@@ -1,0 +1,25 @@
+/google-sheets-mcp
+/google-sheets-mcp.exe
+# `go build ./scripts/X` drops its output here under the package name.
+# Use `go run` instead; these are so a slip cannot be committed.
+/gates
+/livesheet
+/dist/
+cov.out
+schemas.json
+*.test
+# Credentials. None of these may ever be committed, and the leak gate
+# treats a match as a finding rather than something to review.
+client_secret*.json
+token.json
+.env
+# The editor writes its settings, and temporary copies of them, into the
+# working tree while a session runs, so a wildcard `git add` takes
+# whatever exists at that instant. A tool that writes here needs its rule
+# before the first wildcard add, not after the first one is committed —
+# which is how a stray file reached a sibling project's public history.
+# Locally these are also covered by a global ignore; a contributor
+# cloning this repository has no such protection, which is why the rule
+# lives here.
+.claude/settings.local.json
+.claude/settings.local.json.tmp.*
