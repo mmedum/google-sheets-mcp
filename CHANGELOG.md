@@ -70,11 +70,16 @@ and this project follows [semantic versioning](https://semver.org).
   saying an `Fprintf` goes to a caller-supplied writer — true of a
   caller's writer and not of `os.Stdout`. One such line would have put a
   sheet title on the terminal unredacted with the gate reporting nothing.
-  It now counts an `Fprint*` whose writer is literally `os.Stdout`, and
-  says plainly that a writer reached through a variable is not followed.
-  Prompted by a sibling repository finding the same shape — a check that
-  decides a construct is fine from the one spelling it was written
-  against — in a gate of its own.
+  It now matches the *mention* of a printer or of `os.Stdout` rather than
+  the call, which also closes what the first fix had recorded as needing
+  a type checker: `p := fmt.Println; p(x)` fails at the assignment, an
+  aliased writer fails at the alias, and handing `os.Stdout` to a child
+  process fails too. Prompted by a sibling repository finding the same
+  shape in a gate of its own, and the mention-rather-than-call rule is
+  theirs. A comment that argues for a gap is worse than one that leaves
+  it unexplained: it buys the reader's agreement in advance, so the gate
+  ends up protected by its own prose from the person most likely to
+  notice.
 - The stdio smoke gate now drives `resources/templates/list` and
   `resources/read` as well as the tools. A tool and a resource are
   different JSON-RPC methods with different result shapes, and until this

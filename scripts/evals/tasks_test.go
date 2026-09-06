@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -281,5 +280,4 @@ func TestFixtureIsSyntheticThroughout(t *testing.T) {
 	if f.Sheet == "Sheet1" {
 		t.Error("the working sheet is called Sheet1, so the guessing task cannot fail")
 	}
-	fmt.Fprintf(&strings.Builder{}, "%v", f)
 }

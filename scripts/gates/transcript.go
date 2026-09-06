@@ -30,18 +30,18 @@ import (
 var (
 	// printers reach the terminal on their own.
 	printers = []string{"Print", "Printf", "Println"}
-	// writerPrinters reach it when handed os.Stdout, and are invisible
-	// to a check that looks only for the bare forms.
+	// The Fprint* family is not listed, and does not need to be. Any of
+	// them that reaches the terminal has to name os.Stdout to do it, and
+	// naming os.Stdout is the rule below.
 	//
-	// This was the hole: the list above was justified by "Fprintf to a
-	// caller-supplied writer does not reach the terminal", which is true
-	// of a caller-supplied writer and not of os.Stdout. One
-	// fmt.Fprintln(os.Stdout, sheetTitle) would have printed a title
-	// unredacted with the gate reporting nothing. A sibling repository
-	// found the same shape in a different gate on 2026-09-06 — a check
-	// that decides a construct is fine from the one spelling it was
-	// written against — and this is this repository's instance of it.
-	writerPrinters = []string{"Fprint", "Fprintf", "Fprintln"}
+	// This was the hole: the list above used to be justified by "Fprintf
+	// to a caller-supplied writer does not reach the terminal", which is
+	// true of a caller's writer and not of os.Stdout. One
+	// fmt.Fprintln(os.Stdout, sheetTitle) would have put a title on the
+	// terminal unredacted with the gate reporting nothing. A comment
+	// that argues for a gap is worse than one that leaves it unexplained
+	// — it buys the reader's agreement in advance, so the gate ends up
+	// protected by its own prose from the person most likely to notice.
 	// allowedIn are the functions permitted to call one: the redacting
 	// helper itself, and the build-tag stub that runs when the driver is
 	// not compiled in and has nothing to redact.
@@ -106,25 +106,6 @@ func transcriptGate() error {
 	return nil
 }
 
-// writesToStdout reports whether a fmt.Fprint* call's writer is
-// os.Stdout, which makes it a print by another name.
-//
-// Only the literal os.Stdout. A writer reached through a variable is not
-// followed, and that is a limit rather than a decision: it needs type
-// information the parser does not have. Said plainly here so the next
-// person knows what this does and does not see.
-func writesToStdout(call *ast.CallExpr) bool {
-	if len(call.Args) == 0 {
-		return false
-	}
-	sel, ok := call.Args[0].(*ast.SelectorExpr)
-	if !ok || sel.Sel.Name != "Stdout" {
-		return false
-	}
-	pkg, ok := sel.X.(*ast.Ident)
-	return ok && pkg.Name == "os"
-}
-
 // printsOutside reports fmt.Print* calls made from a function that is
 // not allowed to make them.
 func printsOutside(fset *token.FileSet, file *ast.File, allowed []string) []string {
@@ -134,27 +115,39 @@ func printsOutside(fset *token.FileSet, file *ast.File, allowed []string) []stri
 		if !ok || slices.Contains(allowed, fn.Name.Name) {
 			continue
 		}
+		// Mentions, not calls.
+		//
+		// A rule about calls is bypassed by a value: `p := fmt.Println;
+		// p(x)` is a call to p, and `w := os.Stdout; fmt.Fprintln(w, x)`
+		// is a call whose first argument is an identifier. Both reach
+		// the terminal and neither is a call to anything this could
+		// match. Matching the *mention* catches them at the assignment
+		// instead, and needs no type information — which is what a
+		// sibling repository pointed out after this gate had recorded
+		// the gap as needing a type checker.
+		//
+		// What it still cannot see is a writer arriving as a parameter
+		// from outside the package. Written down rather than implied.
 		ast.Inspect(fn, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
+			sel, ok := n.(*ast.SelectorExpr)
 			if !ok {
 				return true
 			}
 			pkg, ok := sel.X.(*ast.Ident)
-			if !ok || pkg.Name != "fmt" {
+			if !ok {
 				return true
 			}
+			what := pkg.Name + "." + sel.Sel.Name
 			switch {
-			case slices.Contains(printers, sel.Sel.Name):
-			case slices.Contains(writerPrinters, sel.Sel.Name) && writesToStdout(call):
+			// os.Stdout named at all: assigned, passed, or handed to a
+			// child process, every one of which puts unredacted bytes
+			// on the terminal.
+			case pkg.Name == "os" && sel.Sel.Name == "Stdout":
+			case pkg.Name == "fmt" && slices.Contains(printers, sel.Sel.Name):
 			default:
 				return true
 			}
-			out = append(out, fmt.Sprintf("%s calls fmt.%s at %s",
-				fn.Name.Name, sel.Sel.Name, fset.Position(call.Pos())))
+			out = append(out, fmt.Sprintf("%s names %s at %s", fn.Name.Name, what, fset.Position(sel.Pos())))
 			return true
 		})
 	}
