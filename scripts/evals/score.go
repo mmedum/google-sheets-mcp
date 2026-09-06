@@ -34,16 +34,30 @@ func (h *harness) cellMatches(f Fixture, sheet, cell string, want func(string) e
 	return want(firstValue(s))
 }
 
-// sheetContains reports whether a value appears anywhere on a sheet.
-func (h *harness) sheetContains(f Fixture, sheet, value string) error {
-	text, _, err := h.call("find_in_spreadsheet", map[string]any{
-		"spreadsheet": f.ID, "sheet": sheet, "query": value,
-	})
+// There is deliberately no "is this value anywhere on the sheet" helper.
+//
+// There was, and it is what let the append task pass a run in which the
+// model wrote nothing: the marker it looked for was a word the fixture's
+// own vocabulary seeds, so the sheet contained it before the task began.
+// A check of that shape passes on the fixture rather than on the work,
+// and the shape is the problem rather than the word — so the helper is
+// gone and each end state says where it expects to find something.
+
+// appendedBelowTheData reports whether a marker landed under the seeded
+// block rather than on top of it.
+//
+// Below, not merely present: "add a row to the bottom" is the task, and
+// a write that replaced row 2 would satisfy "is it on the sheet" while
+// doing the opposite of what was asked.
+func (h *harness) appendedBelowTheData(f Fixture, sheet, marker string) error {
+	first := f.DataLastRow + 1
+	rng := fmt.Sprintf("A%d:B%d", first, first+6)
+	text, _, err := h.read(f, sheet, rng, nil)
 	if err != nil {
-		return fmt.Errorf("searching for %q: %w", value, err)
+		return fmt.Errorf("reading %s: %w", rng, err)
 	}
-	if strings.Contains(text, "no matches") || strings.Contains(text, "0 match") {
-		return fmt.Errorf("%q is not on %q", value, sheet)
+	if !strings.Contains(text, marker) {
+		return fmt.Errorf("%q is not in %s, so nothing was appended under the data", marker, rng)
 	}
 	return nil
 }
@@ -72,8 +86,8 @@ func (h *harness) sheetExists(f Fixture, title string) error {
 // the check is conditional on the trace rather than absolute, which is
 // the honest shape: an absolute check here would fail a correct model
 // half the time and teach nobody anything.
-func (h *harness) formulaSurvivedUnlessAcknowledged(f Fixture, r *Run) error {
-	text, _, err := h.read(f, f.Sheet, f.FormulaCell, map[string]any{"show": "formulas"})
+func (h *harness) formulaSurvivedUnlessAcknowledged(f Fixture, sheet string, r *Run) error {
+	text, _, err := h.read(f, sheet, f.FormulaCell, map[string]any{"show": "formulas"})
 	if err != nil {
 		return err
 	}
@@ -88,9 +102,9 @@ func (h *harness) formulaSurvivedUnlessAcknowledged(f Fixture, r *Run) error {
 }
 
 // headerIsFormatted reads the formatting back rather than the values.
-func (h *harness) headerIsFormatted(f Fixture) error {
+func (h *harness) headerIsFormatted(f Fixture, sheet string) error {
 	text, _, err := h.call("read_formatting", map[string]any{
-		"spreadsheet": f.ID, "sheet": f.Sheet, "range": "1:1",
+		"spreadsheet": f.ID, "sheet": sheet, "range": "1:1",
 	})
 	if err != nil {
 		return err
@@ -114,8 +128,12 @@ func (h *harness) headerIsFormatted(f Fixture) error {
 // Read back, not inferred from the sort's own report of itself: §13's
 // rule from a sibling's driver, where all three wrong results were a
 // result describing the state from before the write.
-func (h *harness) columnIsDescending(f Fixture, column string) error {
-	_, s, err := h.read(f, f.Sheet, column+"2:"+column+"100", map[string]any{"format": "json"})
+func (h *harness) columnIsDescending(f Fixture, sheet, column string) error {
+	// The seeded block only. Reading to row 100 read past it into what
+	// earlier tasks had written — a column total three tasks back — and
+	// failed a model that had sorted exactly what it was asked to.
+	block := fmt.Sprintf("%s2:%s%d", column, column, f.DataLastRow)
+	_, s, err := h.read(f, sheet, block, map[string]any{"format": "json"})
 	if err != nil {
 		return err
 	}
@@ -147,9 +165,9 @@ func (h *harness) columnIsDescending(f Fixture, column string) error {
 }
 
 // hasValidation reads the rule attached to a cell.
-func (h *harness) hasValidation(f Fixture, cell string) error {
+func (h *harness) hasValidation(f Fixture, sheet, cell string) error {
 	text, _, err := h.call("read_formatting", map[string]any{
-		"spreadsheet": f.ID, "sheet": f.Sheet, "range": cell,
+		"spreadsheet": f.ID, "sheet": sheet, "range": cell,
 	})
 	if err != nil {
 		return err

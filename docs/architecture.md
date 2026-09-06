@@ -1,7 +1,6 @@
 # Architecture — google-sheets-mcp
 
-**Status: phase 3 built (2026-09-06), the evals outstanding, not
-tagged.** Reading, writing, formatting, the objects attached to a range,
+**Status: phase 3 complete (2026-09-06), not tagged.** Reading, writing, formatting, the objects attached to a range,
 `gsheets://` resources and durable anchors all work, and `make check` is
 green. Spike K ran against a real account and §18 carries what it found.
 
@@ -11,14 +10,19 @@ could not — a refusal telling a `read_range` caller to pass an A1 *band*,
 and a delete quoting an anchor's name in its refusal and not in its
 result. Both are §18 rows and both are fixed.
 
-**What is not done: the evals.** The refresh token vanished five times
-during the session and `go test ./...` was deleting it: `cmd`'s test
-isolation redirected the config directory and the environment override
-and could not redirect the OS keyring, so a logout test removed the real
-one under the default profile. Fixed, and watched both ways with a decoy.
-§18 carries it, including the wrong diagnosis that came first. `make
-evals` is written and its table is checked by `go test` without
-credentials, but it has not touched the network. §16's rule stands:
+**The evals have run**, four times, and 15 of 16 tasks pass. Every
+failure but the last was in the harness rather than the server: a check
+the fixture satisfied by itself, a scorer reading past the data into
+another task's work, an unanswerable prompt, and a task that demanded a
+refusal a well-behaved model avoids. The sixteenth is a real finding
+about the read window and is §17a.25.
+
+Getting there needed a detour: the refresh token vanished five times and
+`go test ./...` was deleting it. `cmd`'s test isolation redirected the
+config directory and the environment override and could not redirect the
+OS keyring, so a logout test removed the real one under the default
+profile. Fixed and watched both ways with a decoy. §18 carries it,
+including the confident wrong diagnosis that came first. §16's rule stands:
 green gates are not done, and phase 3 is not closed until the evals have
 run and their transcript has been read.
 
@@ -1543,12 +1547,13 @@ rectangle, a split's spill to the right, and a replacement inside
 formulas. Plus the §17a decision the phase owed: the structural tools'
 English moved into the renderer.
 
-**Phase 3 — resources, anchors, evals, performance (v0.3.0). Built
-2026-09-06. Spike K ran; the live driver ran (169 steps, 0 failed, 1
-undetermined) and its transcript was read, which found two defects the
-count could not. The evals are outstanding: the keyring gave up the
-refresh token five times during the session, the last within minutes of
-the driver finishing. Not closed until they have run and been read.**
+**Phase 3 — resources, anchors, evals, performance (v0.3.0). Done
+2026-09-06, including the live work: spike K ran, the live driver ran
+(169 steps, 0 failed, 1 undetermined) and the evals ran four times (15 of
+16 tasks passing). Every transcript was read and every one of them found
+something no count would have: two wording defects in the driver's run,
+four harness defects across the eval runs, and one real finding about the
+read window (§17a.25). Not tagged: `main` is the maintainer's.**
 `gsheets://` resources; developer metadata as durable anchors (§6.4); the
 agent evals and the fixes they force; `make bench` and the numbers in
 §11; `/simplify` and `/code-review high` over the tree, with findings
@@ -1635,7 +1640,7 @@ they are not reopened.
 
 ## 17a. Deferred cleanups
 
-Sixteen open, eight closed. A closed entry keeps its text and the decision that
+Seventeen open, eight closed. A closed entry keeps its text and the decision that
 closed it, so nobody reopens a question that was answered. Five of the
 open ones were raised by phase 2's own review passes and are recorded
 here rather than fixed in passing; two of those (entries 12 and 14) are
@@ -1910,7 +1915,31 @@ cannot be verified again yet.
    NUL byte in the first few kilobytes is the whole rule, so it needs no
    real executable and costs a second. Its absence is the entire reason
    the question went to three readers instead of to a test.
-25. Nothing further. The tool-version problem that was here — a
+25. **A read's window is sized by the sheet's allocated width, not by
+   where the data is.** The evals found it: asked for the last non-empty
+   row of a 900-row sheet, a model took eleven `read_range` calls and
+   then said "the footer even says it plainly: data ends at row 900". It
+   does say that — once a read overshoots the data — and getting there
+   cost eleven reads because the sheet is allocated 26 columns wide while
+   its data occupies two. The cell budget is spent over the allocated
+   rectangle, so 5 000 cells buys 192 rows of a 2-column block instead of
+   2 500: thirteen times the cost, all of it empty.
+
+   Nothing tells a caller the block is narrow. The card reports the grid
+   size, which is the allocated one; the used range is only knowable by
+   reading. The options are a used-range field on the card (a grid read
+   `get_spreadsheet` deliberately does not do), clamping a whole-sheet
+   read to the used width (the same problem one level down), or leaving
+   it and teaching the tool description to narrow the range — which is
+   what a person does and what the model did not think to do.
+
+   **Still open**, and phase 3 is the wrong place to decide it: it
+   touches the card, the budget and possibly a new capability, and
+   `make bench` (§11) says the cost of a read is the decode, which this
+   multiplies. Recorded with its measurement: four runs of that task took
+   2, 4, 5 and 13 calls, so the variance is as much the finding as the
+   worst case.
+26. Nothing further. The tool-version problem that was here — a
    distribution `golangci-lint` built with an older Go refusing this
    module, and a stale `go-licenses` failing on the standard library —
    was fixed rather than deferred: the Makefile fetches all three tools
@@ -2345,6 +2374,23 @@ removed, watching it go.
 | Was the token being deleted? | **Yes, by this repository.** A decoy stored under `google-sheets-mcp/default` survives a full suite with the fix and is gone after one test without it | `isolate` sets `GSHEETS_PROFILE` to a name derived from the test, so the keyring key a test can reach is one no person owns. It is set for every test rather than for the one that reaches the keyring today |
 | Why did nothing catch it? | **Nothing had run the check.** The escape route the helper's comment names is the file; the keyring is the store its author did not have a variable for, and no test asserted the profile a test runs under | `TestIsolateKeepsTestsOutOfTheRealKeyring` asserts it, and the cost of it being wrong is paid by whoever runs the tests rather than by CI, where there is no keyring to damage |
 | Was `ErrKeyringSilent` wasted? | **No, and it is kept.** A locked collection does read as an absence through `go-keyring`, and "run login" is the wrong advice for it. It was written for the wrong reason and is right for its own | Kept, with its reasoning corrected: it is for a keyring that will not answer, which is a real state, and not for the disappearances that prompted it |
+
+**The agent evals, first run 2026-09-06 (`make evals`).** Sixteen tasks,
+one failure, seven carrying a half nothing could check, $1.89. Both
+findings were in the harness rather than in the server, which is what a
+first eval run is mostly for.
+
+| What the transcript showed | What it was | Effect |
+|---|---|---|
+| "append without disturbing what is below" passed on two reads and no write at all | **A check the fixture satisfied by itself.** It asked whether "Threnody" was anywhere on the sheet, and `Threnody` is one of the ten words the fixture seeds its rows from — so `Threnody-03` had been there since setup. The task verified nothing and reported a pass | The marker is a word the vocabulary does not contain, and the check reads *below* the seeded block: "add a row to the bottom" is the task, and a write that replaced row 2 would satisfy "is it on the sheet" while doing the opposite. The `sheetContains` helper is deleted rather than fixed — the shape is the problem, not the word |
+| "sort by a column" failed with `10930 comes after 100` | **The scorer read past the data into another task's work.** 10930 is the column total that "total a column" wrote to B22 seven tasks earlier; the scorer read B2:B100 and found it below the sorted block. The model had sorted exactly what it was asked to | Scoring reads stop at the seeded block. The tasks share one spreadsheet and run in order, so any fixed range past the data is a range some earlier task may have written to |
+| The fixed append task then failed too, on two reads and no write | **The prompt was unanswerable.** It asked for "the name and the value" against a table with four columns, three of them numeric, and the model stopped and asked which one 42 belonged in — correctly. A task a careful reader cannot answer measures how willing a model is to guess, and this server's whole argument is that it should not be | Every column the new row touches is named. It also took a second harness change to see: a failing task now prints what the model *said*, because the calls say what it did and only its answer says why — two reads and no write is a cautious model, a model that could not find the tool, or a model answering in prose, and those are three different findings |
+
+The A/B is recorded as unverified and worth one line anyway: the
+addressed-grid arm found the row and wrote to it in three calls; the
+bare-rows arm made two calls and wrote nothing. That is one run of two
+arms and settles nothing, but the direction is the one §4.9 assumes, and
+the harness said so rather than counting an abandoned arm as cheaper.
 
 **The live driver on phase 3's surface, run 2026-09-06 (`make live`).**
 169 steps, none failed, one undetermined (Drive's content index again).

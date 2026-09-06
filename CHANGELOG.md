@@ -193,6 +193,28 @@ and this project follows [semantic versioning](https://semver.org).
   first. When the profile records a token in the keyring and the keyring
   says nothing, the two together now say so.
 
+- **The first eval run found both of its defects in the harness.** One
+  task passed on two reads and no write: it asked whether a word was
+  anywhere on the sheet, and the word was one the fixture seeds its own
+  rows from, so the sheet had contained it since setup — §13's "task that
+  quietly checks nothing", inside the harness written to catch that. The
+  helper behind it is deleted rather than fixed, because the shape is the
+  problem and not the word. The other was a scorer reading past the
+  seeded block into a total another task had written seven tasks earlier,
+  which failed a model that had done exactly what it was asked. A third
+  surfaced once those were fixed: a prompt asking for "the name and the
+  value" against a four-column table, which the model correctly refused
+  to guess at. A failing task now prints the model's own answer, because
+  the calls say what it did and only its answer says why.
+- **The evals found one thing about the server, recorded rather than
+  fixed.** Asked for the last non-empty row of a 900-row sheet, a model
+  took eleven reads and then observed that the footer had said "data ends
+  at row 900" all along. It had — once a read overshoots the data — and
+  reaching that cost eleven reads because a read's window is sized by the
+  sheet's *allocated* width. The sheet is 26 columns wide and its data
+  occupies two, so 5 000 cells buys 192 rows instead of 2 500. §17a.25
+  has the options; it touches the card, the budget and possibly a new
+  capability, which is not phase 3's to decide.
 - **Two things the live run found that nothing had failed on.** A
   refusal told a `read_range` caller that "any A1 band works here
   instead" — a band being something `read_range` does not take, and the

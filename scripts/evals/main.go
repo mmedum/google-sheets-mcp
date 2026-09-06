@@ -174,6 +174,16 @@ func score(ctx context.Context, h *harness, t Task, cfg, model string, budget fl
 	for _, p := range res.Problems {
 		line("  FAIL %s", p)
 	}
+	// What the model said, when something went wrong. The calls say what
+	// it did and only this says why — a task that read twice and wrote
+	// nothing is either a model being cautious, a model that could not
+	// find the tool, or a model that answered in prose instead of
+	// acting, and those are three different findings about the tool
+	// surface. Printed only on a failure, because on a pass it is a
+	// paraphrase of work the end state already checked.
+	if res.Failed && strings.TrimSpace(r.Text) != "" {
+		line("  it said: %s", firstLines(r.Text, 6))
+	}
 	// Printed, always, and not only when something failed. A task that
 	// scored one half and silently skipped the other is the shape this
 	// rule exists to stop.
@@ -412,6 +422,16 @@ func report(results []Result) {
 	line("")
 	line("Read this transcript rather than the counts. A task can pass by outcome and fail by every")
 	line("rule this server is built on, and the trace lines above are where that shows.")
+}
+
+// firstLines is the head of the model's answer, indented to sit under
+// the finding it explains.
+func firstLines(s string, n int) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	if len(lines) > n {
+		lines = append(lines[:n], "…")
+	}
+	return strings.Join(lines, "\n           ")
 }
 
 func firstLine(s string) string {

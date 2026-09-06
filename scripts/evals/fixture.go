@@ -65,6 +65,7 @@ func build(ctx context.Context, bin string) (Fixture, func(), error) {
 		ErrorCell:   "D21",
 		EmptyCell:   "F2",
 		AnchorRow:   10,
+		DataLastRow: 21,
 	}
 
 	sec("Fixture")
@@ -118,6 +119,21 @@ func build(ctx context.Context, bin string) (Fixture, func(), error) {
 		return Fixture{}, nil, err
 	}
 	line("filled %s with 20 rows, a formula column and one failing formula", f.Sheet)
+
+	// One copy per task that changes anything, so no task can see
+	// another's writes. Duplicated rather than re-seeded: the copy is
+	// the same block by construction, where twenty more write_values
+	// calls would be twenty more chances for the sheets to differ.
+	for _, work := range WorkSheets {
+		if _, err := call("manage_sheet", map[string]any{
+			"spreadsheet": f.ID, "action": "duplicate",
+			"sheet": f.Sheet, "title": f.SheetFor(work),
+		}); err != nil {
+			closeSession()
+			return Fixture{}, nil, err
+		}
+	}
+	line("duplicated it into %d work sheets, one per task that writes", len(WorkSheets))
 
 	// A sheet longer than one read's default budget, so the tail task
 	// has a tail to find.

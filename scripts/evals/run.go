@@ -27,7 +27,47 @@ type Fixture struct {
 	ErrorCell   string
 	EmptyCell   string
 	AnchorRow   int
+	// DataLastRow is where the seeded block ends.
+	DataLastRow int
 }
+
+// Work sheets. Every task that changes anything gets its own copy of the
+// seeded block, and this is the list of them.
+//
+// One shared sheet was the harness's worst idea. Tasks run in order and
+// mutate as they go, so each one saw a sheet its predecessors had
+// changed — and it went wrong in both directions before this existed.
+// A scorer read past the data into a total another task had written, and
+// failed a model that had done exactly what it was asked. Then, with
+// that fixed, a *prompt* went ambiguous for the same reason: "sort the
+// rows under the header" on a sheet now carrying a totals row and an
+// appended row is a question with two defensible answers, and the model
+// stopped and asked which was meant. It was right to.
+//
+// Neither failure was about this server, and both cost a run to find.
+// Isolation is cheaper than either.
+const (
+	WorkTotal  = "total"
+	WorkAppend = "append"
+	WorkGuard  = "guard"
+	WorkAck    = "ack"
+	WorkFormat = "format"
+	WorkSort   = "sort"
+	WorkValid  = "validation"
+	WorkCopy   = "copy"
+	WorkFix    = "fix"
+	WorkAnchor = "anchor"
+)
+
+// WorkSheets is every per-task copy the fixture makes.
+var WorkSheets = []string{
+	WorkTotal, WorkAppend, WorkGuard, WorkAck, WorkFormat,
+	WorkSort, WorkValid, WorkCopy, WorkFix, WorkAnchor,
+}
+
+// SheetFor is the sheet a task works in. Derived rather than stored, so
+// a task and the fixture cannot disagree about which one it is.
+func (f Fixture) SheetFor(work string) string { return f.Sheet + " " + work }
 
 // ToolCall is one call a model made, as the trace reports it.
 type ToolCall struct {
@@ -107,6 +147,9 @@ func (r *Run) readBeforeWriting() error {
 // eventually worked.
 func (r *Run) noInventedSheet(f Fixture) error {
 	known := map[string]bool{f.Sheet: true, f.LongSheet: true, "Summary": true}
+	for _, work := range WorkSheets {
+		known[f.SheetFor(work)] = true
+	}
 	var invented []string
 	for _, c := range r.Calls {
 		// A sheet the model created during the run is its own to name,

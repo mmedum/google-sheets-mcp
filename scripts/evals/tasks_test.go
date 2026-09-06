@@ -176,7 +176,7 @@ func TestEndStateChecksReadBack(t *testing.T) {
 		h := &harness{call: func(string, map[string]any) (string, map[string]any, error) {
 			return "D2 | 42\n", nil, nil // no "=" anywhere: the formula is gone
 		}}
-		err := (&harness{call: h.call}).formulaSurvivedUnlessAcknowledged(f, &Run{})
+		err := (&harness{call: h.call}).formulaSurvivedUnlessAcknowledged(f, f.Sheet, &Run{})
 		if err == nil {
 			t.Error("the formula was replaced and nothing had refused, and this passed")
 		}
@@ -187,7 +187,7 @@ func TestEndStateChecksReadBack(t *testing.T) {
 			return "D2 | 42\n", nil, nil
 		}}
 		r := &Run{Calls: []ToolCall{{IsError: true, Result: "[blocked] D2 holds a formula"}}}
-		if err := h.formulaSurvivedUnlessAcknowledged(f, r); err != nil {
+		if err := h.formulaSurvivedUnlessAcknowledged(f, f.Sheet, r); err != nil {
 			t.Errorf("a model that was refused, read it and went ahead was failed: %v", err)
 		}
 	})
@@ -198,7 +198,7 @@ func TestEndStateChecksReadBack(t *testing.T) {
 				[]any{"100"}, []any{"900"}, []any{"500"},
 			}}, nil
 		}}
-		if err := h.columnIsDescending(f, "B"); err == nil {
+		if err := h.columnIsDescending(f, f.Sheet, "B"); err == nil {
 			t.Error("100, 900, 500 was accepted as descending")
 		}
 	})
@@ -207,7 +207,7 @@ func TestEndStateChecksReadBack(t *testing.T) {
 		h := &harness{call: func(string, map[string]any) (string, map[string]any, error) {
 			return "", map[string]any{"rows": []any{[]any{""}, []any{""}}}, nil
 		}}
-		if err := h.columnIsDescending(f, "B"); err == nil {
+		if err := h.columnIsDescending(f, f.Sheet, "B"); err == nil {
 			t.Error("an empty column passed a sort check; nothing was sorted and nothing said so")
 		}
 	})
@@ -228,7 +228,7 @@ func TestEndStateChecksReadBack(t *testing.T) {
 		h := &harness{call: func(string, map[string]any) (string, map[string]any, error) {
 			return "A1:D1 bold, background #eeeeee\n", nil, nil // not centred
 		}}
-		err := h.headerIsFormatted(f)
+		err := h.headerIsFormatted(f, f.Sheet)
 		if err == nil {
 			t.Fatal("a header that was bold and shaded but not centred passed")
 		}

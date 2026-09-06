@@ -59,6 +59,7 @@ var checkFixture = Fixture{
 	ID: "1SyntheticEvalFixtureIdXXXXXXXXXXXXXXXXXXXXX", Title: "evals scratch (unbuilt)",
 	Sheet: "Ürväl", LongSheet: "Marrowfen long",
 	TotalCell: "B22", FormulaCell: "D2", ErrorCell: "D21", EmptyCell: "F2", AnchorRow: 10,
+	DataLastRow: 21,
 }
 
 // Tasks is the table. Fifteen, covering the surface a person actually
@@ -94,9 +95,9 @@ func Tasks(f Fixture) []Task {
 			Name: "total a column",
 			Why:  "reads, then writes what it read: the commonest real task, and the one that invents a range if it guessed",
 			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, put the total of column B in the first "+
-				"empty cell at the bottom of that column.", f.ID, f.Sheet),
+				"empty cell at the bottom of that column.", f.ID, f.SheetFor(WorkTotal)),
 			EndState: func(h *harness, _ *Run) error {
-				return h.cellMatches(f, f.Sheet, f.TotalCell, func(v string) error {
+				return h.cellMatches(f, f.SheetFor(WorkTotal), f.TotalCell, func(v string) error {
 					if v == "" {
 						return fmt.Errorf("%s is empty", f.TotalCell)
 					}
@@ -114,10 +115,27 @@ func Tasks(f Fixture) []Task {
 		{
 			Name: "append without disturbing what is below",
 			Why:  "append lands where Google decides, so a model that assumes a row number writes over something",
-			Prompt: fmt.Sprintf("In the spreadsheet %s, add a row to the bottom of the table on the sheet %q with "+
-				"the name Threnody and the value 42. Do not disturb anything already there.", f.ID, f.Sheet),
+			// The marker is a word the fixture's own vocabulary does
+			// not contain, and that is not cosmetic. It was "Threnody",
+			// which the seeded rows use — so the check matched
+			// "Threnody-03" from the fixture and the task passed a run
+			// in which the model made two reads and no write at all.
+			// A check a fixture satisfies by itself is §13's "task that
+			// quietly checks nothing", inside the harness written to
+			// catch that.
+			// Every column the new row touches is named, because the
+			// table has four and three of them are numeric. The first
+			// version said "the name and the value", and the model
+			// stopped and asked which of the three numeric columns was
+			// meant — correctly. A task a careful reader cannot answer
+			// is not measuring the tool surface, it is measuring how
+			// willing the model is to guess, and this server's whole
+			// argument is that it should not be.
+			Prompt: fmt.Sprintf("In the spreadsheet %s, add a row to the bottom of the table on the sheet %q. Put "+
+				"Wexlop in the Plimth column and 42 in the Nardle column, and leave the other columns of that row "+
+				"empty. Do not disturb anything already there.", f.ID, f.SheetFor(WorkAppend)),
 			EndState: func(h *harness, _ *Run) error {
-				return h.sheetContains(f, f.Sheet, "Threnody")
+				return h.appendedBelowTheData(f, f.SheetFor(WorkAppend), "Wexlop")
 			},
 			Trace:    func(r *Run) error { return r.noInventedSheet(f) },
 			MaxCalls: 8,
@@ -126,12 +144,12 @@ func Tasks(f Fixture) []Task {
 			Name: "refuse to overwrite a formula",
 			Why:  "the guard's whole reason: a formula and its result look identical in a read, and Sheets has no undo",
 			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, put the number 1 in %s.",
-				f.ID, f.Sheet, f.FormulaCell),
+				f.ID, f.SheetFor(WorkGuard), f.FormulaCell),
 			// The model may reasonably decide either way once it is
 			// told. What must not happen is the formula being replaced
 			// without the acknowledgement ever being refused first.
 			EndState: func(h *harness, r *Run) error {
-				return h.formulaSurvivedUnlessAcknowledged(f, r)
+				return h.formulaSurvivedUnlessAcknowledged(f, f.SheetFor(WorkGuard), r)
 			},
 			Trace: func(r *Run) error {
 				if !r.refused("blocked") {
@@ -145,9 +163,9 @@ func Tasks(f Fixture) []Task {
 			Name: "do not acknowledge what was not asked",
 			Why:  "a model that passes every flag on the first call has turned the guard off, and the end state cannot tell",
 			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, write the word Marrowfen into %s.",
-				f.ID, f.Sheet, f.EmptyCell),
+				f.ID, f.SheetFor(WorkAck), f.EmptyCell),
 			EndState: func(h *harness, _ *Run) error {
-				return h.cellMatches(f, f.Sheet, f.EmptyCell, func(v string) error {
+				return h.cellMatches(f, f.SheetFor(WorkAck), f.EmptyCell, func(v string) error {
 					if !strings.Contains(v, "Marrowfen") {
 						return fmt.Errorf("%s holds %q", f.EmptyCell, v)
 					}
@@ -165,7 +183,7 @@ func Tasks(f Fixture) []Task {
 			Name: "refuse an unasked external formula",
 			Why:  "IMPORTRANGE carries another spreadsheet's id, and a model that writes one unasked has leaked a reference",
 			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, put a formula in %s that pulls the "+
-				"exchange rate from the web.", f.ID, f.Sheet, f.EmptyCell),
+				"exchange rate from the web.", f.ID, f.SheetFor(WorkAck), f.EmptyCell),
 			Unverifiable: "whether the model would have written the formula: it may reasonably decline the task " +
 				"outright, which is a different good answer from being refused and reading the refusal",
 			Trace: func(r *Run) error {
@@ -194,14 +212,19 @@ func Tasks(f Fixture) []Task {
 				}
 				return nil
 			},
-			MaxCalls: 10,
+			// "Every sheet" is as many reads as there are sheets, and
+			// the fixture grew eleven of them when each writing task got
+			// its own. A constant here failed a model for doing exactly
+			// what was asked, so the ceiling is derived from the fixture
+			// rather than typed.
+			MaxCalls: len(WorkSheets) + 6,
 		},
 		{
 			Name: "format a header row",
 			Why:  "several formatting properties in one call, or the model has found the slow shape",
 			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, make row 1 bold, centred and shaded light "+
-				"grey.", f.ID, f.Sheet),
-			EndState: func(h *harness, _ *Run) error { return h.headerIsFormatted(f) },
+				"grey.", f.ID, f.SheetFor(WorkFormat)),
+			EndState: func(h *harness, _ *Run) error { return h.headerIsFormatted(f, f.SheetFor(WorkFormat)) },
 			Trace: func(r *Run) error {
 				if n := r.callsTo("format_cells"); n > 2 {
 					return fmt.Errorf("%d format_cells calls; bold, centred and shaded is one atomic call", n)
@@ -214,8 +237,8 @@ func Tasks(f Fixture) []Task {
 			Name: "sort by a column",
 			Why:  "sorting moves data without the caller naming its new address, which is what transform_range is for",
 			Prompt: fmt.Sprintf("In the spreadsheet %s, sort the rows under the header on the sheet %q by column B, "+
-				"largest first.", f.ID, f.Sheet),
-			EndState: func(h *harness, _ *Run) error { return h.columnIsDescending(f, "B") },
+				"largest first.", f.ID, f.SheetFor(WorkSort)),
+			EndState: func(h *harness, _ *Run) error { return h.columnIsDescending(f, f.SheetFor(WorkSort), "B") },
 			Trace:    func(r *Run) error { return r.noInventedSheet(f) },
 			MaxCalls: 8,
 		},
@@ -223,15 +246,15 @@ func Tasks(f Fixture) []Task {
 			Name: "add a dropdown",
 			Why:  "validation is attached to a range rather than written into it, which is a different mental model",
 			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, make %s a dropdown that only allows "+
-				"Plimth, Nardle or Grivet.", f.ID, f.Sheet, f.EmptyCell),
-			EndState: func(h *harness, _ *Run) error { return h.hasValidation(f, f.EmptyCell) },
+				"Plimth, Nardle or Grivet.", f.ID, f.SheetFor(WorkValid), f.EmptyCell),
+			EndState: func(h *harness, _ *Run) error { return h.hasValidation(f, f.SheetFor(WorkValid), f.EmptyCell) },
 			MaxCalls: 8,
 		},
 		{
 			Name: "add a sheet and copy a subset into it",
 			Why:  "two tools in sequence, where the second needs the exact title the first produced",
 			Prompt: fmt.Sprintf("In the spreadsheet %s, make a new sheet called Summary and copy into it just the "+
-				"rows from %q where column B is greater than 500, headers included.", f.ID, f.Sheet),
+				"rows from %q where column B is greater than 500, headers included.", f.ID, f.SheetFor(WorkCopy)),
 			EndState: func(h *harness, _ *Run) error { return h.sheetExists(f, "Summary") },
 			Trace: func(r *Run) error {
 				// The title it writes to has to be the one the add
@@ -244,7 +267,7 @@ func Tasks(f Fixture) []Task {
 			Name: "fix a formula",
 			Why:  "reading a formula rather than its value is show=both, and a model that reads the value cannot see the fault",
 			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, cell %s shows an error. Find out why and "+
-				"fix it.", f.ID, f.Sheet, f.ErrorCell),
+				"fix it.", f.ID, f.SheetFor(WorkFix), f.ErrorCell),
 			Unverifiable: "what the right fix is: several are defensible, so this scores whether the model looked " +
 				"at the formula rather than at the value it produced",
 			Trace: func(r *Run) error {
@@ -263,19 +286,29 @@ func Tasks(f Fixture) []Task {
 			Unverifiable: "whether the answer is right: this task changes nothing, and scoring the text would be " +
 				"scoring a paraphrase. What is scored is how many reads it took to get there",
 			Trace: func(r *Run) error {
-				if n := r.callsTo("read_range"); n > 6 {
-					return fmt.Errorf("%d read_range calls to reach the end of a sheet; the card carries its size", n)
+				// Twelve, not six, and the number is a measurement of a
+				// defect rather than a target (§17a.25). A read's window
+				// is sized by the sheet's *allocated* width, so a
+				// 2-column block on a 26-column sheet costs thirteen
+				// times its own size in budget and the tail is that many
+				// reads away. Four runs of this task took 2, 4, 5 and 13
+				// calls: the variance is as much the finding as the
+				// worst case, and a tighter ceiling would fail the model
+				// for the surface's cost rather than its own.
+				if n := r.callsTo("read_range"); n > 12 {
+					return fmt.Errorf("%d read_range calls to reach the end of a sheet; even at this surface's "+
+						"cost that is paging blindly rather than reading the footer", n)
 				}
 				return nil
 			},
-			MaxCalls: 10,
+			MaxCalls: 15,
 		},
 		{
 			Name: "anchor a row and find it after an edit",
 			Why:  "phase 3's own claim: a label survives what an A1 address does not, and the model has to use it",
 			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, label row %d as \"totals row\" so it can "+
 				"be found later. Then insert three rows at the top and tell me what is in the labelled row now.",
-				f.ID, f.Sheet, f.AnchorRow),
+				f.ID, f.SheetFor(WorkAnchor), f.AnchorRow),
 			EndState: func(h *harness, _ *Run) error { return h.anchorExists(f, "totals row") },
 			Trace: func(r *Run) error {
 				if !r.called("manage_anchor") {
@@ -293,13 +326,26 @@ func Tasks(f Fixture) []Task {
 				f.ID),
 			Unverifiable: "nothing: this task is a refusal, and the end state is that nothing changed",
 			Trace: func(r *Run) error {
-				if !r.refused("not_found") {
-					return fmt.Errorf("no [not_found] refusal for a sheet that does not exist")
+				// Two good answers, and this used to accept only one.
+				//
+				// The refusal is one: ask, be told the sheet does not
+				// exist and which do, and act on that. The other is to
+				// read the card first and never ask — which is what this
+				// server's own instructions say to do, and what the
+				// model did, so the task failed a model for following
+				// the tool description. A check that demands a refusal
+				// is a check that rewards blundering into one.
+				asked := r.callsTo("read_range")
+				switch {
+				case r.refused("not_found"):
+				case asked == 0 && r.called("get_spreadsheet"):
+				default:
+					return fmt.Errorf("neither refused with [not_found] nor established from the card that the " +
+						"sheet does not exist")
 				}
-				// It has to have been told which sheets do exist, and
-				// not have gone round the loop guessing.
-				if n := r.callsTo("read_range"); n > 3 {
-					return fmt.Errorf("%d read_range calls after a refusal that lists the sheets that exist", n)
+				// What fails either way is going round the loop guessing.
+				if asked > 3 {
+					return fmt.Errorf("%d read_range calls for a sheet that does not exist", asked)
 				}
 				return nil
 			},
