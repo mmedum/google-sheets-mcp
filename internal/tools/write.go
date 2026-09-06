@@ -72,7 +72,7 @@ type DimensionInput struct {
 	Sheet       string `json:"sheet,omitempty" jsonschema:"the sheet to act on, by title or numeric sheet id"`
 	Action      string `json:"action" jsonschema:"insert, move, resize, auto_resize, group or ungroup"`
 	Dimension   string `json:"dimension" jsonschema:"rows or columns"`
-	Band        string `json:"band" jsonschema:"which ones, in A1: 2:5 for rows, B:D for columns. It must agree with dimension"`
+	Band        string `json:"band" jsonschema:"which ones, in A1: 2:5 for rows, B:D for columns. It must agree with dimension. anchor:<name> works here too, and resolves to whatever row or column that label points at now"`
 	To          int    `json:"to,omitempty" jsonschema:"for move, the one-based row or column the band should start at afterwards"`
 	Pixels      int    `json:"pixels,omitempty" jsonschema:"for resize, the new size in pixels"`
 	Inherit     bool   `json:"inherit,omitempty" jsonschema:"for insert, take the formatting of the band before rather than the one after"`
@@ -84,7 +84,7 @@ type DeleteDimensionsInput struct {
 	Spreadsheet string `json:"spreadsheet" jsonschema:"a spreadsheet id, any docs.google.com/spreadsheets URL, or an exact title"`
 	Sheet       string `json:"sheet,omitempty" jsonschema:"the sheet to act on, by title or numeric sheet id"`
 	Dimension   string `json:"dimension" jsonschema:"rows or columns"`
-	Band        string `json:"band" jsonschema:"which ones, in A1: 2:5 for rows, B:D for columns. It must agree with dimension"`
+	Band        string `json:"band" jsonschema:"which ones, in A1: 2:5 for rows, B:D for columns. It must agree with dimension. anchor:<name> works here too, and resolves to whatever row or column that label points at now"`
 	Confirm     bool   `json:"confirm,omitempty" jsonschema:"required: Sheets cannot undo this"`
 	DryRun      bool   `json:"dry_run,omitempty" jsonschema:"report what would go with them and delete nothing"`
 }

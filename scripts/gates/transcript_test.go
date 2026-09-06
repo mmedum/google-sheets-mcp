@@ -38,6 +38,25 @@ func TestPrintsOutside(t *testing.T) {
 			want: 2,
 		},
 		{
+			// The hole this closed: justified by "Fprintf to a
+			// caller-supplied writer does not reach the terminal",
+			// which is true of a caller-supplied writer and not of
+			// os.Stdout.
+			name: "Fprintln to os.Stdout is a print",
+			src:  "package main\nimport (\n\"fmt\"\n\"os\"\n)\nfunc step() { fmt.Fprintln(os.Stdout, \"raw\") }\n",
+			want: 1,
+		},
+		{
+			name: "Fprintf to os.Stderr is not",
+			src:  "package main\nimport (\n\"fmt\"\n\"os\"\n)\nfunc step() { fmt.Fprintf(os.Stderr, \"a\") }\n",
+			want: 0,
+		},
+		{
+			name: "Fprintf to a caller's writer is not",
+			src:  "package main\nimport (\n\"fmt\"\n\"io\"\n)\nfunc step(w io.Writer) { fmt.Fprintf(w, \"a\") }\n",
+			want: 0,
+		},
+		{
 			name: "Sprintf is not a print",
 			src:  "package main\nimport \"fmt\"\nfunc step() string { return fmt.Sprintf(\"a\") }\n",
 			want: 0,

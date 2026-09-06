@@ -119,6 +119,11 @@ var toolCalls = map[string][]map[string]any{
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
 			"kind": "named_range", "action": "delete", "name": searchTerm},
 	},
+	"manage_anchor": {
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "2:2",
+			"action": "add", "name": searchTerm, "note": searchTerm},
+		{"spreadsheet": sheetstest.FixtureID, "action": "list"},
+	},
 	"transform_range": {
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
 			"action": "find_replace", "find": searchTerm, "replace": searchTerm},

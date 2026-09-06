@@ -60,7 +60,11 @@ type Server struct {
 }
 
 // New starts a fake and registers the standard fixture.
-func New(t *testing.T) *Server {
+// New takes a testing.TB rather than a *testing.T so a benchmark can
+// drive the fake too. Measuring the read path without it would mean
+// measuring the renderer alone, which is the half that was never in
+// doubt.
+func New(t testing.TB) *Server {
 	t.Helper()
 	s := &Server{
 		docs:     map[string]*Doc{},
@@ -237,6 +241,8 @@ func (s *Server) dispatch(r *http.Request) (string, http.HandlerFunc) {
 		return "drive.files.list", s.filesList
 	case strings.HasPrefix(p, "/drive/v3/files/"):
 		return "drive.files.get", s.filesGet
+	case strings.HasSuffix(p, "/developerMetadata:search"):
+		return "developerMetadata.search", s.metadataSearch
 	case strings.HasSuffix(p, "/values:batchGet"):
 		return "values.batchGet", s.valuesBatchGet
 	case strings.HasSuffix(p, ":append"):

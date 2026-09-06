@@ -50,7 +50,17 @@ var smokeMessages = []string{
 	`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
 	`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`,
 	`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_spreadsheet","arguments":{"spreadsheet":"1SyntheticFixtureSpreadsheetIdXXXXXXXXXXXXXXX"}}}`,
+	// The resources, over the same wire. A tool and a resource are
+	// different JSON-RPC methods with different result shapes, and the
+	// in-memory tests exercise the SDK's own routing rather than a real
+	// stdio session.
+	`{"jsonrpc":"2.0","id":4,"method":"resources/templates/list","params":{}}`,
+	`{"jsonrpc":"2.0","id":5,"method":"resources/read","params":{"uri":"gsheets://1SyntheticFixtureSpreadsheetIdXXXXXXXXXXXXXXX"}}`,
 }
+
+// smokeReplies is how many of those expect an answer. The two
+// notifications do not.
+const smokeReplies = 5
 
 type smokeFrame struct {
 	ID     int             `json:"id"`
@@ -121,7 +131,7 @@ func smokeSession(bin string) error {
 	}()
 
 	deadline := time.After(30 * time.Second)
-	for len(seen) < 3 {
+	for len(seen) < smokeReplies {
 		select {
 		case f := <-frames:
 			if f.ID != 0 {
@@ -131,13 +141,19 @@ func smokeSession(bin string) error {
 			if err != nil {
 				return err
 			}
-			return fmt.Errorf("stdout ended after %d of 3 replies; stderr:\n%s", len(seen), stderr.String())
+			return fmt.Errorf("stdout ended after %d of %d replies; stderr:\n%s", len(seen), smokeReplies, stderr.String())
 		case <-deadline:
-			return fmt.Errorf("only %d of 3 replies arrived; stderr:\n%s", len(seen), stderr.String())
+			return fmt.Errorf("only %d of %d replies arrived; stderr:\n%s", len(seen), smokeReplies, stderr.String())
 		}
 	}
 	_ = stdin.Close()
+	return checkSmokeReplies(seen)
+}
 
+// checkSmokeReplies is what the session proves, split out from driving
+// it: the two halves fail for different reasons and reading them
+// together was one function too long.
+func checkSmokeReplies(seen map[int]smokeFrame) error {
 	if f, ok := seen[2]; !ok || len(f.Result) == 0 {
 		return fmt.Errorf("tools/list did not answer: %+v", seen[2])
 	}
@@ -154,7 +170,32 @@ func smokeSession(bin string) error {
 	if !strings.Contains(string(call.Result), "[auth]") {
 		return fmt.Errorf("a call without credentials answered without an [auth] class: %.200s", call.Result)
 	}
-	fmt.Printf("%d replies, stdout carried only JSON-RPC, an uncredentialed call answered [auth]\n", len(seen))
+	// The resource templates, which no tools/list would show: a client
+	// that attaches a spreadsheet rather than calling a tool sees only
+	// these, and until phase 3 the only thing proving they were
+	// published was an in-memory client in a unit test.
+	tmpls, ok := seen[4]
+	if !ok || !strings.Contains(string(tmpls.Result), "gsheets://") {
+		return fmt.Errorf("resources/templates/list did not publish the gsheets:// templates: %.200s", tmpls.Result)
+	}
+	// And a resource read without credentials, which must come back as a
+	// readable failure rather than a dropped session. A resource has no
+	// isError flag to carry a class, so this one is a protocol error —
+	// the shape a client can act on.
+	res, ok := seen[5]
+	if !ok || len(res.Error) == 0 {
+		return fmt.Errorf("a resource read without credentials did not come back as an error: %+v", res)
+	}
+	// And the error has to say what is wrong. A resource cannot carry a
+	// class the way a tool result does, so the message is the only place
+	// a client or a person can learn that the answer is "log in" rather
+	// than "this spreadsheet does not exist".
+	if !strings.Contains(string(res.Error), "[auth]") {
+		return fmt.Errorf("a resource read without credentials failed without saying it was an auth problem: %.200s",
+			res.Error)
+	}
+	fmt.Printf("%d replies, stdout carried only JSON-RPC, an uncredentialed call answered [auth], "+
+		"the resource templates are published\n", len(seen))
 	return nil
 }
 

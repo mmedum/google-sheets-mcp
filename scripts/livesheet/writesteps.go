@@ -31,6 +31,10 @@ func (d *driver) writeAll() {
 	d.run(d.dimensionSteps()...)
 	sec("delete_dimensions")
 	d.run(d.deleteDimensionSteps()...)
+	// Phase 3's anchors, on a sheet of their own: they insert, sort and
+	// delete rows to prove an anchor survives all three, which would
+	// move every band the steps above assert about.
+	d.anchorAll()
 	sec("clear_values")
 	d.run(d.clearSteps()...)
 	sec("delete_sheet")

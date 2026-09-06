@@ -424,6 +424,26 @@ func BandIndices(first, last int) (start, end int) {
 // to write "- 1" and be right about it.
 func ZeroBased(oneBased int) int { return oneBased - 1 }
 
+// AnchorPrefix marks a range that names a durable anchor rather than an
+// address: `anchor:invoice totals` (§6.4).
+//
+// Here because it is range syntax, and because three layers speak it:
+// the service resolves it, the renderer tells a caller to use it, and
+// the tool descriptions document it. The renderer cannot import the
+// service, so a constant in the service is a constant the renderer has
+// to spell out again — and renaming it would leave two layers telling
+// the model a syntax the server rejects, with nothing failing.
+//
+// Nothing in A1 can collide with it: a sheet-qualified range needs a
+// "!", and no column name is six letters.
+const AnchorPrefix = "anchor:"
+
+// OneBased converts back, for the fields the API reports as indices.
+// The other direction had a home and this one did not, which is how
+// "+ 1" ended up written out wherever a developer metadata location was
+// read back.
+func OneBased(index int) int { return index + 1 }
+
 // FromGridRange converts back. Round-tripping either way is a table test.
 func FromGridRange(g *gsheets.GridRange) Rect {
 	if g == nil {

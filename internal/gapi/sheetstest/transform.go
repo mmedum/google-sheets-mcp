@@ -70,7 +70,18 @@ func sortRange(d *Doc, req *gsheets.SortRangeRequest) error {
 		return errors.New("sortRange needs at least one sort spec")
 	}
 	rows := take(sh, rect)
-	sort.SliceStable(rows, func(i, j int) bool {
+	// The order is sorted rather than the rows, so what moved where is
+	// still known afterwards. Developer metadata anchored to a row
+	// travels with that row through a sort — spike K watched an anchor
+	// land exactly where its values did — and a fake that left anchors
+	// on their old row numbers would agree with code that treats an
+	// anchor as a row number.
+	order := make([]int, len(rows))
+	for i := range order {
+		order[i] = i + 1
+	}
+	sort.SliceStable(order, func(x, y int) bool {
+		i, j := order[x]-1, order[y]-1
 		for _, spec := range req.SortSpecs {
 			col := spec.DimensionIndex + 1 - rect.FirstCol
 			if col < 0 || col >= len(rows[i]) {
@@ -87,7 +98,12 @@ func sortRange(d *Doc, req *gsheets.SortRangeRequest) error {
 		}
 		return false
 	})
-	put(sh, rect, rows)
+	sorted := make([][]*gsheets.CellData, len(rows))
+	for i, from := range order {
+		sorted[i] = rows[from-1]
+	}
+	put(sh, rect, sorted)
+	permuteMetadata(d, sh.Props.SheetID, rect.FirstRow, order)
 	return nil
 }
 

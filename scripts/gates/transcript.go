@@ -28,9 +28,20 @@ import (
 // argument as the fixtures being generated: a control that depends on
 // noticing is not a control.
 var (
-	// printers reach the terminal. Fprintf to a caller-supplied writer
-	// does not, which is why only the bare forms are here.
+	// printers reach the terminal on their own.
 	printers = []string{"Print", "Printf", "Println"}
+	// writerPrinters reach it when handed os.Stdout, and are invisible
+	// to a check that looks only for the bare forms.
+	//
+	// This was the hole: the list above was justified by "Fprintf to a
+	// caller-supplied writer does not reach the terminal", which is true
+	// of a caller-supplied writer and not of os.Stdout. One
+	// fmt.Fprintln(os.Stdout, sheetTitle) would have printed a title
+	// unredacted with the gate reporting nothing. A sibling repository
+	// found the same shape in a different gate on 2026-09-06 — a check
+	// that decides a construct is fine from the one spelling it was
+	// written against — and this is this repository's instance of it.
+	writerPrinters = []string{"Fprint", "Fprintf", "Fprintln"}
 	// allowedIn are the functions permitted to call one: the redacting
 	// helper itself, and the build-tag stub that runs when the driver is
 	// not compiled in and has nothing to redact.
@@ -52,7 +63,14 @@ func transcriptGate() error {
 	var problems []string
 	files, prints := 0, 0
 
-	for _, dir := range []string{filepath.Join("scripts", "livesheet"), filepath.Join("scripts", "spikes")} {
+	// The evals are here for the same reason and with more at stake: an
+	// eval transcript carries a model's prompts, the arguments it chose
+	// and the text of every result it read, and it is meant to be quoted.
+	for _, dir := range []string{
+		filepath.Join("scripts", "livesheet"),
+		filepath.Join("scripts", "spikes"),
+		filepath.Join("scripts", "evals"),
+	} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", dir, err)
@@ -88,6 +106,25 @@ func transcriptGate() error {
 	return nil
 }
 
+// writesToStdout reports whether a fmt.Fprint* call's writer is
+// os.Stdout, which makes it a print by another name.
+//
+// Only the literal os.Stdout. A writer reached through a variable is not
+// followed, and that is a limit rather than a decision: it needs type
+// information the parser does not have. Said plainly here so the next
+// person knows what this does and does not see.
+func writesToStdout(call *ast.CallExpr) bool {
+	if len(call.Args) == 0 {
+		return false
+	}
+	sel, ok := call.Args[0].(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Stdout" {
+		return false
+	}
+	pkg, ok := sel.X.(*ast.Ident)
+	return ok && pkg.Name == "os"
+}
+
 // printsOutside reports fmt.Print* calls made from a function that is
 // not allowed to make them.
 func printsOutside(fset *token.FileSet, file *ast.File, allowed []string) []string {
@@ -107,7 +144,13 @@ func printsOutside(fset *token.FileSet, file *ast.File, allowed []string) []stri
 				return true
 			}
 			pkg, ok := sel.X.(*ast.Ident)
-			if !ok || pkg.Name != "fmt" || !slices.Contains(printers, sel.Sel.Name) {
+			if !ok || pkg.Name != "fmt" {
+				return true
+			}
+			switch {
+			case slices.Contains(printers, sel.Sel.Name):
+			case slices.Contains(writerPrinters, sel.Sel.Name) && writesToStdout(call):
+			default:
 				return true
 			}
 			out = append(out, fmt.Sprintf("%s calls fmt.%s at %s",

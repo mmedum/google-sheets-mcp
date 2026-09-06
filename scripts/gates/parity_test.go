@@ -72,6 +72,77 @@ func TestParityPassesOnThisRepository(t *testing.T) {
 	}
 }
 
+// Commenting a step out is not the same as running it.
+//
+// The gate matches by substring, so before this it found "gates
+// staleness" inside "# - run: go run ./scripts/gates staleness" and
+// called the gate present. That makes the cheapest way to unblock a red
+// build — typing one "#" — also the way to disable the check that would
+// have noticed. Reported by a sibling repository on 2026-09-06 and
+// confirmed here rather than assumed.
+func TestParitySeesThroughACommentedOutStep(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		line      string
+		commented string
+		want      string
+	}{
+		{
+			name: "a gate's step is commented out",
+			line: "gates staleness", commented: "# run: go run ./scripts/gates staleness",
+			want: `ci.yml does not run the "staleness" gate`,
+		},
+		{
+			name: "a mapped check's step is commented out",
+			line: "gitleaks", commented: "# run: gitleaks dir .",
+			want: "ci.yml does not run",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			makefile, workflow := repoFiles(t)
+			// Every real occurrence gone, and a commented one left in
+			// its place. A gate reading the raw text still finds it.
+			cut := strings.ReplaceAll(workflow, tc.line, "nothing-of-the-sort")
+			cut += "\n      " + tc.commented + "\n"
+			if err := checkParity(makefile, cut); err == nil {
+				t.Fatal("a step that exists only inside a comment was counted as running")
+			} else if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %v, want one naming %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// A gate named in a step's `name:` rather than run by it is not run.
+//
+// The comment case is one spelling of the hole; this is the class. A
+// step title, a description, or any other YAML string can carry the
+// exact text this gate matches on while nothing executes it.
+func TestParityIgnoresAGateNamedButNotRun(t *testing.T) {
+	for _, where := range []string{
+		"      - name: go run ./scripts/gates staleness\n        run: true\n",
+		"      - name: check\n        env:\n          NOTE: go run ./scripts/gates staleness\n",
+	} {
+		makefile, workflow := repoFiles(t)
+		cut := strings.ReplaceAll(workflow, "gates staleness", "nothing-of-the-sort")
+		cut += "\n" + where
+		if err := checkParity(makefile, cut); err == nil {
+			t.Errorf("a gate named in %q was counted as running", strings.TrimSpace(where))
+		}
+	}
+}
+
+// And the Makefile side of the same hole: a `check:` line is one line,
+// but a comment naming a target must not stand in for the target.
+func TestParityIgnoresCommentedMakefileLines(t *testing.T) {
+	makefile, workflow := repoFiles(t)
+	makefile = withoutTarget(t, makefile, "secrets")
+	makefile += "\n# check: secrets\n"
+	if err := checkParity(makefile, workflow); err == nil {
+		t.Fatal("a target named only in a comment was counted as run")
+	}
+}
+
 // The subcommand list comes from the dispatcher rather than from a list
 // here, so a gate added there is covered from its first commit.
 func TestSubcommandsComeFromTheDispatcher(t *testing.T) {

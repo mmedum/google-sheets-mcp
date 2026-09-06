@@ -44,6 +44,10 @@ type Doc struct {
 	AutoRecalc  string
 	Sheets      []*Sheet
 	NamedRanges []*gsheets.NamedRange
+	// Metadata is the spreadsheet's developer metadata — the durable
+	// anchors of §6.4. It hangs off the document rather than the sheet
+	// because an entry can be attached to the spreadsheet itself.
+	Metadata []*gsheets.DeveloperMetadata
 }
 
 // Sheet is one tab of a Doc. Cells are keyed by zero-based row and

@@ -58,7 +58,7 @@ var scratchID string
 // only names one spike to run, so re-probing a single question does not
 // mean re-running every other one. Each run creates a scratch
 // spreadsheet it cannot trash, so a narrower run is a smaller mess.
-var only = flag.String("only", "", "run one spike by letter (A, B, C, E, F, G, H, I, J); default runs all")
+var only = flag.String("only", "", "run one spike by letter (A, B, C, E, F, G, H, I, J, K); default runs all")
 
 func main() {
 	flag.Parse()
@@ -100,6 +100,7 @@ func run(ctx context.Context) error {
 		{"I", func() { spikeI(ctx) }},
 		{"G", func() { spikeG(ctx) }},
 		{"J", func() { spikeJ(ctx) }},
+		{"K", func() { spikeK(ctx) }},
 	} {
 		if *only == "" || strings.EqualFold(*only, p.letter) {
 			p.probe()

@@ -1,6 +1,10 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -133,5 +137,91 @@ func TestSafeDomain(t *testing.T) {
 		if got := safeDomain(domain); got != want {
 			t.Errorf("safeDomain(%q) = %v, want %v", domain, got, want)
 		}
+	}
+}
+
+// The scan reads the working tree, not just the index.
+//
+// A tracked-only scan is blind to exactly the files that most need
+// scanning: a phase's new ones, which nobody has looked at before. This
+// repository ran `make check` green a dozen times over 167 files while
+// 28 of phase 3's own were untracked, and the first `git add -A` found a
+// spreadsheet id in a test written that afternoon.
+//
+// Driven against a throwaway repository rather than this one, so it can
+// watch both halves fail without anything reaching the real tree.
+func TestScanReadsUntrackedFilesToo(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	run("config", "user.email", "fixture@example.test")
+	run("config", "user.name", "Fixture")
+
+	// Twenty tracked files, so the "is the scan seeing the repository"
+	// floor is met, and one gitignored name.
+	for i := range 20 {
+		write(t, dir, fmt.Sprintf("kept%02d.md", i), "Quorbin and Nardle, which are invented.\n")
+	}
+	write(t, dir, ".gitignore", "/ignored-artifact\n")
+	run("add", "-A")
+	run("commit", "-qm", "fixture")
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(wd) }()
+
+	if err := scanTree(); err != nil {
+		t.Fatalf("a clean tree was refused: %v", err)
+	}
+
+	// An untracked text file carrying an identifier. This is the case
+	// the tracked-only scan passed silently.
+	write(t, dir, "new.go", "const id = \"1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789\"\n") // leakcheck:allow
+	if err := scanTree(); err == nil {
+		t.Error("an untracked file carrying an id was not scanned")
+	}
+	if err := os.Remove(filepath.Join(dir, "new.go")); err != nil {
+		t.Fatal(err)
+	}
+
+	// An untracked build artifact, refused while it is still untracked —
+	// which is what fails before a wildcard add can sweep it in.
+	write(t, dir, "artifact", "\x7fELF\x02\x01\x01\x00binary")
+	err = scanTree()
+	if err == nil {
+		t.Fatal("an untracked binary was accepted")
+	}
+	if !strings.Contains(err.Error(), "artifact") {
+		t.Errorf("err = %v, want it to name the artifact", err)
+	}
+	if err := os.Remove(filepath.Join(dir, "artifact")); err != nil {
+		t.Fatal(err)
+	}
+
+	// And a gitignored one is left alone: it cannot be committed either,
+	// and refusing it would fail every working tree that has ever run
+	// `go build`.
+	write(t, dir, "ignored-artifact", "\x7fELF\x02\x01\x01\x00binary")
+	if err := scanTree(); err != nil {
+		t.Errorf("a gitignored build output was refused: %v", err)
+	}
+}
+
+func write(t *testing.T, dir, name, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

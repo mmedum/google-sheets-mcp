@@ -270,6 +270,24 @@ func detectTable(sh *Sheet, rect a1.Rect) a1.Rect {
 
 // shiftRowsDown makes room for inserted rows, moving everything at or
 // below first down by n. Callers hold the lock.
+// shiftCells moves everything at or after a band's start by n along the
+// band's own axis, which is what an insert does to the cells around it.
+func shiftCells(sh *Sheet, r *gsheets.DimensionRange, n int) {
+	axis := 0
+	if r.Dimension == gsheets.DimensionColumns {
+		axis = 1
+	}
+	moved := make(map[[2]int]*gsheets.CellData, len(sh.Cells))
+	for key, cell := range sh.Cells {
+		k := key
+		if k[axis] >= r.StartIndex {
+			k[axis] += n
+		}
+		moved[k] = cell
+	}
+	sh.Cells = moved
+}
+
 func shiftRowsDown(sh *Sheet, first, n int) {
 	if n <= 0 {
 		return
@@ -461,6 +479,21 @@ func (d *Doc) clone() *Doc {
 		copied.Conditional = append([]*gsheets.ConditionalFormatRule(nil), sh.Conditional...)
 		out.Sheets[i] = &copied
 	}
+	// The entries and the locations inside them, because an anchor moves
+	// by having its location rewritten in place. Sharing them would let
+	// a batch that failed halfway leave anchors where it put them.
+	out.Metadata = clonePointers(d.Metadata)
+	for _, md := range out.Metadata {
+		if md == nil || md.Location == nil {
+			continue
+		}
+		loc := *md.Location
+		if loc.DimensionRange != nil {
+			r := *loc.DimensionRange
+			loc.DimensionRange = &r
+		}
+		md.Location = &loc
+	}
 	return &out
 }
 
@@ -544,6 +577,9 @@ func applyRequest(d *Doc, req *gsheets.Request) (*gsheets.Reply, error) {
 	case req.UpdateSheetProperties != nil:
 		return updateProperties(d, req.UpdateSheetProperties)
 	}
+	if reply, handled, err := applyMetadata(d, req); handled {
+		return reply, err
+	}
 	if reply, handled, err := applyFormat(d, req); handled {
 		return reply, err
 	}
@@ -559,18 +595,27 @@ func applyDimension(d *Doc, req *gsheets.Request) (*gsheets.Reply, error) {
 	switch {
 	case req.InsertDimension != nil:
 		return dimension(d, req.InsertDimension.Range, func(sh *Sheet, r *gsheets.DimensionRange) {
-			if r.Dimension == gsheets.DimensionRows {
-				shiftRowsDown(sh, r.StartIndex+1, r.EndIndex-r.StartIndex)
-			}
+			// Both axes. The cells used to move only for rows while the
+			// anchors moved for both, so after a column insert the fake
+			// had a column anchor pointing at an index whose cells had
+			// not moved — the same "an anchor arrives somewhere its row
+			// did not" failure moveCells exists to prevent, in the fake
+			// built to catch it.
+			shiftCells(sh, r, r.EndIndex-r.StartIndex)
+			shiftMetadata(d, r.SheetID, r.Dimension, r.StartIndex, r.EndIndex-r.StartIndex)
 		})
 	case req.DeleteDimension != nil:
 		return dimension(d, req.DeleteDimension.Range, func(sh *Sheet, r *gsheets.DimensionRange) {
 			deleteBand(sh, r)
+			shiftMetadata(d, r.SheetID, r.Dimension, r.StartIndex, r.StartIndex-r.EndIndex)
 		})
 	// The rest change how the band looks rather than what is on it, so
 	// the fake validates the range and stores nothing.
 	case req.MoveDimension != nil:
-		return dimension(d, req.MoveDimension.Source, noCellChange)
+		return dimension(d, req.MoveDimension.Source, func(sh *Sheet, r *gsheets.DimensionRange) {
+			moveCells(sh, r, req.MoveDimension.DestinationIndex)
+			moveMetadata(d, r.SheetID, r.Dimension, r.StartIndex, r.EndIndex, req.MoveDimension.DestinationIndex)
+		})
 	case req.UpdateDimensionProperties != nil:
 		return dimension(d, req.UpdateDimensionProperties.Range, noCellChange)
 	case req.AutoResizeDimensions != nil:

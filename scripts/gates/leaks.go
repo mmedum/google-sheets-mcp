@@ -105,6 +105,46 @@ func leakGate(history bool) error {
 	return nil
 }
 
+// treeFiles is everything this gate reads: the tracked files, and the
+// untracked ones git would let a wildcard add sweep in.
+//
+// The untracked half is the half that matters most, and it was missing.
+// A phase's new files are invisible to a tracked-only scan until they
+// are staged — and a phase's new files are precisely the ones nobody has
+// scanned before. Phase 3 ran `make check` green a dozen times over 167
+// files while 28 of its own were untracked; the first `git add -A` took
+// it to 195 and the gate immediately found a spreadsheet id in a test
+// written that afternoon. The gate was doing what it said. "make check
+// is green" was the claim that was false.
+//
+// Ordering is the point, and it is a sibling repository's: refusing a
+// file while it is still untracked fails *before* `git add -A` can sweep
+// it in, where a tracked-only scan catches it one commit too late.
+// `--exclude-standard` honours .gitignore, so a build output with a rule
+// of its own is left alone — it cannot be committed either.
+func treeFiles() (files []string, tracked int, err error) {
+	out, err := git("ls-files", "-z")
+	if err != nil {
+		return nil, 0, err
+	}
+	files = split0(out)
+	tracked = len(files)
+
+	others, err := git("ls-files", "-z", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, 0, err
+	}
+	return append(files, split0(others)...), tracked, nil
+}
+
+func split0(out string) []string {
+	trimmed := strings.TrimRight(out, "\x00")
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "\x00")
+}
+
 func checkAllowlistHasReasons() error {
 	for value, reason := range allowedValues {
 		if strings.TrimSpace(reason) == "" {
@@ -115,18 +155,17 @@ func checkAllowlistHasReasons() error {
 }
 
 func scanTree() error {
-	out, err := git("ls-files", "-z")
+	files, tracked, err := treeFiles()
 	if err != nil {
 		return err
 	}
-	files := strings.Split(strings.TrimRight(out, "\x00"), "\x00")
-	if len(files) < 20 {
-		return fmt.Errorf("only %d tracked files; the scan is not seeing the repository", len(files))
+	if tracked < 20 {
+		return fmt.Errorf("only %d tracked files; the scan is not seeing the repository", tracked)
 	}
 
 	var findings []string
-	scanned := 0
-	for _, name := range files {
+	scanned, scannedUntracked := 0, 0
+	for i, name := range files {
 		if name == "" || skipFiles[filepath.Base(name)] {
 			continue
 		}
@@ -137,10 +176,19 @@ func scanTree() error {
 		if isBinary(data) {
 			// A committed binary is a finding rather than something to
 			// scan: its symbol table buries the line that matters.
-			findings = append(findings, name+": a binary file is committed; scanning one hides the line that matters")
+			findings = append(findings, name+": a binary file is in the tree; scanning one hides the line that "+
+				"matters, and a compiled artifact swept in by a wildcard add is how two sibling repositories put "+
+				"megabytes into a public history")
 			continue
 		}
 		scanned++
+		// The untracked count is reported rather than folded in, so a
+		// run says how much of what it read is code nothing had scanned
+		// before. That number being large is the normal state during a
+		// phase, and it is the number this gate used to be blind to.
+		if i >= tracked {
+			scannedUntracked++
+		}
 		for _, f := range findLeaks(strip(string(data))) {
 			findings = append(findings, name+": "+f)
 		}
@@ -148,7 +196,7 @@ func scanTree() error {
 	if scanned < 15 {
 		return fmt.Errorf("read %d text files; the scan is not looking at the tree", scanned)
 	}
-	fmt.Printf("scanned %d tracked text files\n", scanned)
+	fmt.Printf("scanned %d text files, %d of them not yet tracked\n", scanned, scannedUntracked)
 	return report(findings)
 }
 

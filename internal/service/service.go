@@ -24,6 +24,7 @@ type API interface {
 	GetSpreadsheet(ctx context.Context, id string, o gapi.GetOptions) (*gsheets.Spreadsheet, error)
 	GetValues(ctx context.Context, id, a1Range string, o gapi.ValueOptions) (*gsheets.ValueRange, error)
 	SearchSpreadsheets(ctx context.Context, q string, limit int, pageToken string) (*gapi.FileList, error)
+	SearchDeveloperMetadata(ctx context.Context, id string, filters []*gsheets.DataFilter) (*gsheets.SearchDeveloperMetadataResponse, error)
 	GetFile(ctx context.Context, id string) (*gapi.File, error)
 	About(ctx context.Context) (*gapi.User, error)
 

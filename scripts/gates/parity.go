@@ -98,10 +98,87 @@ func readBothLists() (makefile, workflow string, err error) {
 	return string(m), string(ci), nil
 }
 
+// uncommented drops lines whose first non-blank character starts a
+// comment. Only whole lines: a trailing comment sits after real content
+// on the same line, and cutting there would need to know about quoting.
+func uncommented(text string) string {
+	lines := strings.Split(text, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
+
+// stepKey matches the start of a workflow step's `run:` or `uses:`, with
+// or without the leading list dash.
+var stepKey = regexp.MustCompile(`^\s*-?\s*(run|uses):`)
+
+// executableLines keeps only what a workflow actually executes.
+//
+// A `run:` block is a YAML scalar that continues over indented lines, so
+// once one starts, its continuation lines are kept until something less
+// indented appears. That is not a YAML parser and does not need to be:
+// it has to be right about which lines carry commands, and a command
+// that runs is always inside one of these two keys.
+func executableLines(workflow string) string {
+	var kept []string
+	inRun, runIndent := false, 0
+	for _, line := range strings.Split(uncommented(workflow), "\n") {
+		indent := len(line) - len(strings.TrimLeft(line, " \t"))
+		switch {
+		case stepKey.MatchString(line):
+			kept = append(kept, line)
+			inRun, runIndent = strings.Contains(line, "run:"), indent
+		case inRun && strings.TrimSpace(line) == "":
+			kept = append(kept, line)
+		case inRun && indent > runIndent:
+			kept = append(kept, line)
+		default:
+			inRun = false
+		}
+	}
+	return strings.Join(kept, "\n")
+}
+
 // checkParity is the comparison, over the two files' text rather than
 // their paths, so a test can hand it a version with one check removed
 // and watch this fail.
 func checkParity(makefile, workflow string) error {
+	// Whole-line comments go first, and here rather than in the reader,
+	// so nothing can reach the comparison without passing through it.
+	//
+	// This gate matches by substring, and a substring is found inside a
+	// comment as readily as inside a step: "gates staleness" was found
+	// in "# - run: go run ./scripts/gates staleness" and counted as
+	// running. That made the cheapest way to unblock a red build — one
+	// "#" — also the way to switch off the check that would have
+	// noticed. Reported by a sibling repository on 2026-09-06, and
+	// present here when it was looked for.
+	//
+	// A step disabled by an `if:` that is never true still passes. That
+	// needs a YAML parse, which is not worth a dependency here.
+	makefile = uncommented(makefile)
+	// The workflow is reduced to the lines that actually execute
+	// something, rather than merely scrubbed of comments.
+	//
+	// This gate matches by substring, and a substring is found anywhere:
+	// "gates staleness" was found inside "# - run: go run ./scripts/gates
+	// staleness" and counted as running, which made the cheapest way to
+	// unblock a red build — one "#" — also the way to switch off the
+	// check that would have noticed. Reported by a sibling repository on
+	// 2026-09-06, and present here when it was looked for.
+	//
+	// Dropping comments alone fixes that one spelling. Keeping only the
+	// `run:` and `uses:` scalars closes the class: a step's `name:`, a
+	// `description:`, or a YAML string anywhere else can no longer stand
+	// in for the step. A step disabled by an `if:` that is never true
+	// still passes, which needs a YAML parse and is not worth a
+	// dependency here.
+	workflow = executableLines(workflow)
 	targets, err := checkTargets(makefile)
 	if err != nil {
 		return err

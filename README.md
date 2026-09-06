@@ -20,11 +20,23 @@ It works **inside** a spreadsheet. Finding, sharing, moving and trashing
 files, and their comment threads and revisions, belong to a server built
 on the Drive API. A cell **note** is a Sheets field and is here.
 
-> **Status: phase 2 of five, not yet released.** Reading, writing,
-> formatting and the objects attached to a range all work. Resources,
-> durable anchors and the agent evals are phase 3; charts, pivot tables
-> and Connected Sheets data sources are phase 4. The phase plan is §16 of
+> **Status: phase 3 of five, not yet released.** Reading, writing,
+> formatting, the objects attached to a range, `gsheets://` resources and
+> durable anchors all work. Charts, pivot tables and Connected Sheets data
+> sources are phase 4. The phase plan is §16 of
 > [`docs/architecture.md`](docs/architecture.md).
+
+## Resources
+
+Two, for a client that attaches a spreadsheet rather than calling a tool.
+There is no static list — enumerating a person's spreadsheets is a Drive
+listing, which belongs to a server built on the Drive API — and no
+subscriptions, because the Sheets API has no push and no changes feed.
+
+| URI | What it is |
+|---|---|
+| `gsheets://{spreadsheet}` | The card: every sheet with its exact title, id and size, plus named ranges, tables and protected ranges. Reads no cells |
+| `gsheets://{spreadsheet}/{sheet}` | That sheet's **used range** as CSV — the rows and columns holding something, not the sheet's allocated size. The sheet title is percent-encoded |
 
 ## Install
 
@@ -154,8 +166,8 @@ personal one.
 
 ## Tools
 
-Sixteen tools. Everything but `search_spreadsheets` needs only the Sheets
-scope; in read-only mode the read tools ask for
+Seventeen tools. Everything but `search_spreadsheets` needs only the
+Sheets scope; in read-only mode the read tools ask for
 `spreadsheets.readonly` instead.
 
 | Tool | What it does | Scope |
@@ -171,6 +183,7 @@ scope; in read-only mode the read tools ask for
 | `format_cells` | Number format, font, colours, borders, alignment, wrapping, merges and notes, applied in one atomic batch. A merge, a clear and a note are the three that take something away, and each is refused until acknowledged | `spreadsheets` |
 | `manage_range` | Add, update or delete what is attached to a range: a named range, a protected range, a validation rule, a table, banding, or a conditional format rule. Existing ones are named by the range they cover, not by an id | `spreadsheets` |
 | `transform_range` | Sort, replace, trim, de-duplicate, split, shuffle, fill, copy or move a range — the operations that move data without you naming its new address, so each reads what it would land on first | `spreadsheets` |
+| `manage_anchor` | Label a row, column or sheet so it can be found again after the spreadsheet has been edited around it. An anchor follows its row through inserts, deletes, moves and sorts, where an A1 address goes stale the moment somebody inserts a row. Pass `anchor:<name>` anywhere a range or band is taken, including the two tools that delete rows | `spreadsheets` |
 | `manage_sheet` | Add, rename, duplicate, copy to another spreadsheet, hide, unhide, reorder, resize, freeze or colour a sheet | `spreadsheets` |
 | `edit_dimensions` | Insert, move, resize, auto-size, group or ungroup rows and columns | `spreadsheets` |
 | `delete_dimensions` | Destructive, off by default: remove rows or columns and the data on them, having counted what that is | `spreadsheets` |
@@ -203,8 +216,11 @@ found to be a silent loss rather than assumed to be one:
 - a **`text_to_columns`** spills into the columns to its right;
 - a **`find_replace` with `in_formulas`** rewrites what a cell computes
   rather than what it shows;
-- and **deleting a table** takes every conditional format rule over its
-  range with it — verified against the live API, not read anywhere.
+- **deleting a table** takes every conditional format rule over its
+  range with it — verified against the live API, not read anywhere;
+- and **deleting a row or column** takes any anchor on it, which nothing
+  in Google's reply mentions either. `delete_dimensions` names them
+  before it takes them.
 
 Beyond the guard:
 

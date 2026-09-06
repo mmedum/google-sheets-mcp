@@ -65,9 +65,11 @@ type DimensionAct struct {
 	// resize. Each is read only by the action that uses it.
 	To     int
 	Pixels int
-	// Cells and Formulas are what a delete would take with it.
+	// Cells and Formulas are what a delete would take with it, and
+	// Anchors the durable labels that go with them.
 	Cells    int
 	Formulas int
+	Anchors  []string
 	// Shifted says addresses after the band moved.
 	Shifted bool
 }
@@ -115,6 +117,10 @@ func DimensionDone(a DimensionAct) string {
 func dimensionNotes(b *strings.Builder, a DimensionAct, took, moved string) {
 	if a.Cells > 0 || a.Formulas > 0 {
 		fmt.Fprintf(b, "It %s %d non-empty cell(s) and %d formula(s) with it.\n", took, a.Cells, a.Formulas)
+	}
+	if len(a.Anchors) > 0 {
+		fmt.Fprintf(b, "It %s the anchor(s) %s with it; Google's reply does not mention them.\n",
+			took, strings.Join(a.Anchors, ", "))
 	}
 	if a.Shifted {
 		fmt.Fprintf(b, "Addresses after the band %s: a checkpoint or an address from before this call no longer "+

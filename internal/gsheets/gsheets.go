@@ -412,6 +412,11 @@ type Request struct {
 	AutoFill                    *AutoFillRequest                    `json:"autoFill,omitempty"`
 	CopyPaste                   *CopyPasteRequest                   `json:"copyPaste,omitempty"`
 	CutPaste                    *CutPasteRequest                    `json:"cutPaste,omitempty"`
+
+	// Phase 3: developer metadata, the durable anchors of §6.4.
+	CreateDeveloperMetadata *CreateDeveloperMetadataRequest `json:"createDeveloperMetadata,omitempty"`
+	UpdateDeveloperMetadata *UpdateDeveloperMetadataRequest `json:"updateDeveloperMetadata,omitempty"`
+	DeleteDeveloperMetadata *DeleteDeveloperMetadataRequest `json:"deleteDeveloperMetadata,omitempty"`
 }
 
 // Reply is one member of the reply union, in the same order as the
@@ -428,6 +433,10 @@ type Reply struct {
 	FindReplace                 *FindReplaceReply                 `json:"findReplace,omitempty"`
 	TrimWhitespace              *TrimWhitespaceReply              `json:"trimWhitespace,omitempty"`
 	DeleteDuplicates            *DeleteDuplicatesReply            `json:"deleteDuplicates,omitempty"`
+
+	CreateDeveloperMetadata *CreateDeveloperMetadataReply `json:"createDeveloperMetadata,omitempty"`
+	UpdateDeveloperMetadata *UpdateDeveloperMetadataReply `json:"updateDeveloperMetadata,omitempty"`
+	DeleteDeveloperMetadata *DeleteDeveloperMetadataReply `json:"deleteDeveloperMetadata,omitempty"`
 }
 
 // NewSheetProperties is a sheet that does not exist yet.

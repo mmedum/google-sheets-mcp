@@ -52,6 +52,9 @@ type DimensionResult struct {
 	// Shifted says addresses below or right of the change moved, so a
 	// checkpoint or an address from before this call is now wrong.
 	Shifted bool `json:"addresses_shifted,omitempty" jsonschema:"true when rows or columns were inserted, moved or deleted, so addresses after the band changed"`
+	// Anchors are the durable labels a delete takes with the band. The
+	// API's reply never mentions them.
+	Anchors []string `json:"anchors_removed,omitempty" jsonschema:"the anchors that were on the deleted rows or columns and went with them"`
 	// Cells and Formulas are what a delete took with it.
 	Cells    int  `json:"cells,omitempty"`
 	Formulas int  `json:"formulas,omitempty"`
@@ -81,9 +84,9 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 	if err != nil {
 		return nil, err
 	}
-	band, err := plan.ParseBand(req.Dimension, req.Band)
+	band, err := s.resolveBand(ctx, ref.ID, props, req.Dimension, req.Band)
 	if err != nil {
-		return nil, Errorf("invalid", "%s", err)
+		return nil, err
 	}
 	if err := bandFits(band, props); err != nil {
 		return nil, err
@@ -113,6 +116,15 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 		}
 		res.Cells, res.Formulas = counts.NonEmpty, counts.Formulas
 		act.Cells, act.Formulas = counts.NonEmpty, counts.Formulas
+		// The anchors on the band go with it, and the API's reply says
+		// nothing at all about them (spike K). Same shape as spike J's
+		// deleteTable finding: what a delete takes silently is exactly
+		// what this server has to name beforehand.
+		doomed, err := s.anchorsOnBand(ctx, ref.ID, props.SheetID, band)
+		if err != nil {
+			return nil, err
+		}
+		res.Anchors, act.Anchors = doomed, doomed
 	}
 
 	op, err := dimensionRequest(req, band, props)
@@ -126,9 +138,9 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 	}
 	if req.Action == DimDelete && !req.Confirm {
 		return nil, Errorf("blocked",
-			"deleting %s on %q takes %d non-empty cell(s) and %d formula(s) with them, and Sheets cannot undo it. "+
+			"deleting %s on %q takes %d non-empty cell(s) and %d formula(s) with them%s, and Sheets cannot undo it. "+
 				"Pass confirm to go ahead",
-			act.Band, props.Title, res.Cells, res.Formulas)
+			act.Band, props.Title, res.Cells, res.Formulas, render.AnchorsTaken(res.Anchors))
 	}
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{op},

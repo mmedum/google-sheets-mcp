@@ -1,24 +1,32 @@
 # Architecture — google-sheets-mcp
 
-**Status: phase 2 complete (2026-09-06), not yet tagged.** Reading,
-writing, formatting and the objects attached to a range all work,
-`make check` is green, and the live work is done: spikes G and J ran, and
-the live driver ran against a real account.
+**Status: phase 3 built (2026-09-06), live verification outstanding, not
+tagged.** Reading, writing, formatting, the objects attached to a range,
+`gsheets://` resources and durable anchors all work, and `make check` is
+green. Spike K ran against a real account and §18 carries what it found.
 
-Reading the transcripts is what phase 2 was worth. It took three runs of
-the driver to reach 143 steps with none failed. The first failed five,
-and three of them were the server:
-a merge spanning a frozen edge, which Sheets refuses with a message that
-does not say where the edge is; a named range with a space in it, refused
-by Google as "invalid" with no hint which character; and a conditional
-format rule that had disappeared, which spike J traced to `deleteTable`
-taking every rule over its range with it and saying nothing. None of the
-three is in any reference read for this project. All three are guarded
-now. Spike G's own first run answered none of its three questions
-properly while appearing to, for the same reason.
+**What is not done: the live driver run and the evals.** The stored
+refresh token vanished from the keyring four times during the session —
+once before spike K, and again twice after the maintainer
+re-authenticated, with the keyring daemon running and unlocked. Spike K
+got through on one of the windows; `make live` and `make evals` did not.
+Both are written, both are covered by the gates that can run without
+credentials, and neither has touched the network. §16's rule stands:
+green gates are not done, and phase 3 is not closed until those two have
+run and their transcripts have been read.
 
-Phase 3 — resources, durable anchors, evals and performance — starts on
-an explicit go.
+Phase 2 is what that rule is made of. It took three runs of the driver to
+reach 143 steps with none failed, and the first failed five — three of
+them the server: a merge spanning a frozen edge, a named range with a
+space in it, and a conditional format rule that `deleteTable` had taken
+silently. None of the three is in any reference read for this project.
+Phase 3 found the same shape twice more, both by reading rather than
+counting: `deleteDimension` takes the anchors on the band and says
+nothing, and spike K's own first run answered four of eleven questions
+against rows the anchor had already left.
+
+Phase 4 — charts, pivots and data sources — starts on an explicit go,
+after phase 3's live work is done.
 
 Everything here was checked against the Sheets API v4 discovery document
 (`sheets.googleapis.com/$discovery/rest?version=v4`, revision 20260831),
@@ -353,6 +361,8 @@ docs/
 scripts/gates/            the repository's own checks, as Go: coverage floor, schema diff, stdio smoke,
                           staleness, leak scan, workflow pins, pre-commit; never shipped
 scripts/livesheet/        drives the built binary against a real account, redacting ids and addresses
+scripts/spikes/           the probes §15 lists, each answering what the reference does not pin down
+scripts/evals/            drives a model through the tools alone and scores the end state and the trace
 ```
 
 Dependency direction runs one way: `tools` → `service` → `plan`/`grid` →
@@ -442,7 +452,7 @@ diff. This is best effort by construction — the platform offers nothing
 atomic — and the tool description says so rather than implying a
 guarantee.
 
-### 6.4 Developer metadata (phase 3)
+### 6.4 Developer metadata (phase 3, built)
 
 Developer metadata is the only anchor Google keeps attached to a location
 while the sheet is edited around it. It reaches a spreadsheet, a sheet or
@@ -450,6 +460,34 @@ a dimension range, not an arbitrary rectangle, and reading it needs a
 write-capable scope, so it can never be the only way to find something.
 It is offered as an optional durable label — "remember this row as
 `invoice-totals`" — and every tool that accepts one also accepts A1.
+
+**Verified as spike K (§18), and the premise held.** An anchored row
+follows its row through an insert above it, a delete above it, a
+`moveDimension` and a `sortRange` — and after a sort it lands where that
+row's *values* landed, which is the one thing here a reading of the
+reference would have got backwards. What it does not do is notice its
+contents being replaced: an anchor names a row, not the data on it, so it
+survives the sheet being reorganised and says nothing when the row is
+rewritten. The two are easy to hear as one promise, so the tool says
+both.
+
+**The shape follows from three findings.** A key is not unique, so
+uniqueness is enforced here or `anchor:totals` is a question with two
+answers. Deleting the row deletes the anchor with nothing in the reply
+saying so, so `delete_dimensions` names them first. And there is no
+"everything in this spreadsheet" location query — a spreadsheet location
+with `INTERSECTING` is refused — so listing goes through an empty lookup,
+which the reference does not describe and which makes it one request.
+
+`anchor:<name>` is a prefix on the existing range argument rather than an
+argument of its own, so every tool that takes a range takes an anchor
+from one change in `ResolveRange`, and none of them grows an eighteenth
+argument (§17a.12 is already that complaint). Nothing in A1 can collide
+with it: a sheet-qualified range needs a `!`, and no column name is six
+letters. Visibility is always `DOCUMENT`: `PROJECT` scopes an entry to
+the OAuth client that created it, and this server is distributed for
+people to run under a client id of their own, so a `PROJECT` anchor would
+vanish on a re-install with nothing to say why.
 
 ### 6.5 Error classes
 
@@ -749,6 +787,7 @@ registers only the readOnly rows and requests read-only scopes.
 | `format_cells` | Number format, styles, borders, alignment, wrapping, merges, notes | idempotent | 2 |
 | `manage_range` | Named ranges, protected ranges, data validation, tables, banding, conditional format rules | — | 2 |
 | `transform_range` | sort, find_replace, trim, dedupe, text_to_columns, fill, copy/cut-paste | — | 2 |
+| `manage_anchor` | Durable labels for a row, column or sheet: add, list, move, remove. `anchor:<name>` works wherever a range does (§6.4) | — | 3 |
 | `clear_values` | Gated: clear a range's values, keeping formatting | destructive | 1 |
 | `delete_sheet` | Gated: delete a sheet and everything on it | destructive | 1 |
 | `manage_chart` | Charts and slicers: add, update, delete, move | — | 4 |
@@ -759,10 +798,19 @@ There is deliberately no bulk tool that spans spreadsheets: one
 spreadsheet per call, so a wrong id costs one refusal rather than a
 sweep.
 
-**Resources** (phase 3). `gsheets://{spreadsheet}` is the card;
+**Resources** (phase 3, built). `gsheets://{spreadsheet}` is the card;
 `gsheets://{spreadsheet}/{sheet}` is that sheet's used range as csv under
 one 400 000-character budget. No static list (that would be a Drive
 listing) and no subscriptions (the API has no push and no changes feed).
+
+The used range rather than the sheet: a sheet is 1 000 by 26 whatever is
+on it, and a resource of 26 000 commas describes nothing. A read cut
+short by the budget says so in a second content block rather than in the
+CSV — CSV has no comment syntax, so a note in the body parses as a row of
+data, which is the silent half-answer this server exists to avoid. The
+sheet title is percent-encoded: a title can hold a slash, a question mark
+or a hash, and `net/url` would read each of those as structure and hand
+back a title with the end missing.
 
 **Registration.** One `Kind` per tool — read, write, idempotent write,
 destructive — decides the annotations, whether read-only mode leaves the
@@ -1037,10 +1085,57 @@ a task is scored against a spreadsheet the harness built.
 - **Caching.** Spreadsheet metadata coalesced for 5 s by id; the sheet
   title → id map for the same window; writes invalidate. Never for
   correctness.
-- **Targets, measured by benchmarks against the fake in phase 3.** The
-  card in one request; a 5 000-cell read in one request rendered under
-  20 ms; a guarded write in two requests; a 10 000-row grid rendered with
-  a flat memory profile.
+- **Targets, measured 2026-09-06 by `make bench`** on an AMD Ryzen 7 PRO
+  7730U, Go 1.27.1, linux/amd64, against the fake. The request counts
+  hold and the timings are all comfortably inside their targets — but
+  measuring moved the target, because the cost is not where the target
+  was written.
+
+  | What | 5 000 cells (the default budget) | 50 000 cells (the maximum) |
+  |---|---|---|
+  | Decode the response | **7.2 ms**, 1.7 MB, 33 001 allocs | **83 ms**, 17 MB, 329 886 allocs |
+  | Build the grid | 0.8 ms | 7.5 ms |
+  | Render it addressed | **0.73 ms**, 490 KB | 6.7 ms |
+  | The write guard over it | **0.04 ms**, 536 B, 25 allocs | 0.42 ms, 1 KB, 50 allocs |
+
+  **Rendering was never the expensive half.** §11 has said "rendered
+  under 20 ms" since the plan was written, and rendering a 5 000-cell
+  read takes 0.73 ms — 27 times inside the target. Decoding the JSON that
+  carried those cells takes ten times longer, and at the maximum budget
+  it takes 83 ms, which is the same order as the network round trip that
+  delivered it. Nothing here can make that much faster; it is the shape
+  of the wire, and it is the number to quote when somebody asks what
+  raising `max_cells` costs. The target stands, and now it names the
+  right half.
+
+  **The guard's flat profile is literal.** 25 allocations over 5 000
+  cells and 50 over 50 000 — the cost of a guarded write does not grow
+  with the rectangle, only with what it finds. It reached that during
+  this measurement rather than before it: the guard formatted an A1
+  address for every cell and kept ten, which was 28 000 allocations on a
+  5 000-cell write and 298 000 on a 50 000-cell one. **13.7× faster and
+  1 121× fewer allocations**, over three passes, and each pass is worth
+  more than the number.
+
+  The first was wrong in a way only the benchmark could show: it asked
+  whether *any* finding set was full, and on a rectangle of plain values
+  three of the four sets stay empty, an empty set is not full, and every
+  address got built anyway. The measurement did not move, which is how
+  the mistake was found — a reading of the code would have called it
+  fixed. The second worked and left the cap in two places: the loop
+  named every set a cell could land in, so a set added later without its
+  clause would be counted correctly and never named, and a message going
+  quiet is not a failure anything catches. The third moved the decision
+  into `Cells.AddCell`, which takes the coordinates instead of the
+  address and formats one only if it will keep it. Nothing outside the
+  type knows the cap now, and it is a further 1.6× faster than the
+  version that did.
+
+  The counts are unchanged: the card is one request, a 5 000-cell read is
+  one request, a guarded write is two. `a1.Parse` is 61–143 ns and
+  allocates nothing except for a quoted sheet title; `CheckDestination`,
+  which every formatting call pays, is 14 ns and allocates nothing at
+  all.
 
 ## 12. Distribution and setup
 
@@ -1346,6 +1441,18 @@ forgotten. Results go into §18.
   driver watched a conditional format rule disappear across an `addTable`
   and a `deleteTable` and could only see that it was gone by the end.
   Counted after every step, the probe puts it on the delete.
+- **K. Whether developer metadata is a durable anchor** (phase 3, **run
+  2026-09-06**): §6.4 offers "remember this row as `invoice-totals`" and
+  the reference says only where metadata may attach, never what happens
+  when the sheet moves under it. An anchor that follows a row and one
+  that holds a row *number* are different features, and the second points
+  at somebody else's data after one insert. So the probe mutates the
+  sheet — insert, delete, move, sort, a values write — and reads the
+  location back out of `developerMetadata.search` after each, alongside
+  what is on that row now. Results in §18. Its first run answered four of
+  the eleven questions against rows the anchor had already left, which
+  looked like a verdict and was a stale constant; every step that names a
+  row now asks where the anchor is at that moment.
 
 ## 16. Delivery phases
 
@@ -1429,11 +1536,38 @@ rectangle, a split's spill to the right, and a replacement inside
 formulas. Plus the §17a decision the phase owed: the structural tools'
 English moved into the renderer.
 
-**Phase 3 — resources, anchors, evals, performance (v0.3.0).**
+**Phase 3 — resources, anchors, evals, performance (v0.3.0). Built
+2026-09-06; the live driver run and the evals are outstanding, because
+the keyring gave up the refresh token four times during the session and
+only spike K got a window. Not closed until both have run and their
+transcripts have been read.**
 `gsheets://` resources; developer metadata as durable anchors (§6.4); the
 agent evals and the fixes they force; `make bench` and the numbers in
 §11; `/simplify` and `/code-review high` over the tree, with findings
 resolved or recorded in §17a.
+
+Spike K ran first, which is the ordering §15 asks for and phase 2 got
+wrong. It answered the question §6.4 had been assuming since the design:
+an anchored row survives an insert above, a delete above, a
+`moveDimension` and a `sortRange`, and after a sort it lands where its
+row's *values* landed. Deleting the row deletes the anchor and the reply
+says nothing — the second silent delete this project has found, after
+phase 2's `deleteTable`, and `delete_dimensions` now names them first.
+
+Its first run answered four of eleven questions against rows the anchor
+had already left. A probe whose whole subject is that the row moves had
+hardcoded row 2 in four steps, so "0 matches" read as a verdict on row
+lookups and was a stale constant. Every step that names a row now asks
+where the anchor is at that moment. That is the third time in three
+phases that reading a transcript found what counting it could not.
+
+`make bench` moved a target rather than confirming one. §11 has said "a
+5 000-cell read rendered under 20 ms" since the design; rendering takes
+0.73 ms and decoding the response takes ten times longer. It also found
+the guard formatting an A1 address for every cell in the target and
+keeping ten — 28 000 allocations on a 5 000-cell write, now 25. The
+first fix for that was wrong and the benchmark is what said so: the
+number did not move.
 
 **Phase 4 — charts, pivots, data sources (v0.4.0).** `manage_chart`,
 `manage_pivot_table`, `manage_data_source`, each verified live before it
@@ -1493,7 +1627,7 @@ they are not reopened.
 
 ## 17a. Deferred cleanups
 
-Ten open, six closed. A closed entry keeps its text and the decision that
+Sixteen open, eight closed. A closed entry keeps its text and the decision that
 closed it, so nobody reopens a question that was answered. Five of the
 open ones were raised by phase 2's own review passes and are recorded
 here rather than fixed in passing; two of those (entries 12 and 14) are
@@ -1635,6 +1769,14 @@ cannot be verified again yet.
    helper that decides the ordering once. **Still open**, and left alone
    deliberately: it changes the behaviour of two tools that were verified
    live in phase 1, and phase 2 has had no live run to verify them again.
+
+   Phase 3's `manage_anchor` joins the second group, and knowingly. A
+   dry-run `add` under a name already in use is refused rather than
+   previewed. The refusal carries the same information the preview would
+   — the name, where the existing anchor points, and `action=move` as the
+   way on — so nothing is lost except the consistency, and the ordering
+   is the service helper's to decide when one exists rather than a third
+   tool's to guess at now.
 15. **`manage_range` reads the conditional format rules in a request of
    their own.** Counting them for an update or a delete costs a
    `spreadsheets.get` that the card could carry: `conditionalFormats` is
@@ -1650,7 +1792,106 @@ cannot be verified again yet.
    `git cat-file --batch` fed the ids on stdin would do it in one
    process. It is a manual gate, so the cost is nobody's per-push
    problem, but it grows monotonically with the history. **Still open.**
-17. Nothing further. The tool-version problem that was here — a
+17. **A committed binary is invisible to every gate here.** The leak
+   scan skips any file containing a NUL byte, which is what keeps it from
+   choking on an image, and gitleaks looks for credentials rather than
+   for size. So a compiled binary committed by a wildcard `git add` would
+   pass `make check` and CI. Not hypothetical: two sibling repositories
+   found one in their history on 2026-09-06, one of them pushed to a
+   public remote across three commits. This tree is clean — the largest
+   tracked file is `docs/architecture.md` at 204K, a NUL scan over every
+   tracked file finds nothing, and `.gitignore` has carried `/gates`,
+   `/.gates`, `/.gates.exe` and `/livesheet` since phase 0 with a comment
+   saying to use `go run` — but that is the ignore rules working, not a
+   gate. A tracked-file size ceiling with named exceptions would catch
+   it and needs no dependency. **Still open**, and deliberately not built
+   in passing: a gate nobody has watched fail is not a gate.
+18. **The stdio smoke test has never been watched against a server that
+   dies during initialisation.** It returns the child's stderr on its
+   error paths, so the shape a sibling got wrong — a bare broken pipe
+   with the panic that explained it discarded — should not happen here.
+   Should not is not the same as has not: nothing has faked a server that
+   panics before its first reply and read what came back. **Still open**,
+   and recorded as unverified rather than counted as covered, which is
+   the distinction §16 keeps making about reading a transcript.
+19. **`Cells.Full` coupled the guard's loop to a cap the type owns.**
+   The loop asked each finding set whether it could still name a cell
+   before formatting an address, which is what took a guarded write from
+   28 000 allocations to 25 (§11) — and it made the loop name every set a
+   cell could land in, so a set added later without its clause would be
+   counted correctly and never named. A message going quiet is not a
+   failure anything catches. **Closed 2026-09-06**, in the same review
+   pass that raised it: `Cells.AddCell` takes the grid and the
+   coordinates and formats the address only if it will keep it, so
+   nothing outside the type knows the cap. It is also 1.6× faster than
+   the version that asked.
+20. **`delete_dimensions` pays a request to find the anchors it would
+   take.** `anchorsOnBand` is a `developerMetadata.search`, so an
+   unconfirmed delete went from two requests to three and the real
+   blocked-then-confirmed pair from four to six — about two seconds at
+   one request in flight. The cheaper shape is to fold it into the grid
+   read `countBand` already makes: `spreadsheets.get` with `ranges` can
+   return `sheets.data.rowMetadata.developerMetadata`, which is exactly
+   the anchors on the band being counted, for no extra request. It needs
+   a mask of its own rather than an extension of `gapi.GridFields`, which
+   the whole read path shares, and `rowMetadata` emits an object per row
+   in the window — so it needs a live probe before adoption (rule 12).
+   **Still open**, and the placement before the confirm gate is right and
+   stays: a refusal has to name what it is refusing.
+21. **A resource builds a grid the size of its window, not its data.**
+   `SheetCSV` fetches up to `config.MaxMaxCells` and `grid.Build` pads to
+   the whole requested rectangle, so a sparse sheet holding sixty cells
+   allocates megabytes to describe them — 3.4 MB of a measured 4.2 MB on
+   one such read. The rendering is trimmed to the used range now, which
+   took the path from 42 ms to 23 ms, but the padding is upstream of
+   that. Building over the response's actual extent would fix it and
+   changes `grid.Build`'s contract, which the whole read path shares.
+   **Still open**, and it costs allocations rather than requests, on a
+   path already paying a round trip.
+22. **`SheetCSV` walks a pipeline `Read` already owns.** Locate, fit,
+   fetch with grid data, build, render — the same seven steps, differing
+   only in trimming to the used range and in the note it writes. Reusing
+   `Read` would mean rendering an addressed grid nobody asked for on
+   every resource read; keeping both means a change to the fetch window
+   has two places to land. **Decided rather than deferred: keep them
+   separate**, because the resource's whole point is the used range and
+   `Read`'s is the window the caller named. Recorded so the duplication
+   reads as chosen rather than unnoticed.
+23. **The evals and the live driver carry the same redaction helper
+   twice.** About sixty lines — the registry, `reg`, `substitute`,
+   `redactLine`, `sec`, `line` — differing only in a comment. Both
+   already import `internal/redact`, which is where a shared registry
+   would go, and the transcript gate now reads both directories. The fix
+   that both files' comments describe, masking what registration cannot
+   know about, had to be made twice. **Still open**: it is a refactor
+   across two build-tagged programs neither of which CI can run, and the
+   phase that adds the second copy is the wrong one to do it in.
+24. **The leak gate was weakest on the code that most needs it.** It
+   scanned tracked files, so a phase's new files were invisible to it
+   until they were staged — and a phase's new files are exactly the ones
+   nobody has scanned before. Phase 3 ran `make check` green a dozen
+   times over 167 files while 28 of its own were untracked; the first
+   `git add -A` took the count to 195 and the gate immediately found a
+   fixture spreadsheet id that did not declare itself synthetic, in a
+   test written that afternoon. Nothing was wrong with the gate: it did
+   what it said. The claim "make check is green" was the thing that was
+   wrong. **Closed 2026-09-06:** the scan reads `git ls-files --others
+   --exclude-standard` beside the tracked list, and the ordering is the
+   point — a file refused while it is still untracked fails *before* a
+   wildcard add can sweep it in, where a tracked-only scan catches it one
+   commit too late. `--exclude-standard` honours `.gitignore`, so a build
+   output with a rule of its own is left alone; it cannot be committed
+   either. Watched failing on all four cases in a throwaway repository:
+   an untracked file carrying an id, an untracked ELF, a gitignored ELF
+   that must pass, and a clean tree.
+
+   The binary half was already there and this document said otherwise
+   for an hour: a tracked binary has been a finding rather than a skip
+   since phase 0, which a probe confirmed by building 8.5 MB to the
+   repository root and watching the gate name it. Two sibling
+   repositories put a compiled `gates` binary into their history this
+   week, one of them public, which is what sent somebody looking.
+25. Nothing further. The tool-version problem that was here — a
    distribution `golangci-lint` built with an older Go refusing this
    module, and a stale `go-licenses` failing on the standard library —
    was fixed rather than deferred: the Makefile fetches all three tools
@@ -2021,6 +2262,38 @@ something is gone by the end. Counted after every step:
 | Question | What the API did | Effect |
 |---|---|---|
 | Does a table take the conditional format rules over its range? | **The delete does; the add does not.** One rule on the sheet, `addTable` over the same range → still one, `deleteTable` → none. Nothing in either reply mentions a rule | `manage_range table delete` reads the rules over the range first and refuses without `overwrite`, naming each one. It is the only act in that tool that destroys anything, and it is invisible in the response — which is the definition of what this server's guard is for. Undocumented anywhere read for this project |
+
+**Spike K, run live 2026-09-06 (`go run -tags=live ./scripts/spikes
+-only K`).** Whether developer metadata is the durable anchor §6.4 is
+built on. Eleven questions, each answered by mutating the sheet and then
+reading the location back out of `developerMetadata.search` rather than
+out of this code's idea of where it put it. The first run answered four
+of them against rows the anchor had already left — a hardcoded row 2 in a
+probe whose whole subject is that the row moves — so those steps now ask
+where the anchor is at the moment they run.
+
+| Question | What the API did | Effect |
+|---|---|---|
+| Does a row anchor survive the rows around it changing? | **Yes, through all four.** Anchored on row 3, then: insert 2 above → row 5; delete 1 above → row 4; `moveDimension` the row itself → row 2; `sortRange` over the block → row 4. Every time, the row it landed on still held the values it was created against | §6.4's premise holds, and this is the only anchor in the API that does. It is what `read_range` and the write tools can accept in place of an A1 row |
+| Does a sort move the anchor with the values or leave it on the row number? | **With the values.** The sort put the anchored row's contents on row 4 and the anchor moved from row 2 to row 4 with them. `sortRange` moves rows wholesale, metadata included, rather than rewriting cells in place | `transform_range sort` does not disturb an anchor, so nothing has to be re-anchored after one. The distinction is the reason the probe prints the row's values beside the location: a location alone cannot tell the two behaviours apart |
+| Does a values write over the anchored row disturb it? | **No.** The row was rewritten and the anchor stayed on it | An anchor names a row, not the data on it. So it survives the sheet being reorganised and it does *not* notice its contents being replaced — which is what the tool description has to say, because the two are easy to hear as one promise |
+| Is a metadata key unique? | **No.** Two entries were created under one key and both came back from a search of it | Uniqueness is this server's to enforce: an anchor name that matches two rows is `[ambiguous]` with both listed, the same refusal `manage_range` gives. Google will not do it |
+| What does a search match? | **Key alone works, and so does `locationType: ROW` alone** — neither needs a location. A sheet lookup with `INTERSECTING_LOCATION` returned every row anchor on that sheet plus the sheet's own; with `EXACT_LOCATION`, only the sheet's own. A lookup at the anchored row returned it under either strategy; at an empty row, nothing | One request lists every anchor on a sheet, which is what a `list` action returns. Exact is what a lookup by name resolves through, so a row anchor is never confused with the sheet's |
+| Can a spreadsheet-level lookup be intersecting? | **No**: `400 DeveloperMetadataLookup.spreadsheet is true, but locationMatchingStrategy was specified as INTERSECTING` | Refused here before it is sent. A spreadsheet *location* reaches nothing but itself |
+| Is there a one-request way to list everything, whatever it is attached to? | **Yes, and it is the empty lookup.** A filter carrying `developerMetadataLookup: {}` returned all four entries — two rows, a sheet and the spreadsheet. `locationType: SPREADSHEET` alone also works, which the reference's own wording had left doubtful, since it forbids that type under an intersecting strategy and calls intersecting the default. Several filters in one request come back deduplicated: four filters, four distinct ids, none repeated | `list` is one request against one empty lookup, which keeps §4.5 — one tool call, one API request — on a listing that would otherwise cost a request per sheet. The three shapes were probed together because the reference settles none of them and the cheapest one is not the one its prose suggests |
+| Does `PROJECT` visibility work without a service account? | **Yes**, created and read back through an ordinary per-user OAuth client | Recorded, and **not** used. `DOCUMENT` is what this server writes: `PROJECT` scopes an anchor to the OAuth client that made it, so a user who re-installs under a client id of their own — which is how this server is distributed — would find every anchor they had made gone, with nothing to say why |
+| What locations are refused, and in what words? | Two rows at once: `DimensionRange must represent a single row or column`. Unbounded: `DimensionRange must specify both a startIndex and an endIndex` | Both refused before sending, quoting the rule. A caller who asks to anchor a rectangle is told what an anchor can attach to rather than forwarded a message about a type they never named |
+| Does `spreadsheets.get` carry anchors, or does every read cost a search? | **Both, split by location.** Sheet-level and spreadsheet-level metadata come back with an ordinary card mask. Row and column anchors appear only under `includeGridData` as `sheets.data.rowMetadata.developerMetadata`, so they arrive only for a range already being read | The card carries sheet-level anchors for free. A lookup by name is a `developerMetadata.search`, which is one request and does not need the grid — §17a.15's shape, decided the other way here because the alternative is a grid read of a range nobody asked for |
+| What happens to an anchor when its row is deleted? | **It goes with the row, and nothing in the reply mentions it.** Two anchors under one key, one row deleted: the reply is an ordinary success and the search afterwards returns one | `delete_dimensions` reads the anchors over its range first and names them, and refuses without `overwrite`. Exactly spike J's shape — a delete that silently takes something the response never mentions — and the second one this project has found |
+
+**Not observed, and recorded rather than assumed.** Reading developer
+metadata needs a write-capable scope: `developerMetadata.get` and
+`.search` list `spreadsheets`, `drive` and `drive.file`, and not
+`spreadsheets.readonly`. Whether a card read under read-only scopes still
+carries the sheet-level metadata is unanswered, for the same reason three
+of spike E's error shapes are: this machine's token is not a read-only
+one. `GSHEETS_READ_ONLY=true` therefore does not register the anchor
+tool at all, which is true whichever way that question resolves.
 
 **The live driver, run 2026-09-06 (`make live`).** Five steps failed on
 the first run of phase 2's surface, and the split is worth recording:

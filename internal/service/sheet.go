@@ -419,7 +419,10 @@ type DeleteSheetResult struct {
 	Cells       int      `json:"cells" jsonschema:"non-empty cells that went with it"`
 	Formulas    int      `json:"formulas"`
 	Sheets      []string `json:"sheets,omitempty" jsonschema:"the sheets left, in order"`
-	DryRun      bool     `json:"dry_run,omitempty"`
+	// Anchors are the durable labels that went with the sheet. The API's
+	// reply never mentions them.
+	Anchors []string `json:"anchors_removed,omitempty" jsonschema:"the anchors that were on the sheet and went with it"`
+	DryRun  bool     `json:"dry_run,omitempty"`
 }
 
 // Render is the text half.
@@ -455,16 +458,25 @@ func (s *Service) DeleteSheet(ctx context.Context, req DeleteSheetRequest) (*Del
 		Cells: counts.NonEmpty, Formulas: counts.Formulas,
 	}
 	charts := len(sheetOf(sp, props.SheetID).Charts)
+	// The anchors on the sheet, which go with it and which the API's
+	// reply never mentions — the same silent loss `delete_dimensions`
+	// names for a band.
+	doomed, err := s.anchorsOnSheet(ctx, ref.ID, props.SheetID)
+	if err != nil {
+		return nil, err
+	}
+	res.Anchors = doomed
 	if req.DryRun {
 		res.DryRun = true
-		res.Summary = render.DeletePreview(props.Title, counts.NonEmpty, counts.Formulas, charts)
+		res.Summary = render.DeletePreview(props.Title, counts.NonEmpty, counts.Formulas, charts) +
+			anchorNote(doomed)
 		return res, nil
 	}
 	if !req.Confirm {
 		return nil, Errorf("blocked",
-			"deleting %q takes %d non-empty cell(s), %d formula(s) and %d chart(s) with it, and Sheets cannot undo it. "+
-				"Pass confirm to go ahead, or duplicate the sheet first",
-			props.Title, counts.NonEmpty, counts.Formulas, charts)
+			"deleting %q takes %d non-empty cell(s), %d formula(s) and %d chart(s) with it%s, and Sheets cannot undo "+
+				"it. Pass confirm to go ahead, or duplicate the sheet first",
+			props.Title, counts.NonEmpty, counts.Formulas, charts, render.AnchorsTaken(doomed))
 	}
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{plan.DeleteSheet(props.SheetID)},
@@ -477,7 +489,8 @@ func (s *Service) DeleteSheet(ctx context.Context, req DeleteSheetRequest) (*Del
 		return nil, err
 	}
 	res.Sheets, _ = sheetTitles(after)
-	res.Summary = render.DeleteDone(props.Title, counts.NonEmpty, counts.Formulas, charts, res.Sheets)
+	res.Summary = render.DeleteDone(props.Title, counts.NonEmpty, counts.Formulas, charts, res.Sheets) +
+		anchorNote(doomed)
 	return res, nil
 }
 

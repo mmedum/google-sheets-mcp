@@ -61,6 +61,28 @@ func (c *Cells) Add(addr string) {
 // Any reports whether anything was recorded.
 func (c Cells) Any() bool { return c.Total > 0 }
 
+// AddCell records one cell, naming it only if this set still has room.
+//
+// The address is what costs: every set caps at ten names and counts the
+// rest, so on a 5 000-cell write all but ten were formatted and thrown
+// away — 28 000 allocations, on the path of every guarded write. Taking
+// the coordinates instead of the string is what makes the formatting
+// conditional without the caller knowing the cap.
+//
+// The caller used to ask, through a Full method and a condition naming
+// every set the cell could land in. That worked and it put the cap in
+// two places: a set added later without its clause would be counted
+// correctly and never named, and the failure is a message going quiet.
+// It also had to be got right twice — the first attempt asked whether
+// *any* set was full, which never fires on a rectangle of plain values,
+// and the benchmark is what said so.
+func (c *Cells) AddCell(g *grid.Grid, i, j int) {
+	c.Total++
+	if len(c.Named) < maxNamed {
+		c.Named = append(c.Named, g.Address(i, j))
+	}
+}
+
 // Merge folds another set into this one, keeping the cap.
 //
 // Here rather than at the caller, because "name a few and count the
@@ -282,22 +304,23 @@ func Check(g *grid.Grid, values [][]any, formulasEvaluated bool) Report {
 	CheckPartialMerges(&r, g)
 	for i, row := range g.Cells {
 		for j, cell := range row {
-			addr := g.Address(i, j)
+			// What this cell is. AddCell decides whether the address is
+			// worth formatting, so nothing here knows the cap.
+			//
 			// HasFormula rather than the kind: a formula that evaluated
 			// to an error is KindError, and a write over one would
 			// otherwise need only `overwrite`.
-			switch {
-			case cell.HasFormula():
-				r.Formulas.Add(addr)
-				r.NonEmpty.Add(addr)
-			case !cell.Empty():
-				r.NonEmpty.Add(addr)
+			if cell.HasFormula() {
+				r.Formulas.AddCell(g, i, j)
+				r.NonEmpty.AddCell(g, i, j)
+			} else if !cell.Empty() {
+				r.NonEmpty.AddCell(g, i, j)
 			}
 			if cell.Note != "" {
-				r.Notes.Add(addr)
+				r.Notes.AddCell(g, i, j)
 			}
 			if cell.Validation != "" {
-				r.Validation.Add(addr)
+				r.Validation.AddCell(g, i, j)
 			}
 		}
 	}
@@ -367,20 +390,34 @@ func CheckValues(r *Report, values [][]any, formulasEvaluated bool, label func(i
 			if !ok {
 				continue
 			}
+			// The tests first, the address after. Naming a cell costs a
+			// formatted string and almost every value is unremarkable,
+			// so building one before knowing whether anything is wrong
+			// with the value was half the guard's allocations.
+			//
+			// An empty label still means a cell outside the grid and
+			// still records nothing; it is now asked for only when there
+			// would be something to record.
+			tooLong := len(s) > MaxCellChars
+			var fetching, cross bool
+			if formulasEvaluated && strings.HasPrefix(strings.TrimSpace(s), "=") {
+				fetching = externalFetch.MatchString(s)
+				cross = externalRange.MatchString(s)
+			}
+			if !tooLong && !fetching && !cross {
+				continue
+			}
 			at := label(i, j)
 			if at == "" {
 				continue
 			}
-			if len(s) > MaxCellChars {
+			if tooLong {
 				r.TooLong.Add(at)
 			}
-			if !formulasEvaluated || !strings.HasPrefix(strings.TrimSpace(s), "=") {
-				continue
-			}
-			if externalFetch.MatchString(s) {
+			if fetching {
 				r.Fetching.Add(at)
 			}
-			if externalRange.MatchString(s) {
+			if cross {
 				r.CrossSpreadsheet.Add(at)
 			}
 		}

@@ -111,6 +111,88 @@ Reading the transcript is not a formality. Phase 1 ran the driver five
 times; every run was green or nearly so, and every transcript held
 something the count did not — including a hole in the write guard.
 
+**The leak scan reads the working tree, not the index.** That is
+deliberate and it was not always true: it read tracked files only, so a
+phase's new files — the ones nobody had scanned before — were invisible
+until `git add`. Phase 3 ran it green while 28 of its own had never been
+looked at, and the first staging found a spreadsheet id in a test that
+did not declare itself synthetic. It now reads untracked files too, which
+also means a build artifact is refused while it is still untracked,
+before a wildcard `git add -A` can sweep it in. Anything `.gitignore`
+covers is left alone.
+
+## The spikes
+
+```
+go run -tags=live ./scripts/spikes -only K
+```
+
+The probes §15 lists, each answering a question the reference does not
+pin down. `-only` runs one, because every run creates a scratch
+spreadsheet it cannot trash and a narrower run is a smaller mess.
+
+They are written to be *read*, not to pass. A spike prints what the API
+did, and the verdict goes into the evidence log in `docs/architecture.md`
+§18 rather than into somebody's memory. Two of them have now had a first
+run that answered nothing while looking like an answer: spike G measured
+the length of a JSON body and called it the length of a cell, and spike K
+aimed four of its eleven questions at a row its own subject had already
+moved. Both were visible only by reading the output against what the step
+claimed to be asking.
+
+The rule that came out of the second one: **a step that names a position
+asks where the thing is at that moment.** A constant in a probe about
+movement is a stale constant, and its answer reads as a finding.
+
+## The evals
+
+```
+make evals
+```
+
+The live driver proves the tools work. The evals prove they can be
+*used*, which is a different claim and the one that fails quietly: what
+no driver catches is a result that is internally consistent and wrong.
+Fifteen tasks go to a model through this server's tools alone, with the
+shell and the file tools switched off, so what is being scored is the
+tool surface rather than the model's resourcefulness.
+
+Every task is scored twice, and the second half is the one that earns its
+keep:
+
+- **The end state**, read back through this server. A model's account of
+  what it did is the least reliable thing in the run.
+- **The trace** — the calls it made, in order, with their arguments —
+  because a task can be completed by a model that guessed and was lucky.
+  Guessing `Sheet1`, being refused, then reading the card and succeeding
+  is a pass by outcome and a failure by every rule this server is built
+  on. So is passing `overwrite: true` on a call that never needed it: the
+  write succeeds either way, and only the trace can tell that the guard
+  was switched off rather than satisfied.
+
+Two rules, both inherited from a sibling's first full eval run rather
+than from its plan:
+
+- **Every task answers "what does this check when the world says no?"**
+  Where the end state cannot exist, the task scores the trace and
+  *prints* which half went unchecked. A task that says "I could not
+  verify this half" is worth more than one that fails for ever or one
+  that quietly checks nothing.
+- **A prompt containing an unsubstituted placeholder is refused, and a
+  unit test walks the whole table.** That sibling passed two tasks while
+  sending the agent a literal `{folder}`. The guard is in `go test`,
+  where it costs nothing, rather than in a run that costs ten minutes and
+  an account — `go test ./scripts/evals` needs no credentials.
+
+One entry is an A/B rather than a task: the same work with the addressed
+grid in front of the model and with bare rows, counting the calls each
+took. §4.9 is reasoning rather than measurement, and this is the
+measurement. If the two arms write to *different* rows, that is a
+stronger finding than any call count.
+
+Like the driver, it leaves a scratch spreadsheet behind, titled `evals
+scratch …`.
+
 ## `make check` and CI
 
 `make check` is what CI runs, and `make parity` is what makes that

@@ -223,6 +223,19 @@ type Band struct {
 	Last      int
 }
 
+// ParseDimension reads the axis word, in the spellings a person uses.
+// Separate from ParseBand because an anchor names a band without any A1
+// in it, and the axis still has to agree with what the anchor is on.
+func ParseDimension(dimension string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(dimension)) {
+	case "rows", "row":
+		return gsheets.DimensionRows, nil
+	case "columns", "column", "cols", "col":
+		return gsheets.DimensionColumns, nil
+	}
+	return "", fmt.Errorf("dimension %q is not rows or columns", dimension)
+}
+
 // ParseBand reads "rows" or "columns" and an A1 band such as "2:5" or
 // "B:D", and checks the two agree.
 //
@@ -230,14 +243,9 @@ type Band struct {
 // thing and typed another, and applying either reading would move
 // somebody's data somewhere they did not ask for.
 func ParseBand(dimension, band string) (Band, error) {
-	var dim string
-	switch strings.ToLower(strings.TrimSpace(dimension)) {
-	case "rows", "row":
-		dim = gsheets.DimensionRows
-	case "columns", "column", "cols", "col":
-		dim = gsheets.DimensionColumns
-	default:
-		return Band{}, fmt.Errorf("dimension %q is not rows or columns", dimension)
+	dim, err := ParseDimension(dimension)
+	if err != nil {
+		return Band{}, err
 	}
 	rect, err := a1.ParseRect(strings.TrimSpace(band))
 	if err != nil {

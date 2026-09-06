@@ -145,7 +145,15 @@ type SheetRef struct {
 //     it to mean the sheet: a bare name is resolved as a named range
 //     first (verified live), so an unquoted "Data" reads the named
 //     range called Data.
+//   - An anchor stands in for a range. `anchor:invoice totals` resolves
+//     to whatever row that label points at now, which is what makes a
+//     label worth having: it survives rows being inserted above it and
+//     an A1 address does not. A1 still works everywhere, so an anchor is
+//     never the only way to reach anything (§6.4).
 func (s *Service) ResolveRange(ctx context.Context, ref Reference, sheet, rangeA1 string) (SheetRef, error) {
+	if name, ok := strings.CutPrefix(strings.TrimSpace(rangeA1), AnchorPrefix); ok {
+		return s.resolveAnchorRange(ctx, ref, sheet, name)
+	}
 	sp, err := s.card(ctx, ref.ID)
 	if err != nil {
 		return SheetRef{}, err

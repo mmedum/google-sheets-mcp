@@ -139,6 +139,10 @@ hooks: ## Point git at the repository's own hooks
 live: build ## Drive the built binary against a real account (see docs/development.md)
 	$(GO) run -tags=live ./scripts/livesheet -bin $(BIN)
 
+.PHONY: evals
+evals: build ## Drive a model through the tools and score it (needs credentials and the claude CLI)
+	$(GO) run -tags=live ./scripts/evals -bin $(BIN)
+
 .PHONY: check
 check: fmt vet tidy lint cover vuln licenses secrets classes leaks transcript live-cover mcpb parity pins schema-diff smoke staleness ## Everything CI runs
 

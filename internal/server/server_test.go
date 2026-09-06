@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -55,7 +56,7 @@ var readTools = []string{"find_in_spreadsheet", "get_spreadsheet", "read_formatt
 // destructiveTools need the destructive flag as well.
 var writeTools = []string{
 	"append_rows", "create_spreadsheet", "edit_dimensions", "format_cells",
-	"manage_range", "manage_sheet", "transform_range", "write_values",
+	"manage_anchor", "manage_range", "manage_sheet", "transform_range", "write_values",
 }
 
 var destructiveTools = []string{"clear_values", "delete_dimensions", "delete_sheet"}
@@ -285,5 +286,85 @@ func TestInstructionsPointAtGetSpreadsheetFirst(t *testing.T) {
 	}
 	if strings.Contains(init.Instructions, "Sheet1") {
 		t.Error("the instructions teach the model to guess a sheet name")
+	}
+}
+
+// TestResourcesRouteByTemplate checks the SDK's own matching rather than
+// this code's reading of RFC 6570. The two templates differ by one path
+// segment, and if `{spreadsheet}` matched a slash the card template
+// would swallow every sheet URI and answer a card for all of them —
+// which looks like a working resource until somebody wants their data.
+func TestResourcesRouteByTemplate(t *testing.T) {
+	s, _ := newServer(t, config.Config{}, nil)
+	cs := connect(t, s)
+	ctx := context.Background()
+
+	tmpls, err := cs.ListResourceTemplates(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tmpls.ResourceTemplates) != 2 {
+		t.Fatalf("%d resource templates; §8 offers two", len(tmpls.ResourceTemplates))
+	}
+	// No static list: enumerating spreadsheets is a Drive listing.
+	res, err := cs.ListResources(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Resources) != 0 {
+		t.Errorf("%d static resources; there is deliberately no list", len(res.Resources))
+	}
+
+	card, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: "gsheets://" + sheetstest.FixtureID})
+	if err != nil {
+		t.Fatalf("reading the card: %v", err)
+	}
+	if len(card.Contents) != 1 || !strings.Contains(card.Contents[0].Text, sheetstest.FirstSheet) {
+		t.Errorf("the card resource does not name the sheets: %+v", card.Contents)
+	}
+	if card.Contents[0].MIMEType != "text/plain" {
+		t.Errorf("card MIME type = %q", card.Contents[0].MIMEType)
+	}
+
+	sheet, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{
+		URI: "gsheets://" + sheetstest.FixtureID + "/" + sheetstest.FirstSheet,
+	})
+	if err != nil {
+		t.Fatalf("reading the sheet: %v", err)
+	}
+	if len(sheet.Contents) == 0 {
+		t.Fatal("the sheet resource is empty")
+	}
+	if sheet.Contents[0].MIMEType != "text/csv" {
+		t.Errorf("sheet MIME type = %q, want text/csv — the router sent this to the card handler", sheet.Contents[0].MIMEType)
+	}
+	if !strings.Contains(sheet.Contents[0].Text, "Plimth,Nardle") {
+		t.Errorf("the sheet resource is not the CSV: %.80q", sheet.Contents[0].Text)
+	}
+
+	// A percent-encoded title, which is the case the scheme exists to
+	// carry: the fixture's second sheet is not ASCII.
+	enc, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{
+		URI: "gsheets://" + sheetstest.FixtureID + "/" + url.PathEscape(sheetstest.SecondSheet),
+	})
+	if err != nil {
+		t.Fatalf("reading a percent-encoded sheet title: %v", err)
+	}
+	if !strings.Contains(enc.Contents[0].Text, "Trennow") {
+		t.Errorf("the encoded title read the wrong sheet: %.80q", enc.Contents[0].Text)
+	}
+}
+
+func TestResourceNotFoundIsTheSpecifiedError(t *testing.T) {
+	s, _ := newServer(t, config.Config{}, nil)
+	cs := connect(t, s)
+	_, err := cs.ReadResource(context.Background(), &mcp.ReadResourceParams{
+		URI: "gsheets://" + sheetstest.FixtureID + "/Nardlewick",
+	})
+	if err == nil {
+		t.Fatal("a sheet that does not exist was read")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "not found") {
+		t.Errorf("err = %v, want the specification's resource-not-found", err)
 	}
 }

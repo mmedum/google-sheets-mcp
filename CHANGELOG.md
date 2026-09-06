@@ -7,6 +7,98 @@ and this project follows [semantic versioning](https://semver.org).
 
 ### Added
 
+- **`gsheets://` resources.** `gsheets://{spreadsheet}` is the card;
+  `gsheets://{spreadsheet}/{sheet}` is that sheet's used range as CSV
+  under one 400 000-character budget. The used range, not the sheet: a
+  new sheet is 1 000 by 26 whatever is on it, and 26 000 commas describe
+  nothing. A read cut short says so in a second content block rather
+  than in the CSV, because a comment is not a thing CSV has and a note in
+  the body parses as a row of data.
+- **`manage_anchor`, and `anchor:<name>` wherever a range is taken.** An
+  A1 address goes stale the moment somebody inserts a row above it, and
+  nothing says so. An anchor does not: it follows its row through
+  inserts, deletes, moves and sorts. It is a prefix on the existing range
+  argument rather than a new argument on every tool, so all seventeen
+  tools accept one and none of them grew an eighteenth argument. That
+  covers the `band` argument too, which takes a different path from a
+  range: without its own hook, `anchor:` failed with an A1 syntax error
+  on `edit_dimensions` and `delete_dimensions` — the two tools that
+  destroy anchors, and the ones "delete the row anchored as totals" is
+  actually about. Found by a review pass reading the promise against the
+  code rather than by anything failing.
+- **Spike K, and what it found.** §6.4 has assumed since the design that
+  developer metadata is durable. It is, and the reference says none of
+  it. An anchored row survives an insert above, a delete above, a
+  `moveDimension` and a `sortRange` — and after a sort it lands where its
+  row's *values* landed, which is the one behaviour a reading of the
+  reference would have got backwards. Deleting the row deletes the
+  anchor, and the reply says nothing at all: the same shape as phase 2's
+  `deleteTable` finding, and the second one this project has found. So
+  `delete_dimensions` now names the anchors it would take, before it
+  takes them.
+- Three more from the same probe, each one a refusal written here rather
+  than a message forwarded. A metadata key is **not unique** — Google
+  will hold two entries under one name, so uniqueness is this server's to
+  keep or `anchor:totals` is a question with two answers. A location must
+  be a single bounded row or column, and the API's refusal names a type
+  the caller never mentioned. And a spreadsheet-level lookup cannot be
+  intersecting, which rules out the obvious way to list everything; the
+  way that works is an **empty lookup**, one request, which the reference
+  does not describe.
+- **A move now stores the note it reports.** `manage_anchor action=move`
+  built its answer from the request and sent a field mask that wrote only
+  the location, so a new note was reported and never stored — the result
+  and the spreadsheet disagreeing, which hard rule 7 exists to prevent. A
+  move with no note of its own now reports the note that is still there
+  rather than an empty one, which was the same lie in the other
+  direction.
+- **`delete_sheet` names the anchors it takes**, like `delete_dimensions`.
+  Deleting a sheet takes every anchor on it and the reply mentions none.
+- **The leak scan reads the working tree, not just the index.** It read
+  tracked files, so a phase's new files were invisible to it until they
+  were staged — and those are precisely the ones nobody has scanned
+  before. This phase ran `make check` green a dozen times over 167 files
+  while 28 of its own were untracked; the first `git add -A` took it to
+  195 and the gate immediately found a fixture spreadsheet id that did
+  not declare itself synthetic. The gate was doing what it said; "make
+  check is green" was the false claim. Refusing an untracked file also
+  means a build artifact is caught before a wildcard add can sweep it in,
+  which is how two sibling repositories put megabytes of compiled binary
+  into their history this week.
+- **The transcript gate could be walked past with `fmt.Fprintln(os.Stdout, …)`.**
+  It matched `fmt.Print`, `Printf` and `Println`, justified by a comment
+  saying an `Fprintf` goes to a caller-supplied writer — true of a
+  caller's writer and not of `os.Stdout`. One such line would have put a
+  sheet title on the terminal unredacted with the gate reporting nothing.
+  It now counts an `Fprint*` whose writer is literally `os.Stdout`, and
+  says plainly that a writer reached through a variable is not followed.
+  Prompted by a sibling repository finding the same shape — a check that
+  decides a construct is fine from the one spelling it was written
+  against — in a gate of its own.
+- The stdio smoke gate now drives `resources/templates/list` and
+  `resources/read` as well as the tools. A tool and a resource are
+  different JSON-RPC methods with different result shapes, and until this
+  the only thing proving the templates were published was an in-memory
+  client in a unit test. It also holds the uncredentialed resource read
+  to saying `[auth]`: a resource cannot carry a class the way a tool
+  result does, so the message is the only place a client learns the
+  answer is "log in" rather than "no such spreadsheet".
+- **`make bench`, and the numbers in §11.** Rendering was never the
+  expensive half. §11 has said "a 5 000-cell read rendered under 20 ms"
+  since the design; it renders in 0.73 ms, and decoding the JSON that
+  carried those cells takes ten times longer. At the maximum budget the
+  decode is 83 ms, which is the same order as the round trip that
+  delivered it. The target stands and now names the right half.
+- **`make evals`: fifteen agent tasks and an A/B**, driven through
+  `claude -p` with only this server's tools. Every task is scored twice —
+  the end state read back through the server, and the trace, because a
+  task can be completed by a model that guessed a range and was lucky.
+  Guessing `Sheet1`, being refused, then reading the card and succeeding
+  is a pass by outcome and a failure by every rule this server is built
+  on. Tasks that cannot check an end state say which half went unchecked
+  rather than quietly checking one, and a unit test walks the whole table
+  refusing any prompt that still carries a placeholder.
+
 - Four tools for formatting and structure: `read_formatting`,
   `format_cells`, `manage_range` and `transform_range`.
 - **`read_formatting`** is the other half of a read: what the cells look
@@ -75,6 +167,38 @@ and this project follows [semantic versioning](https://semver.org).
   `status` and `doctor` had no tests and nothing could report that.
 
 ### Changed
+
+- **A resource stopped rendering the cells it was about to throw away.**
+  `SheetCSV` rendered the whole fetched window and then sliced to the
+  used range, and wrote its CSV through a fresh `csv.Writer` — with a
+  4 KB buffer — for every row. Trimming first and using one writer took
+  the path from 42 ms to 23 ms and cut a quarter of its memory; the
+  writer change alone is 4× faster and 13× lighter on a thousand rows.
+
+- **The write guard stopped naming cells it would never mention.** It
+  formatted an A1 address for every cell in the target and kept ten: 28
+  000 allocations on a 5 000-cell write, 298 000 on a 50 000-cell one.
+  Now 25 and 50 — flat, whichever size the rectangle is — and 13.7 times
+  faster. Found by `make bench` rather than by reading, and it took three
+  passes. The first was wrong in a way only the benchmark could show: it
+  asked whether *any* finding set was full, and on a rectangle of plain
+  values three of the four sets stay empty, an empty set is not full, and
+  every address got built anyway. The measurement did not move, which is
+  what gave it away. The last pass moved the decision inside the type
+  that owns the cap, so no caller has to know it.
+- **The parity gate could be switched off with one `#`.** It matched by
+  substring over the whole workflow text, so `gates staleness` was found
+  inside a commented-out step and counted as running — making the
+  cheapest way to unblock a red build also the way to disable the check
+  that would have noticed. Reported by a sibling repository and present
+  here when it was looked for. The stripping is inside `checkParity`
+  rather than in the function that reads the files, because a fix in the
+  reader is a fix any other caller bypasses — the new test found that by
+  still failing after the first attempt looked green. The match is now
+  restricted to the workflow's `run:` and `uses:` scalars, which closes
+  the class rather than the one spelling: a gate named in a step's
+  `name:` or in an `env:` value no longer stands in for a step that runs
+  it.
 
 - **The structural tools' English moved into the renderer** (§17a.9).
   `manage_sheet` and `edit_dimensions` used to compose a sentence
