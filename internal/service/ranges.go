@@ -59,8 +59,11 @@ type RangeRequest struct {
 	Header bool
 	// Index names a conditional format rule, which is the only one of
 	// these the API identifies by position rather than by what it covers.
-	Index  int
-	DryRun bool
+	Index int
+	// Overwrite allows the one act here that destroys something: a table
+	// delete takes the conditional format rules over its range.
+	Overwrite bool
+	DryRun    bool
 }
 
 // RangeResult is manage_range's answer.
@@ -158,6 +161,22 @@ func (s *Service) ManageRange(ctx context.Context, req RangeRequest) (*RangeResu
 func (s *Service) rangeOp(ctx context.Context, req RangeRequest, action string, ref Reference,
 	card *gsheets.Spreadsheet, props *gsheets.SheetProperties, rect a1.Rect,
 ) (*gsheets.Request, []render.Applied, error) {
+	// Deleting a table takes the conditional format rules over its range
+	// with it. Verified live: one rule before, none after, and nothing
+	// in the reply says so — adding a table leaves them alone, so it is
+	// the delete that takes them.
+	if strings.EqualFold(strings.TrimSpace(req.Kind), RangeTable) && action == RangeDelete && !req.Overwrite {
+		rules, err := s.rulesOver(ctx, ref, props.SheetID, rect)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(rules) > 0 {
+			return nil, nil, Errorf("blocked",
+				"deleting the table on %s takes %d conditional format rule(s) over that range with it, "+
+					"and nothing in Sheets brings them back: %s. Pass overwrite to go ahead",
+				a1.FormatRect(rect), len(rules), join(rules))
+		}
+	}
 	switch strings.ToLower(strings.TrimSpace(req.Kind)) {
 	case RangeNamed:
 		return namedRangeOp(req, action, card, props, rect)
@@ -181,8 +200,8 @@ func namedRangeOp(req RangeRequest, action string, card *gsheets.Spreadsheet,
 	props *gsheets.SheetProperties, rect a1.Rect,
 ) (*gsheets.Request, []render.Applied, error) {
 	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		return nil, nil, Errorf("invalid", "a named range needs name")
+	if err := plan.CheckNamedRange(name); err != nil {
+		return nil, nil, Errorf("invalid", "%s", err)
 	}
 	existing := findNamedRange(card, name)
 	switch action {
@@ -419,6 +438,28 @@ func ruleFormat(req RangeRequest) (*gsheets.CellFormat, error) {
 			"a conditional format rule needs a format to apply: colour, text_colour, bold, or several")
 	}
 	return format, nil
+}
+
+// rulesOver describes the conditional format rules that reach a
+// rectangle, for the one request that destroys them.
+func (s *Service) rulesOver(ctx context.Context, ref Reference, sheetID int, rect a1.Rect) ([]string, error) {
+	got, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{Fields: gapi.RuleFields})
+	if err != nil {
+		return nil, wrap(err)
+	}
+	var out []string
+	for _, rule := range sheetOf(got, sheetID).ConditionalFormats {
+		if rule == nil {
+			continue
+		}
+		for _, r := range rule.Ranges {
+			if a1.FromGridRange(r).Overlaps(rect) {
+				out = append(out, render.RuleText(rule))
+				break
+			}
+		}
+	}
+	return out, nil
 }
 
 // ruleCount reads how many conditional format rules a sheet has.

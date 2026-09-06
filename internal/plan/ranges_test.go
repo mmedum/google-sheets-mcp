@@ -188,3 +188,38 @@ func setMembers(req *gsheets.Request) int {
 	}
 	return len(members)
 }
+
+// Google's own refusal for a bad name is "The name given to this range
+// is invalid", which names neither the rule nor the character that broke
+// it — verified live, on a name whose only fault was a space.
+func TestCheckNamedRange(t *testing.T) {
+	for _, ok := range []string{"Totals", "_totals", "Skerry_totals", "Q1_total", "a1b"} {
+		if err := plan.CheckNamedRange(ok); err != nil {
+			t.Errorf("CheckNamedRange(%q) = %v", ok, err)
+		}
+	}
+	for name, why := range map[string]string{
+		"":               "empty",
+		"Livesheet band": "a space",
+		"totals!":        "punctuation",
+		"1totals":        "a leading digit",
+		"Q1":             "a cell address",
+		"AB12":           "a cell address",
+	} {
+		err := plan.CheckNamedRange(name)
+		if err == nil {
+			t.Errorf("CheckNamedRange(%q) accepted %s", name, why)
+			continue
+		}
+		// The rule, not just the refusal: a caller who cannot see what
+		// was wrong has to guess, which is what Google's own message
+		// leaves them doing.
+		if name != "" && !strings.Contains(err.Error(), name) {
+			t.Errorf("the refusal for %q does not quote it: %v", name, err)
+		}
+	}
+	// A cell address is refused with a way out rather than a rule.
+	if err := plan.CheckNamedRange("Q1"); err == nil || !strings.Contains(err.Error(), "Q1_total") {
+		t.Errorf("the cell-address refusal offers no alternative: %v", err)
+	}
+}

@@ -1,19 +1,23 @@
 # Architecture — google-sheets-mcp
 
-**Status: phase 2 code complete (2026-09-06), live work outstanding, not
-tagged.** Reading, writing, formatting and the objects attached to a
-range all work against the fake, and `make check` is green. Sixteen
-tools, and the write guard now covers what formatting can destroy: a
-merge keeps the top-left value and discards the rest, a clear takes
-formatting Sheets cannot return, a note replaces one no read would have
-shown, and a paste or a split lands on cells the caller never named.
+**Status: phase 2 complete (2026-09-06), not yet tagged.** Reading,
+writing, formatting and the objects attached to a range all work,
+`make check` is green, and the live work is done: spikes G and J ran, and
+the live driver ran against a real account.
 
-**Nothing in phase 2 has been run against a real account.** Spike G and
-the live driver both need credentials the machine this was written on
-does not have, and by this project's own rule green gates are not done.
-§16 says what is outstanding and which two commands close it. Phase 3 —
-resources, durable anchors, evals and performance — starts after that,
-on an explicit go.
+Reading the transcripts is what phase 2 was worth. The driver's first run
+of the new surface failed five steps, and three of them were the server:
+a merge spanning a frozen edge, which Sheets refuses with a message that
+does not say where the edge is; a named range with a space in it, refused
+by Google as "invalid" with no hint which character; and a conditional
+format rule that had disappeared, which spike J traced to `deleteTable`
+taking every rule over its range with it and saying nothing. None of the
+three is in any reference read for this project. All three are guarded
+now. Spike G's own first run answered none of its three questions
+properly while appearing to, for the same reason.
+
+Phase 3 — resources, durable anchors, evals and performance — starts on
+an explicit go.
 
 Everything here was checked against the Sheets API v4 discovery document
 (`sheets.googleapis.com/$discovery/rest?version=v4`, revision 20260831),
@@ -339,6 +343,9 @@ internal/service/         orchestration: resolve references, read, write, struct
 internal/server/          SDK wiring; schema dump through an in-memory client session
 internal/tools/           one file per area: read.go, values.go, sheets.go, format.go, ranges.go,
                           transform.go, resources.go, tools.go
+internal/redact/          the one redactor every live driver prints through: ids, links, addresses
+internal/livecover/       what "the driver covers the tool surface" means, so the static gate and the
+                          driver itself cannot disagree about it
 internal/version/
 testdata/                 synthetic fixtures and golden outputs
 docs/
@@ -1280,14 +1287,19 @@ forgotten. Results go into §18.
   decides whether the guard's "the write removed notes on A1" is true;
   and whether `moveDimension`'s `destinationIndex` is read against the
   sheet before or after the move.
-- **G. Size behaviour** (phase 2, **written and not yet run**): what a
-  write past 10 million cells or column ZZZ returns, and how a
-  50 000-character cell round-trips. The probe is `spikeG` in
-  `scripts/spikes`; it needs credentials this machine does not have, so
-  the phase's own record says so rather than the row implying a run that
-  did not happen. The character half was answered during phase 1 and is
-  in §18; what is unrun is the boundary at exactly 50 000, the column
-  ceiling and the ten-million-cell one.
+- **G. Size behaviour** (phase 2, **run 2026-09-06**): what a write past
+  10 million cells or column ZZZ returns, and how a 50 000-character cell
+  round-trips. All three answered, and the first run of the probe
+  answered none of them properly — it measured the length of a JSON body
+  and called it the length of a cell, and it asked for 18 279 columns on
+  a 1 000-row sheet, where 18.3 million cells trips the cell ceiling
+  before the column one. Both were visible only by reading the
+  transcript. Results in §18.
+- **J. What a table does to the rules over its range** (phase 2, **run
+  2026-09-06**): added during the phase, and not from the plan — the live
+  driver watched a conditional format rule disappear across an `addTable`
+  and a `deleteTable` and could only see that it was gone by the end.
+  Counted after every step, the probe puts it on the delete.
 
 ## 16. Delivery phases
 
@@ -1333,26 +1345,29 @@ first. Then `create_spreadsheet`, `write_values`, `append_rows`,
 phase owed: one `service.Budget`, the scratch-file cleanup, and the three
 error classes that were declared and not yet emitted.
 
-**Phase 2 — formatting and structure (v0.2.0). Code complete
-2026-09-06; the live work is not done, and the phase is not closed until
-it is.** `read_formatting`, `format_cells`, `manage_range` and
-`transform_range` are written, `make check` is green, and the driver has
-a step for every option of all four — 156 of 158 exercised, the same two
-excused as before. What is outstanding is the part that cannot be done
-from this machine: spike G and the live driver both need credentials that
-are not here, so **no line of phase 2 has been run against a real
-account**, and by this project's own rule (green gates are not done) that
-is what stands between the code and the tag. `make live` and `go run
--tags=live ./scripts/spikes -only G` are the two commands, and the
-transcripts have to be read rather than counted.
+**Phase 2 — formatting and structure (v0.2.0). Done 2026-09-06,
+including the live work: spike G ran, spike J was added and ran, and the
+live driver ran the whole surface — 157 of 159 tool options exercised,
+the same two excused as before.** `read_formatting`, `format_cells`,
+`manage_range` and `transform_range`, with a step in the driver for every
+option of each.
+
+Reading the transcripts found what the green counts had not. Five driver
+steps failed on the first run of the new surface; three were the server
+and two were the driver's own expectations, and §18 carries the split.
+The three server findings — a merge across a frozen edge, a named range
+with a space in it, and `deleteTable` taking the conditional format rules
+over its range — are all guarded now, and none of them appears in any
+reference read for this project. Spike G's first run is the sharper
+lesson: it answered none of its three questions properly and printed
+something that looked like an answer to each.
 
 Spike G was written first in the plan and second in fact. That is a
 deviation and it is recorded rather than smoothed over: the questions it
 asks — the column ceiling, the ten-million-cell ceiling, a cell at
 exactly 50 000 characters — bear on the refusals this server writes
-before sending, not on the shape of the four tools, so building them
-first cost nothing that a run before the tag will not still catch.
-Everything the four tools *do* depend on was verified in phase 0 or 1.
+before sending, not on the shape of the four tools. It cost nothing here,
+and the ordering in the plan is still the right one.
 
 The union builders for formatting, validation, protection, tables,
 banding and conditional formatting are in `internal/plan`, and the guard
@@ -1928,3 +1943,42 @@ wants a live answer, and the driver is written to give it.
 | A protected range refuses every write into it | **Refined**: it must not refuse the request that lifts it. The destination check runs for every kind `manage_range` handles except `protected_range` itself | Anything else is a trap rather than a guard, and a spreadsheet with a protection nobody can remove through this server |
 | `includeGridData: false` is enough to keep a `spreadsheets.get` off the grid | **Refuted, and it was a live bug in this phase's own code.** The parameter is documented as ignored when a field mask is set, so a mask naming `data(...)` is a grid read whatever the option says. `manage_range`'s rule count was reading conditional format rules with the formatting mask and no range, which is the entered and effective format of every cell of every sheet — the whole-spreadsheet read §4.6 forbids, walking straight past the guard in `GetSpreadsheet`, which can only see the option. The fake hid it: it returns grid data only when the option is set, so no test could tell the two apart | A second guard in `GetSpreadsheet`, on the mask rather than the option: a mask containing `data(` with no range is refused before anything is sent. `gapi.RuleFields` names the rules and the sheet ids and nothing else. Found by a review pass reading the reference, not by anything running |
 | `sortRange`'s `dimensionIndex` is an offset into the sorted range | **Read as absolute — the sheet's own column — and not yet verified live.** The discovery document describes it as the dimension the sort applies to, which reads as the sheet's index and matches how every other `DimensionRange` in the API is numbered, but the reference does not say so in as many words, and rule 12 says prose is not evidence | `plan.ParseSort` converts a column letter to the sheet's zero-based index, and the service refuses a key outside the range. The live driver settles it: it sorts `B31:C34` by column C, having seeded B counting up and C counting down, so a reading relative to the range would sort by B and leave the rows where they are. **Until that runs, this row is a belief with a test waiting for it** |
+
+**Spike G, run live 2026-09-06 (`go run -tags=live ./scripts/spikes
+-only G`).** The platform's own edges, and what this server says before
+reaching them. The first run of this probe answered none of these
+properly and looked as though it had, which is the argument for reading a
+transcript rather than counting it: it printed the length of a JSON body
+as though it were the length of a cell, and it asked for one column past
+ZZZ on a 1 000-row sheet, where 18.3 million cells trips a different
+ceiling first. Both are fixed and both are why the rows below say what
+they say.
+
+| Question | What the API did | Effect |
+|---|---|---|
+| Where exactly is the 50 000-character cell limit? | **Inclusive.** 50 000 characters is accepted and reads back as 50 000 characters stored; 50 001 is `400 INVALID_ARGUMENT`, "Your input contains more than the maximum of 50000 characters in a single cell" | `plan.MaxCellChars` is 50 000 and the check is `>`, so exactly 50 000 goes through. Confirmed rather than assumed, and the round trip is read rather than inferred from a successful write |
+| What does a column past ZZZ do? | **Two different things, and the difference matters.** `AAAA1` is `400 Unable to parse range` — four letters is not a column at all. `ZZZ1` on a 26-column sheet is `400 Range (…!ZZZ1) exceeds grid limits. Max rows: 1000, max columns: 26`: a real column name, past the end of *that sheet* | `a1.ParseColumn` refuses more than three letters, which is the first case, and the service refuses past the sheet's extent with the sheet's own size, which is the second. Neither refusal needs a round trip |
+| Is the 10-million-cell ceiling per sheet or per spreadsheet? | **Per spreadsheet**, in Google's own word: "This action would increase the number of cells in the **workbook** above the limit of 10000000 cells." Both 10 000 001 × 1 and 1 000 000 × 100 are refused | `manage_sheet resize` checks the row and column ceilings and forwards Google's message for the cell one, which is the only check that would need summing every sheet. Recorded rather than built: the message names the limit and the action, which is enough to act on |
+| Is the column ceiling separate from the cell ceiling? | **Yes, and it is a sheet limit.** On a one-row sheet, 18 278 columns is accepted and 18 279 is "This action would increase the number of columns in **the sheet** above the limit of 18278 columns" | `a1.MaxColumns` is 18 278, exactly. The first run of this probe could not see it: at 1 000 rows the cell ceiling answers first, and the transcript showed the cell-limit message where a column-limit one was expected |
+
+**Spike J, run live 2026-09-06.** Not from the plan. The live driver
+watched a conditional format rule vanish somewhere between adding a table
+over its range and deleting that table, and a driver can only see that
+something is gone by the end. Counted after every step:
+
+| Question | What the API did | Effect |
+|---|---|---|
+| Does a table take the conditional format rules over its range? | **The delete does; the add does not.** One rule on the sheet, `addTable` over the same range → still one, `deleteTable` → none. Nothing in either reply mentions a rule | `manage_range table delete` reads the rules over the range first and refuses without `overwrite`, naming each one. It is the only act in that tool that destroys anything, and it is invisible in the response — which is the definition of what this server's guard is for. Undocumented anywhere read for this project |
+
+**The live driver, run 2026-09-06 (`make live`).** Five steps failed on
+the first run of phase 2's surface, and the split is worth recording:
+three were the server, two were the driver's own expectations left behind
+by a review pass.
+
+| What failed | What it turned out to be | Effect |
+|---|---|---|
+| A merge that had been acknowledged | **The server's.** Sheets answers "You can't merge frozen and non-frozen columns", and the work sheet had frozen its first row and column several steps earlier. The refusal says the rule and not where the edge is | `format_cells` refuses a merge spanning a frozen edge before sending, naming the count, the column the freeze ends at, and `manage_sheet freeze` as the way to undo it. The counts are on the card the call has already read, so it costs nothing |
+| A named range called "Livesheet band" | **The server's.** `400 The name given to this range is invalid` — which names neither the rule nor the character that broke it, and the fault was a space | `plan.CheckNamedRange` refuses before sending and says the rule. A name that is also a cell address is refused separately, with an alternative, because "Q1" is a good word for a quarter and a good cell reference and cannot be both |
+| A conditional rule that could not be deleted | **The server's, found through spike J**: a `deleteTable` earlier in the run had taken it. See above |
+| Removing a note | **The driver's.** The step expected removal to go through unguarded, which was true when it was written and stopped being true when a review pass decided that removing a note takes the same unseen thing replacing one does | The step now expects the refusal and then passes `overwrite`. Worth recording as a driver failure rather than a server one: the expectation was the stale half |
+| Deleting a named range that was never created | **A cascade** of the second row, and the only one of the five that told us nothing new |

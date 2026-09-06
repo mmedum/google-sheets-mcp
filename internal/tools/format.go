@@ -76,7 +76,8 @@ type ManageRangeInput struct {
 	Header     bool   `json:"header,omitempty" jsonschema:"for banding: give the first row a darker shade of the colour"`
 	Index      int    `json:"index,omitempty" jsonschema:"for conditional_format: which rule, counted from zero in the order they are evaluated. read_formatting lists the rules with their indexes. On add it is where the new rule goes, so 0 makes it the first to be tried"`
 
-	DryRun bool `json:"dry_run,omitempty" jsonschema:"say what would change and send nothing"`
+	Overwrite bool `json:"overwrite,omitempty" jsonschema:"allow deleting a table that takes conditional format rules with it. Deleting a table removes every rule over its range, and nothing in Sheets brings them back"`
+	DryRun    bool `json:"dry_run,omitempty" jsonschema:"say what would change and send nothing"`
 }
 
 // TransformRangeInput is what transform_range takes.
@@ -174,7 +175,7 @@ func registerFormat(s *mcp.Server, d Deps) {
 				Name: in.Name, Description: in.Description, WarningOnly: in.WarningOnly,
 				Condition: in.Condition, Values: in.Values, Strict: in.Strict, Message: in.Message,
 				Colour: in.Colour, TextColour: in.TextColour, Bold: in.Bold, Header: in.Header,
-				Index: in.Index, DryRun: in.DryRun,
+				Index: in.Index, Overwrite: in.Overwrite, DryRun: in.DryRun,
 			})
 		},
 	})

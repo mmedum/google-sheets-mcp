@@ -2,6 +2,7 @@ package plan
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -13,6 +14,34 @@ import (
 // protection, a validation rule, a table, a banding, a conditional
 // format rule. Each has add, update and delete, and each update carries
 // the mask that names what it changes.
+
+// namedRangePattern is what Google accepts as a named range's name:
+// letters, digits and underscores, not starting with a digit.
+var namedRangePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// CheckNamedRange refuses a name Google will refuse, and says why.
+//
+// Verified live: a name with a space comes back as "The name given to
+// this range is invalid", which names neither the rule nor the character
+// that broke it. A caller who wrote "Livesheet band" has to guess.
+//
+// The A1 case is the one worth spelling out separately: "Q1" is a
+// perfectly good word for a quarter and a perfectly good cell reference,
+// and a named range cannot be either-or.
+func CheckNamedRange(name string) error {
+	switch {
+	case name == "":
+		return fmt.Errorf("a named range needs a name")
+	case !namedRangePattern.MatchString(name):
+		return fmt.Errorf("%q is not a valid name for a named range: use letters, digits and underscores, "+
+			"starting with a letter or an underscore. Spaces and punctuation are not allowed", name)
+	}
+	if _, err := a1.ParseRect(name); err == nil {
+		return fmt.Errorf("%q is a cell address, so it cannot also be a named range; "+
+			"add a word to it, such as %q", name, name+"_total")
+	}
+	return nil
+}
 
 // NamedRangeAdd names a rectangle.
 func NamedRangeAdd(name string, sheetID int, rect a1.Rect) *gsheets.Request {

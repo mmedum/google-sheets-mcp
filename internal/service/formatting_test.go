@@ -365,3 +365,41 @@ func TestFormattingNeverWritesValues(t *testing.T) {
 		}
 	}
 }
+
+// Sheets refuses a merge that spans the edge of a frozen band, with a
+// message that says the rule and not where the edge is. The counts are
+// on the card this call has already read, so the refusal says which
+// column the freeze ends at and how to undo it.
+func TestMergingAcrossAFrozenEdgeIsRefused(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	svc := newService(t, srv)
+	ctx := context.Background()
+	// The fixture's first sheet freezes one row.
+	_, err := svc.FormatCells(ctx, service.FormatRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "A2:A3",
+		Merge: "all", Overwrite: true,
+	})
+	if err != nil {
+		t.Fatalf("a merge below the frozen row was refused: %v", err)
+	}
+	// Columns E and F, clear of the protected heading row, so this is
+	// about the freeze and nothing else.
+	_, err = svc.FormatCells(ctx, service.FormatRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "E1:F3",
+		Merge: "all", Overwrite: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "frozen row") {
+		t.Fatalf("a merge spanning the frozen row gave %v", err)
+	}
+	if !strings.Contains(err.Error(), "manage_sheet freeze") {
+		t.Errorf("the refusal does not say how to undo the freeze: %q", err)
+	}
+	// Merging by rows keeps every row separate, so it never spans the
+	// frozen row edge and is not held back.
+	if _, err := svc.FormatCells(ctx, service.FormatRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "E1:F3",
+		Merge: "rows", Overwrite: true,
+	}); err != nil {
+		t.Errorf("a row-wise merge across the frozen edge was refused: %v", err)
+	}
+}

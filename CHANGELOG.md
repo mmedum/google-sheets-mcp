@@ -34,6 +34,16 @@ and this project follows [semantic versioning](https://semver.org).
   range it covers rather than by an id, so nothing has to be fetched
   first; a range matching several is refused with the list. A protection
   never blocks the request that lifts it.
+- **Three refusals the live run found**, none of them in any reference
+  read for this project. A merge spanning the edge of a frozen band is
+  refused before sending, naming where the freeze ends and how to undo
+  it — Sheets answers "You can't merge frozen and non-frozen columns"
+  and does not say where the edge is. A named range with a space, or a
+  name that is also a cell address, is refused with the rule; Google
+  answers "The name given to this range is invalid". And **deleting a
+  table takes every conditional format rule over its range with it**,
+  which nothing in the reply mentions, so it now needs `overwrite` and
+  names the rules that would go.
 - **`transform_range`** sorts, replaces, trims, de-duplicates, splits,
   shuffles, fills, copies and moves. These are the operations that move
   data without the caller naming its new address, so each reads what it
@@ -73,6 +83,31 @@ and this project follows [semantic versioning](https://semver.org).
   across a refusal, a preview and a result. They now return the parts and
   the renderer owns the template. `plan.Band` lost its words with it.
 
+### Added — documentation and the gates that hold it
+
+- The README is a release-shaped document now: badges, verifying a
+  download against the signed checksums and the build provenance, the
+  scope each tool needs, what keeps you safe, and how the packages fit
+  together.
+- [`docs/gcp-setup.md`](docs/gcp-setup.md), which walks through the Cloud
+  project with the reasons — including why it is `drive.readonly` and not
+  `drive.file` or the full scope.
+- [`docs/runbook.md`](docs/runbook.md): rotating a token, revoking one,
+  suspected exposure, moving machines, two accounts on one machine, and
+  what the weekly expiry on a consumer account looks like from the
+  inside.
+- `CODE_OF_CONDUCT.md` — Contributor Covenant 3.0.
+- **The staleness gate reads prose for paths.** Every repository path a
+  document links to has to exist. A link that stopped resolving is the
+  cheapest staleness to introduce and nothing else in `make check` was
+  looking. CHANGELOG history is excluded on purpose: an entry naming a
+  file that has since gone is history, not drift.
+- **The architecture's package tree is derived rather than trusted.** It
+  named 13 of 15 packages when the check was written, and one of the two
+  missing was `internal/redact` — the single redactor every live driver
+  prints through, which is to say the one carrying a confidentiality
+  guarantee.
+
 ### Fixed
 
 - **A field mask could ask for the whole grid.** `includeGridData` is
@@ -107,6 +142,15 @@ and this project follows [semantic versioning](https://semver.org).
 - An explicitly white background read as "no formatting of its own"
   while `clear_format` still refused over it and named the cell — the
   read and the guard describing the same cell differently.
+- **The log leak scan could fail on a timestamp.** It scanned the whole
+  log line, including the handler's own `time=`, so a four-character
+  numeric cell value could collide with the clock: `07.502` contains
+  `7.50`, which is a cell in the fixture, and about one run in
+  twenty-five failed naming a leak that had not happened. The two fields
+  this server computes rather than reads are exempt now, by name and with
+  the list asserted, and a test reproduces the collision deterministically
+  rather than waiting for it. A gate whose failures cannot be trusted is
+  worse than no gate: the next real finding reads as the flake.
 - **A package's coverage number was its subtree's.** The floor gate
   matched a package by prefix, so `internal/gapi` was scored on
   `internal/gapi/sheetstest` as well — and the number it printed
@@ -116,13 +160,20 @@ and this project follows [semantic versioning](https://semver.org).
 
 ### Notes
 
-- **None of this has been run against a real account.** Spike G and the
-  live driver both need credentials the machine this was written on does
-  not have. `make check` is green and the driver has a step for every
-  option of all four new tools, but green gates are not done in this
-  project: `make live` and `go run -tags=live ./scripts/spikes -only G`
-  close the phase, and their transcripts have to be read rather than
-  counted.
+- **Run against a real account**, which is where three of the fixes above
+  came from. Five driver steps failed on the first run of the new
+  surface: three were the server and two were the driver's own
+  expectations, left stale by a review pass that had changed the
+  behaviour deliberately. §18 of `docs/architecture.md` carries the
+  split.
+- Spike G answered §15's last size question, and answered none of it on
+  its first attempt while appearing to — it printed the length of a JSON
+  body as though it were the length of a cell, and asked for one column
+  past ZZZ on a sheet where a different ceiling answers first. Both were
+  visible only by reading the transcript, which is the whole reason this
+  project reads them.
+- Spike J was added mid-phase, for a question the plan did not have: what
+  a table does to the rules over its range.
 
 ## [0.1.0] - 2026-09-06
 

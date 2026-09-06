@@ -163,7 +163,9 @@ func TestEveryToolIsDriven(t *testing.T) {
 // to write into a log.
 func TestLogsCarryNothingFromTheSpreadsheet(t *testing.T) {
 	var buf bytes.Buffer
-	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
+		Level: slog.LevelDebug, ReplaceAttr: dropGenerated,
+	}))
 	s, fake := newServer(t, config.Config{EnableDestructive: true}, log)
 	cs := connect(t, s)
 
@@ -217,6 +219,64 @@ func TestLogsCarryNothingFromTheSpreadsheet(t *testing.T) {
 
 // forbiddenStrings is everything the fixture holds that a log must never
 // carry, read out of the fixture itself.
+// generatedFields are the log attributes this server computes rather
+// than reads, and they are dropped before the scan below.
+//
+// They are numbers from a clock, and a number from a clock can happen to
+// spell a number from a spreadsheet. `time=…T18:47:07.502+02:00` carries
+// "7.50", and "7.50" is a cell in the fixture — so the check failed on
+// roughly one run in twenty-five, naming a leak that had not happened.
+// A gate whose failures cannot be trusted is worse than no gate: the
+// next real finding reads as the flake.
+//
+// Dropped by name, and the names are asserted below, so an attribute
+// added later is scanned rather than quietly exempt.
+var generatedFields = map[string]bool{
+	slog.TimeKey: true, // the handler's own timestamp
+	"ms":         true, // how long the call took
+}
+
+// dropGenerated removes those attributes before the handler writes them.
+func dropGenerated(groups []string, a slog.Attr) slog.Attr {
+	if len(groups) == 0 && generatedFields[a.Key] {
+		return slog.Attr{}
+	}
+	return a
+}
+
+// The flake, made deterministic: a fixture value that a timestamp can
+// spell must not be reported as a leak. Written against the handler
+// rather than the whole server, so it fails in one run rather than one
+// in twenty-five.
+func TestATimestampIsNotMistakenForAValue(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
+		Level: slog.LevelDebug, ReplaceAttr: dropGenerated,
+	}))
+	log.Info("google api", "op", "values.get", "ms", 7502)
+	logged := buf.String()
+	// "7.50" is a formatted value in the fixture; it reaches a raw log
+	// line twice over, through the timestamp and through the duration.
+	if strings.Contains(logged, "7.50") {
+		t.Errorf("a clock field still reaches the scan: %q", logged)
+	}
+	// And the fields that are not the clock's are still there, or the
+	// exemption would have taken the whole line with it.
+	if !strings.Contains(logged, "values.get") {
+		t.Errorf("the exemption dropped more than the clock: %q", logged)
+	}
+}
+
+// The exemption is two fields wide and has to stay that way on purpose:
+// everything else the server logs is scanned for the spreadsheet's
+// content, and a third entry here should be an argued decision rather
+// than a way to quieten a failure.
+func TestOnlyClockFieldsAreExemptFromTheLeakScan(t *testing.T) {
+	if len(generatedFields) != 2 || !generatedFields[slog.TimeKey] || !generatedFields["ms"] {
+		t.Errorf("the leak scan exempts %v; only the two clock fields may be exempt", generatedFields)
+	}
+}
+
 func forbiddenStrings(t *testing.T) []string {
 	t.Helper()
 	doc, file := sheetstest.Fixture()

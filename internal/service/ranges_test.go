@@ -23,7 +23,7 @@ func TestNamedRangeRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	req := rangeReq(service.RangeNamed, service.RangeAdd, "A1:B2")
-	req.Name = "Skerry totals"
+	req.Name = "Skerry_totals"
 	if _, err := svc.ManageRange(ctx, req); err != nil {
 		t.Fatalf("adding a named range: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestNamedRangeRoundTrip(t *testing.T) {
 	}
 	// A name that is not there is refused with the ones that are, so the
 	// caller can see the typo.
-	req.Name = "Nardle totals"
+	req.Name = "Nardle_totals"
 	_, err := svc.ManageRange(ctx, req)
 	if err == nil || !strings.HasPrefix(err.Error(), "[not_found]") {
 		t.Fatalf("deleting a name that is not there gave %v", err)
@@ -357,7 +357,7 @@ func TestUpdatingNeedsSomethingToChange(t *testing.T) {
 func TestManageRangeDryRunSendsNothing(t *testing.T) {
 	srv := sheetstest.Standard(t)
 	req := rangeReq(service.RangeNamed, service.RangeAdd, "A1:B2")
-	req.Name = "Skerry totals"
+	req.Name = "Skerry_totals"
 	req.DryRun = true
 	res, err := newService(t, srv).ManageRange(context.Background(), req)
 	if err != nil {
@@ -414,5 +414,60 @@ func TestTheNearbyRefusalNamesARange(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "A1:H50") {
 		t.Errorf("the refusal does not name the protection that is there: %q", err)
+	}
+}
+
+// Deleting a table takes the conditional format rules over its range,
+// verified live: one rule before, none after, and nothing in the reply
+// says so. Adding a table leaves them, so it is the delete that takes
+// them.
+func TestDeletingATableThatTakesRulesIsRefused(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	svc := newService(t, srv)
+	ctx := context.Background()
+
+	table := rangeReq(service.RangeTable, service.RangeAdd, "A1:B3")
+	table.Name = "Trennow"
+	if _, err := svc.ManageRange(ctx, table); err != nil {
+		t.Fatal(err)
+	}
+	rule := rangeReq(service.RangeRule, service.RangeAdd, "A1:B3")
+	rule.Condition = "not_blank"
+	rule.Colour = "#d9ead3"
+	if _, err := svc.ManageRange(ctx, rule); err != nil {
+		t.Fatal(err)
+	}
+
+	remove := rangeReq(service.RangeTable, service.RangeDelete, "A1:B3")
+	_, err := svc.ManageRange(ctx, remove)
+	if err == nil || !strings.HasPrefix(err.Error(), "[blocked]") {
+		t.Fatalf("deleting a table over a rule gave %v", err)
+	}
+	if !strings.Contains(err.Error(), "not blank") {
+		t.Errorf("the refusal does not say which rule would go: %q", err)
+	}
+
+	remove.Overwrite = true
+	if _, err := svc.ManageRange(ctx, remove); err != nil {
+		t.Fatalf("overwrite did not allow it: %v", err)
+	}
+	if got := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Tables; len(got) != 0 {
+		t.Errorf("%d tables left", len(got))
+	}
+}
+
+// A table with no rules over it is deleted without ceremony: the guard
+// is about what would be lost, not about the act.
+func TestDeletingAPlainTableIsNotHeldBack(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	svc := newService(t, srv)
+	ctx := context.Background()
+	table := rangeReq(service.RangeTable, service.RangeAdd, "A1:B3")
+	table.Name = "Trennow"
+	if _, err := svc.ManageRange(ctx, table); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ManageRange(ctx, rangeReq(service.RangeTable, service.RangeDelete, "A1:B3")); err != nil {
+		t.Errorf("deleting a table with no rules over it was refused: %v", err)
 	}
 }

@@ -19,6 +19,10 @@ const (
 	bandRow = 30
 	// splitCell holds text with a delimiter in it, for text_to_columns.
 	splitCell = "E30"
+	// mergeBand is clear of the frozen first row and column, so the
+	// merge steps are about what a merge discards rather than about the
+	// freeze. The write steps filled A20:C22.
+	mergeBand = "B20:C20"
 )
 
 func (d *driver) formatAll() {
@@ -207,7 +211,7 @@ func (d *driver) readFormattingSteps() []step {
 }
 
 func (d *driver) rangeSteps() []step {
-	const named = "Livesheet band"
+	const named = "Livesheet_band"
 	return []step{
 		{
 			name: "a dry run attaches nothing",
@@ -378,7 +382,16 @@ func (d *driver) rangeSteps() []step {
 			},
 		},
 		{
-			name: "a table over the band, and away again",
+			name: "the conditional rule is deleted by its index",
+			why:  "the index is the API's own identifier for a rule, and deleting by it has to work",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
+				"kind": "conditional_format", "action": "delete", "index": 0,
+			},
+		},
+		{
+			name: "a table over the band",
 			why:  "a table is a first-class object in the API and nothing else here creates one",
 			tool: "manage_range",
 			args: map[string]any{
@@ -396,21 +409,50 @@ func (d *driver) rangeSteps() []step {
 			},
 		},
 		{
-			name: "the table is removed and the cells stay",
-			why:  "deleting a table must not delete what is in it",
+			// The step that found this: a rule over the table's range
+			// vanished across a delete, and spike J narrowed it to the
+			// delete rather than the add.
+			name: "a rule over the table's range, to be taken by the delete",
+			why:  "deleting a table removes every conditional rule over its range, and the reply says nothing",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
-				"kind": "table", "action": "delete",
+				"kind": "conditional_format", "action": "add", "index": 0,
+				"condition": "not_blank", "colour": "#d9ead3",
 			},
 		},
 		{
-			name: "the conditional rule is deleted",
-			why:  "the scratch sheet is left as the transforms expect to find it",
+			name:        "deleting the table is refused while a rule is over it",
+			why:         "nothing in Sheets brings a conditional rule back, and nothing in the reply says one went",
+			tool:        "manage_range",
+			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8", "kind": "table", "action": "delete"},
+			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "conditional format rule") || !strings.Contains(text, "overwrite") {
+					return fmt.Errorf("the refusal does not say what would go or how to allow it: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "acknowledged, the table and its rule go",
+			why:  "the guard refuses until it is told to allow, and then it allows",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
-				"kind": "conditional_format", "action": "delete", "index": 0,
+				"kind": "table", "action": "delete", "overwrite": true,
+			},
+		},
+		{
+			name: "and the rule really did go with it",
+			why:  "a driver that only reports success can be wrong about every result it printed",
+			tool: "read_formatting",
+			args: map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8"},
+			check: func(text string, s map[string]any) error {
+				if rules, _ := s["conditional_rules"].([]any); len(rules) != 0 {
+					return fmt.Errorf("%d conditional rule(s) survived the table delete: %s", len(rules), text)
+				}
+				return nil
 			},
 		},
 	}

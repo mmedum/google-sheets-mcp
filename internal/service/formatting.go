@@ -370,6 +370,9 @@ func (s *Service) formatGuard(ctx context.Context, ref Reference, props *gsheets
 	}
 	report := plan.CheckDestination(read)
 	if compiled.merge != "" {
+		if err := frozenBoundary(props, rect, compiled.merge); err != nil {
+			return plan.Report{}, err
+		}
 		plan.CheckMerge(&report, read, compiled.merge)
 		// A merge over an existing merge is how one is widened, so the
 		// partial-merge check is not asked for here. Nothing else in
@@ -581,4 +584,44 @@ func appliedLines(applied []render.Applied) []string {
 		out = append(out, strings.TrimSuffix(a.Kind+" "+a.Value, " "))
 	}
 	return out
+}
+
+// frozenBoundary refuses a merge that spans the edge of a frozen band.
+//
+// Verified live: Sheets answers "You can't merge frozen and non-frozen
+// columns", which says the rule and not where the edge is — and a caller
+// who froze the first column two calls ago is not thinking about it. The
+// counts are on the card this call already read, so saying it here costs
+// nothing.
+//
+// Merging entirely inside the frozen band, or entirely outside it, is
+// fine; only crossing is refused.
+func frozenBoundary(props *gsheets.SheetProperties, rect a1.Rect, kind string) error {
+	grid := props.GridProperties
+	if grid == nil {
+		return nil
+	}
+	// A merge by rows keeps every row separate, so it cannot span the
+	// frozen row edge; by columns, the same for columns.
+	rows, cols := kind != gsheets.MergeRows, kind != gsheets.MergeColumns
+	if rows && crosses(grid.FrozenRowCount, rect.FirstRow, rect.LastRow) {
+		return Errorf("blocked",
+			"%s spans the edge of the %d frozen row(s) on %q, and Sheets cannot merge frozen with non-frozen. "+
+				"Merge inside the frozen rows or below them, or unfreeze with manage_sheet freeze rows=0",
+			a1.FormatRect(rect), grid.FrozenRowCount, props.Title)
+	}
+	if cols && crosses(grid.FrozenColumnCount, rect.FirstCol, rect.LastCol) {
+		name, _ := a1.ColumnName(grid.FrozenColumnCount)
+		return Errorf("blocked",
+			"%s spans the edge of the %d frozen column(s) on %q, which end at column %s, and Sheets cannot merge "+
+				"frozen with non-frozen. Merge inside them or beyond them, or unfreeze with manage_sheet freeze cols=0",
+			a1.FormatRect(rect), grid.FrozenColumnCount, props.Title, name)
+	}
+	return nil
+}
+
+// crosses reports whether a band of frozen leading rows or columns ends
+// inside first..last.
+func crosses(frozen, first, last int) bool {
+	return frozen > 0 && first <= frozen && last > frozen
 }
