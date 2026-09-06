@@ -12,12 +12,103 @@ to any particular organisation or account.
 
 It works inside a spreadsheet. Finding, sharing, moving and trashing
 files, and their comment threads and revisions, belong to a Drive server
-built on the Drive API.
+built on the Drive API. A cell **note** is a Sheets field and is here.
 
-**Status: design.** There is no code yet. The design, the platform
-constraints it is built on, the decided trade-offs, the phase plan and
-the evidence log are in [docs/architecture.md](docs/architecture.md).
-Phase 0 starts on an explicit go.
+**Status: v0.0.1, phase 0 of five.** Reading works; writing is phase 1.
+The design, the platform constraints it is built on, the decided
+trade-offs, the phase plan and the evidence log are in
+[docs/architecture.md](docs/architecture.md).
+
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `get_spreadsheet` | The spreadsheet card: title, link, locale, and every sheet's exact title, id, size, frozen rows, hidden state and what it holds, plus named ranges, tables, protected ranges and filter views. No cell data, so it costs the same on any size of spreadsheet. Call it first. |
+| `read_range` | An addressed grid of a range: column letters across the top, row numbers down the side. `show=both` prints each formula under the value it produced. Budgeted in cells and characters, with a continuation, and every read returns a checkpoint. |
+| `search_spreadsheets` | Find a spreadsheet by part of its title, by text inside it, by owner or by when it changed. The only Drive call this server makes. |
+| `find_in_spreadsheet` | Search one spreadsheet for text or an RE2 pattern and get back A1 addresses, saying whether each match was in a value, in the formula under it, or in a note beside it. |
+
+Writing, sheets and dimensions arrive in v0.1.0; formatting and structure
+in v0.2.0.
+
+## What makes it different
+
+- **Every read shows addresses.** A grid with column letters and row
+  numbers, so the model can write back to what it just read without
+  counting. There is nothing to remember between calls and nothing to go
+  stale.
+- **A1 is the contract.** The model never sees a `GridRange`. The
+  zero-based half-open arithmetic lives in one package with table tests,
+  including the trap where a named range silently shadows a sheet of the
+  same name in an unquoted reference.
+- **Sheet names are read, never assumed.** Google names the first sheet
+  in the account's language, so `Sheet1` does not exist on a Portuguese
+  account. No tool defaults a sheet and no description offers one as an
+  example; a missing sheet is refused with the titles that do exist.
+- **Reads are budgeted before the call.** The window is resolved against
+  the sheet's real extent and a finite range is sent, so an open-ended
+  `A:Z` never becomes a whole column in memory.
+- **Errors keep Google's meaning.** `[class] message`, with a closed
+  vocabulary a gate holds shut from both sides.
+
+And from v0.1.0, the reason this server exists: **a write never destroys
+what it cannot see.** Overwriting anything non-empty needs `overwrite`;
+overwriting a formula needs `overwrite_formulas` as well; protected
+ranges and partial merges are refused before the request is built. Sheets
+has no undo, so a gate there is the only one there is.
+
+## Install
+
+Download an archive from the
+[releases](https://github.com/mmedum/google-sheets-mcp/releases), or:
+
+```
+go install github.com/mmedum/google-sheets-mcp/cmd/google-sheets-mcp@latest
+```
+
+## Set up
+
+You need your own Google Cloud project. In this order, which is also the
+order `doctor` checks:
+
+1. Create a Cloud project.
+2. Enable the **Google Sheets API** and the **Google Drive API** (the
+   second one only for `search_spreadsheets`).
+3. Configure the consent screen: **Internal** for a Workspace account,
+   **External + Testing** for a consumer one — which means re-running
+   `login` about weekly.
+4. Add the scopes: `.../auth/spreadsheets` and
+   `.../auth/drive.readonly`.
+5. Create a **Desktop app** OAuth client and download its JSON.
+6. `google-sheets-mcp login -secret /path/to/client_secret.json`
+7. `google-sheets-mcp doctor`
+
+Then point your client at it:
+
+```json
+{
+  "mcpServers": {
+    "google-sheets": {
+      "command": "google-sheets-mcp"
+    }
+  }
+}
+```
+
+Settings are `GSHEETS_*` environment variables, each with a flag of the
+same name; see [docs/configuration.md](docs/configuration.md).
+`GSHEETS_READ_ONLY=true` requests read-only scopes and registers only the
+read tools.
+
+## Documentation
+
+- [docs/architecture.md](docs/architecture.md) — the design, the platform
+  constraints, the decisions and the evidence log.
+- [docs/configuration.md](docs/configuration.md) — every setting.
+- [docs/security.md](docs/security.md) — what is stored, what is logged,
+  and what the server refuses to do.
+- [docs/development.md](docs/development.md) — building, the gates, and
+  releasing.
 
 ## Licence
 

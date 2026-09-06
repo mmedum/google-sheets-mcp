@@ -1,0 +1,65 @@
+version: 2
+
+project_name: google-sheets-mcp
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/google-sheets-mcp
+    binary: google-sheets-mcp
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    # The commit's time rather than the build's, so rebuilding a tag
+    # produces byte-identical binaries.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w -X github.com/mmedum/google-sheets-mcp/internal/version.Version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [LICENSE, README.md]
+
+checksum:
+  name_template: checksums.txt
+
+# One SBOM per archive, so a deployer can see what is inside a binary
+# they did not build.
+sboms:
+  - artifacts: archive
+
+# The checksum file is signed with a keyless Sigstore certificate tied to
+# the workflow's OIDC identity: no private key to hold or leak. cosign 3
+# replaced --output-signature and --output-certificate with --bundle,
+# which writes everything a verifier needs into one file.
+signs:
+  - cmd: cosign
+    signature: "${artifact}.bundle"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
+changelog:
+  use: github
+  filters:
+    exclude: ["^docs:", "^test:", "^chore:"]
+
+release:
+  # A tag is the decision. A draft nobody remembers to publish is how
+  # releases go missing.
+  draft: false
+  prerelease: auto
+  footer: |
+    Built by GoReleaser from the tag. Verify a download against
+    `checksums.txt`; every archive carries the binary, LICENSE and README.

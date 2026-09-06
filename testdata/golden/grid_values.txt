@@ -1,0 +1,9 @@
+    A            B        C        D
+1 | Plimth     | Nardle | Grivet | Oblisk
+2 | Quorbin-01 | 243.4  | 419.79 | 663.19
+3 | Vandel-02  | 268.12 | 149.62 | 417.74
+4 | Skerry-03  | 701.7  | 903.63 | 1605.33
+5 | Plimth-04  | 149.2  | 59.6   | 208.8
+6 | Nardle-05  | 648.17 | 377.77 | 1025.94
+protected: A1:D1 (heading row; you may not edit it)
+rows 1-6 of 200; columns A:D

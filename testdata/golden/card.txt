@@ -1,0 +1,21 @@
+Quorbin Skerry
+id: 1SyntheticFixtureSpreadsheetIdXXXXXXXXXXXXXXX
+link: https://docs.google.com/spreadsheets/d/1SyntheticFixtureSpreadsheetIdXXXXXXXXXXXXXXX/edit
+locale en_GB; time zone Etc/GMT; recalculates on change; owner fixture@example.test; modified 2026-03-11T14:25:00.000Z
+
+3 sheet(s):
+  Vandel (id 0, 200 rows x 12 columns, 1 row frozen, holds 1 table, 1 merge)
+  Ürväl (id 1837, 50 rows x 8 columns)
+  Yalmic's Bractal (id 2914, 20 rows x 4 columns, hidden, tab #3366cc)
+
+named ranges:
+  Vandel -> 'Ürväl'!A1:B2 (shares its name with a sheet; this server always quotes a sheet title, so the two stay apart)
+
+tables:
+  Oblisk -> 'Vandel'!A1:D21 (Plimth TEXT and Nardle DOUBLE)
+
+protected ranges:
+  heading row -> 'Vandel'!A1:D1 (you may not edit it)
+
+filter views:
+  Grivet over 500 -> 'Vandel'!A1:D21
