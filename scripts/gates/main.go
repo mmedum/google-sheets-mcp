@@ -28,7 +28,9 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fail("usage: gates coverage PROFILE MIN | classes | leaks [history] | transcript | pins | smoke BIN | staleness BIN | schema-diff BIN | parity | precommit")
+		fail("usage: gates coverage PROFILE MIN | classes | leaks [history] | transcript | " +
+			"live-cover BIN | pins | smoke BIN | staleness BIN | schema-diff BIN | mcpb | " +
+			"mcpb-pack VERSION [DIST] | parity | precommit")
 	}
 	root, err := repoRoot()
 	if err != nil {
@@ -65,6 +67,17 @@ func main() {
 		check(staleness(binArg()), "staleness")
 	case "schema-diff":
 		check(schemaDiff(binArg()), "schema diff")
+	case "mcpb":
+		check(mcpbGate(os.Stdout), "bundle manifest")
+	case "mcpb-pack":
+		if len(os.Args) < 3 {
+			fail("usage: gates mcpb-pack VERSION [DIST]")
+		}
+		dist := ""
+		if len(os.Args) > 3 {
+			dist = os.Args[3]
+		}
+		check(mcpbPack(os.Stdout, os.Args[2], dist), "bundle packed")
 	case "parity":
 		check(parityGate(), "make check and CI agree")
 	case "precommit":

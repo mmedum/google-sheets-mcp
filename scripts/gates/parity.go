@@ -68,6 +68,8 @@ var gateTargets = map[string]string{
 var precommitOnly = map[string]string{
 	"precommit": "the pre-commit hook's own entry point; it runs the other gates rather than being one",
 	"leaks":     "run by CI and by `make check` under its own target; the history sweep is manual (§17a)",
+	"mcpb-pack": "runs at release time, as the universal binary's post hook, where the binaries it packs " +
+		"exist; `mcpb` is the half that runs on every commit, against the names it will pack",
 }
 
 func parityGate() error {

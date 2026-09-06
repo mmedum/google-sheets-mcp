@@ -65,6 +65,8 @@ jobs:
         run: go run ./scripts/gates transcript
       - name: workflow pins
         run: go run ./scripts/gates pins
+      - name: bundle manifest
+        run: go run ./scripts/gates mcpb
       - name: make check and CI agree
         run: go run ./scripts/gates parity
       - name: build the server

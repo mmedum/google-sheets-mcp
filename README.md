@@ -56,6 +56,21 @@ you did not build. Builds are reproducible: `-trimpath`, and the commit's
 timestamp rather than the build's, so rebuilding a tag gives the same
 bytes.
 
+### Claude Desktop
+
+Every release also carries a `.mcpb` bundle. Open it and Claude Desktop
+installs the server and asks for your OAuth client JSON — no config file
+to edit. It covers macOS, Windows and Linux on both architectures each:
+macOS through a universal binary, Windows through amd64, and Linux
+through a small launcher that picks the right binary at start, because a
+bundle manifest has no key for the architecture. Its SHA-256 is in the
+same signed `checksums.txt`.
+
+The bundle does **not** log you in. Install the binary as well, run
+`google-sheets-mcp login -secret <your client JSON>` once, and the bundle
+picks up the same credentials. Claude Code does not install `.mcpb`
+files, so it uses the command below.
+
 ## Set up Google
 
 You need your own OAuth client. It takes about fifteen minutes once, and
@@ -257,9 +272,10 @@ make check     # everything CI runs
 the build-tagged code, golangci-lint, race tests with a per-package
 coverage floor, `govulncheck`, a licence allow-list, two secret and
 identifier scans, a stdio smoke test, a schema diff against the released
-tool surface, a check that the Makefile and CI run the same things, and a
-staleness gate that fails when this README, the docs or the changelog
-drift from the code.
+tool surface, a check that the Claude Desktop bundle's manifest names
+only files that will be packed, a check that the Makefile and CI run the
+same things, and a staleness gate that fails when this README, the docs
+or the changelog drift from the code.
 
 Green gates are not the whole of it. Anything touching the write path or
 an API response shape also gets a run against a real account, and the

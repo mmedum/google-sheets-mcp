@@ -103,6 +103,10 @@ transcript: gates ## The live drivers print only through their redactor
 live-cover: build gates ## The live driver must exercise every tool option
 	@$(GATES) live-cover $(BIN)
 
+.PHONY: mcpb
+mcpb: gates ## The Claude Desktop bundle's manifest, against the files it will pack
+	@$(GATES) mcpb
+
 .PHONY: parity
 parity: gates ## `make check` and ci.yml run the same things
 	@$(GATES) parity
@@ -136,7 +140,7 @@ live: build ## Drive the built binary against a real account (see docs/developme
 	$(GO) run -tags=live ./scripts/livesheet -bin $(BIN)
 
 .PHONY: check
-check: fmt vet tidy lint cover vuln licenses secrets classes leaks transcript live-cover parity pins schema-diff smoke staleness ## Everything CI runs
+check: fmt vet tidy lint cover vuln licenses secrets classes leaks transcript live-cover mcpb parity pins schema-diff smoke staleness ## Everything CI runs
 
 .PHONY: clean
 clean:

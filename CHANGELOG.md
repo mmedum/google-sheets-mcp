@@ -83,6 +83,42 @@ and this project follows [semantic versioning](https://semver.org).
   across a refusal, a preview and a result. They now return the parts and
   the renderer owns the template. `plan.Band` lost its words with it.
 
+### Added — the Claude Desktop bundle
+
+- Every release now carries a **`.mcpb`**. Opening it installs the server
+  and asks for the OAuth client JSON, so the alternative is no longer
+  asking somebody to hand-edit a config file. macOS, Windows and Linux on
+  both architectures each: a universal binary for macOS, amd64 for
+  Windows, and both Linux binaries with a launcher that reads `uname -m`
+  and `exec`s the right one — writing any failure to stderr, because
+  stdout is the JSON-RPC channel.
+- **Packed in Go**, in `scripts/gates`, rather than by the official Node
+  CLI: a `.mcpb` is a deflate zip and the standard library writes one, so
+  the alternative was an interpreter nothing declared.
+- **The manifest is validated against the files being packed**, which is
+  the check a schema cannot do. `entry_point`, `mcp_config.command`,
+  every `platform_overrides.*.command` and every `${user_config.x}` an
+  env value spends must name something real. Each is broken on purpose in
+  the tests and watched being refused; a sibling's packer verified two of
+  the three and a typo in the Windows path would have packed, installed
+  and been caught by nothing. `make mcpb` runs it on every commit against
+  the names the packer will stage, so it needs no build.
+- The bundle is reproducible: entries carry a fixed timestamp rather than
+  the source file's, and the names are sorted, so the same inputs give
+  byte-identical output.
+
+### Fixed — before it ever shipped
+
+- **The bundle was packed and left out of `checksums.txt`.** Packing in
+  the universal binary's post hook is what makes it *possible* for the
+  checksum file to cover it; the checksum step covers goreleaser's own
+  artifacts, and a file a hook drops into `dist/` is not one. It needed
+  naming in `checksum.extra_files` as well, and in `release.extra_files`
+  or it would have been hashed and not uploaded. Caught by checking the
+  version in all five places the standard names on a snapshot build: it
+  agreed in four and was absent from the fifth, which is exactly what
+  shipping unsigned looks like from the outside.
+
 ### Added — documentation and the gates that hold it
 
 - The README is a release-shaped document now: badges, verifying a

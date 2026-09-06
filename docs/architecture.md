@@ -1051,6 +1051,51 @@ a task is scored against a spreadsheet the harness built.
   tag is byte-identical; never a draft. `go install …@latest` is the
   second path, with the version from `debug.ReadBuildInfo()` since
   `go install` applies no ldflags.
+- **The Claude Desktop bundle.** Every release carries a `.mcpb`, which
+  is a deflate zip: `manifest.json` at the root, the binaries under
+  `server/`, and the licence and README beside them. Opening it installs
+  the server and asks for the OAuth client JSON, so the alternative to
+  shipping one is asking a person to hand-edit a config file.
+
+  **Packed here, in Go** (`scripts/gates/mcpb.go`), rather than by the
+  official Node CLI: an interpreter `make check` needs is a prerequisite
+  nobody declared, and the standard library writes a zip. What the CLI
+  buys is validation against the published schema, and that is not the
+  validation worth having — a manifest whose `entry_point` names a binary
+  nobody staged is well formed by any schema and produces a bundle that
+  installs and then does nothing. `checkManifest` holds it to the staged
+  tree instead: `entry_point`, `mcp_config.command`, **every**
+  `platform_overrides.*.command`, and every `${user_config.x}` an env
+  value spends. Each is broken on purpose in the tests and watched being
+  refused.
+
+  A manifest names a command per *platform* and has no key for the
+  architecture, so every platform it claims has to work on both. macOS
+  gets a universal binary, kept out of the ordinary archives with `ids`
+  so the release page does not offer a fourth macOS download. Windows
+  gets amd64, which arm64 runs under emulation. Linux gets both binaries
+  and a launcher that reads `uname -m` and **`exec`s** the right one —
+  not a call, because the server talks MCP over that process's stdio —
+  writing any failure to **stderr**, because a line of English on stdout
+  corrupts the JSON-RPC session before the client's first request.
+
+  **The version comes from one place** and is checked in five: the bundle
+  filename, the archive filenames, the manifest inside the bundle, the
+  binary's own `--version` and `checksums.txt`. The committed manifest
+  carries `0.0.0-dev` and the packer refuses any other value, so a
+  manifest in the tree cannot claim a stale version; the real one goes in
+  through a JSON decode and encode rather than a substitution over text.
+
+  **Packing runs as the universal binary's post hook**, the one point
+  where every binary exists and `checksums.txt` has not been written —
+  and that is only half of what puts it in that file. The checksum step
+  covers goreleaser's own artifacts, and a file a hook dropped into
+  `dist/` is not one, so the bundle is also named in `checksum.extra_files`
+  and in `release.extra_files`. Being in `checksums.txt` is what gets it
+  signed, since the signature is over that file. The first snapshot build
+  here agreed about the version in four places and left it out of the
+  fifth, which is exactly the shape of shipping unsigned while looking no
+  different — found by checking rather than by reading.
 - **Branches and pull requests.** `main` is released code and is never
   pushed to directly, release commits included. Work on a short topic
   branch; the maintainer pushes, opens the pull request and merges once
