@@ -160,12 +160,21 @@ and this project follows [semantic versioning](https://semver.org).
 
 ### Notes
 
-- **Run against a real account**, which is where three of the fixes above
-  came from. Five driver steps failed on the first run of the new
+- **Run against a real account**: 143 driver steps, none failed, one
+  undetermined (Drive's content index, which no single read can tell from
+  a broken search). Three of the fixes above came from it. Five driver steps failed on the first run of the new
   surface: three were the server and two were the driver's own
   expectations, left stale by a review pass that had changed the
   behaviour deliberately. §18 of `docs/architecture.md` carries the
-  split.
+  split. It took three runs in all — the second because an edit to the
+  driver never reached disk, and the third because a band assumed to
+  hold values held none, so the merge that was supposed to be refused
+  succeeded instead.
+- **`sortRange`'s `dimensionIndex` is the sheet's own column, not an
+  offset into the sorted range.** The plan claimed it and the reference
+  did not settle it, so it was written down as a belief with a test
+  waiting for it. The test ran: a range starting at B, sorted by C, comes
+  back in C's order.
 - Spike G answered §15's last size question, and answered none of it on
   its first attempt while appearing to — it printed the length of a JSON
   body as though it were the length of a cell, and asked for one column

@@ -5,8 +5,9 @@ writing, formatting and the objects attached to a range all work,
 `make check` is green, and the live work is done: spikes G and J ran, and
 the live driver ran against a real account.
 
-Reading the transcripts is what phase 2 was worth. The driver's first run
-of the new surface failed five steps, and three of them were the server:
+Reading the transcripts is what phase 2 was worth. It took three runs of
+the driver to reach 143 steps with none failed. The first failed five,
+and three of them were the server:
 a merge spanning a frozen edge, which Sheets refuses with a message that
 does not say where the edge is; a named range with a space in it, refused
 by Google as "invalid" with no hint which character; and a conditional
@@ -1347,14 +1348,20 @@ error classes that were declared and not yet emitted.
 
 **Phase 2 — formatting and structure (v0.2.0). Done 2026-09-06,
 including the live work: spike G ran, spike J was added and ran, and the
-live driver ran the whole surface — 157 of 159 tool options exercised,
-the same two excused as before.** `read_formatting`, `format_cells`,
+live driver ran the whole surface — 143 steps, 0 failed, 1 undetermined
+(Drive's content index again), 157 of 159 tool options exercised.** `read_formatting`, `format_cells`,
 `manage_range` and `transform_range`, with a step in the driver for every
 option of each.
 
-Reading the transcripts found what the green counts had not. Five driver
-steps failed on the first run of the new surface; three were the server
-and two were the driver's own expectations, and §18 carries the split.
+It took three runs of the driver. The first failed five steps: three were
+the server and two were the driver's own expectations, and §18 carries
+the split. The second failed four, and the reason is worth writing down —
+an edit to the driver had never reached disk, because the script making
+it aborted on a later assertion and wrote nothing, so two steps that
+looked fixed were not. The third failed two: a merge band that had been
+assumed to hold values held none, so the merge it was supposed to refuse
+simply succeeded. A step that asserts about values now writes them
+itself.
 The three server findings — a merge across a frozen edge, a named range
 with a space in it, and `deleteTable` taking the conditional format rules
 over its range — are all guarded now, and none of them appears in any
@@ -1942,7 +1949,7 @@ wants a live answer, and the driver is written to give it.
 | An attached object is named by an id | **Rejected.** A protected range, a banding and a table all have ids, and a caller would have to fetch one before deleting anything. A1 is this server's contract everywhere else (§17.1) | `manage_range` names an existing object by the range it covers, matched exactly; a range matching several is `[ambiguous]` with the list rather than a guess. The exception is a conditional format rule, which the API identifies by position — so those take an `index`, and `read_formatting` reports it beside each rule |
 | A protected range refuses every write into it | **Refined**: it must not refuse the request that lifts it. The destination check runs for every kind `manage_range` handles except `protected_range` itself | Anything else is a trap rather than a guard, and a spreadsheet with a protection nobody can remove through this server |
 | `includeGridData: false` is enough to keep a `spreadsheets.get` off the grid | **Refuted, and it was a live bug in this phase's own code.** The parameter is documented as ignored when a field mask is set, so a mask naming `data(...)` is a grid read whatever the option says. `manage_range`'s rule count was reading conditional format rules with the formatting mask and no range, which is the entered and effective format of every cell of every sheet — the whole-spreadsheet read §4.6 forbids, walking straight past the guard in `GetSpreadsheet`, which can only see the option. The fake hid it: it returns grid data only when the option is set, so no test could tell the two apart | A second guard in `GetSpreadsheet`, on the mask rather than the option: a mask containing `data(` with no range is refused before anything is sent. `gapi.RuleFields` names the rules and the sheet ids and nothing else. Found by a review pass reading the reference, not by anything running |
-| `sortRange`'s `dimensionIndex` is an offset into the sorted range | **Read as absolute — the sheet's own column — and not yet verified live.** The discovery document describes it as the dimension the sort applies to, which reads as the sheet's index and matches how every other `DimensionRange` in the API is numbered, but the reference does not say so in as many words, and rule 12 says prose is not evidence | `plan.ParseSort` converts a column letter to the sheet's zero-based index, and the service refuses a key outside the range. The live driver settles it: it sorts `B31:C34` by column C, having seeded B counting up and C counting down, so a reading relative to the range would sort by B and leave the rows where they are. **Until that runs, this row is a belief with a test waiting for it** |
+| `sortRange`'s `dimensionIndex` is an offset into the sorted range | **Refuted, live.** It is the sheet's own column. `B31:C34` was seeded with B counting up and C counting down, and sorted by column C ascending; the read-back afterwards is B = 3, 3, 2, 1, which is C in order. A reading relative to the range would have sorted by B and left the rows where they were. This row was a belief with a test waiting for it until 2026-09-06, and is written down that way because it was the plan's own claim that the reference did not settle | `plan.ParseSort` converts a column letter to the sheet's zero-based index, and the service refuses a key outside the range with the column named |
 
 **Spike G, run live 2026-09-06 (`go run -tags=live ./scripts/spikes
 -only G`).** The platform's own edges, and what this server says before

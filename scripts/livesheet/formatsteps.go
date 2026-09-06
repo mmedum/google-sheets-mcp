@@ -64,16 +64,48 @@ func (d *driver) formatSteps() []step {
 			},
 		},
 		{
+			// The work sheet froze its first row and column several
+			// steps ago, and a merge cannot span that edge. Sheets says
+			// so — "You can't merge frozen and non-frozen columns" —
+			// without saying where the edge is, which is what this
+			// server adds.
+			name:        "a merge spanning the frozen edge is refused before it is sent",
+			why:         "the freeze was set several calls ago and the caller is not thinking about it",
+			tool:        "format_cells",
+			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:C1", "merge": "all", "overwrite": true},
+			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "frozen") || !strings.Contains(text, "manage_sheet freeze") {
+					return fmt.Errorf("the refusal does not name the freeze or how to undo it: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			// Its own values rather than another step's. The first
+			// version of these steps merged a band the write steps
+			// happened to fill, and when it turned out to be empty the
+			// merge simply succeeded — a step that asserts about values
+			// has to put them there.
+			name: "seed the band the merge steps work in",
+			why:  "a merge discards values, so there have to be values to discard",
+			tool: "write_values",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": mergeBand,
+				"values": [][]any{{"Quorbin", "Vandel"}}, "input": "literal", "overwrite": true,
+			},
+		},
+		{
 			name: "a merge that would discard values is refused",
 			why:  "Sheets keeps the top-left value of a merge and drops the rest with nothing saying so",
 			tool: "format_cells",
 			args: map[string]any{
-				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:C1", "merge": "all",
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": mergeBand, "merge": "all",
 			},
 			expectError: "blocked",
 			check: func(text string, _ map[string]any) error {
-				if !strings.Contains(text, "B1") || !strings.Contains(text, "overwrite") {
-					return fmt.Errorf("the refusal names neither the cells nor the argument: %s", text)
+				if !strings.Contains(text, "overwrite") {
+					return fmt.Errorf("the refusal does not name the argument that would allow it: %s", text)
 				}
 				return nil
 			},
@@ -83,7 +115,7 @@ func (d *driver) formatSteps() []step {
 			why:  "a preview is the one call that should always answer, since it sends nothing",
 			tool: "format_cells",
 			args: map[string]any{
-				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:C1",
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": mergeBand,
 				"merge": "all", "dry_run": true,
 			},
 			check: func(text string, _ map[string]any) error {
@@ -98,7 +130,7 @@ func (d *driver) formatSteps() []step {
 			why:  "the guard refuses until it is told to allow, and then it allows",
 			tool: "format_cells",
 			args: map[string]any{
-				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:C1",
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": mergeBand,
 				"merge": "all", "overwrite": true,
 			},
 		},
@@ -107,7 +139,7 @@ func (d *driver) formatSteps() []step {
 			why:  "a merge that could not be undone would leave the sheet in a shape no later step could write to",
 			tool: "format_cells",
 			args: map[string]any{
-				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:C1", "unmerge": true,
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": mergeBand, "unmerge": true,
 			},
 		},
 		{
@@ -132,11 +164,19 @@ func (d *driver) formatSteps() []step {
 			},
 		},
 		{
-			name: "removing a note is not held back",
-			why:  "removing is what the caller asked for; replacing is the loss they cannot see",
+			name:        "removing a note is guarded too",
+			why:         "removing takes the same unseen thing that replacing does, which a review pass settled",
+			tool:        "format_cells",
+			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1", "clear_note": true},
+			expectError: "blocked",
+		},
+		{
+			name: "acknowledged, the note is removed",
+			why:  "the guard refuses until it is told to allow, and then it allows",
 			tool: "format_cells",
 			args: map[string]any{
-				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1", "clear_note": true,
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1",
+				"clear_note": true, "overwrite": true,
 			},
 		},
 		{

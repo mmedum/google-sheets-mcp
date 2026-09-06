@@ -62,3 +62,76 @@ func TestPackageMapNamesEveryPackage(t *testing.T) {
 		t.Errorf("%v", problems)
 	}
 }
+
+// The status line is the first thing a reader sees and the furthest
+// thing from any test. Every case below is watched failing or passing on
+// purpose: a check nobody has seen fire is a check nobody knows the
+// shape of.
+func TestStatusLineIsTrue(t *testing.T) {
+	atRepoRoot(t)
+	// This repository is the pre-tag case: a phase in the status line,
+	// no version claimed, no tag. It must pass silently.
+	if problems := statusLineIsTrue(); len(problems) > 0 {
+		t.Fatalf("the repository's own status lines: %v", problems)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(wd) }()
+	if err := os.MkdirAll("docs", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(readme, arch, changelog string) {
+		for path, body := range map[string]string{
+			"README.md": readme, "docs/architecture.md": arch, "CHANGELOG.md": changelog,
+		} {
+			if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	const phase = "> **Status: phase 2 of five, not yet released.**\n"
+	const claimsV2 = "**Status: v0.2.0, released.**\n"
+
+	// A phase and no tag: nothing to confirm and nothing claimed.
+	write(phase, phase, "# Changelog\n\n## [Unreleased]\n")
+	if problems := statusLineIsTrue(); len(problems) > 0 {
+		t.Errorf("a phase with no tag was reported: %v", problems)
+	}
+
+	// A version claimed with nothing released at all. This is the case
+	// that used to be judged the other way round, failing every project
+	// that had not shipped rather than the one document overclaiming.
+	write(claimsV2, phase, "# Changelog\n\n## [Unreleased]\n")
+	problems := statusLineIsTrue()
+	if len(problems) != 1 || !strings.Contains(problems[0], "name the phase instead") {
+		t.Errorf("a version claimed with nothing released gave %v", problems)
+	}
+
+	// The release-commit case: the changelog carries the version before
+	// the tag can exist, and the claim matches it.
+	write(claimsV2, phase, "# Changelog\n\n## [0.2.0] - 2026-09-06\n")
+	if problems := statusLineIsTrue(); len(problems) > 0 {
+		t.Errorf("a claim matching the newest changelog heading was reported: %v", problems)
+	}
+
+	// The failure this check exists for: a status line left behind.
+	write("**Status: v0.1.0, released.**\n", phase, "# Changelog\n\n## [0.2.0] - 2026-09-06\n")
+	problems = statusLineIsTrue()
+	if len(problems) != 1 || !strings.Contains(problems[0], "the newest released version is 0.2.0") {
+		t.Errorf("a stale version claim gave %v", problems)
+	}
+
+	// And the floor: no status line anywhere means the pattern changed
+	// and the check is reading nothing, which must not pass.
+	write("# google-sheets-mcp\n", "# Architecture\n", "# Changelog\n")
+	problems = statusLineIsTrue()
+	if len(problems) != 1 || !strings.Contains(problems[0], "reading nothing") {
+		t.Errorf("documents with no status line gave %v", problems)
+	}
+}

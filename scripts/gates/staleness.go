@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -112,6 +113,7 @@ func staleness(bin string) error {
 	}
 	problems = append(problems, pathsExist()...)
 	problems = append(problems, packageMapIsComplete()...)
+	problems = append(problems, statusLineIsTrue()...)
 
 	if len(problems) > 0 {
 		return fmt.Errorf("%d problem(s):\n  %s", len(problems), strings.Join(problems, "\n  "))
@@ -325,4 +327,105 @@ func packageMapIsComplete() []string {
 	}
 	sort.Strings(problems)
 	return problems
+}
+
+// statusDocs are the documents carrying a status line, and the order a
+// reader meets them in.
+var statusDocs = []string{"README.md", "docs/architecture.md"}
+
+var (
+	// The status line, as both documents write it: a bold "Status:" at
+	// the start of a line, optionally inside a block quote.
+	statusLine = regexp.MustCompile(`(?m)^>?\s*\*\*Status:.*$`)
+	// A released version, as a status line would claim one.
+	claimedVersion = regexp.MustCompile(`v(\d+\.\d+\.\d+)`)
+)
+
+// statusLineIsTrue fails when a document claims a version nothing can
+// confirm.
+//
+// The status line is the first thing a reader sees and the furthest
+// thing from any test, so it goes stale in a way nothing else notices: a
+// README saying v0.5.0 five releases after v0.5.0 is read by everybody
+// and checked by nobody.
+//
+// The claim is gathered first and the absence of a reference judged only
+// against it. A project with no tag and everything under [Unreleased] is
+// a project that has not shipped, not a fault — this repository is
+// exactly that — so no claim and no tag passes silently. A claim with
+// nothing to confirm it is the failure, and the way out of it is to name
+// the phase rather than a version.
+func statusLineIsTrue() []string {
+	claims := map[string]string{}
+	found := 0
+	for _, doc := range statusDocs {
+		body, err := os.ReadFile(doc)
+		if err != nil {
+			return []string{doc + " has no status line to check: " + err.Error()}
+		}
+		line := statusLine.Find(body)
+		if line == nil {
+			continue
+		}
+		found++
+		if m := claimedVersion.FindSubmatch(line); m != nil {
+			claims[doc] = string(m[1])
+		}
+	}
+	if found == 0 {
+		return []string{"no status line in " + strings.Join(statusDocs, " or ") +
+			"; the pattern has probably changed, and this check is reading nothing"}
+	}
+	if len(claims) == 0 {
+		return nil
+	}
+
+	var known []string
+	if tag := newestTag(); tag != "" {
+		known = append(known, tag)
+	}
+	if released := newestReleased(); released != "" {
+		known = append(known, released)
+	}
+	var problems []string
+	for doc, claimed := range claims {
+		switch {
+		case len(known) == 0:
+			problems = append(problems, doc+" claims v"+claimed+
+				" and nothing has been released; name the phase instead, or tag it")
+		case !slices.Contains(known, claimed):
+			problems = append(problems, fmt.Sprintf("%s claims v%s; the newest released version is %s",
+				doc, claimed, strings.Join(known, " or ")))
+		}
+	}
+	sort.Strings(problems)
+	return problems
+}
+
+// newestTag is the highest semantic version tag, or "" when there is
+// none.
+func newestTag() string {
+	out, err := exec.Command("git", "tag", "--sort=-v:refname").Output()
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if m := claimedVersion.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
+			return m[1]
+		}
+	}
+	return ""
+}
+
+// newestReleased is the newest version heading in the changelog, which
+// is the version a release commit writes before its tag can exist.
+func newestReleased() string {
+	body, err := os.ReadFile("CHANGELOG.md")
+	if err != nil {
+		return ""
+	}
+	if m := versionHeading.FindSubmatch(body); m != nil {
+		return string(m[1])
+	}
+	return ""
 }
