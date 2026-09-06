@@ -1891,6 +1891,17 @@ cannot be verified again yet.
    repository root and watching the gate name it. Two sibling
    repositories put a compiled `gates` binary into their history this
    week, one of them public, which is what sent somebody looking.
+
+   **Three of us got that question wrong from the source alone**, on
+   three repositories, and one of them had just described the behaviour
+   to another. The cause was not the code being unclear. `isBinary` had
+   a unit test from phase 0 and the branch that uses it had none, so what
+   the scan *did* with a binary was answerable only by reading — and a
+   name invites agreement where an unexplained gap invites doubt. There
+   is a test on the branch now, watched failing with it disabled, and a
+   NUL byte in the first few kilobytes is the whole rule, so it needs no
+   real executable and costs a second. Its absence is the entire reason
+   the question went to three readers instead of to a test.
 25. Nothing further. The tool-version problem that was here — a
    distribution `golangci-lint` built with an older Go refusing this
    module, and a stale `go-licenses` failing on the standard library —

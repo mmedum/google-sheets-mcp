@@ -64,7 +64,13 @@ and this project follows [semantic versioning](https://semver.org).
   check is green" was the false claim. Refusing an untracked file also
   means a build artifact is caught before a wildcard add can sweep it in,
   which is how two sibling repositories put megabytes of compiled binary
-  into their history this week.
+  into their history this week. A tracked binary was already refused —
+  the branch has been there since phase 0 — but only `isBinary` had a
+  test and the branch that uses it had none, so what the scan did with a
+  binary was answerable only by reading it. Three people on three
+  repositories read it and got it wrong on the same day, one of them
+  having just described it to another. Both paths are tested now, and
+  watched failing.
 - **The transcript gate could be walked past with `fmt.Fprintln(os.Stdout, …)`.**
   It matched `fmt.Print`, `Printf` and `Println`, justified by a comment
   saying an `Fprintf` goes to a caller-supplied writer — true of a

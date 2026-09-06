@@ -125,6 +125,40 @@ func TestBinaryDetection(t *testing.T) {
 	}
 }
 
+// TestATrackedBinaryIsAFinding runs the branch rather than the helper.
+//
+// isBinary has been tested since phase 0 and the branch that uses it
+// never was, so what the scan does with a committed binary was a
+// question only the source could answer — and three people read that
+// source today and got it wrong, including one who had just described it
+// to somebody else. A check nobody has run is worse than a gap nobody
+// has explained: an unexplained gap invites doubt, and a name invites
+// agreement.
+//
+// A NUL byte in the first few kilobytes is the whole rule, which is what
+// git itself uses, so this needs no real executable. That is the part
+// worth noticing: the test costs a second and its absence is what left
+// the question to be settled by reading.
+func TestATrackedBinaryIsAFinding(t *testing.T) {
+	dir := fixtureRepo(t)
+	write(t, dir, "committed-artifact", "\x7fELF\x02\x01\x01\x00binary")
+	gitIn(t, dir, "add", "-f", "committed-artifact")
+	gitIn(t, dir, "commit", "-qm", "the accident")
+
+	inDir(t, dir)
+	err := scanTree()
+	if err == nil {
+		t.Fatal("a committed binary was accepted")
+	}
+	if !strings.Contains(err.Error(), "committed-artifact") {
+		t.Errorf("err = %v, want it to name the file", err)
+	}
+	// And it says what is wrong rather than only that something is.
+	if !strings.Contains(err.Error(), "binary") {
+		t.Errorf("err = %v, want it to say the file is binary", err)
+	}
+}
+
 func TestSafeDomain(t *testing.T) {
 	for domain, want := range map[string]bool{
 		"example.test": true, "example.com": true, "sub.example.invalid": true,
@@ -151,36 +185,8 @@ func TestSafeDomain(t *testing.T) {
 // Driven against a throwaway repository rather than this one, so it can
 // watch both halves fail without anything reaching the real tree.
 func TestScanReadsUntrackedFilesToo(t *testing.T) {
-	dir := t.TempDir()
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	run("init", "-q")
-	run("config", "user.email", "fixture@example.test")
-	run("config", "user.name", "Fixture")
-
-	// Twenty tracked files, so the "is the scan seeing the repository"
-	// floor is met, and one gitignored name.
-	for i := range 20 {
-		write(t, dir, fmt.Sprintf("kept%02d.md", i), "Quorbin and Nardle, which are invented.\n")
-	}
-	write(t, dir, ".gitignore", "/ignored-artifact\n")
-	run("add", "-A")
-	run("commit", "-qm", "fixture")
-
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(wd) }()
+	dir := fixtureRepo(t)
+	inDir(t, dir)
 
 	if err := scanTree(); err != nil {
 		t.Fatalf("a clean tree was refused: %v", err)
@@ -199,7 +205,7 @@ func TestScanReadsUntrackedFilesToo(t *testing.T) {
 	// An untracked build artifact, refused while it is still untracked —
 	// which is what fails before a wildcard add can sweep it in.
 	write(t, dir, "artifact", "\x7fELF\x02\x01\x01\x00binary")
-	err = scanTree()
+	err := scanTree()
 	if err == nil {
 		t.Fatal("an untracked binary was accepted")
 	}
@@ -224,4 +230,45 @@ func write(t *testing.T, dir, name, body string) {
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func gitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// fixtureRepo is a throwaway repository with enough tracked files to
+// meet the scan's own "am I seeing a repository" floor, and one
+// gitignored name to prove the ignore rules are still honoured.
+func fixtureRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	gitIn(t, dir, "init", "-q")
+	gitIn(t, dir, "config", "user.email", "fixture@example.test")
+	gitIn(t, dir, "config", "user.name", "Fixture")
+	for i := range 20 {
+		write(t, dir, fmt.Sprintf("kept%02d.md", i), "Quorbin and Nardle, which are invented.\n")
+	}
+	write(t, dir, ".gitignore", "/ignored-artifact\n")
+	gitIn(t, dir, "add", "-A")
+	gitIn(t, dir, "commit", "-qm", "fixture")
+	return dir
+}
+
+// inDir runs the rest of the test with dir as the working directory,
+// because the scan reads the repository it is standing in.
+func inDir(t *testing.T, dir string) {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
 }
