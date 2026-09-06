@@ -131,26 +131,35 @@ func TestTheFormattedAndRawReadsAgreeOnAnError(t *testing.T) {
 	}
 }
 
-func TestACellWithOnlyANoteIsNotEmpty(t *testing.T) {
-	// A write over it destroys the note, and a values read does not show
-	// it, which is exactly the case the guard exists for.
+// A cell carrying only a note holds no value, so a write into it
+// destroys nothing.
+//
+// This test asserted the opposite, on the reasoning that a write would
+// take the note with it. A live probe says values.update leaves the note
+// and the validation rule alone, exactly as values.clear documents — so
+// the old behaviour refused a write into a blank cell for a loss that
+// never happened, and said so in the refusal.
+func TestACellWithOnlyAnAnnotationIsEmpty(t *testing.T) {
 	c := cell(sheetstest.WithNote(&gsheets.CellData{}, "Quorbin reconciliation"), AsRaw)
-	if c.Empty() {
-		t.Error("a cell carrying a note counts as occupied")
+	if !c.Empty() {
+		t.Error("a cell carrying only a note counts as occupied")
+	}
+	if c.Note == "" {
+		t.Error("the note is not reported at all, so a result could not mention it")
 	}
 	v := cell(sheetstest.WithValidation(&gsheets.CellData{}, "Skerry", "Plimth"), AsRaw)
-	if v.Empty() {
-		t.Error("a cell carrying a validation rule counts as occupied")
+	if !v.Empty() {
+		t.Error("a cell carrying only a validation rule counts as occupied")
 	}
 	if !strings.Contains(v.Validation, "Skerry") {
 		t.Errorf("validation described as %q", v.Validation)
 	}
-	link := cell(&gsheets.CellData{Hyperlink: "https://example.test/a"}, AsRaw)
-	if link.Empty() {
-		t.Error("a cell carrying a hyperlink counts as occupied")
+	// A value still makes it occupied, annotation or not.
+	if cell(sheetstest.WithNote(sheetstest.Str("Plimth"), "a note"), AsRaw).Empty() {
+		t.Error("a cell with a value and a note is empty")
 	}
-	if cell(&gsheets.CellData{}, AsRaw).Empty() != true {
-		t.Error("a bare cell is empty")
+	if !cell(&gsheets.CellData{}, AsRaw).Empty() {
+		t.Error("a bare cell is not empty")
 	}
 }
 
@@ -188,8 +197,29 @@ func TestCount(t *testing.T) {
 		[]*gsheets.CellData{sheetstest.WithValidation(sheetstest.Str("Skerry"), "Skerry")},
 	), AsRaw)
 	c := g.Count()
-	if c.NonEmpty != 4 || c.Formulas != 1 || c.Errors != 1 || c.Notes != 1 || c.Validation != 1 {
+	// Two formulas, not one: the error cell holds "=1/0", and a count of
+	// what a delete would take has to include a formula that happens to
+	// be broken. Errors are counted separately as well.
+	if c.NonEmpty != 4 || c.Formulas != 2 || c.Errors != 1 || c.Notes != 1 || c.Validation != 1 {
 		t.Errorf("Count = %+v", c)
+	}
+}
+
+// A formula that evaluated to an error is KindError, so a check on the
+// kind misses it — and a write over `=IMPORTRANGE(...)` showing #REF!
+// would need only `overwrite`, which is the exact loss the second
+// acknowledgement exists to prevent.
+func TestAnErroredFormulaIsStillAFormula(t *testing.T) {
+	rect := a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 1, LastRow: 1}
+	g := Build("Vandel", 0, rect, data(0, 0,
+		[]*gsheets.CellData{sheetstest.ErrorCell("=IMPORTRANGE(\"x\",\"y\")", "REF", "")},
+	), AsRaw)
+	cell, _ := g.At(1, 1)
+	if cell.Kind != KindError {
+		t.Fatalf("Kind = %q, want the error kind this test is about", cell.Kind)
+	}
+	if !cell.HasFormula() {
+		t.Error("a cell holding a formula that errored did not report one")
 	}
 }
 
@@ -255,5 +285,25 @@ func TestIsCheckpoint(t *testing.T) {
 		if got := IsCheckpoint(tc.in); got != tc.ok {
 			t.Errorf("IsCheckpoint(%q) = %v", tc.in, got)
 		}
+	}
+}
+
+// A checkpoint is over what the cells store, not over what they show.
+//
+// Read with formatted=true, a currency cell displays "£1,234.50" where
+// it stores 1234.5. Hashing the display made such a checkpoint fail
+// against every write — a write reads raw — so expect_checkpoint
+// reported a conflict on a range nobody had touched.
+func TestCheckpointIgnoresFormatting(t *testing.T) {
+	rect := a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 2, LastRow: 1}
+	cells := []*gsheets.CellData{sheetstest.Num(1234.5, "£1,234.50"), sheetstest.Str("Plimth")}
+	raw := Build("Vandel", 0, rect, data(0, 0, cells), AsRaw)
+	shown := Build("Vandel", 0, rect, data(0, 0, cells), AsFormatted)
+
+	if shown.Cells[0][0].Display == raw.Cells[0][0].Display {
+		t.Fatal("the fixture does not format differently, so this test proves nothing")
+	}
+	if got, want := Checkpoint("id", shown), Checkpoint("id", raw); got != want {
+		t.Errorf("a formatted read gave checkpoint %s and a raw read %s; a write could never match the first", got, want)
 	}
 }

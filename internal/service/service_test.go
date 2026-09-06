@@ -224,3 +224,15 @@ func countOp(s *sheetstest.Server, op string) int {
 	}
 	return n
 }
+
+// destructive is a service with the gated tools' configuration.
+func destructive(t *testing.T) (*sheetstest.Server, *service.Service) {
+	t.Helper()
+	srv := sheetstest.Standard(t)
+	fs, err := settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs.EnableDestructive = true
+	return srv, service.New(service.Deps{API: srv.Client(), Config: fs})
+}

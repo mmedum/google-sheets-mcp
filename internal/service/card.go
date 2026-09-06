@@ -39,16 +39,24 @@ func (s *Service) Card(ctx context.Context, ref string) (*CardResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := render.Card{
-		ID:   sp.SpreadsheetID,
-		Link: sp.SpreadsheetURL,
-	}
+	return s.describe(ctx, sp, r), nil
+}
+
+// describe turns a spreadsheets.get response into the card.
+//
+// Separate from Card because a create already holds the response and
+// must not fetch it again: with one request in flight and sixty a
+// minute, an avoidable call costs a second of somebody's wall clock.
+func (s *Service) describe(ctx context.Context, sp *gsheets.Spreadsheet, r Reference) *CardResult {
+	c := render.Card{ID: sp.SpreadsheetID}
 	if c.ID == "" {
 		c.ID = r.ID
 	}
-	if c.Link == "" {
-		c.Link = gapi.SpreadsheetURL(c.ID)
-	}
+	// Built rather than taken from the response. Google's own
+	// spreadsheetUrl carries an `?ouid=` query holding the signed-in
+	// account's obfuscated id; the link this builds opens the same
+	// spreadsheet and identifies nobody.
+	c.Link = gapi.SpreadsheetURL(c.ID)
 	if p := sp.Properties; p != nil {
 		c.Title, c.Locale, c.TimeZone, c.Recalc = p.Title, p.Locale, p.TimeZone, p.AutoRecalc
 	}
@@ -83,7 +91,7 @@ func (s *Service) Card(ctx context.Context, ref string) (*CardResult, error) {
 
 	return &CardResult{
 		Card: render.Spreadsheet(c), Spreadsheet: c.ID, Title: c.Title, Link: c.Link, Sheets: titles,
-	}, nil
+	}
 }
 
 // sheetTitles reads the titles in order, and the id-to-title map every
@@ -106,7 +114,7 @@ func sheetTitles(sp *gsheets.Spreadsheet) ([]string, map[int]string) {
 func cardSheet(sh *gsheets.Sheet) render.CardSheet {
 	p := sh.Properties
 	cs := render.CardSheet{
-		Title: p.Title, ID: p.SheetID, Index: p.Index, Type: p.SheetType,
+		Title: p.Title, ID: p.SheetID, Index: deref(p.Index), Type: p.SheetType,
 		Hidden: p.Hidden, TabColor: tabColor(p.TabColorStyle),
 	}
 	if g := p.GridProperties; g != nil {
@@ -208,4 +216,14 @@ func tabColor(cs *gsheets.ColorStyle) string {
 	}
 	c := cs.RGBColor
 	return fmt.Sprintf("#%02x%02x%02x", int(c.Red*255+0.5), int(c.Green*255+0.5), int(c.Blue*255+0.5))
+}
+
+// deref reads an optional API integer, treating "unset" as zero. Sheet
+// index is the one that matters: absent means Google has not said, and
+// for a card that is the same answer as first.
+func deref(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
 }

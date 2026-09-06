@@ -14,10 +14,10 @@ It works inside a spreadsheet. Finding, sharing, moving and trashing
 files, and their comment threads and revisions, belong to a Drive server
 built on the Drive API. A cell **note** is a Sheets field and is here.
 
-**Status: v0.0.1, phase 0 of five.** Reading works; writing is phase 1.
-The design, the platform constraints it is built on, the decided
-trade-offs, the phase plan and the evidence log are in
-[docs/architecture.md](docs/architecture.md).
+**Status: v0.1.0, phase 1 of five.** Reading and writing work;
+formatting and structure are phase 2. The design, the platform
+constraints it is built on, the decided trade-offs, the phase plan and
+the evidence log are in [docs/architecture.md](docs/architecture.md).
 
 ## Tools
 
@@ -27,9 +27,17 @@ trade-offs, the phase plan and the evidence log are in
 | `read_range` | An addressed grid of a range: column letters across the top, row numbers down the side. `show=both` prints each formula under the value it produced. Budgeted in cells and characters, with a continuation, and every read returns a checkpoint. |
 | `search_spreadsheets` | Find a spreadsheet by part of its title, by text inside it, by owner or by when it changed. The only Drive call this server makes. |
 | `find_in_spreadsheet` | Search one spreadsheet for text or an RE2 pattern and get back A1 addresses, saying whether each match was in a value, in the formula under it, or in a note beside it. |
+| `create_spreadsheet` | A new spreadsheet, optionally with extra sheets and seed values. Returns its card, including the id every later call needs. |
+| `write_values` | Write a rectangle, refusing first anything the write would destroy that you cannot see, then reporting every value Google stored differently from how it was sent. |
+| `append_rows` | Add rows after a block of data and report where they actually landed — Google decides the destination, and the same sheet given different ranges appends in different places. |
+| `manage_sheet` | Add, rename, duplicate, copy to another spreadsheet, hide, unhide, reorder, resize, freeze or colour a sheet. |
+| `edit_dimensions` | Insert, move, resize, auto-size, group or ungroup rows and columns. |
+| `delete_dimensions` | Destructive, off by default: remove rows or columns and the data on them, having counted what that is. |
+| `clear_values` | Destructive, off by default: clear a range's values and keep its formatting, notes and validation rules. |
+| `delete_sheet` | Destructive, off by default: delete a sheet and everything on it, having counted what that is. |
 
-Writing, sheets and dimensions arrive in v0.1.0; formatting and structure
-in v0.2.0.
+Formatting and structure arrive in v0.2.0; charts and pivot tables in
+v0.4.0.
 
 ## What makes it different
 
@@ -51,11 +59,22 @@ in v0.2.0.
 - **Errors keep Google's meaning.** `[class] message`, with a closed
   vocabulary a gate holds shut from both sides.
 
-And from v0.1.0, the reason this server exists: **a write never destroys
-what it cannot see.** Overwriting anything non-empty needs `overwrite`;
+And the reason this server exists: **a write never destroys what it
+cannot see.** Overwriting anything non-empty needs `overwrite`;
 overwriting a formula needs `overwrite_formulas` as well; protected
-ranges and partial merges are refused before the request is built. Sheets
-has no undo, so a gate there is the only one there is.
+ranges and partial merges are refused before the request is built, with
+the cells named. Sheets has no undo, so a gate there is the only one
+there is.
+
+- **Coercion is reported, never hidden.** `input: typed` parses as a
+  person typing, so `007` becomes `7` and `2026-09-05` becomes a date.
+  Every write reads back what Google stored and names each value it
+  changed — and for a date, what the cell still displays, so a serial
+  number does not read as data loss. `input: literal` stores exactly
+  what you send, and the server never substitutes one for the other.
+- **`dry_run` on every write.** Sheets has no suggestion mode, so the
+  preview reports what the guard found and what would change, having
+  sent nothing.
 
 ## Install
 

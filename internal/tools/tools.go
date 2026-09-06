@@ -61,6 +61,7 @@ func Register(s *mcp.Server, d Deps) {
 		d.Logger = slog.New(slog.DiscardHandler)
 	}
 	registerRead(s, d)
+	registerWrite(s, d)
 }
 
 // Def is one tool.

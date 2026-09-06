@@ -184,6 +184,10 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil {
 		b, _ := io.ReadAll(io.LimitReader(r.Body, 1<<22))
 		body = string(b)
+		// Put it back. Reading it here to record it left the handlers
+		// with an empty body, so every write came back as "Invalid JSON
+		// payload received" — the fake's own error, describing the fake.
+		r.Body = io.NopCloser(strings.NewReader(body))
 	}
 	s.record(Call{Method: r.Method, Op: op, Query: r.URL.Query(), Body: body})
 
@@ -235,8 +239,21 @@ func (s *Server) dispatch(r *http.Request) (string, http.HandlerFunc) {
 		return "drive.files.get", s.filesGet
 	case strings.HasSuffix(p, "/values:batchGet"):
 		return "values.batchGet", s.valuesBatchGet
+	case strings.HasSuffix(p, ":append"):
+		return "values.append", s.valuesAppend
+	case strings.HasSuffix(p, ":clear"):
+		return "values.clear", s.valuesClear
+	case strings.HasSuffix(p, ":copyTo"):
+		return "sheets.copyTo", s.sheetsCopyTo
+	case strings.HasSuffix(p, ":batchUpdate"):
+		return "spreadsheets.batchUpdate", s.spreadsheetsBatchUpdate
 	case strings.Contains(p, "/values/"):
+		if r.Method == http.MethodPut {
+			return "values.update", s.valuesUpdate
+		}
 		return "values.get", s.valuesGet
+	case p == "/v4/spreadsheets":
+		return "spreadsheets.create", s.spreadsheetsCreate
 	case strings.HasPrefix(p, "/v4/spreadsheets/"):
 		return "spreadsheets.get", s.spreadsheetsGet
 	}
@@ -247,6 +264,12 @@ func (s *Server) dispatch(r *http.Request) (string, http.HandlerFunc) {
 func spreadsheetID(p string) string {
 	rest := strings.TrimPrefix(p, "/v4/spreadsheets/")
 	if i := strings.IndexByte(rest, '/'); i >= 0 {
+		rest = rest[:i]
+	}
+	// The custom methods hang a ":verb" off the id itself, so
+	// ":batchUpdate" was part of the id the fake looked up and every
+	// structural write came back as a 404.
+	if i := strings.IndexByte(rest, ':'); i >= 0 {
 		rest = rest[:i]
 	}
 	id, err := url.PathUnescape(rest)
@@ -267,27 +290,9 @@ func (s *Server) spreadsheetsGet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "this fake refuses an unmasked get, as this server refuses to send one")
 		return
 	}
-	out := &gsheets.Spreadsheet{
-		SpreadsheetID:  d.ID,
-		SpreadsheetURL: gapi.SpreadsheetURL(d.ID),
-		Properties: &gsheets.SpreadsheetProperties{
-			Title: d.Title, Locale: d.Locale, TimeZone: d.TimeZone, AutoRecalc: d.AutoRecalc,
-		},
-		NamedRanges: d.NamedRanges,
-	}
+	out := docCard(d)
 	grid := q.Get("includeGridData") == "true"
 	ranges := q["ranges"]
-	for _, sh := range d.Sheets {
-		props := sh.Props
-		out.Sheets = append(out.Sheets, &gsheets.Sheet{
-			Properties:      &props,
-			Merges:          sh.Merges,
-			ProtectedRanges: sh.Protected,
-			FilterViews:     sh.FilterViews,
-			Tables:          sh.Tables,
-			Charts:          sh.Charts,
-		})
-	}
 	if grid {
 		for _, raw := range ranges {
 			ref, err := a1.Parse(raw)
@@ -310,6 +315,31 @@ func (s *Server) spreadsheetsGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, out)
+}
+
+// docCard is a Doc as spreadsheets.get and spreadsheets.create both
+// return it: everything but the cells.
+func docCard(d *Doc) *gsheets.Spreadsheet {
+	out := &gsheets.Spreadsheet{
+		SpreadsheetID:  d.ID,
+		SpreadsheetURL: gapi.SpreadsheetURL(d.ID),
+		Properties: &gsheets.SpreadsheetProperties{
+			Title: d.Title, Locale: d.Locale, TimeZone: d.TimeZone, AutoRecalc: d.AutoRecalc,
+		},
+		NamedRanges: d.NamedRanges,
+	}
+	for _, sh := range d.Sheets {
+		props := sh.Props
+		out.Sheets = append(out.Sheets, &gsheets.Sheet{
+			Properties:      &props,
+			Merges:          sh.Merges,
+			ProtectedRanges: sh.Protected,
+			FilterViews:     sh.FilterViews,
+			Tables:          sh.Tables,
+			Charts:          sh.Charts,
+		})
+	}
+	return out
 }
 
 // clamp resolves a range against the sheet's allocated size, guarding a

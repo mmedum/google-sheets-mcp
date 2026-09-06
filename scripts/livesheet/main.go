@@ -77,7 +77,7 @@ func run(ctx context.Context, bin, profile string, keep bool) error {
 	}
 	api := newDriverAPI(ctx, ts)
 
-	title := fmt.Sprintf("livesheet scratch %s", time.Now().UTC().Format("2006-01-02 15:04:05"))
+	title := fmt.Sprintf("%s %s", scratchTitle, time.Now().UTC().Format("2006-01-02 15:04:05"))
 	sec("Scratch spreadsheet")
 	id, firstSheet, err := api.createSpreadsheet(ctx, title)
 	if err != nil {
@@ -137,9 +137,16 @@ func run(ctx context.Context, bin, profile string, keep bool) error {
 			// Expected, and said plainly rather than swallowed: this
 			// server asks for drive.readonly on purpose, and a
 			// read-only Drive scope cannot trash a file.
-			line("could not trash the scratch spreadsheet: %v", err)
-			line("THIS RUN LEFT A FILE BEHIND. Trash %q by hand.", title)
-			line("It is expected: the server asks for drive.readonly, and trashing needs a write-capable Drive scope.")
+			line("could not trash the scratch spreadsheets: %v", err)
+			line("THIS RUN LEFT FILES BEHIND, and it is expected: the server asks for drive.readonly,")
+			line("and trashing needs a write-capable Drive scope.")
+			// Every file this driver makes carries the same prefix, so
+			// the cleanup is one search rather than a hunt. Deciding
+			// this rather than reusing one spreadsheet across runs is
+			// deliberate: a driver that carries state between runs is a
+			// driver whose results can be explained by the last run.
+			line("Find them all in Drive with this search, and trash them:")
+			line("    %s", scratchTitle)
 			return
 		}
 		line("trashed the scratch spreadsheet")
@@ -217,7 +224,11 @@ func tokenSource(ctx context.Context, profile string) (oauth2.TokenSource, error
 // way a real host does.
 func startServer(ctx context.Context, bin, profile string) (*mcp.ClientSession, func(), error) {
 	cmd := exec.CommandContext(ctx, bin)
-	cmd.Env = append(cmd.Environ(), "GSHEETS_PROFILE="+profile, "GSHEETS_LOG_LEVEL=warn")
+	// The destructive tools are registered for the run: they are part of
+	// the surface and a driver that could not call them would leave the
+	// two most dangerous tools untested.
+	cmd.Env = append(cmd.Environ(),
+		"GSHEETS_PROFILE="+profile, "GSHEETS_LOG_LEVEL=warn", "GSHEETS_ENABLE_DESTRUCTIVE=true")
 	cmd.Stderr = os.Stderr
 	client := mcp.NewClient(&mcp.Implementation{Name: "livesheet", Version: "0"}, nil)
 	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
@@ -270,8 +281,14 @@ type driver struct {
 	owner         string
 	since         string
 	continueFrom  int
-	steps         int
-	failed        int
+	// What the write steps produce and later ones need: the second
+	// spreadsheet create_spreadsheet made, the sheet this run writes in,
+	// and a checkpoint from a read.
+	created    string
+	workSheet  string
+	checkpoint string
+	steps      int
+	failed     int
 	// undetermined counts steps the world would not let this run
 	// settle — Drive's full-text index has not caught up, say. They are
 	// neither passes nor failures: reporting one as a pass hides a
@@ -335,6 +352,7 @@ func (d *driver) runAll() {
 	sec("search_spreadsheets")
 	d.run(d.searchSteps()...)
 	d.searchWithIndexingLag()
+	d.writeAll()
 }
 
 func (d *driver) run(steps ...step) {
@@ -352,14 +370,31 @@ func (d *driver) run(steps ...step) {
 			d.fail(s, "expected success, got a refusal: %s", firstLine(text))
 			continue
 		}
-		if s.check != nil {
-			if err := s.check(text, structured); err != nil {
-				d.fail(s, "%v", err)
-				continue
-			}
+		if err := runCheck(s, text, structured); err != nil {
+			d.fail(s, "%v", err)
+			continue
 		}
 		d.pass(s, text)
 	}
+}
+
+// runCheck runs one step's check and turns a panic in it into a failed
+// step.
+//
+// A panicking check is a defect in the driver rather than in the server,
+// and it should be loud — but it should not cost the forty live steps
+// after it. A run against a real account is expensive to repeat, and an
+// unchecked type assertion in one check took a whole one down.
+func runCheck(s step, text string, structured map[string]any) (err error) {
+	if s.check == nil {
+		return nil
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("the check itself panicked, which is a bug in this driver: %v", r)
+		}
+	}()
+	return s.check(text, structured)
 }
 
 func (d *driver) pass(s step, text string) {

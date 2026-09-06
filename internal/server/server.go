@@ -34,6 +34,13 @@ const instructions = "Google Sheets tools that work inside one spreadsheet. " +
 	"Then read_range for cells, with show=both when you need to see which numbers are computed, or " +
 	"find_in_spreadsheet to locate something first. Ranges are A1 throughout; this server does the index arithmetic. " +
 	"Reads are budgeted and say where to continue. " +
+	"Writing is guarded: write_values reads the target first and refuses to overwrite anything non-empty without " +
+	"overwrite, or a formula without overwrite_formulas as well, naming the cells each time. Sheets has no undo, so " +
+	"take a refusal as information rather than an obstacle, and use dry_run when you are not sure what is there. " +
+	"input=typed parses as a person typing, so 007 becomes 7 and a date becomes a serial; every value Google changes " +
+	"is named in the result, and input=literal stores exactly what you send. " +
+	"append_rows lands where Google decides and reports it; write_values is the one to use when you know the " +
+	"addresses. " +
 	"Files, folders, sharing, revisions and comment threads are not here: they belong to a server built on the Drive " +
 	"API. A cell note is a Sheets field and is here."
 

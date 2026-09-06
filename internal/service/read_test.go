@@ -119,7 +119,7 @@ func TestOpenEndedRangeIsResolvedBeforeTheCall(t *testing.T) {
 	svc := newService(t, srv)
 
 	res, err := svc.Read(context.Background(), service.ReadRequest{
-		Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A:T", MaxCells: 200,
+		Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A:T", Budget: service.Budget{Cells: 200},
 	})
 	if err != nil {
 		t.Fatalf("Read: %v", err)
@@ -161,7 +161,7 @@ func TestReadContinues(t *testing.T) {
 	ctx := context.Background()
 
 	first, err := svc.Read(ctx, service.ReadRequest{
-		Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A1:D200", MaxCells: 40,
+		Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A1:D200", Budget: service.Budget{Cells: 40},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -170,7 +170,7 @@ func TestReadContinues(t *testing.T) {
 		t.Fatalf("first read: truncated=%v continue_from=%d, want true and 11", first.Truncated, first.ContinueFrom)
 	}
 	second, err := svc.Read(ctx, service.ReadRequest{
-		Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A1:D200", MaxCells: 40, ContinueFrom: first.ContinueFrom,
+		Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A1:D200", Budget: service.Budget{Cells: 40}, ContinueFrom: first.ContinueFrom,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -311,7 +311,7 @@ func TestCharacterBudgetCutsAtARowBoundary(t *testing.T) {
 	svc := newService(t, srv)
 
 	res, err := svc.Read(context.Background(), service.ReadRequest{
-		Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A1:F100", MaxChars: 400,
+		Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A1:F100", Budget: service.Budget{Chars: 400},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -346,7 +346,7 @@ func TestTheBudgetBindsEveryFormat(t *testing.T) {
 	for _, format := range []string{service.FormatGrid, service.FormatJSON, service.FormatCSV, service.FormatTSV} {
 		t.Run(format, func(t *testing.T) {
 			res, err := svc.Read(ctx, service.ReadRequest{
-				Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A1:D200", MaxChars: 300, Format: format,
+				Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A1:D200", Budget: service.Budget{Chars: 300}, Format: format,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -434,7 +434,7 @@ func TestAnnotationsCoverOnlyTheRowsShown(t *testing.T) {
 	_, svc := standard(t)
 	res, err := svc.Read(context.Background(), service.ReadRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "A1:D10",
-		IncludeNotes: true, IncludeValidation: true, MaxChars: 200,
+		IncludeNotes: true, IncludeValidation: true, Budget: service.Budget{Chars: 200},
 	})
 	if err != nil {
 		t.Fatal(err)

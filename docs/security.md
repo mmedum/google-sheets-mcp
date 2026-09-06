@@ -113,12 +113,15 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
   may treat as untrusted, and a host in an auto-approve permission mode
   runs an annotated tool without prompting anybody — so every gate is
   server-side. Client-side approval is not one of the layers here.
-- **A write never destroys what it cannot see** (from v0.1.0). Anything
+- **A write never destroys what it cannot see.** Anything
   non-empty needs `overwrite`; a formula needs `overwrite_formulas` as
   well; a protected range or a partially covered merge is refused before
   the request is built, with the obstacle named in A1. Sheets has no
   undo and the API cannot restore version history, so this is the only
-  guard there is.
+  guard there is. A formula that evaluated to an error is still a
+  formula and still needs the second acknowledgement: a live run found
+  the version of this check that tested the cell's *kind*, which
+  `#REF!` overwrites.
 - **A formula that reaches outside the spreadsheet needs saying so.**
   `IMPORTXML`, `IMPORTDATA`, `IMPORTHTML`, `IMPORTFEED`, `IMAGE` and
   `HYPERLINK` take an arbitrary URL, which Google fetches from its own

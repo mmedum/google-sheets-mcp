@@ -49,7 +49,21 @@ func connect(t *testing.T, s *mcp.Server) *mcp.ClientSession {
 // phase0Tools is the surface this phase ships. It is written out so a
 // tool appearing or disappearing is a decision somebody made rather than
 // something that happened.
-var phase0Tools = []string{"find_in_spreadsheet", "get_spreadsheet", "read_range", "search_spreadsheets"}
+var readTools = []string{"find_in_spreadsheet", "get_spreadsheet", "read_range", "search_spreadsheets"}
+
+// writeTools are registered unless the server is read-only;
+// destructiveTools need the destructive flag as well.
+var writeTools = []string{"append_rows", "create_spreadsheet", "edit_dimensions", "manage_sheet", "write_values"}
+
+var destructiveTools = []string{"clear_values", "delete_dimensions", "delete_sheet"}
+
+// allTools is the surface this phase ships, which is what the schema
+// dump carries.
+func allTools() []string {
+	all := append(append(append([]string{}, readTools...), writeTools...), destructiveTools...)
+	slices.Sort(all)
+	return all
+}
 
 func TestToolSurface(t *testing.T) {
 	s, _ := newServer(t, config.Config{}, nil)
@@ -74,8 +88,10 @@ func TestToolSurface(t *testing.T) {
 		}
 	}
 	slices.Sort(names)
-	if !slices.Equal(names, phase0Tools) {
-		t.Errorf("tools = %v, want %v", names, phase0Tools)
+	want := append(append([]string{}, readTools...), writeTools...)
+	slices.Sort(want)
+	if !slices.Equal(names, want) {
+		t.Errorf("tools = %v, want %v", names, want)
 	}
 }
 
@@ -105,13 +121,21 @@ func TestToolsNameEachOther(t *testing.T) {
 }
 
 func TestReadOnlyModeKeepsTheReads(t *testing.T) {
-	s, _ := newServer(t, config.Config{ReadOnly: true}, nil)
+	s, _ := newServer(t, config.Config{ReadOnly: true, EnableDestructive: true}, nil)
 	res, err := connect(t, s).ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Tools) != len(phase0Tools) {
-		t.Errorf("read-only mode registered %d tools; every phase 0 tool is a read", len(res.Tools))
+	var names []string
+	for _, tool := range res.Tools {
+		names = append(names, tool.Name)
+	}
+	slices.Sort(names)
+	// Destructive is on as well, so this asserts the two gates in the
+	// order that matters: read-only wins over it, rather than the two
+	// combining into a server that offers a destructive tool.
+	if !slices.Equal(names, readTools) {
+		t.Errorf("read-only mode registered %v, want only the reads", names)
 	}
 }
 
@@ -188,7 +212,10 @@ func TestToolErrorsAreResultsNotProtocolErrors(t *testing.T) {
 }
 
 func TestDumpSchemas(t *testing.T) {
-	s, _ := newServer(t, config.Config{}, nil)
+	// The full surface, as --dump-schemas builds it: a dump that showed
+	// only what this configuration registers would let a destructive
+	// tool's schema change without the diff gate ever seeing it.
+	s, _ := newServer(t, config.Config{EnableDestructive: true}, nil)
 	var buf bytes.Buffer
 	if err := server.DumpSchemas(context.Background(), s, &buf, "test"); err != nil {
 		t.Fatal(err)
@@ -207,7 +234,7 @@ func TestDumpSchemas(t *testing.T) {
 	if dump.Server != server.Name || dump.SDK != server.SDKVersion {
 		t.Errorf("dump header = %+v", dump)
 	}
-	if len(dump.Tools) != len(phase0Tools) {
+	if len(dump.Tools) != len(allTools()) {
 		t.Fatalf("the dump has %d tools", len(dump.Tools))
 	}
 	// Sorted, so a diff between two dumps is a change and not a map's

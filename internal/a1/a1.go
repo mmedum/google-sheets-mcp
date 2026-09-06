@@ -392,19 +392,37 @@ func Format(sheet string, r Rect) string {
 func (r Rect) GridRange(sheetID int) *gsheets.GridRange {
 	g := &gsheets.GridRange{SheetID: sheetID}
 	if r.FirstRow != 0 {
-		g.StartRowIndex = ptr(r.FirstRow - 1)
+		g.StartRowIndex = gsheets.Ptr(r.FirstRow - 1)
 	}
 	if r.LastRow != 0 {
-		g.EndRowIndex = ptr(r.LastRow)
+		g.EndRowIndex = gsheets.Ptr(r.LastRow)
 	}
 	if r.FirstCol != 0 {
-		g.StartColumnIndex = ptr(r.FirstCol - 1)
+		g.StartColumnIndex = gsheets.Ptr(r.FirstCol - 1)
 	}
 	if r.LastCol != 0 {
-		g.EndColumnIndex = ptr(r.LastCol)
+		g.EndColumnIndex = gsheets.Ptr(r.LastCol)
 	}
 	return g
 }
+
+// BandIndices converts a one-based inclusive run of rows or columns into
+// the API's zero-based half-open pair.
+//
+// It is Rect.GridRange's arithmetic on one axis, and it lives here for
+// the same reason: hard rule 4 says every conversion between A1 and the
+// API's indices is this package's, and "the same arithmetic, but for a
+// dimension" was the shape of the exception that would have made the
+// rule nearly true.
+func BandIndices(first, last int) (start, end int) {
+	g := Rect{FirstRow: first, LastRow: last}.GridRange(0)
+	return *g.StartRowIndex, *g.EndRowIndex
+}
+
+// ZeroBased converts a one-based row or column number to the index the
+// API counts from. The one-line conversion has a home so no caller has
+// to write "- 1" and be right about it.
+func ZeroBased(oneBased int) int { return oneBased - 1 }
 
 // FromGridRange converts back. Round-tripping either way is a table test.
 func FromGridRange(g *gsheets.GridRange) Rect {
@@ -426,8 +444,6 @@ func FromGridRange(g *gsheets.GridRange) Rect {
 	}
 	return r
 }
-
-func ptr[T any](v T) *T { return &v }
 
 // Bounded reports whether every side of the rectangle is given.
 func (r Rect) Bounded() bool {

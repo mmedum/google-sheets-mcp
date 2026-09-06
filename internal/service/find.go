@@ -26,8 +26,7 @@ type FindRequest struct {
 	// SearchNotes beside them.
 	SearchFormulas bool
 	SearchNotes    bool
-	MaxCells       int
-	MaxMatches     int
+	Budget         Budget
 }
 
 // FindResult is find_in_spreadsheet's answer.
@@ -54,9 +53,6 @@ type FindHit struct {
 // Render is the text half.
 func (r FindResult) Render() string { return r.Matches }
 
-// DefaultMaxMatches bounds a search that matches everything.
-const DefaultMaxMatches = 200
-
 // Find searches a spreadsheet for text or an RE2 pattern.
 //
 // The Sheets API has no query endpoint, so this reads and matches here.
@@ -70,6 +66,10 @@ func (s *Service) Find(ctx context.Context, req FindRequest) (*FindResult, error
 		return nil, Errorf("invalid", "give exactly one of query (plain text) or regex (an RE2 pattern)")
 	}
 	match, err := matcher(req)
+	if err != nil {
+		return nil, err
+	}
+	bud, err := s.budget(req.Budget)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (s *Service) Find(ctx context.Context, req FindRequest) (*FindResult, error
 		full[i] = a1.WholeSheet.Clamp(rows, cols)
 		sizes[i], _ = full[i].Cells()
 	}
-	allowance := Share(budget(req.MaxCells, s.cfg.MaxCells), sizes)
+	allowance := Share(bud.Cells, sizes)
 
 	var ranges []string
 	var windows []a1.Rect
@@ -131,10 +131,6 @@ func (s *Service) Find(ctx context.Context, req FindRequest) (*FindResult, error
 		return nil, wrap(err)
 	}
 
-	maxMatches := req.MaxMatches
-	if maxMatches <= 0 {
-		maxMatches = DefaultMaxMatches
-	}
 	res := &FindResult{Spreadsheet: ref.ID}
 	// Whether every sheet ran out of data before its window ran out of
 	// room. It does not prove the rows below are empty — nothing short
@@ -161,7 +157,7 @@ search:
 				if kind == "" {
 					continue
 				}
-				if len(res.Hits) >= maxMatches {
+				if len(res.Hits) >= bud.Matches {
 					// A different dial from the cell budget: these cells
 					// were read, so raising max_cells would change
 					// nothing. But it does not *replace* a cell budget

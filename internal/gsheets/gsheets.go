@@ -12,6 +12,13 @@ package gsheets
 
 import "encoding/json"
 
+// Ptr is the address of a value, for the API's many optional scalars.
+//
+// The API distinguishes "absent" from "zero" in a dozen places where the
+// zero is meaningful — a sheet index, a start row, a frozen row count —
+// so the wire types use pointers and the callers need this.
+func Ptr[T any](v T) *T { return &v }
+
 // GridRange is a range on one sheet in the API's own coordinates:
 // zero-based and half-open, with a missing index meaning unbounded on
 // that side. A1 is one-based and inclusive, so every conversion between
@@ -55,10 +62,16 @@ type Sheet struct {
 }
 
 // SheetProperties describe one tab.
+//
+// Index is a pointer because the API's field is optional and the zero
+// value means "first", not "unset": an addSheet carrying index 0 puts
+// the new tab at the front of the spreadsheet. A struct that cannot
+// express "leave it where Google would put it" is how a sheet lands in
+// the wrong place with nobody having asked for it.
 type SheetProperties struct {
 	SheetID        int             `json:"sheetId"`
 	Title          string          `json:"title,omitempty"`
-	Index          int             `json:"index"`
+	Index          *int            `json:"index,omitempty"`
 	SheetType      string          `json:"sheetType,omitempty"`
 	GridProperties *GridProperties `json:"gridProperties,omitempty"`
 	Hidden         bool            `json:"hidden,omitempty"`
@@ -276,4 +289,223 @@ type ValueRange struct {
 type BatchGetValuesResponse struct {
 	SpreadsheetID string        `json:"spreadsheetId,omitempty"`
 	ValueRanges   []*ValueRange `json:"valueRanges,omitempty"`
+}
+
+// Everything below is the write half: the request and response shapes
+// for the calls that change a spreadsheet. They are separate from the
+// read types above only in what uses them; the API returns the same
+// SheetProperties it accepts.
+
+// UpdateValuesResponse is what values.update returns, and what each
+// entry of a values.batchUpdate response carries.
+//
+// UpdatedData is present only when the request asked for the values
+// back, which every write here does: it is the half the coercion report
+// is built from (§4.4).
+type UpdateValuesResponse struct {
+	SpreadsheetID  string      `json:"spreadsheetId,omitempty"`
+	UpdatedRange   string      `json:"updatedRange,omitempty"`
+	UpdatedRows    int         `json:"updatedRows,omitempty"`
+	UpdatedColumns int         `json:"updatedColumns,omitempty"`
+	UpdatedCells   int         `json:"updatedCells,omitempty"`
+	UpdatedData    *ValueRange `json:"updatedData,omitempty"`
+}
+
+// AppendValuesResponse is what values.append returns.
+//
+// TableRange is the block Google decided to append after, which is not
+// predictable from the range given: verified live, a range naming a cell
+// in the first block appends after that block, and a whole-sheet range
+// appends after the last one. So it is reported rather than assumed.
+type AppendValuesResponse struct {
+	SpreadsheetID string                `json:"spreadsheetId,omitempty"`
+	TableRange    string                `json:"tableRange,omitempty"`
+	Updates       *UpdateValuesResponse `json:"updates,omitempty"`
+}
+
+// ClearValuesResponse is what values.clear returns.
+type ClearValuesResponse struct {
+	SpreadsheetID string `json:"spreadsheetId,omitempty"`
+	ClearedRange  string `json:"clearedRange,omitempty"`
+}
+
+// BatchUpdateSpreadsheetRequest is the structural write: one atomic
+// batch of typed requests.
+//
+// The discovery document is explicit that the batch is all or nothing —
+// "If any request is not valid then the entire request will fail and
+// nothing will be applied" — and that a batch counts once against quota.
+// So ops compile into one of these rather than into several calls.
+//
+// `includeSpreadsheetInResponse` is deliberately absent. It would bring
+// the state after the write back in the same response and save the card
+// re-read that follows every structural change here, and the fields to
+// use it are not written until something uses them: this package's rule
+// is that a field appearing in it means some code reads it. §17a carries
+// the entry, including the live probe it needs first.
+type BatchUpdateSpreadsheetRequest struct {
+	Requests []*Request `json:"requests,omitempty"`
+}
+
+// BatchUpdateSpreadsheetResponse is that request's answer. Replies line
+// up with the requests that produced them, one for one.
+type BatchUpdateSpreadsheetResponse struct {
+	SpreadsheetID string   `json:"spreadsheetId,omitempty"`
+	Replies       []*Reply `json:"replies,omitempty"`
+}
+
+// Request is one member of the batchUpdate union. The API has 69; this
+// is the set phase 1 builds, and each later phase adds its own rather
+// than the whole union arriving as free-form maps.
+//
+// Exactly one field is set. Nothing here accepts a raw map: a typed
+// builder is what stops a request being sent that no code has read.
+type Request struct {
+	AddSheet                  *AddSheetRequest                  `json:"addSheet,omitempty"`
+	DeleteSheet               *DeleteSheetRequest               `json:"deleteSheet,omitempty"`
+	DuplicateSheet            *DuplicateSheetRequest            `json:"duplicateSheet,omitempty"`
+	UpdateSheetProperties     *UpdateSheetPropertiesRequest     `json:"updateSheetProperties,omitempty"`
+	InsertDimension           *InsertDimensionRequest           `json:"insertDimension,omitempty"`
+	DeleteDimension           *DeleteDimensionRequest           `json:"deleteDimension,omitempty"`
+	MoveDimension             *MoveDimensionRequest             `json:"moveDimension,omitempty"`
+	UpdateDimensionProperties *UpdateDimensionPropertiesRequest `json:"updateDimensionProperties,omitempty"`
+	AutoResizeDimensions      *AutoResizeDimensionsRequest      `json:"autoResizeDimensions,omitempty"`
+	AddDimensionGroup         *DimensionGroupRequest            `json:"addDimensionGroup,omitempty"`
+	DeleteDimensionGroup      *DimensionGroupRequest            `json:"deleteDimensionGroup,omitempty"`
+}
+
+// Reply is one member of the reply union, in the same order as the
+// requests. Only the replies phase 1 reads are here.
+type Reply struct {
+	AddSheet       *AddSheetReply       `json:"addSheet,omitempty"`
+	DuplicateSheet *DuplicateSheetReply `json:"duplicateSheet,omitempty"`
+}
+
+// NewSheetProperties is a sheet that does not exist yet.
+//
+// It has no sheetId, and that absence is the type's whole reason for
+// being: SheetProperties carries one, the zero value serialises as
+// `"sheetId": 0`, and Google reads that as a request for id 0 — which
+// the first sheet always has. Live, an addSheet built from
+// SheetProperties came back as "Sheet with id 0 already exists", and a
+// create came back with the requested sheet and nothing else.
+//
+// A field that cannot be set wrongly beats a rule about not setting it.
+type NewSheetProperties struct {
+	Title          string          `json:"title,omitempty"`
+	Index          *int            `json:"index,omitempty"`
+	GridProperties *GridProperties `json:"gridProperties,omitempty"`
+}
+
+// NewSheet is a sheet in a spreadsheets.create request.
+type NewSheet struct {
+	Properties *NewSheetProperties `json:"properties,omitempty"`
+}
+
+// NewSpreadsheet is the spreadsheets.create request body. Separate from
+// Spreadsheet for the same reason NewSheetProperties is separate from
+// SheetProperties: nothing here has an id yet.
+type NewSpreadsheet struct {
+	Properties *SpreadsheetProperties `json:"properties,omitempty"`
+	Sheets     []*NewSheet            `json:"sheets,omitempty"`
+}
+
+// AddSheetRequest adds a tab.
+type AddSheetRequest struct {
+	Properties *NewSheetProperties `json:"properties,omitempty"`
+}
+
+// AddSheetReply carries the properties of the sheet that was added,
+// including the id Google assigned it.
+type AddSheetReply struct {
+	Properties *SheetProperties `json:"properties,omitempty"`
+}
+
+// DeleteSheetRequest removes a tab and everything on it.
+type DeleteSheetRequest struct {
+	SheetID int `json:"sheetId"`
+}
+
+// DuplicateSheetRequest copies a tab within the same spreadsheet.
+type DuplicateSheetRequest struct {
+	SourceSheetID    int    `json:"sourceSheetId"`
+	InsertSheetIndex *int   `json:"insertSheetIndex,omitempty"`
+	NewSheetName     string `json:"newSheetName,omitempty"`
+}
+
+// DuplicateSheetReply names the copy.
+type DuplicateSheetReply struct {
+	Properties *SheetProperties `json:"properties,omitempty"`
+}
+
+// UpdateSheetPropertiesRequest changes the fields its mask names, and
+// only those. An empty mask changes nothing, which the API treats as an
+// error rather than a no-op.
+type UpdateSheetPropertiesRequest struct {
+	Properties *SheetProperties `json:"properties,omitempty"`
+	Fields     string           `json:"fields,omitempty"`
+}
+
+// Dimensions, as the API spells them.
+const (
+	DimensionRows    = "ROWS"
+	DimensionColumns = "COLUMNS"
+)
+
+// DimensionRange is a band of rows or columns, zero-based and half-open
+// like every other index the API uses.
+type DimensionRange struct {
+	SheetID    int    `json:"sheetId"`
+	Dimension  string `json:"dimension,omitempty"`
+	StartIndex int    `json:"startIndex"`
+	EndIndex   int    `json:"endIndex"`
+}
+
+// InsertDimensionRequest makes room. InheritFromBefore decides which
+// neighbour's formatting the new band takes; it cannot be true at index
+// zero, since there is nothing before it.
+type InsertDimensionRequest struct {
+	Range             *DimensionRange `json:"range,omitempty"`
+	InheritFromBefore bool            `json:"inheritFromBefore,omitempty"`
+}
+
+// DeleteDimensionRequest removes a band and the data in it.
+type DeleteDimensionRequest struct {
+	Range *DimensionRange `json:"range,omitempty"`
+}
+
+// MoveDimensionRequest moves a band. DestinationIndex is where the band
+// starts *before* the move, which is the API's own convention and the
+// one arithmetic trap in this request.
+type MoveDimensionRequest struct {
+	Source           *DimensionRange `json:"source,omitempty"`
+	DestinationIndex int             `json:"destinationIndex"`
+}
+
+// DimensionProperties is a band's size. Hiding a row or a column is
+// phase 2's, and the field arrives with the code that sets it.
+type DimensionProperties struct {
+	PixelSize int `json:"pixelSize,omitempty"`
+}
+
+// UpdateDimensionPropertiesRequest resizes or hides a band.
+type UpdateDimensionPropertiesRequest struct {
+	Range      *DimensionRange      `json:"range,omitempty"`
+	Properties *DimensionProperties `json:"properties,omitempty"`
+	Fields     string               `json:"fields,omitempty"`
+}
+
+// AutoResizeDimensionsRequest sizes a band to its contents.
+type AutoResizeDimensionsRequest struct {
+	Dimensions *DimensionRange `json:"dimensions,omitempty"`
+}
+
+// DimensionGroupRequest adds or removes a collapsible group.
+type DimensionGroupRequest struct {
+	Range *DimensionRange `json:"range,omitempty"`
+}
+
+// CopySheetToAnotherSpreadsheetRequest is the body of sheets.copyTo.
+type CopySheetToAnotherSpreadsheetRequest struct {
+	DestinationSpreadsheetID string `json:"destinationSpreadsheetId,omitempty"`
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/mmedum/google-sheets-mcp/internal/config"
 	"github.com/mmedum/google-sheets-mcp/internal/gapi"
 	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/internal/render"
 )
 
 // API is the part of the Google client this package uses. An interface
@@ -21,9 +22,17 @@ import (
 // retry loop's timing.
 type API interface {
 	GetSpreadsheet(ctx context.Context, id string, o gapi.GetOptions) (*gsheets.Spreadsheet, error)
+	GetValues(ctx context.Context, id, a1Range string, o gapi.ValueOptions) (*gsheets.ValueRange, error)
 	SearchSpreadsheets(ctx context.Context, q string, limit int, pageToken string) (*gapi.FileList, error)
 	GetFile(ctx context.Context, id string) (*gapi.File, error)
 	About(ctx context.Context) (*gapi.User, error)
+
+	UpdateValues(ctx context.Context, id, a1Range string, values [][]any, o gapi.WriteOptions) (*gsheets.UpdateValuesResponse, error)
+	AppendValues(ctx context.Context, id, a1Range string, values [][]any, o gapi.WriteOptions) (*gsheets.AppendValuesResponse, error)
+	ClearValues(ctx context.Context, id, a1Range string) (*gsheets.ClearValuesResponse, error)
+	CreateSpreadsheet(ctx context.Context, in *gsheets.NewSpreadsheet) (*gsheets.Spreadsheet, error)
+	BatchUpdate(ctx context.Context, id string, in *gsheets.BatchUpdateSpreadsheetRequest) (*gsheets.BatchUpdateSpreadsheetResponse, error)
+	CopySheetTo(ctx context.Context, id string, sheetID int, destination string) (*gsheets.SheetProperties, error)
 }
 
 // Classes is the closed vocabulary of error classes this server speaks.
@@ -185,13 +194,7 @@ type Rendered interface {
 	Render() string
 }
 
-// join is strings.Join with an Oxford-free "and" for message text.
-func join(items []string) string {
-	switch len(items) {
-	case 0:
-		return ""
-	case 1:
-		return items[0]
-	}
-	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
-}
+// join phrases a list for a message. One implementation, in the
+// renderer, because a refusal and a result listing the same things
+// should read the same way.
+func join(items []string) string { return render.JoinAnd(items) }

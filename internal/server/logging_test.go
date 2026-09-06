@@ -53,6 +53,52 @@ var toolCalls = map[string][]map[string]any{
 		{"spreadsheet": sheetstest.FixtureID, "regex": "(?i)" + searchTerm},
 		{"spreadsheet": sheetstest.FixtureID, "regex": "(?P<"},
 	},
+	// The writes send the word that must never be logged as a cell
+	// value, which is the route a read cannot test: a value the caller
+	// supplied travels in a request body rather than in a URL.
+	"create_spreadsheet": {
+		{"title": "Grivet plan", "values": [][]any{{searchTerm}}},
+		{"title": "  "},
+	},
+	"write_values": {
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "E1",
+			"values": [][]any{{searchTerm}}},
+		// Refused: the heading row is protected, and this one is not
+		// empty either.
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.FirstSheet, "range": "A1:B1",
+			"values": [][]any{{searchTerm, searchTerm}}},
+	},
+	"append_rows": {
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
+			"values": [][]any{{searchTerm, 1}}},
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
+			"values": [][]any{{searchTerm}}, "insert": "overwrite"},
+	},
+	"manage_sheet": {
+		{"spreadsheet": sheetstest.FixtureID, "action": "add", "title": "Oblisk added"},
+		{"spreadsheet": sheetstest.FixtureID, "action": "rename", "sheet": sheetstest.SecondSheet,
+			"title": sheetstest.FirstSheet},
+	},
+	"edit_dimensions": {
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "action": "auto_resize",
+			"dimension": "columns", "band": "A:B"},
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "action": "insert",
+			"dimension": "rows", "band": "A:B"},
+	},
+	"delete_dimensions": {
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet,
+			"dimension": "rows", "band": "2:3", "dry_run": true},
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet,
+			"dimension": "rows", "band": "2:3"},
+	},
+	"clear_values": {
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2", "dry_run": true},
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2"},
+	},
+	"delete_sheet": {
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.ApostropheName, "dry_run": true},
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.ApostropheName},
+	},
 }
 
 func TestEveryToolIsDriven(t *testing.T) {
@@ -92,7 +138,7 @@ func TestEveryToolIsDriven(t *testing.T) {
 func TestLogsCarryNothingFromTheSpreadsheet(t *testing.T) {
 	var buf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	s, fake := newServer(t, config.Config{}, log)
+	s, fake := newServer(t, config.Config{EnableDestructive: true}, log)
 	cs := connect(t, s)
 
 	ctx := context.Background()
@@ -128,14 +174,18 @@ func TestLogsCarryNothingFromTheSpreadsheet(t *testing.T) {
 	}
 
 	// Asserted over what actually reached the fake, not over a list of
-	// calls somebody remembered to write. Phase 0 reads; the day a write
-	// arrives, this line is what notices.
+	// calls somebody remembered to write. A write tool that refused
+	// everything would leave the log clean and prove nothing, so the
+	// check is that the write methods were exercised at all.
 	methods := map[string]bool{}
 	for _, c := range fake.Calls() {
 		methods[c.Method] = true
 	}
-	if len(methods) != 1 || !methods[http.MethodGet] {
-		t.Errorf("the tools sent %v; every phase 0 tool is a read", slices.Sorted(keys(methods)))
+	for _, want := range []string{http.MethodGet, http.MethodPut, http.MethodPost} {
+		if !methods[want] {
+			t.Errorf("no %s reached the fake; the write path was not exercised (%v)",
+				want, slices.Sorted(keys(methods)))
+		}
 	}
 }
 
@@ -175,7 +225,7 @@ func forbiddenStrings(t *testing.T) []string {
 	}
 	// A1 ranges are addresses, and an address says which part of
 	// somebody's spreadsheet was touched.
-	add("A1:D6", "A1:D4", "A1:B2")
+	add("A1:D6", "A1:D4", "A1:B2", "A1:B1", "E1", "A:B")
 	if len(seen) < 20 {
 		t.Fatalf("only %d forbidden strings; the list is not being read out of the fixture", len(seen))
 	}

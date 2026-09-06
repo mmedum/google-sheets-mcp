@@ -526,7 +526,8 @@ func doctor(ctx context.Context, cfg config.Config, spreadsheet string, out io.W
 			// path beats sanitising it: there is then nothing here for
 			// a later edit to reintroduce.
 			if _, err := svc.Read(ctx, service.ReadRequest{
-				Spreadsheet: spreadsheet, Sheet: sheetTitle, Range: "A1:A1", MaxCells: 1,
+				Spreadsheet: spreadsheet, Sheet: sheetTitle, Range: "A1:A1",
+				Budget: service.Budget{Cells: 1},
 			}); err != nil {
 				return "", err
 			}

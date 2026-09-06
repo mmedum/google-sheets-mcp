@@ -155,7 +155,7 @@ func TestFindSaysWhenTheBudgetStoppedIt(t *testing.T) {
 	svc := newService(t, srv)
 
 	res, err := svc.Find(context.Background(), service.FindRequest{
-		Spreadsheet: doc.ID, Query: "nothing matches this", MaxCells: 100,
+		Spreadsheet: doc.ID, Query: "nothing matches this", Budget: service.Budget{Cells: 100},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +174,7 @@ func TestFindSaysWhenTheBudgetStoppedIt(t *testing.T) {
 func TestFindStopsAtMaxMatches(t *testing.T) {
 	_, svc := standard(t)
 	res, err := svc.Find(context.Background(), service.FindRequest{
-		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Regex: `.`, MaxMatches: 3,
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Regex: `.`, Budget: service.Budget{Matches: 3},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -212,7 +212,7 @@ func TestTheStopReasonPicksTheRightDial(t *testing.T) {
 	ctx := context.Background()
 
 	byCells, err := big.Find(ctx, service.FindRequest{
-		Spreadsheet: doc.ID, Query: "nothing matches this", MaxCells: 100,
+		Spreadsheet: doc.ID, Query: "nothing matches this", Budget: service.Budget{Cells: 100},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -222,7 +222,7 @@ func TestTheStopReasonPicksTheRightDial(t *testing.T) {
 	}
 
 	byMatches, err := small.Find(ctx, service.FindRequest{
-		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Regex: ".", MaxMatches: 3,
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Regex: ".", Budget: service.Budget{Matches: 3},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -256,7 +256,7 @@ func TestBothLimitsBitingKeepsTheHonestOne(t *testing.T) {
 	svc := newService(t, srv)
 
 	res, err := svc.Find(context.Background(), service.FindRequest{
-		Spreadsheet: doc.ID, Regex: ".", MaxCells: 40, MaxMatches: 2,
+		Spreadsheet: doc.ID, Regex: ".", Budget: service.Budget{Cells: 40, Matches: 2},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -278,7 +278,7 @@ func TestCellsReadCountsWhatWasLookedAt(t *testing.T) {
 	svc := newService(t, srv)
 
 	res, err := svc.Find(context.Background(), service.FindRequest{
-		Spreadsheet: doc.ID, Regex: ".", MaxMatches: 1,
+		Spreadsheet: doc.ID, Regex: ".", Budget: service.Budget{Matches: 1},
 	})
 	if err != nil {
 		t.Fatal(err)

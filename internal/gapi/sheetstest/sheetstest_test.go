@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mmedum/google-sheets-mcp/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
 )
 
 func TestFixtureShape(t *testing.T) {
@@ -280,5 +281,30 @@ func TestCellConstructors(t *testing.T) {
 		if got := ErrorCell("=x", kind, "").FormattedValue; got != want {
 			t.Errorf("ErrorCell(%q) = %q, want %q", kind, got, want)
 		}
+	}
+}
+
+// The API applies nothing when any request in a batch is invalid, and
+// the fake has to do the same: applying in order and stopping at the
+// first failure leaves a state the real API never produces, and a test
+// written against it would agree with the wrong thing.
+func TestBatchUpdateAppliesNothingWhenOneRequestFails(t *testing.T) {
+	srv := Standard(t)
+	client := srv.Client()
+	ctx := context.Background()
+
+	_, err := client.BatchUpdate(ctx, FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*gsheets.Request{
+			// Valid, and it would apply first.
+			{AddSheet: &gsheets.AddSheetRequest{Properties: &gsheets.NewSheetProperties{Title: "Trennow"}}},
+			// Invalid: no sheet has this id.
+			{DeleteSheet: &gsheets.DeleteSheetRequest{SheetID: 987654}},
+		},
+	})
+	if err == nil {
+		t.Fatal("a batch with an invalid request was accepted")
+	}
+	if sh := srv.Doc(FixtureID).Find("Trennow"); sh != nil {
+		t.Error("the first request of a failed batch was applied; the API applies none of them")
 	}
 }

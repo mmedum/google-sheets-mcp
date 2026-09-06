@@ -25,8 +25,7 @@ type ReadRequest struct {
 	Show      string
 	Format    string
 	Formatted bool
-	MaxCells  int
-	MaxChars  int
+	Budget    Budget
 	// ContinueFrom is the row a previous truncated read stopped at.
 	ContinueFrom      int
 	IncludeNotes      bool
@@ -87,6 +86,10 @@ func (s *Service) Read(ctx context.Context, req ReadRequest) (*ReadResult, error
 	if err != nil {
 		return nil, err
 	}
+	bud, err := s.budget(req.Budget)
+	if err != nil {
+		return nil, err
+	}
 	ref, err := s.Resolve(ctx, req.Spreadsheet)
 	if err != nil {
 		return nil, err
@@ -120,8 +123,7 @@ func (s *Service) Read(ctx context.Context, req ReadRequest) (*ReadResult, error
 		window.FirstRow = req.ContinueFrom
 	}
 
-	maxCells := budget(req.MaxCells, s.cfg.MaxCells)
-	window, cellsCut := fit(window, maxCells)
+	window, cellsCut := fit(window, bud.Cells)
 	rangeA1 := a1.Format(sh.Props.Title, window)
 
 	got, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{
@@ -141,7 +143,7 @@ func (s *Service) Read(ctx context.Context, req ReadRequest) (*ReadResult, error
 
 	opts := render.GridOptions{
 		Show:              show,
-		MaxChars:          budget(req.MaxChars, s.cfg.MaxChars),
+		MaxChars:          bud.Chars,
 		IncludeNotes:      req.IncludeNotes,
 		IncludeValidation: req.IncludeValidation,
 		IncludeMerges:     req.IncludeMerges,
@@ -259,13 +261,6 @@ func fit(r a1.Rect, maxCells int) (a1.Rect, bool) {
 	}
 	r.LastRow = r.FirstRow + maxRows - 1
 	return r, true
-}
-
-func budget(asked, dflt int) int {
-	if asked > 0 {
-		return asked
-	}
-	return dflt
 }
 
 // sheetData pulls one sheet's grid data, merges and protected ranges out

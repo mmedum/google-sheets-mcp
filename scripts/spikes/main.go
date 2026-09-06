@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -54,7 +55,13 @@ const sheetsBase = "https://sheets.googleapis.com/v4"
 var client *http.Client
 var scratchID string
 
+// only names one spike to run, so re-probing a single question does not
+// mean re-running every other one. Each run creates a scratch
+// spreadsheet it cannot trash, so a narrower run is a smaller mess.
+var only = flag.String("only", "", "run one spike by letter (A, B, C, E, F, H, I); default runs all")
+
 func main() {
+	flag.Parse()
 	ctx := context.Background()
 	if err := run(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "\nspikes: %v\n", err)
@@ -78,8 +85,24 @@ func run(ctx context.Context) error {
 	line("NOTE: this run leaves the spreadsheet behind — drive.readonly cannot trash it.")
 	line("      Remove %q by hand.", title)
 
-	spikeC(ctx, first, second)
-	spikeE(ctx, first)
+	// A slice rather than a map: a transcript that changes order between
+	// runs cannot be diffed against the last one.
+	for _, p := range []struct {
+		letter string
+		probe  func()
+	}{
+		{"C", func() { spikeC(ctx, first, second) }},
+		{"E", func() { spikeE(ctx, first) }},
+		{"A", func() { spikeA(ctx); spikeShape(ctx) }},
+		{"B", func() { spikeB(ctx) }},
+		{"F", func() { spikeF(ctx) }},
+		{"H", func() { spikeH(ctx) }},
+		{"I", func() { spikeI(ctx) }},
+	} {
+		if *only == "" || strings.EqualFold(*only, p.letter) {
+			p.probe()
+		}
+	}
 	return nil
 }
 

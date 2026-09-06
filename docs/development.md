@@ -82,14 +82,32 @@ Four rules keep that from happening here:
   that is Drive's index: a spreadsheet created a second ago may not be
   findable by `search_spreadsheets` yet, and one read cannot tell
   indexing lag from a broken search.
-- The driver creates its own spreadsheet, fills it with its own synthetic
-  data and trashes it afterwards. It never reads a spreadsheet it did not
-  write, so the values in a transcript are its own and are safe to paste
-  into a commit message. Redaction of ids and links is a second line of
-  defence and lives in the print helper only: scrubbing on the read path
-  means a step parses a placeholder out of one result and feeds it back
-  into the next call, which is a mistake a sibling project made and had
-  to undo.
+- The driver creates its own spreadsheets and fills them with its own
+  synthetic data. It never reads a spreadsheet it did not write, so the
+  values in a transcript are its own and are safe to paste into a commit
+  message. Redaction of ids and links is a second line of defence and
+  lives in the print helper only: scrubbing on the read path means a step
+  parses a placeholder out of one result and feeds it back into the next
+  call, which is a mistake a sibling project made and had to undo.
+- A step writes what it will then count. Three steps in phase 1's first
+  full run reported "0 non-empty cells" and passed, over rectangles an
+  earlier step had emptied and a sheet duplicated before anything was
+  written to it. A count that is always zero is a check that is always
+  true.
+
+**It leaves two spreadsheets behind, and cannot help it.** This server
+asks for `drive.readonly` on purpose, and trashing a file needs a
+write-capable Drive scope. Every file the driver makes is titled
+`livesheet scratch …`, and the run ends by printing that as a Drive
+search so the cleanup is one selection. Reusing a single scratch
+spreadsheet across runs was considered and rejected: it would leave one
+file forever and give every run a state the last run wrote, and a driver
+whose results can be explained by the previous run is not a driver worth
+reading.
+
+Reading the transcript is not a formality. Phase 1 ran the driver five
+times; every run was green or nearly so, and every transcript held
+something the count did not — including a hole in the write guard.
 
 ## Branches and releases
 

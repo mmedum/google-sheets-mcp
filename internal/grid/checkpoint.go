@@ -46,7 +46,11 @@ func Checkpoint(spreadsheetID string, g *Grid) string {
 				add("f", c.Formula)
 				continue
 			}
-			add(string(c.Kind), c.Display)
+			// Raw, not Display: a read with formatted=true shows
+			// "£1,234.50" where the cell stores 1234.5, and hashing what
+			// was shown made every such checkpoint fail against a write,
+			// which reads raw.
+			add(string(c.Kind), c.Raw)
 		}
 		buf = append(buf, 0x1e)
 		_, _ = h.Write(buf)

@@ -1,16 +1,17 @@
 # Architecture — google-sheets-mcp
 
-**Status: phase 0 complete (2026-09-06), not yet tagged.** The skeleton,
-the gates and the four read tools are in, `make check` is green, and
-everything has run against a real account: spikes C and E, the live
-driver, and the configuration surface. Two things remain before v0.0.1
-is a release rather than a commit, and both are the maintainer's: CI has
-never run on macOS or Windows, and `main` is never pushed to directly.
+**Status: phase 1 complete (2026-09-06), not yet tagged.** Reading and
+writing both work, `make check` is green, and the live driver ran 86
+steps with none failed. It took several runs: reading the transcript of
+each one found something the green count hid, and the two review passes
+found four more after the driver was already green. The write guard, the
+coercion report, checkpoints and `dry_run` are in, and every one of them
+was exercised against a real account.
 
-Phase 1 (§16) — writing values and sheets — starts on an explicit go.
-Read §17a first: three of its six entries are decisions phase 1 has to
-make in its first hour, and spikes A, B and F run before `write_values`
-is designed.
+Phase 2 (§16) — formatting and structure — starts on an explicit go.
+Spike G runs before `format_cells` is designed. Five of §17a's entries are
+open; none blocks phase 2, and two of them (7 and 8) are best done while
+phase 2 is already in those files.
 
 Everything here was checked against the Sheets API v4 discovery document
 (`sheets.googleapis.com/$discovery/rest?version=v4`, revision 20260831),
@@ -597,12 +598,24 @@ value.
   non-empty cells, formulas and charts go with it, and the description
   points at `duplicate` first.
 - `edit_dimensions`: `action` — `insert`, `move`, `resize`,
-  `auto_resize`, `group`, `ungroup`, over rows or columns. The `delete`
-  action is **absent from the schema** unless
-  `GSHEETS_ENABLE_DESTRUCTIVE=true`, and needs `confirm: true` when it is
-  there: deleting a column takes its data with it and nothing in Sheets
-  brings it back. An action a model cannot see is one it cannot reach,
-  which is the same rule as an unregistered tool, applied one level down.
+  `auto_resize`, `group`, `ungroup`, over rows or columns. `move`'s `to`
+  is where the band ends up: the API reads its index against the sheet
+  *before* the move, verified live, and the conversion is this server's.
+- `delete_dimensions`: gated, and needs `confirm: true`. Deleting a
+  column takes its data with it and nothing in Sheets brings it back.
+
+  It is a **tool** rather than an action on `edit_dimensions`, which is
+  what an earlier draft of this section specified. That version said the
+  action would be "absent from the schema" when destructive tools are
+  off, and hiding it from the description does not achieve that — with no
+  enum on `action` there is nothing structural to omit, and `confirm`'s
+  own description still named it. Worse, `edit_dimensions` is registered
+  as a plain write, so it advertised `destructiveHint: false` while
+  offering an irreversible action. `Kind` decides the annotations, the
+  registration gate and the interaction mark, and a tool whose
+  destructiveness depends on an argument is exactly the matrix `Kind`
+  exists to avoid — so the destructive act got its own tool and inherits
+  all three.
 
 ### 7.5 Formatting and structure (phase 2)
 
@@ -634,10 +647,8 @@ go with the charts.
 snake_case verb_noun, no dots. Claude Code prefixes `mcp__<server>__`.
 "Gated" means registered only with `GSHEETS_ENABLE_DESTRUCTIVE=true`, and
 each gated tool also requires `confirm: true` on the call and sets
-`_meta["anthropic/requiresUserInteraction"]`. One *action* is gated the
-same way — `edit_dimensions delete` — and is absent from the schema
-rather than refused at runtime (§7.4). `GSHEETS_READ_ONLY=true` registers
-only the readOnly rows and requests read-only scopes.
+`_meta["anthropic/requiresUserInteraction"]`. `GSHEETS_READ_ONLY=true`
+registers only the readOnly rows and requests read-only scopes.
 
 | Tool | Purpose | Annotations | Phase |
 |---|---|---|---|
@@ -649,7 +660,8 @@ only the readOnly rows and requests read-only scopes.
 | `write_values` | Write a grid; guard, coercion report, checkpoint | — | 1 |
 | `append_rows` | Append after the detected table; reports where it landed | — | 1 |
 | `manage_sheet` | add, rename, duplicate, copy_to, hide, unhide, reorder, resize, freeze, tab_color | idempotent | 1 |
-| `edit_dimensions` | insert, move, resize, auto_resize, group, ungroup rows or columns; `delete` only when destructive is enabled | — | 1 |
+| `edit_dimensions` | insert, move, resize, auto_resize, group, ungroup rows or columns | — | 1 |
+| `delete_dimensions` | Gated: remove rows or columns and the data on them | destructive | 1 |
 | `read_formatting` | Number formats, styles, borders, conditional rules over a range | readOnly | 2 |
 | `format_cells` | Number format, styles, borders, alignment, merges, notes, conditional rules | — | 2 |
 | `manage_range` | Named ranges, protected ranges, data validation, tables, banding | — | 2 |
@@ -1149,13 +1161,15 @@ the start of the phase that builds the code depending on it — a spike
 whose subject does not exist yet is a spike that gets skipped and then
 forgotten. Results go into §18.
 
-- **A. The coercion matrix** (phase 1, before `write_values`): what
+- **A. The coercion matrix** (phase 1, **run 2026-09-06**): what
   `USER_ENTERED` does to `1-2`, `007`, `=1+2`, `$100.15`, `TRUE`,
   `'0123`, `2026-09-05`, a 60 000-character string, and what `RAW` does
-  to the same. The recorded answers become the fake's replay table.
-- **B. Append's table detection** (phase 1): where `append_rows` writes
-  on a sheet with a gap below the block, with `OVERWRITE` and with
-  `INSERT_ROWS`, and what `tableRange` reports.
+  to the same. The recorded answers are the fake's replay table. Run
+  with a second half the plan had not asked for and needed: what
+  `values.update` does when the range and the array disagree about size.
+- **B. Append's table detection** (phase 1, **run 2026-09-06**): where
+  `append_rows` writes on a sheet with a gap below the block, with
+  `OVERWRITE` and with `INSERT_ROWS`, and what `tableRange` reports.
 - **C. Range syntax** (phase 0, **run 2026-09-06**; results in §18, and
   the probe is `scripts/spikes`): whether `values.get` accepts a named
   range (its reference documents only A1 and R1C1) and a table reference
@@ -1175,9 +1189,22 @@ forgotten. Results go into §18.
   troubleshooting page documents only 400, 500 and 503, so the class
   mapping in §6.5 is otherwise built from the Drive API's documented
   error vocabulary rather than from Sheets itself.
-- **F. Checkpoint economics** (phase 1): whether Drive's `files.get`
-  `version` field changes on every Sheets edit, which would give a
-  cheaper spreadsheet-wide staleness check than re-reading a range.
+- **F. Checkpoint economics** (phase 1, **run 2026-09-06**, rejected):
+  whether Drive's `files.get` `version` field changes on every Sheets
+  edit, which would give a cheaper spreadsheet-wide staleness check than
+  re-reading a range. `modifiedTime` was read in the same poll.
+- **H. Creating with a sheets list** (phase 1, **run 2026-09-06**): added
+  during phase 1 rather than planned. Whether `spreadsheets.create`'s
+  `sheets` are added beside the one Google always makes or are the whole
+  set — which decides what `create_spreadsheet` promises and where its
+  seed values land.
+- **I. What a values write keeps, and where a move lands** (phase 1,
+  **run 2026-09-06**): also added during the phase, both questions raised
+  by a review of code that had already assumed an answer. Whether
+  `values.update` leaves a cell's note and validation rule alone, which
+  decides whether the guard's "the write removed notes on A1" is true;
+  and whether `moveDimension`'s `destinationIndex` is read against the
+  sheet before or after the move.
 - **G. Size behaviour** (phase 2): what a write past 10 million cells or
   column ZZZ returns, and how a 50 000-character cell round-trips.
 
@@ -1207,12 +1234,23 @@ built now rather than as a later cleanup because it costs an afternoon
 and is the difference between a vocabulary and a habit; spikes C and E;
 a live run whose transcript is read.
 
-**Phase 1 — writing values and sheets (v0.1.0).** Spikes A, B and F
+**Phase 1 — writing values and sheets (v0.1.0). Done 2026-09-06,
+including the live work: spikes A, B and F ran, spike H was added and
+ran, and the live driver ran five times (83 steps, 0 failed, 1
+undetermined — Drive's content index again). Reading each transcript
+found something the green count hid: a `sheetId: 0` on every create, a
+reorder off by one, three counts that were zero for a reason the step
+could not see, a coercion line that read as no change, and a guard hole
+where a formula showing `#REF!` needed only `overwrite`. The review
+passes then found four more, including a `dry_run` that could not
+preview any write the guard refused. Not tagged: `main` is the maintainer's.** Spikes A, B and F
 first. Then `create_spreadsheet`, `write_values`, `append_rows`,
 `manage_sheet`, `edit_dimensions`, and the gated `clear_values` and
 `delete_sheet`; the guard, the coercion diff, checkpoints and `dry_run`;
 `sheetstest` grows the write paths and the recorded coercion table;
-`scripts/livesheet` covers every tool.
+`scripts/livesheet` covers every tool. Plus the three §17a decisions the
+phase owed: one `service.Budget`, the scratch-file cleanup, and the three
+error classes that were declared and not yet emitted.
 
 **Phase 2 — formatting and structure (v0.2.0).** Spike G first. Then
 `read_formatting`, `format_cells`, `manage_range`, `transform_range`;
@@ -1284,19 +1322,31 @@ they are not reopened.
 
 ## 17a. Deferred cleanups
 
-1. **The live driver cannot trash the spreadsheet it creates.** §17.6
-   asks for `drive.readonly`, and trashing a file needs a write-capable
-   Drive scope, so the driver ends by naming the file it left behind and
-   saying why. Found while writing the driver in phase 0. The options
-   are a driver-only credential with a wider scope, or accepting the
-   manual cleanup; phase 1 decides, when the driver runs for the first
-   time and the nuisance is measurable rather than theoretical.
-2. **Three error classes are declared and not yet emitted** —
-   `blocked`, `conflict` and `unsupported`. The vocabulary is written
-   down whole because a model should not learn a class twice, and the
-   code that emits these belongs to phases 1 and 2. The gate carries the
-   three by name with the phase that removes each, so the list shrinks
-   rather than being forgotten.
+Five open, five closed in phase 1. A closed entry keeps its text and the
+decision that closed it, so nobody reopens a question that was answered;
+four of the six open ones were raised by phase 1's own review passes and
+are recorded here rather than fixed in passing.
+
+1. **The live driver cannot trash the spreadsheets it creates.**
+   **Decided 2026-09-06: accept the manual cleanup, and make it one
+   search.** §17.6 asks for `drive.readonly` and trashing needs a
+   write-capable Drive scope, so the two options written here were a
+   driver-only credential with a wider scope or living with the mess. A
+   third was considered and rejected: reusing one scratch spreadsheet
+   across runs would leave exactly one file forever, and it would also
+   mean a driver whose results can be explained by the last run. A
+   correctness driver buys isolation with tidiness, not the other way
+   round. So every file it makes carries the prefix `livesheet scratch`,
+   and the run ends by printing the Drive search that finds all of them.
+   A run leaves two: the scratch spreadsheet, and the one
+   `create_spreadsheet` makes, which cannot be tested without making one.
+2. **Three error classes are declared and not yet emitted** — `blocked`,
+   `conflict` and `unsupported`. **Closed 2026-09-06:** the write guard
+   emits `blocked`, the checkpoint emits `conflict`, and
+   `edit_dimensions delete` emits `unsupported` when destructive tools
+   are off. The gate's `plannedClasses` list is empty, and it still
+   reads from both sides, so a class listed there and emitted anyway is
+   as much a failure as one declared and never emitted.
 3. **The fetch window is bounded by cells, the rendering by
    characters.** At the default budgets they land within a few rows of
    each other, but a caller who raises `max_cells` — which the tool
@@ -1304,24 +1354,62 @@ they are not reopened.
    the next continuation re-reads from where the render stopped. A
    character-aware row cap would fix it and could under-fetch if the
    estimate is wrong, so it waits for phase 3, where `make bench`
-   measures rather than guesses.
-4. **Budget policy sits at three altitudes**: the upper bounds in the
-   tool, the defaults and the cell fit in the service, the character cut
-   in the renderer, and `max_matches` inline in `Find` with no maximum at
-   all. Phase 1 adds five write tools that would each repeat the
-   tool-layer half. One `service.Budget` that defaults and clamps in one
-   place is the deeper fix; it is worth doing at the start of phase 1
-   rather than after five copies exist.
-5. **The live driver cannot clean up after itself**, so every run leaves
-   a scratch spreadsheet in My Drive. This is §17a.1 seen from the other
-   end: with `drive.readonly` the driver can create and fill but not
-   trash. Until that is decided, a run has a manual step, and the driver
-   says so loudly rather than leaving it to be discovered.
-6. **`leaks history` spawns one `git cat-file` per blob.** A single
+   measures rather than guesses. **Still open**, and phase 1 met it
+   once: a test asserting the cell default had to raise the character
+   budget out of the way to see it.
+4. **Budget policy sat at three altitudes.** **Closed 2026-09-06, before
+   the five write tools were written rather than after.**
+   `service.Budget` defaults and clamps in one place, `max_matches` has
+   a maximum for the first time, and an over-range budget is refused
+   rather than silently reduced — a caller who asks for 200 000 cells
+   and gets 50 000 reads a footer describing a window they never asked
+   for. The tools pass the caller's numbers through untouched.
+5. **The live driver cannot clean up after itself.** The other end of
+   §17a.1, and closed with it.
+6. **A structural write costs a card re-read it could avoid.**
+   `manage_sheet`, `delete_sheet` and `edit_dimensions` each send a
+   `batchUpdate` and then re-read the card, because the write invalidated
+   the cached one and the result lists the sheets afterwards.
+   `batchUpdate` takes `includeSpreadsheetInResponse` with
+   `responseRanges`, which §7.3 already names, and it would fold that
+   read into the write — one request saved on every structural change,
+   which at sixty writes a minute with one in flight is about a second
+   each. Two things have to be settled first: the response's spreadsheet
+   arrives unmasked, so it carries the `spreadsheetUrl` the card's field
+   mask now deliberately drops, and the reply has to re-prime the cache
+   rather than just fill the result. It needs a live probe before it is
+   adopted (rule 12), which is why phase 1 recorded it rather than
+   guessing. The wire fields are not written until then.
+7. **A refusal names the tool's argument from inside the guard.**
+   `plan.Blocker.Allow` holds `"overwrite"`, `"overwrite_formulas"` and
+   `"allow_external_formulas"` — the JSON names `internal/tools`
+   publishes — so the bottom layer knows the top layer's schema, and
+   renaming an argument would make the guard's refusals lie with nothing
+   failing. A typed reason on `Blocker`, mapped to a name by the service,
+   is the fix. Phase 1 removed the other half of this (the tool layer no
+   longer imports `plan`); this half waits, because the messages it would
+   touch were verified live and are worth changing on purpose rather than
+   in passing.
+8. **The service composes the English that the renderer decorates.**
+   `manage_sheet` and `edit_dimensions` build a sentence fragment
+   ("insert 2 row(s) before row 2 on %q") that `render` then capitalises
+   and wraps. Phrasing decided above the renderer is phrasing the
+   renderer's goldens cannot cover. The fix is to return the parts —
+   action, band, count, title — and let `render` own the template, which
+   is what `render.Write` and `render.Append` already do. Phase 2 touches
+   both tools and is the moment to do it.
+9. **`edit_dimensions delete` was hidden from the tool's description,
+   not from its schema.** **Closed 2026-09-06** by making it
+   `delete_dimensions`, its own destructive tool. The description hid the
+   action while `confirm`'s description still named it and `action` had
+   no enum to omit it from — and `edit_dimensions`, registered as a plain
+   write, advertised `destructiveHint: false` while offering an
+   irreversible action. See §7.4.
+10. **`leaks history` spawns one `git cat-file` per blob.** A single
    `git cat-file --batch` fed the ids on stdin would do it in one
    process. It is a manual gate, so the cost is nobody's per-push
-   problem, but it grows monotonically with the history.
-7. Nothing further. The tool-version problem that was here — a
+   problem, but it grows monotonically with the history. **Still open.**
+11. Nothing further. The tool-version problem that was here — a
    distribution `golangci-lint` built with an older Go refusing this
    module, and a stale `go-licenses` failing on the standard library —
    was fixed rather than deferred: the Makefile now fetches all three
@@ -1396,10 +1484,9 @@ which rather than letting them blur.** Three tiers:
    tier and into a row of their own, because they turned out to carry a
    provenance that matters.
 
-Beyond those, seven things are **unverified by design** and wait for a
-live probe: §15's spikes A-G, of which E — what Sheets actually returns
-for a missing sheet, a bad range, a protected range and a throttled call
-— is the one the error mapping in §6.5 rests on.
+Beyond those, §15's spikes are **unverified by design** until the phase
+that depends on each one runs it. A, B, C, E, F, H and I are done; D and
+G are not. Every row a spike produced is dated in place below.
 
 | Convention | Verdict | Effect |
 |---|---|---|
@@ -1588,3 +1675,51 @@ had never touched the network at all.
 | A live driver's own setup does not need the resilience it is testing | **Refuted by an aborted run**: creating the scratch spreadsheet got a transient `503 UNAVAILABLE` and the run ended before its first step. The driver's setup uses a raw client on purpose — the server's retry loop is what is under test, not the driver's plumbing — but that left the whole run hostage to a transport hiccup on a project that demonstrably produces them (the same `503` appeared in a spike E probe of a *definite* 404) | The setup calls retry on 429 and 5xx, four attempts with a widening wait, and say when they did — a run that needed three attempts must not read like one that needed none. The steps themselves are untouched: what they measure is the server's behaviour, and retrying *that* would be measuring the retry |
 
 | An allowlist of functions permitted to print is the same rule as "everything printed is redacted" | **Refuted, in this repository's own gate, and the argument came from a sibling that hit the shape one level down.** Three functions were allowed to print and only one of them redacted: `sec` wrote the section header directly, which was safe because the titles are literals. That is the wrong kind of safe — the list had quietly become "functions allowed to reach the terminal", so a later `sec(someSheetTitle)` would have been blessed by name and printed raw | `sec` goes through `line`, so exactly one function prints and the allowlist is two entries, the second being a build-tag stub with nothing to redact. The sibling's version of this was an allowlist of safe *expressions*, which they deleted for the same reason after it grew to fifteen entries — two of which read a value off an API response that happens to be harmless today. A list that blesses a name once stops asking about the value |
+
+**Spikes A, B and F, run live 2026-09-06 at the start of phase 1.** Each
+answers a question §15 says the reference does not, and each decides code
+written immediately after it. The probe is `scripts/spikes`, and the
+scratch spreadsheet it reads is one it created and filled itself.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| **Spike A.** `USER_ENTERED` rewrites the *value*, and a coercion report that names the value has said everything | **Refined, and the refinement is half the report**: it rewrites the number format too. `$100.15` stores the number `100.15` **and** a `CURRENCY` format, so the cell still displays `$100.15`; `2026-09-05` stores `46270` with a `DATE(yyyy-mm-dd)` format and displays unchanged; `1-2` stores `46024` with `DATE(m-d)`. A diff over stored values alone reports "your text became a number" for all three and cannot say that two of them look identical on screen while the third now reads as a date | The coercion diff compares the value **and** says when Sheets attached a format, so `$100.15 → 100.15 (currency)` reads as what happened rather than as data loss. The recorded table is the fake's replay table: the fake never parses input, it looks the answer up |
+| **Spike A, the rest of the matrix** | **Confirmed as designed**: `007` → `7`, `TRUE` → boolean, `=1+2` → a formula whose effective value is `3`, `'0123` → the string `0123` with the apostrophe consumed. `RAW` stores every one of them as the literal string, apostrophe included | `input: typed \| literal` is worth the parameter: the two differ on every input tested, and for a product code or a leading-zero identifier `literal` is the only correct answer. Neither is defaulted silently over the other (§17.3) |
+| A cell's character limit is a phase-2 question (§15.G) | **Answered early and for free**: a 60 004-character string is refused with `400 INVALID_ARGUMENT`, "Your input contains more than the maximum of 50000 characters in a single cell", under both input options | The limit is checked before the request is built, so a caller is told which cell is too long rather than having a whole batch refused. §15.G keeps the other half — column ZZZ and the 10-million-cell ceiling |
+| **Spike A, the shape half.** `range` and `values` must agree, and a caller has to spell the rectangle out | **Refined by probe**: a single anchor cell is enough — `A1` with a three-by-two array wrote `A1:B3` — and an *unbounded* range works the same way, `A:A` with two rows writing `A1:A2`. A range **larger** than the array writes only the array's rectangle and leaves the rest alone, confirming "values with no data are skipped" from the other direction. A range **smaller** than the array is a `400`, and Google's own message for it names a row number: "Requested writing within range [...], but tried writing to row [3]" | `range` names where the write starts and how far it may reach; `values` decides the rectangle. Too small is refused here, before the request, with the array's shape and the range's — the API's message says neither. The result names the region covered and says when the named range was larger, since the tail is still whatever it was |
+| A ragged `values` array is a caller's business | **Refuted by what it does**: rows of length 3, 1 and 3 were accepted, and the short row left the two cells beyond it holding their previous values — "skipped", per row, not per request. A caller who believed they had replaced a rectangle would have replaced most of one | `write_values` refuses a ragged array with the two row lengths, and says the fix: pad with empty strings to clear those cells, or write a narrower range to leave them alone. Neither is guessable from a result, which is why it is not guessed on the caller's behalf. It also keeps the guard's target a rectangle, so what is checked and what is written are the same cells |
+| **Spike B.** `values.append` finds the data on the sheet and writes after it | **Refuted, in the direction that matters**: it finds the contiguous block the **given range** falls in and writes after *that*. On a sheet holding rows 1-3, a gap, and rows 6-7, an append at `A1` reported `tableRange` `A1:B3` and landed in rows 4-5 — between the two blocks. An append at `A6` reported `A6:B7` and landed in 8-9 | `append_rows` reports `tableRange` and the range Google chose, always, because the caller cannot predict either. The description says the range picks the table rather than the destination |
+| A whole-sheet append and an append at `A1` are the same call | **Refuted**: with no range, `tableRange` came back as `A6:B7` — the **last** block, not the first — and the rows landed at 8-9, where the same sheet given `A1` put them at 4-5. Two calls a model would read as synonyms write six rows apart | The range is required rather than defaulted, and named in the result. A default here would be a coin flip whose outcome is invisible until somebody reads the sheet |
+| `INSERT_ROWS` and `OVERWRITE` differ only in tidiness | **Refuted, and both need saying**: `INSERT_ROWS` inserted two rows at 4-5 and pushed the second block from 6-7 down to 8-9, so every address below the insert point moved. `OVERWRITE` consumed the two empty gap rows and left the second block where it was | `INSERT_ROWS` stays the default — it destroys nothing — and the result says the rows below moved, because a checkpoint or an address the caller is holding is now wrong. `OVERWRITE` runs the write guard over the rows it would land on, which is the one case where an append can destroy data |
+| **Spike F.** Drive's `files.get` `version` is a cheaper spreadsheet-wide staleness check than re-reading the range | **Rejected**: `version` did not move after a value change, after re-writing the same value, or after a structural `batchUpdate` — three edits, fourteen seconds of polling each, still `"3"`. `modifiedTime` was read in the same poll and did not move either | Checkpoints stay as designed (§4.7): a hash over the values, re-read at write time. A field that reports "unchanged" during exactly the window a checkpoint exists to cover would be worse than the re-read it replaces, not cheaper. §17a's staleness entry is closed |
+| Drive's lag is a search problem | **Widened by the same run**: `modifiedTime` had not moved fourteen seconds after an edit, which is the field `search_spreadsheets` sorts and filters on. Phase 0 found the *content* index lagging; this is the metadata | `search_spreadsheets`' `modified_after` description says the timestamp is Drive's and lags an edit, so a spreadsheet changed moments ago is not found by it. The same fact, met at a second surface |
+
+**Phase 1's live runs, 2026-09-06.** Five of them, and the count is the
+finding: every run was green or nearly so, and every transcript held
+something the count did not. Four of the six rows below are defects the
+gates could not have caught, because the fake agreed with the code.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| A request that creates a sheet may reuse the type a response returns | **Refuted twice in one run.** `SheetProperties` carries `sheetId`, the zero value serialises as `"sheetId": 0`, and Google reads that as a request for id 0 — the id the first sheet always has. `manage_sheet add` came back "Sheet with id 0 already exists", and `create_spreadsheet` came back with one sheet where two were asked for | `NewSheetProperties`, `NewSheet` and `NewSpreadsheet` have no id field at all, so the mistake is not available. The same shape as `Index` becoming a pointer earlier the same day, and for the same reason: a zero that means something is not a zero value |
+| **Spike H.** `spreadsheets.create`'s `sheets` are added beside the one Google always makes | **Refuted**: a create naming two sheets came back with exactly those two, at indices 0 and 1, and no third. With no list, Google makes one and names it in the account's language — observed in the same transcript, which creates its scratch spreadsheet that way | `create_spreadsheet`'s description says giving `sheets` replaces the default rather than adding to it, and that seed values go to the first sheet. A description promising a tab that is not there would send a model looking for it |
+| `updateSheetProperties`' `index` is where the sheet ends up | **Refuted by a step written to fail if it was a no-op.** A sheet at index 0 asked for index 3 in a four-sheet spreadsheet landed at 2: the API removes the sheet and then inserts it, reading the index against the order *before* the move. It is the convention `moveDimension` documents for rows and columns, undocumented here | `plan.ReorderSheet` takes the sheet's current index and converts, so the caller's `index` means where it ends up. The fake reads the index the same way Google does, or the unit tests would have agreed with the bug. Found only because the previous version of the step moved a sheet to where it already was and passed |
+| A cell holding a formula has `Kind == formula` | **Refuted, and it was a hole in the guard rather than in a count.** A formula that evaluated to an error is `KindError`: `userEnteredValue.formulaValue` is set and `effectiveValue.errorValue` overwrites the kind. So `=IMPORTRANGE(...)` showing `#REF!` was treated as an ordinary value, and `overwrite` alone would have replaced it — losing exactly what `overwrite_formulas` exists to protect | `grid.Cell.HasFormula()` tests the formula, not the kind, and the guard and the counts both use it. Found by reading a delete's count: a sheet this run had filled with formulas reported "0 formula(s)", which was the visible end of an invisible defect |
+| A step that passes has tested something | **Refuted three times in one transcript.** `clear_values` reported "0 non-empty cells" three times over a rectangle that had been emptied by an earlier step; `delete_sheet` counted zero on a sheet duplicated before anything was written to it; the reorder step moved a sheet to where it already was. All three passed, and none exercised the thing it named | Each now writes what it will then count, and asserts the number. The count is the whole substance of a clear's or a deletion's result, so a count that is always zero is a check that is always true — the same failure as phase 0's undetermined search step, one level down |
+| A coercion report that names the values has said enough | **Refuted by reading one**: `B2  "12" -> "12"` is a line that reports a change and shows none. What changed was the kind — the caller sent text and Google stored a number — and that is the change a product code cares about most | Both kinds are named and only text is quoted: `B2  text "12" -> number 12`. The date keeps its pair, `text "2026-09-05" -> number 46270, displayed "2026-09-05"`, which is what stops a serial reading as data loss |
+| A link is a link | **Refined**: Google's `spreadsheetUrl` carries `?ouid=`, the signed-in account's obfuscated id, in every card. The driver's redactor had been quietly catching it since phase 0, so it never reached a transcript, and it was still in every tool result | `spreadsheetUrl` is out of the field mask and the link is built from the id. It opens the same spreadsheet and identifies nobody, which is §9's "do not fetch what nothing needs" applied to a field that arrived free |
+
+**What phase 1's review passes found, 2026-09-06.** `/simplify` and
+`/code-review high` ran over the whole phase after the live driver was
+green. Between them they found four defects the driver had not, and two
+of those turned on API behaviour the code had assumed rather than
+checked — which is spike I, run to settle them.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| **Spike I.** `values.update` destroys the note and the validation rule on the cells it writes | **Refuted**: both survive. A cell carrying a note, written over, came back with the note and the rule intact — the same guarantee `values.clear` documents, which the fake already modelled for clears and not for writes. So every write result said "The write removed notes on A1", which was false, and a cell holding *only* a note counted as occupied and refused a write for a loss that never happened | `Cell.Empty()` is about the value alone. `Report.Loses()` became `Keeps()`, and a surviving validation rule is reported as surviving — it still applies to the value that just replaced the old one, which is worth knowing and is the opposite of what the result used to say |
+| **Spike I, the second half.** `moveDimension`'s `destinationIndex` says where the band ends up | **Refuted**: rows 1-2 of four, sent with `destinationIndex: 3`, came back starting at row 2. The API removes the band and then inserts it, reading the index against the order *before* the move — the same convention a sheet's index follows, found the same way two hours earlier | `plan.MoveDimension` converts, so `to` means the row the band starts at afterwards. A driver step marks the rows before moving them and reads the destination back: the version before it moved rows that earlier inserts had left empty, so it landed anywhere and looked right |
+| `dry_run` is available whenever a write is | **Refuted by reading the code path**: the guard ran first, so a write the guard refused could not be previewed — and the refusal's own last sentence is "dry_run shows what would change without sending anything". A caller following that advice got the identical refusal. Every test and every live step passed `dry_run` together with the acknowledgements, so the path had never run | The preview comes before the refusal and lists what would stop the write. A dry run sends nothing, so there is nothing to guard, and the one call that exists to explain a refusal must not be the one call the refusal blocks |
+| A checkpoint is a checkpoint | **Refuted**: a read hashes what it renders, and `formatted: true` renders `£1,234.50` where the cell stores `1234.5`. A write reads raw and hashes raw, so a checkpoint from a formatted read could never match — every date or currency in the range made `expect_checkpoint` report a conflict that had not happened. The live driver reads unformatted, so no transcript would ever have shown it | `Cell.Raw` carries the unformatted value whatever `Display` holds, and the checkpoint hashes that. A checkpoint is over what the cells store, not over what they show |
+| An action can be gated inside a tool | **Refuted in the schema this repository publishes.** `edit_dimensions delete` was hidden by leaving it out of the description, while `confirm`'s description still said "required by delete" and `action` carried no enum for anything to be absent from. The tool was registered as a plain write, so it advertised `destructiveHint: false` while offering an irreversible action, and got no `requiresUserInteraction` mark | `delete_dimensions` is its own tool with `Kind: Destructive`, and inherits the registration gate, the annotation and the mark from the one place that decides them. §8's rule was already the right one — "Kind is an enum over which world a tool touches" — and a tool whose destructiveness depends on an argument is the matrix that rule exists to prevent |
+| A guard that reads part of a range guards the range | **Refuted**: `clear_values` bounded its read by the cell budget and then sent the clear for the whole range, so a protected block in the part it never read was not named, and the count it reported was a floor it did not say was one | A clear larger than one read is refused with the size, the way an oversized write is. The alternative — clearing only what was read — would answer a different question from the one asked |

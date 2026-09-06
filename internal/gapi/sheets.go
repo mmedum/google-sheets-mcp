@@ -13,7 +13,12 @@ import (
 // CardFields is the field mask behind the spreadsheet card: everything
 // get_spreadsheet reports and no cell data at all, so the call costs the
 // same on a spreadsheet of ten cells and one of ten million.
-const CardFields = "spreadsheetId,spreadsheetUrl," +
+// spreadsheetUrl is deliberately absent. Google's own URL carries an
+// `?ouid=` query holding the signed-in account's obfuscated id, which
+// nothing needs to open the spreadsheet — SpreadsheetURL builds a link
+// that works without it. Found by reading a live transcript, where the
+// redactor had been quietly catching it in every card.
+const CardFields = "spreadsheetId," +
 	"properties(title,locale,timeZone,autoRecalc)," +
 	"sheets(properties(sheetId,title,index,sheetType,hidden,rightToLeft,gridProperties,tabColorStyle)," +
 	"merges,protectedRanges(protectedRangeId,range,namedRangeId,description,warningOnly,requestingUserCanEdit,editors)," +

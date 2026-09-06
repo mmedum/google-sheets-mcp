@@ -5,7 +5,6 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/internal/config"
 	"github.com/mmedum/google-sheets-mcp/internal/service"
 )
 
@@ -50,7 +49,7 @@ type FindInput struct {
 	SearchFormulas bool   `json:"search_formulas,omitempty" jsonschema:"also look at the formula under a value, not only at the value"`
 	SearchNotes    bool   `json:"search_notes,omitempty" jsonschema:"also look at cell notes"`
 	MaxCells       int    `json:"max_cells,omitempty" jsonschema:"how many cells may be read, default 5000, maximum 50000. There is no server-side search in the Sheets API, so this reads and matches here and the budget is what bounds the cost"`
-	MaxMatches     int    `json:"max_matches,omitempty" jsonschema:"stop after this many matches, default 200"`
+	MaxMatches     int    `json:"max_matches,omitempty" jsonschema:"stop after this many matches, default 200, maximum 5000"`
 }
 
 func registerRead(s *mcp.Server, d Deps) {
@@ -84,16 +83,14 @@ func registerRead(s *mcp.Server, d Deps) {
 			"cells you want.",
 		Kind: Read,
 		Handle: func(ctx context.Context, in ReadInput) (*service.ReadResult, error) {
-			if err := validateBudgets(in.MaxCells, in.MaxChars); err != nil {
-				return nil, err
-			}
 			if in.ContinueFrom < 0 {
 				return nil, service.Errorf("invalid", "continue_from is a row number, so it cannot be negative")
 			}
 			return d.Service.Read(ctx, service.ReadRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range,
 				Show: in.Show, Format: in.Format, Formatted: in.Formatted,
-				MaxCells: in.MaxCells, MaxChars: in.MaxChars, ContinueFrom: in.ContinueFrom,
+				Budget:       service.Budget{Cells: in.MaxCells, Chars: in.MaxChars},
+				ContinueFrom: in.ContinueFrom,
 				IncludeNotes: in.IncludeNotes, IncludeValidation: in.IncludeValidation, IncludeMerges: in.IncludeMerges,
 			})
 		},
@@ -128,27 +125,11 @@ func registerRead(s *mcp.Server, d Deps) {
 			"Use search_spreadsheets to find a spreadsheet by name, and read_range once you know which cells you want.",
 		Kind: Read,
 		Handle: func(ctx context.Context, in FindInput) (*service.FindResult, error) {
-			if err := validateBudgets(in.MaxCells, 0); err != nil {
-				return nil, err
-			}
-			if in.MaxMatches < 0 {
-				return nil, service.Errorf("invalid", "max_matches cannot be negative")
-			}
 			return d.Service.Find(ctx, service.FindRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Query: in.Query, Regex: in.Regex,
 				MatchCase: in.MatchCase, SearchFormulas: in.SearchFormulas, SearchNotes: in.SearchNotes,
-				MaxCells: in.MaxCells, MaxMatches: in.MaxMatches,
+				Budget: service.Budget{Cells: in.MaxCells, Matches: in.MaxMatches},
 			})
 		},
 	})
-}
-
-func validateBudgets(cells, chars int) error {
-	if cells < 0 || cells > config.MaxMaxCells {
-		return service.Errorf("invalid", "max_cells must be between 1 and %d", config.MaxMaxCells)
-	}
-	if chars < 0 || chars > config.MaxMaxChars {
-		return service.Errorf("invalid", "max_chars must be between 1 and %d", config.MaxMaxChars)
-	}
-	return nil
 }

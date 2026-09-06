@@ -30,7 +30,7 @@ const (
 func Fixture() (*Doc, *gapi.File) {
 	nums := Numbers(1, 60)
 	first := &Sheet{Props: gsheets.SheetProperties{
-		SheetID: 0, Title: FirstSheet, Index: 0, SheetType: "GRID",
+		SheetID: 0, Title: FirstSheet, Index: gsheets.Ptr(0), SheetType: "GRID",
 		GridProperties: &gsheets.GridProperties{RowCount: 200, ColumnCount: 12, FrozenRowCount: 1},
 	}}
 	headings := []string{"Plimth", "Nardle", "Grivet", "Oblisk"}
@@ -74,7 +74,7 @@ func Fixture() (*Doc, *gapi.File) {
 	}}
 
 	second := &Sheet{Props: gsheets.SheetProperties{
-		SheetID: 1837, Title: SecondSheet, Index: 1, SheetType: "GRID",
+		SheetID: 1837, Title: SecondSheet, Index: gsheets.Ptr(1), SheetType: "GRID",
 		GridProperties: &gsheets.GridProperties{RowCount: 50, ColumnCount: 8},
 	}}
 	second.Set(1, 1, Str("Trennow"))
@@ -86,7 +86,7 @@ func Fixture() (*Doc, *gapi.File) {
 	second.Set(3, 2, Num(7.5, "7.50"))
 
 	third := &Sheet{Props: gsheets.SheetProperties{
-		SheetID: 2914, Title: ApostropheName, Index: 2, SheetType: "GRID",
+		SheetID: 2914, Title: ApostropheName, Index: gsheets.Ptr(2), SheetType: "GRID",
 		GridProperties: &gsheets.GridProperties{RowCount: 20, ColumnCount: 4},
 		Hidden:         true,
 	}}
@@ -117,7 +117,7 @@ func Fixture() (*Doc, *gapi.File) {
 // than take one.
 func Second() (*Doc, *gapi.File) {
 	sh := &Sheet{Props: gsheets.SheetProperties{
-		SheetID: 0, Title: "Grivet", Index: 0, SheetType: "GRID",
+		SheetID: 0, Title: "Grivet", Index: gsheets.Ptr(0), SheetType: "GRID",
 		GridProperties: &gsheets.GridProperties{RowCount: 100, ColumnCount: 6},
 	}}
 	sh.Set(1, 1, Str("Plimth"))
@@ -150,7 +150,7 @@ func NotASpreadsheet() *gapi.File {
 // sheet of rows by cols, filled from a seeded generator.
 func Large(rows, cols int) (*Doc, *gapi.File) {
 	sh := &Sheet{Props: gsheets.SheetProperties{
-		SheetID: 0, Title: "Bractal", Index: 0, SheetType: "GRID",
+		SheetID: 0, Title: "Bractal", Index: gsheets.Ptr(0), SheetType: "GRID",
 		GridProperties: &gsheets.GridProperties{RowCount: rows, ColumnCount: cols},
 	}}
 	nums := Numbers(9, rows*cols)

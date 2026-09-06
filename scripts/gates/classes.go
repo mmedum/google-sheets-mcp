@@ -32,15 +32,17 @@ import (
 // each with the phase that will emit it.
 //
 // The vocabulary is written down whole because a model should not learn
-// a class twice, and these three belong to code this phase has not
-// written. An entry here is a decision somebody made and a reviewer can
-// see; without the list the gate would either pass on a vocabulary
+// a class twice, so a class can be declared before the code that emits
+// it exists. An entry here is a decision somebody made and a reviewer
+// can see; without the list the gate would either pass on a vocabulary
 // nothing holds, or fail on a plan that is going as intended.
-var plannedClasses = map[string]string{
-	"blocked":     "the write guard refusing what the API would allow, in phase 1 with write_values",
-	"conflict":    "a checkpoint mismatch on a write, in phase 1",
-	"unsupported": "a capability the API or this configuration lacks, first met in phase 2",
-}
+//
+// Empty since phase 1: `blocked`, `conflict` and `unsupported` were the
+// three, and the write guard, the checkpoint and the gated dimension
+// action emit them. The map stays because the next phase that declares
+// ahead of itself needs it, and because the gate reads it from both
+// sides — a class listed here and emitted anyway is also a failure.
+var plannedClasses = map[string]string{}
 
 func classGate() error {
 	declared := service.Classes()

@@ -304,7 +304,7 @@ func TestGridRangeConversion(t *testing.T) {
 		t.Error("a nil GridRange is a whole sheet")
 	}
 	// The API sends merges and protected ranges this way round.
-	col := &gsheets.GridRange{SheetID: 1, StartColumnIndex: ptr(1), EndColumnIndex: ptr(2)}
+	col := &gsheets.GridRange{SheetID: 1, StartColumnIndex: gsheets.Ptr(1), EndColumnIndex: gsheets.Ptr(2)}
 	if got := FromGridRange(col); got != (Rect{2, 0, 2, 0}) {
 		t.Errorf("a whole-column GridRange became %+v", got)
 	}
@@ -387,5 +387,53 @@ func TestParseKeepsSheetAndRect(t *testing.T) {
 	}
 	if _, err := Parse("'Data'!nonsense"); err == nil {
 		t.Error("a bad range after a good sheet must still fail")
+	}
+}
+
+// The one-axis conversion. A1 counts rows and columns from one and
+// includes both ends; the API counts from zero and excludes the far one,
+// and getting that wrong deletes the wrong row.
+func TestBandIndices(t *testing.T) {
+	for _, tc := range []struct {
+		first, last, start, end int
+	}{
+		{first: 1, last: 1, start: 0, end: 1},
+		{first: 2, last: 5, start: 1, end: 5},
+		{first: 10, last: 10, start: 9, end: 10},
+	} {
+		start, end := BandIndices(tc.first, tc.last)
+		if start != tc.start || end != tc.end {
+			t.Errorf("BandIndices(%d, %d) = %d, %d, want %d, %d",
+				tc.first, tc.last, start, end, tc.start, tc.end)
+		}
+		// The count survives: a band of n rows is n indices wide.
+		if end-start != tc.last-tc.first+1 {
+			t.Errorf("BandIndices(%d, %d) covers %d, want %d",
+				tc.first, tc.last, end-start, tc.last-tc.first+1)
+		}
+	}
+}
+
+func TestZeroBased(t *testing.T) {
+	for one, want := range map[int]int{1: 0, 2: 1, 100: 99} {
+		if got := ZeroBased(one); got != want {
+			t.Errorf("ZeroBased(%d) = %d, want %d", one, got, want)
+		}
+	}
+}
+
+// The band conversion and the rectangle conversion are the same
+// arithmetic, and a test that says so is what keeps them from drifting
+// apart the day one of them is "fixed".
+func TestBandIndicesAgreesWithGridRange(t *testing.T) {
+	for first := 1; first <= 4; first++ {
+		for last := first; last <= 6; last++ {
+			start, end := BandIndices(first, last)
+			g := Rect{FirstRow: first, LastRow: last}.GridRange(0)
+			if start != *g.StartRowIndex || end != *g.EndRowIndex {
+				t.Errorf("rows %d:%d: band gave %d,%d and GridRange gave %d,%d",
+					first, last, start, end, *g.StartRowIndex, *g.EndRowIndex)
+			}
+		}
 	}
 }

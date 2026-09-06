@@ -21,7 +21,7 @@ announces itself rather than on the first call.
 | `GSHEETS_LOG_LEVEL` | `-log-level` | `info` | `debug`, `info`, `warn` or `error`. Logs go to stderr; stdout carries JSON-RPC frames and nothing else. |
 | `GSHEETS_LOG_FORMAT` | `-log-format` | `text` | `text` or `json`. |
 | `GSHEETS_READ_ONLY` | `-read-only` | `false` | Requests read-only scopes and registers only the read tools. This is a real restriction rather than a label: with `spreadsheets.readonly` the API itself refuses the data-filter methods and both developer-metadata reads. |
-| `GSHEETS_ENABLE_DESTRUCTIVE` | `-enable-destructive` | `false` | Registers the destructive tools at all. Each of them still needs `confirm: true` on the call. Sheets has no undo and the API cannot restore version history, so leaving this off is the safe default. |
+| `GSHEETS_ENABLE_DESTRUCTIVE` | `-enable-destructive` | `false` | Registers `clear_values` and `delete_sheet` at all, and puts `edit_dimensions`' `delete` action into that tool's description. Each still needs `confirm: true` on the call, and each counts what it would take before it asks. Sheets has no undo and the API cannot restore version history, so leaving this off is the safe default. |
 | `GSHEETS_MAX_CELLS` | `-max-cells` | `5000` | The default cell budget for a read; a call may ask for less, or for up to 50000. Applied before the request, so an open-ended range never becomes an unbounded fetch. |
 | `GSHEETS_MAX_CHARS` | `-max-chars` | `20000` | The default character budget for a rendering; up to 400000. |
 | `GSHEETS_HTTP_TIMEOUT` | `-http-timeout` | `60s` | Per attempt on a read. |

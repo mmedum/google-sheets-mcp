@@ -37,12 +37,21 @@ type Cell struct {
 	// Display is what a person sees: the formatted value, or the raw one
 	// when the read asked for values unformatted.
 	Display string
+	// Raw is always the unformatted value, whatever Display carries.
+	//
+	// It exists for the checkpoint, which has to hash what the cell
+	// stores rather than what it shows. Hashing Display meant a read
+	// with formatted=true produced a checkpoint no write could match —
+	// a write reads raw — so every date or currency in the range made
+	// expect_checkpoint report a conflict that had not happened.
+	Raw string
 	// Formula is the text under the value, "" when the cell was typed
 	// rather than computed.
 	Formula string
 	Kind    Kind
 	// Error is the error a formula produced, such as "#REF!".
 	Error string
+
 	// Note, Validation and Hyperlink are the three things a values read
 	// cannot show and a write can destroy without saying so.
 	Note       string
@@ -50,11 +59,25 @@ type Cell struct {
 	Hyperlink  string
 }
 
-// Empty reports whether the cell holds nothing at all. A cell with only
-// a note is not empty: a write over it loses the note.
-func (c Cell) Empty() bool {
-	return c.Kind == KindEmpty && c.Note == "" && c.Validation == "" && c.Hyperlink == ""
-}
+// Empty reports whether the cell holds no value.
+//
+// A note or a validation rule does not make it non-empty. That is the
+// opposite of what this said before: the claim was that a write over
+// such a cell loses the note, and a live probe says it does not —
+// values.update keeps the note and the rule, the same way values.clear
+// documents that it does. Refusing a write into a blank cell for a loss
+// that never happens is a guard getting in the way for nothing.
+func (c Cell) Empty() bool { return c.Kind == KindEmpty }
+
+// HasFormula reports whether a formula is what the cell holds.
+//
+// Kind is not the test. A formula that evaluated to an error is
+// KindError, so a check on the kind misses it — and a write over
+// `=IMPORTRANGE(...)` showing #REF! would then need only `overwrite`,
+// which is the exact loss `overwrite_formulas` exists to prevent. Found
+// by reading a live transcript where a sheet full of formulas reported
+// none.
+func (c Cell) HasFormula() bool { return c.Formula != "" }
 
 // Protection is a protected range as it applies to this rectangle.
 type Protection struct {
@@ -180,6 +203,7 @@ func cell(cd *gsheets.CellData, formatted Formatted) Cell {
 			c.Display = "FALSE"
 		}
 	}
+	c.Raw = c.Display
 	if formatted == AsFormatted && cd.FormattedValue != "" {
 		c.Display = cd.FormattedValue
 	}
@@ -248,7 +272,7 @@ func (g *Grid) Count() Counts {
 			if !cell.Empty() {
 				c.NonEmpty++
 			}
-			if cell.Kind == KindFormula {
+			if cell.HasFormula() {
 				c.Formulas++
 			}
 			if cell.Kind == KindError {
@@ -263,4 +287,73 @@ func (g *Grid) Count() Counts {
 		}
 	}
 	return c
+}
+
+// FromValues builds a Grid out of a values response rather than out of
+// cell data.
+//
+// A write asks for its stored values back in the same response (§4.4),
+// rendered as formulas. That is enough to describe the region it
+// produced and to hash a new checkpoint over it, without a second read.
+//
+// The reconstruction has to agree with what Build would make of the same
+// cells, or two checkpoints over one rectangle would differ by which
+// call produced them. It does: a formula hashes as its formula either
+// way, a number as the same digits, a boolean as TRUE or FALSE, and an
+// omitted trailing cell as empty. The one thing a values response cannot
+// say is whether a string beginning with "=" is a formula or the text of
+// one, and the input option decides that — under RAW nothing is
+// evaluated, verified live.
+func FromValues(sheet string, sheetID int, rect a1.Rect, values [][]any, formulasEvaluated bool) *Grid {
+	g := &Grid{Sheet: sheet, SheetID: sheetID, Rect: rect}
+	rows, cols := rect.Rows(), rect.Cols()
+	flat := make([]Cell, rows*cols)
+	g.Cells = make([][]Cell, rows)
+	for i := range g.Cells {
+		g.Cells[i] = flat[i*cols : (i+1)*cols : (i+1)*cols]
+		for j := range g.Cells[i] {
+			g.Cells[i][j].Kind = KindEmpty
+		}
+	}
+	for i, row := range values {
+		if i >= rows {
+			break
+		}
+		for j, v := range row {
+			if j >= cols {
+				break
+			}
+			g.Cells[i][j] = valueCell(v, formulasEvaluated)
+			if !g.Cells[i][j].Empty() && i+1 > g.DataRows {
+				g.DataRows = i + 1
+			}
+		}
+	}
+	return g
+}
+
+func valueCell(v any, formulasEvaluated bool) Cell {
+	switch t := v.(type) {
+	case string:
+		switch {
+		case t == "":
+			return Cell{Kind: KindEmpty}
+		case formulasEvaluated && strings.HasPrefix(t, "="):
+			return Cell{Kind: KindFormula, Formula: t, Display: t, Raw: t}
+		default:
+			return Cell{Kind: KindText, Display: t, Raw: t}
+		}
+	case bool:
+		if t {
+			return Cell{Kind: KindBool, Display: "TRUE", Raw: "TRUE"}
+		}
+		return Cell{Kind: KindBool, Display: "FALSE", Raw: "FALSE"}
+	case float64:
+		n := strconv.FormatFloat(t, 'f', -1, 64)
+		return Cell{Kind: KindNumber, Display: n, Raw: n}
+	case int:
+		n := strconv.Itoa(t)
+		return Cell{Kind: KindNumber, Display: n, Raw: n}
+	}
+	return Cell{Kind: KindEmpty}
 }
