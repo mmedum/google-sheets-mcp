@@ -5,7 +5,12 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.0] - 2026-09-06
+
 ### Added
+
 
 - **`gsheets://` resources.** `gsheets://{spreadsheet}` is the card;
   `gsheets://{spreadsheet}/{sheet}` is that sheet's used range as CSV
@@ -109,75 +114,8 @@ and this project follows [semantic versioning](https://semver.org).
   on. Tasks that cannot check an end state say which half went unchecked
   rather than quietly checking one, and a unit test walks the whole table
   refusing any prompt that still carries a placeholder.
-
-- Four tools for formatting and structure: `read_formatting`,
-  `format_cells`, `manage_range` and `transform_range`.
-- **`read_formatting`** is the other half of a read: what the cells look
-  like, summarised per block of identically formatted cells rather than
-  per cell. A cell with no format of its own is counted, not listed, so
-  what comes back is what somebody set. It also reports what is attached
-  to the range and decides how a cell looks without being on the cell —
-  merges, conditional format rules with the index `manage_range` needs,
-  banding, validation rules, notes and protected ranges.
-- **`format_cells`** applies everything in one call as one atomic batch:
-  number format, font, colours, borders, alignment, wrapping, merges and
-  notes. A header row that is bold, centred and shaded is one request.
-  Clearing is applied before setting, so "clear this and then make it
-  bold" is one call rather than a clear that undoes the bold.
-- **The guard extended over what formatting can destroy.** Three ops
-  take something away and each is refused until acknowledged: a merge
-  keeps the top-left value of every merged block and discards the rest,
-  `clear_format` removes formatting Sheets cannot bring back, and a note
-  replaces one no values read would have shown the caller. The cells are
-  read only when one of the three is asked for, so an ordinary "make it
-  bold" still costs one request.
-- **`manage_range`** adds, updates and deletes what is attached to a
-  range: a named range, a protected range, a validation rule, a table,
-  banding, or a conditional format rule. An existing one is named by the
-  range it covers rather than by an id, so nothing has to be fetched
-  first; a range matching several is refused with the list. A protection
-  never blocks the request that lifts it.
-- **Three refusals the live run found**, none of them in any reference
-  read for this project. A merge spanning the edge of a frozen band is
-  refused before sending, naming where the freeze ends and how to undo
-  it — Sheets answers "You can't merge frozen and non-frozen columns"
-  and does not say where the edge is. A named range with a space, or a
-  name that is also a cell address, is refused with the rule; Google
-  answers "The name given to this range is invalid". And **deleting a
-  table takes every conditional format rule over its range with it**,
-  which nothing in the reply mentions, so it now needs `overwrite` and
-  names the rules that would go.
-- **`transform_range`** sorts, replaces, trims, de-duplicates, splits,
-  shuffles, fills, copies and moves. These are the operations that move
-  data without the caller naming its new address, so each reads what it
-  would land on and refuses first: a paste lands on cells nobody named, a
-  split spills into the columns to its right, and a replacement inside
-  formulas rewrites what a cell computes rather than what it shows.
-- `internal/plan` grows the union builders for formatting, validation,
-  protection, tables, banding, conditional formats and the transforms —
-  typed, like the rest, so no request is sent that no code here has read.
-- The colour, border, number-format, alignment, condition and sort-key
-  parsers, each taking the spelling a person has in their hand: `1pt
-  solid #cccccc`, `date:yyyy-mm-dd`, `B asc, C desc`.
-- `make parity` (`gates parity`): `make check` and `ci.yml` have to run
-  the same things, and the gate fails when either side has something the
-  other lacks. The Makefile has said "everything CI runs" since phase 0
-  and has been wrong three times.
-- CI vets the build-tagged code, so the live driver and the spikes are
-  compiled by something other than a maintainer's laptop. Nothing in CI
-  compiled them before: `go list ./scripts/livesheet` returns one stub
-  file, and a break would have surfaced at the step that closes a phase.
-- `make tidy` and a CI step: `go mod tidy -diff` fails when go.mod is not
-  what tidy would write. It ran nowhere before — only inside a release,
-  in the form that writes, where a rewrite fails the tag on a dirty tree
-  while every rehearsal stays green.
-- `make secrets` runs gitleaks at the version CI uses. CI scanned and the
-  Makefile did not, so the drift ran both ways.
-- `cmd/` is under the coverage floor, at 40% against 48% reached. It was
-  outside the profile entirely, so 571 lines of `login`, `logout`,
-  `status` and `doctor` had no tests and nothing could report that.
-
 ### Changed
+
 
 - **`go test ./...` was deleting the developer's refresh token.** The
   command tests redirect a config directory and an environment variable,
@@ -256,6 +194,80 @@ and this project follows [semantic versioning](https://semver.org).
   the class rather than the one spelling: a gate named in a step's
   `name:` or in an `env:` value no longer stands in for a step that runs
   it.
+
+## [0.2.0] - 2026-09-06
+
+### Added
+
+
+- Four tools for formatting and structure: `read_formatting`,
+  `format_cells`, `manage_range` and `transform_range`.
+- **`read_formatting`** is the other half of a read: what the cells look
+  like, summarised per block of identically formatted cells rather than
+  per cell. A cell with no format of its own is counted, not listed, so
+  what comes back is what somebody set. It also reports what is attached
+  to the range and decides how a cell looks without being on the cell —
+  merges, conditional format rules with the index `manage_range` needs,
+  banding, validation rules, notes and protected ranges.
+- **`format_cells`** applies everything in one call as one atomic batch:
+  number format, font, colours, borders, alignment, wrapping, merges and
+  notes. A header row that is bold, centred and shaded is one request.
+  Clearing is applied before setting, so "clear this and then make it
+  bold" is one call rather than a clear that undoes the bold.
+- **The guard extended over what formatting can destroy.** Three ops
+  take something away and each is refused until acknowledged: a merge
+  keeps the top-left value of every merged block and discards the rest,
+  `clear_format` removes formatting Sheets cannot bring back, and a note
+  replaces one no values read would have shown the caller. The cells are
+  read only when one of the three is asked for, so an ordinary "make it
+  bold" still costs one request.
+- **`manage_range`** adds, updates and deletes what is attached to a
+  range: a named range, a protected range, a validation rule, a table,
+  banding, or a conditional format rule. An existing one is named by the
+  range it covers rather than by an id, so nothing has to be fetched
+  first; a range matching several is refused with the list. A protection
+  never blocks the request that lifts it.
+- **Three refusals the live run found**, none of them in any reference
+  read for this project. A merge spanning the edge of a frozen band is
+  refused before sending, naming where the freeze ends and how to undo
+  it — Sheets answers "You can't merge frozen and non-frozen columns"
+  and does not say where the edge is. A named range with a space, or a
+  name that is also a cell address, is refused with the rule; Google
+  answers "The name given to this range is invalid". And **deleting a
+  table takes every conditional format rule over its range with it**,
+  which nothing in the reply mentions, so it now needs `overwrite` and
+  names the rules that would go.
+- **`transform_range`** sorts, replaces, trims, de-duplicates, splits,
+  shuffles, fills, copies and moves. These are the operations that move
+  data without the caller naming its new address, so each reads what it
+  would land on and refuses first: a paste lands on cells nobody named, a
+  split spills into the columns to its right, and a replacement inside
+  formulas rewrites what a cell computes rather than what it shows.
+- `internal/plan` grows the union builders for formatting, validation,
+  protection, tables, banding, conditional formats and the transforms —
+  typed, like the rest, so no request is sent that no code here has read.
+- The colour, border, number-format, alignment, condition and sort-key
+  parsers, each taking the spelling a person has in their hand: `1pt
+  solid #cccccc`, `date:yyyy-mm-dd`, `B asc, C desc`.
+- `make parity` (`gates parity`): `make check` and `ci.yml` have to run
+  the same things, and the gate fails when either side has something the
+  other lacks. The Makefile has said "everything CI runs" since phase 0
+  and has been wrong three times.
+- CI vets the build-tagged code, so the live driver and the spikes are
+  compiled by something other than a maintainer's laptop. Nothing in CI
+  compiled them before: `go list ./scripts/livesheet` returns one stub
+  file, and a break would have surfaced at the step that closes a phase.
+- `make tidy` and a CI step: `go mod tidy -diff` fails when go.mod is not
+  what tidy would write. It ran nowhere before — only inside a release,
+  in the form that writes, where a rewrite fails the tag on a dirty tree
+  while every rehearsal stays green.
+- `make secrets` runs gitleaks at the version CI uses. CI scanned and the
+  Makefile did not, so the drift ran both ways.
+- `cmd/` is under the coverage floor, at 40% against 48% reached. It was
+  outside the profile entirely, so 571 lines of `login`, `logout`,
+  `status` and `doctor` had no tests and nothing could report that.
+
+### Changed
 
 - **The structural tools' English moved into the renderer** (§17a.9).
   `manage_sheet` and `edit_dimensions` used to compose a sentence
@@ -548,6 +560,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/mmedum/google-sheets-mcp/releases/tag/v0.0.1
