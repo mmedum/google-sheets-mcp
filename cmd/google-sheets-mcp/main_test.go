@@ -43,7 +43,43 @@ func isolate(t *testing.T) string {
 	t.Setenv("GSHEETS_CONFIG_DIR", dir)
 	// The token file is the other thing that could escape the sandbox.
 	t.Setenv("GSHEETS_REFRESH_TOKEN", "")
+	// And the OS keyring is the third, which this used to miss.
+	//
+	// A config directory and an environment variable are the two stores
+	// an env var can redirect. The keyring is not one of them: it is
+	// addressed by service name and profile, both of which these tests
+	// took from the defaults, so `logout` in a test called
+	// OSKeyring().Delete("google-sheets-mcp", "default") and removed the
+	// developer's own refresh token. It did that on every `make check`
+	// for a whole session while the diagnosis went looking at
+	// gnome-keyring.
+	//
+	// The profile is the only part of that key a test can change, so it
+	// changes here, once, for every test — rather than in the one test
+	// that happens to reach the keyring today.
+	t.Setenv("GSHEETS_PROFILE", "test-"+strings.ReplaceAll(t.Name(), "/", "-"))
 	return dir
+}
+
+// TestIsolateKeepsTestsOutOfTheRealKeyring is the rule watched working.
+//
+// The keyring is the one store in this program that no environment
+// variable redirects, so the only thing standing between a test and a
+// developer's own credentials is the profile name. This asserts that
+// isolate changes it, because the cost of it not doing so is silent and
+// is paid by whoever is running the tests.
+func TestIsolateKeepsTestsOutOfTheRealKeyring(t *testing.T) {
+	isolate(t)
+	cfg, err := settingsFor(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Profile == "default" {
+		t.Fatal("a test runs under the default profile; logout in a test would delete the developer's own token")
+	}
+	if !strings.HasPrefix(cfg.Profile, "test-") {
+		t.Errorf("profile = %q, want one this test suite owns", cfg.Profile)
+	}
 }
 
 func TestVersionFlagPrintsToStdoutAndNothingElse(t *testing.T) {
@@ -107,7 +143,14 @@ func TestBadFlagIsRefused(t *testing.T) {
 // matters more than that it printed.
 func TestStatusMasksWhatIsMeantToBePasted(t *testing.T) {
 	dir := isolate(t)
-	if err := userconfig.Save("default", userconfig.Config{
+	cfg, err := settingsFor(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Seeded under the profile this test actually runs as, which is not
+	// "default": isolate changes it so nothing here can reach the
+	// developer's own keyring entry.
+	if err := userconfig.Save(cfg.Profile, userconfig.Config{
 		AccountEmail:     "someone@example.test",
 		ClientSecretPath: filepath.Join(dir, "client_secret_"+exampleClientID+".json"),
 		TokenStore:       "keyring",
@@ -116,10 +159,6 @@ func TestStatusMasksWhatIsMeantToBePasted(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	cfg, err := settingsFor(t)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := status(context.Background(), cfg, &out); err != nil {
 		t.Fatalf("status: %v", err)
 	}
@@ -131,7 +170,9 @@ func TestStatusMasksWhatIsMeantToBePasted(t *testing.T) {
 			t.Errorf("status printed %q unmasked:\n%s", forbidden, got)
 		}
 	}
-	for _, want := range []string{"profile: default", "token store: keyring", "read-only:", "destructive tools:"} {
+	// The profile is the test's own, not "default": isolate keeps these
+	// tests out of the developer's keyring by changing it.
+	for _, want := range []string{"profile: " + cfg.Profile, "token store: keyring", "read-only:", "destructive tools:"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("status is missing %q:\n%s", want, got)
 		}
@@ -323,7 +364,7 @@ func TestDoctorPrintsBeforeItFails(t *testing.T) {
 	}
 	var out bytes.Buffer
 	_ = doctor(context.Background(), cfg, "", &out)
-	if !strings.Contains(out.String(), "profile: default") {
+	if !strings.Contains(out.String(), "profile: "+cfg.Profile) {
 		t.Errorf("doctor failed without printing its header:\n%s", out.String())
 	}
 }

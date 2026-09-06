@@ -11,14 +11,13 @@ could not — a refusal telling a `read_range` caller to pass an A1 *band*,
 and a delete quoting an anchor's name in its refusal and not in its
 result. Both are §18 rows and both are fixed.
 
-**What is not done: the evals.** The refresh token appeared to vanish
-from the keyring five times during the session. **It never did**: the
-secret was there throughout, created once at 19:19 and never modified,
-and it read back correctly later without anybody logging in again. What
-failed was the read, and this server reported it as "no refresh token
-found; run login" — which is why the maintainer logged in five times to
-fix a token that was not missing. §18 has the evidence and the change.
-`make evals` is written and its table is checked by `go test` without
+**What is not done: the evals.** The refresh token vanished five times
+during the session and `go test ./...` was deleting it: `cmd`'s test
+isolation redirected the config directory and the environment override
+and could not redirect the OS keyring, so a logout test removed the real
+one under the default profile. Fixed, and watched both ways with a decoy.
+§18 carries it, including the wrong diagnosis that came first. `make
+evals` is written and its table is checked by `go test` without
 credentials, but it has not touched the network. §16's rule stands:
 green gates are not done, and phase 3 is not closed until the evals have
 run and their transcript has been read.
@@ -2315,16 +2314,37 @@ of spike E's error shapes are: this machine's token is not a read-only
 one. `GSHEETS_READ_ONLY=true` therefore does not register the anchor
 tool at all, which is true whichever way that question resolves.
 
-**The keyring, chased 2026-09-06 after five apparent disappearances.**
-Not an evidence row about Google: an evidence row about this server's own
-diagnosis, and it belongs here for the same reason the others do — it was
-believed for a session and was wrong.
+**The keyring, 2026-09-06: this repository's own test suite was deleting
+the developer's credentials.** Five apparent disappearances in one
+session, and the cause was `go test ./...`.
 
-| Question | What was actually true | Effect |
+`cmd`'s `isolate` helper redirected the two stores an environment
+variable can redirect — `GSHEETS_CONFIG_DIR` for the token file and
+`GSHEETS_REFRESH_TOKEN` for the override — and its comment named the
+token file as "the other thing that could escape the sandbox". The OS
+keyring is the third and no variable redirects it: it is addressed by
+service name and profile, and the tests took both from the defaults. So
+`TestLogoutWithNothingStored` called
+`OSKeyring().Delete("google-sheets-mcp", "default")` and removed the real
+refresh token, on every `make check`, for a whole session.
+
+**The diagnosis before this one was wrong, and it is left here rather
+than deleted.** It concluded the token was never deleted at all — from a
+`secret-tool` search that found the item, 50 lookups that all succeeded,
+and one recovery without a login. Every one of those observations was
+real. The reasoning was not: the item was found between a login and the
+next test run, and the "recovery" was the same. A single sample either
+side of an event is not a measurement of the event, and the conclusion
+"it never disappears" was drawn from never having watched the moment it
+did. What settled it was a decoy secret stored under the real key, a full
+test run, and looking again — and then the same with the isolation
+removed, watching it go.
+
+| What | Verdict | Effect |
 |---|---|---|
-| Was the refresh token being deleted? | **No.** `secret-tool` found it in the keyring throughout: one item, created 19:19:13, never modified, matching the profile's `token_store` and `updated_at` to the second. Nothing in this code deletes except `logout`, which also clears `token_store`, and that field was intact | The premise was wrong for a whole session. Five logins were spent on it |
-| Then why did `doctor` say it was gone? | **The read failed and was reported as an absence.** `go-keyring` unlocks the collection, searches, and returns `ErrNotFound` when the search comes back empty — which is what a locked or unreachable collection also looks like from outside. 25 lookups idle and 25 under concurrent load all succeeded, so it is not a race this could reproduce on demand; it recovered on its own, without a login, which is what rules out deletion | `credentials.ErrKeyringSilent`. When the profile records that a token was saved to the keyring and the keyring answers nothing, the two together say the keyring is not answering rather than that nobody has logged in |
-| Was the advice right? | **No, and it was confidently wrong.** "run `google-sheets-mcp login`" is correct for a first run and is a workaround here: it writes a second token beside the one already in there, which appears to fix it and addresses nothing | The new message says to unlock the keyring, and says plainly that logging in works around this rather than fixing it. The profile supplies the second opinion; `internal/credentials` does not read it, because that package touches secrets and should not also depend on non-secret state |
+| Was the token being deleted? | **Yes, by this repository.** A decoy stored under `google-sheets-mcp/default` survives a full suite with the fix and is gone after one test without it | `isolate` sets `GSHEETS_PROFILE` to a name derived from the test, so the keyring key a test can reach is one no person owns. It is set for every test rather than for the one that reaches the keyring today |
+| Why did nothing catch it? | **Nothing had run the check.** The escape route the helper's comment names is the file; the keyring is the store its author did not have a variable for, and no test asserted the profile a test runs under | `TestIsolateKeepsTestsOutOfTheRealKeyring` asserts it, and the cost of it being wrong is paid by whoever runs the tests rather than by CI, where there is no keyring to damage |
+| Was `ErrKeyringSilent` wasted? | **No, and it is kept.** A locked collection does read as an absence through `go-keyring`, and "run login" is the wrong advice for it. It was written for the wrong reason and is right for its own | Kept, with its reasoning corrected: it is for a keyring that will not answer, which is a real state, and not for the disappearances that prompted it |
 
 **The live driver on phase 3's surface, run 2026-09-06 (`make live`).**
 169 steps, none failed, one undetermined (Drive's content index again).
