@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/zalando/go-keyring"
 )
 
 // fakeKeyring is an in-memory Backend that can be made to fail the way a
@@ -190,5 +192,66 @@ func TestNoStoreConfigured(t *testing.T) {
 	s := &Store{Profile: "default"}
 	if _, err := s.Save("tok"); err == nil {
 		t.Error("saving with neither a keyring nor a file must fail loudly")
+	}
+}
+
+// A keyring that answers "nothing" when the profile says it holds a
+// token is a different failure from never having logged in, and the
+// advice differs: unlock the keyring, rather than write a second token
+// beside the one already in there.
+//
+// This is the message that sent a maintainer to `login` five times in
+// one session while the secret sat in the keyring the whole time,
+// created once and never modified.
+func TestASilentKeyringIsNotAMissingLogin(t *testing.T) {
+	// The library's own not-found, which is what a locked collection
+	// produces: go-keyring unlocks, searches, finds nothing it can see,
+	// and reports the item as absent. The fake's plain error would
+	// exercise the "keyring is broken" path instead, which already has
+	// a message of its own.
+	empty := newFake()
+	empty.getErr = keyring.ErrNotFound
+
+	never := &Store{Profile: "default", Keyring: empty, Env: func(string) string { return "" }}
+	_, _, err := never.Resolve()
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("with no record of a token, err = %v, want ErrNotFound", err)
+	}
+	if errors.Is(err, ErrKeyringSilent) {
+		t.Error("a first run was told its keyring is misbehaving")
+	}
+
+	stored := &Store{
+		Profile: "default", Keyring: empty, Env: func(string) string { return "" },
+		ExpectKeyring: true,
+	}
+	_, _, err = stored.Resolve()
+	if !errors.Is(err, ErrKeyringSilent) {
+		t.Fatalf("err = %v, want ErrKeyringSilent", err)
+	}
+	// The advice is the whole point of the distinction.
+	for _, want := range []string{"locked", "unlock"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want it to mention %q", err, want)
+		}
+	}
+	if !strings.Contains(err.Error(), "works around this rather than fixing it") {
+		t.Errorf("err = %v, want it to say login is a workaround here", err)
+	}
+}
+
+// And the environment override still wins, because a token handed in
+// deliberately is not the keyring's business either way.
+func TestTheEnvironmentOverrideBeatsASilentKeyring(t *testing.T) {
+	env := newFake()
+	env.getErr = keyring.ErrNotFound
+	store := &Store{
+		Profile: "default", Keyring: env,
+		Env:           func(string) string { return "from-the-environment" },
+		ExpectKeyring: true,
+	}
+	tok, source, err := store.Resolve()
+	if err != nil || tok != "from-the-environment" || source != SourceEnv {
+		t.Errorf("Resolve() = %q, %q, %v", tok, source, err)
 	}
 }

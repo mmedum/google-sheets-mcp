@@ -179,6 +179,16 @@ and this project follows [semantic versioning](https://semver.org).
 
 ### Changed
 
+- **"No refresh token found" was telling people to fix the wrong thing.**
+  A token appeared to vanish from the OS keyring five times in one
+  session and never did: the secret was there throughout, created once
+  and never modified, and it read back correctly later without anybody
+  logging in. The read was failing and this server reported it as an
+  absence, with advice — "run login" — that writes a second token beside
+  the first and appears to work. When the profile records that a token
+  was saved to the keyring and the keyring answers nothing, the two
+  together now say so, and the advice is to unlock the keyring.
+
 - **Two things the live run found that nothing had failed on.** A
   refusal told a `read_range` caller that "any A1 band works here
   instead" — a band being something `read_range` does not take, and the

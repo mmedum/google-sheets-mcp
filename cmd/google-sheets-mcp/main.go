@@ -180,11 +180,19 @@ func tokenStore(cfg config.Config, log *slog.Logger) (*credentials.Store, error)
 	if err != nil {
 		return nil, err
 	}
+	// The profile's own record of where the token went, so a keyring
+	// that answers "nothing" can be told from a login that never
+	// happened. Read here rather than in the credentials package, which
+	// touches secrets and should not also grow a dependency on
+	// non-secret state; a profile that cannot be read is simply no
+	// second opinion.
+	uc, _ := userconfig.Load(cfg.Profile)
 	return &credentials.Store{
-		Profile:  cfg.Profile,
-		Keyring:  credentials.OSKeyring(),
-		FilePath: path,
-		Warn:     func(m string) { log.Warn(m) },
+		Profile:       cfg.Profile,
+		Keyring:       credentials.OSKeyring(),
+		FilePath:      path,
+		Warn:          func(m string) { log.Warn(m) },
+		ExpectKeyring: uc.TokenStore == string(credentials.SourceKeyring),
 	}, nil
 }
 

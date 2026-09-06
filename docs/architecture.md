@@ -11,10 +11,14 @@ could not — a refusal telling a `read_range` caller to pass an A1 *band*,
 and a delete quoting an anchor's name in its refusal and not in its
 result. Both are §18 rows and both are fixed.
 
-**What is not done: the evals.** The stored refresh token vanished from
-the keyring five times during the session, the last time within minutes
-of the driver finishing, with the daemon running and unlocked. `make
-evals` is written and its table is checked by `go test` without
+**What is not done: the evals.** The refresh token appeared to vanish
+from the keyring five times during the session. **It never did**: the
+secret was there throughout, created once at 19:19 and never modified,
+and it read back correctly later without anybody logging in again. What
+failed was the read, and this server reported it as "no refresh token
+found; run login" — which is why the maintainer logged in five times to
+fix a token that was not missing. §18 has the evidence and the change.
+`make evals` is written and its table is checked by `go test` without
 credentials, but it has not touched the network. §16's rule stands:
 green gates are not done, and phase 3 is not closed until the evals have
 run and their transcript has been read.
@@ -2310,6 +2314,17 @@ carries the sheet-level metadata is unanswered, for the same reason three
 of spike E's error shapes are: this machine's token is not a read-only
 one. `GSHEETS_READ_ONLY=true` therefore does not register the anchor
 tool at all, which is true whichever way that question resolves.
+
+**The keyring, chased 2026-09-06 after five apparent disappearances.**
+Not an evidence row about Google: an evidence row about this server's own
+diagnosis, and it belongs here for the same reason the others do — it was
+believed for a session and was wrong.
+
+| Question | What was actually true | Effect |
+|---|---|---|
+| Was the refresh token being deleted? | **No.** `secret-tool` found it in the keyring throughout: one item, created 19:19:13, never modified, matching the profile's `token_store` and `updated_at` to the second. Nothing in this code deletes except `logout`, which also clears `token_store`, and that field was intact | The premise was wrong for a whole session. Five logins were spent on it |
+| Then why did `doctor` say it was gone? | **The read failed and was reported as an absence.** `go-keyring` unlocks the collection, searches, and returns `ErrNotFound` when the search comes back empty — which is what a locked or unreachable collection also looks like from outside. 25 lookups idle and 25 under concurrent load all succeeded, so it is not a race this could reproduce on demand; it recovered on its own, without a login, which is what rules out deletion | `credentials.ErrKeyringSilent`. When the profile records that a token was saved to the keyring and the keyring answers nothing, the two together say the keyring is not answering rather than that nobody has logged in |
+| Was the advice right? | **No, and it was confidently wrong.** "run `google-sheets-mcp login`" is correct for a first run and is a workaround here: it writes a second token beside the one already in there, which appears to fix it and addresses nothing | The new message says to unlock the keyring, and says plainly that logging in works around this rather than fixing it. The profile supplies the second opinion; `internal/credentials` does not read it, because that package touches secrets and should not also depend on non-secret state |
 
 **The live driver on phase 3's surface, run 2026-09-06 (`make live`).**
 169 steps, none failed, one undetermined (Drive's content index again).

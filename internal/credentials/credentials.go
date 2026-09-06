@@ -43,6 +43,24 @@ const (
 // ErrNotFound means no token is stored anywhere.
 var ErrNotFound = errors.New("credentials: no refresh token found; run `google-sheets-mcp login`")
 
+// ErrKeyringSilent is what a keyring that answers "nothing" looks like
+// when something else says a token was stored in it.
+//
+// The two are not the same and the advice differs. A missing token is
+// fixed by logging in. A keyring that has the token and will not hand it
+// over — locked, or a session bus that cannot reach the daemon — is
+// fixed by unlocking it, and logging in again writes a second token
+// beside the first without addressing the cause.
+//
+// Written after chasing this on 2026-09-06: a token vanished five times
+// in a session, `login` appeared to fix it each time, and the secret was
+// in the keyring throughout — created once, never modified, readable
+// again later without anybody logging in. The message had said "run
+// login" and the maintainer had, five times.
+var ErrKeyringSilent = errors.New("credentials: the profile records a refresh token in the OS keyring and the " +
+	"keyring returned nothing. It is more likely locked or unreachable than empty: unlock it and try again. " +
+	"`google-sheets-mcp login` writes a fresh token, which works around this rather than fixing it")
+
 // Backend is the keyring contract. Tests substitute an in-memory one.
 type Backend interface {
 	Get(service, account string) (string, error)
@@ -73,6 +91,15 @@ type Store struct {
 	// Warn receives human-readable warnings; the plaintext fallback is
 	// announced through it on every use rather than once at login.
 	Warn func(string)
+	// ExpectKeyring says the profile records that a token was saved to
+	// the keyring. It changes only the error: with it, a keyring that
+	// answers "nothing" is reported as a keyring that will not answer
+	// rather than as a token that was never there.
+	//
+	// A field rather than a lookup here, because this package does not
+	// read the profile and should not start: the profile is
+	// non-secret state and this is the one place that touches secrets.
+	ExpectKeyring bool
 }
 
 type tokenFile struct {
@@ -127,6 +154,13 @@ func (s *Store) ResolveStored() (string, Source, error) {
 	}
 	if keyringErr != nil {
 		return "", "", fmt.Errorf("%w (keyring error: %w)", ErrNotFound, keyringErr)
+	}
+	// The keyring said nothing and something else says it should have
+	// said something. That is a different failure from never having
+	// logged in, and the caller supplies the second opinion because this
+	// package does not read the profile.
+	if s.ExpectKeyring {
+		return "", "", ErrKeyringSilent
 	}
 	return "", "", ErrNotFound
 }
