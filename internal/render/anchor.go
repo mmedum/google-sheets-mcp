@@ -28,22 +28,34 @@ func (a Anchor) Where() string {
 	}
 }
 
-// AnchorsTaken is the clause a delete's refusal adds when anchors would
-// go with the band.
+// AnchorNames is how a list of anchors is written, wherever it is
+// written.
 //
-// Here rather than in the service, beside DimensionAct.Anchors, which
-// describes the same act after the fact. The two used to be a sentence
-// apart and quoted the names differently — which is the shape §17a.9
-// moved the structural tools' English into this package to stop.
-func AnchorsTaken(names []string) string {
-	if len(names) == 0 {
-		return ""
-	}
+// One function because a live run found the two callers disagreeing: the
+// refusal quoted the names and the result printed them bare, for the
+// same delete, a moment apart. That is the shape §17a.9 moved the
+// structural tools' English into this package to stop, reintroduced by
+// adding the clause to one caller and the sentence to the other.
+func AnchorNames(names []string) string {
 	quoted := make([]string, 0, len(names))
 	for _, n := range names {
 		quoted = append(quoted, fmt.Sprintf("%q", n))
 	}
-	return ", and takes the anchor(s) " + JoinAnd(quoted) + " with them"
+	return JoinAnd(quoted)
+}
+
+// AnchorsTaken is the clause a delete's refusal adds when anchors would
+// go with the band.
+//
+// "and the anchor(s)" rather than a second "takes … with them": the
+// sentence it joins already ends in "with them", and the live transcript
+// read "takes 2 cells and 0 formulas with them, and takes the anchor(s)
+// X with them".
+func AnchorsTaken(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	return ", and the anchor(s) " + AnchorNames(names)
 }
 
 // AnchorActed is an add, a move or a removal, in parts.

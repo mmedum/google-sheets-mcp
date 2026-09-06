@@ -252,9 +252,16 @@ func TestAnchorRangeRefusesAnUnknownName(t *testing.T) {
 	if !strings.HasPrefix(err.Error(), "[not_found]") {
 		t.Errorf("err = %v, want [not_found]", err)
 	}
-	// A1 has to be offered, because an anchor is never the only way in.
-	if !strings.Contains(err.Error(), "A1") {
-		t.Errorf("err = %v, want it to say an A1 range works here", err)
+	// A1 has to be offered, because an anchor is never the only way in —
+	// and it has to offer the kind of argument this path takes. A live
+	// run found read_range being told to pass "any A1 band", which is
+	// not a thing read_range accepts, and this assertion was written
+	// loosely enough ("A1") to pass on it.
+	if !strings.Contains(err.Error(), "A1 range") {
+		t.Errorf("err = %v, want it to offer an A1 range, which is what this tool takes", err)
+	}
+	if strings.Contains(err.Error(), "band") {
+		t.Errorf("err = %v, offers a band to a tool that takes a range", err)
 	}
 }
 
@@ -550,4 +557,50 @@ func TestAnchorMoveReportsTheNoteItActuallyStored(t *testing.T) {
 			t.Errorf("the move erased the note: %q", got)
 		}
 	})
+}
+
+// The band path gets the band wording, and neither path gets the other's.
+func TestAnchorBandRefusalOffersABand(t *testing.T) {
+	_, svc := standard(t)
+	_, err := svc.EditDimensions(context.Background(), service.DimensionRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
+		Action: service.DimGroup, Dimension: "rows", Band: service.AnchorPrefix + "nothing here",
+	})
+	if err == nil {
+		t.Fatal("an anchor that does not exist resolved to a band")
+	}
+	if !strings.Contains(err.Error(), "A1 band") {
+		t.Errorf("err = %v, want it to offer an A1 band", err)
+	}
+}
+
+// A refusal and the result that follows it describe the same act, so
+// they name the anchors the same way. A live run found one quoting and
+// the other not, a moment apart, for the same delete.
+func TestAnchorNamesReadTheSameInRefusalAndResult(t *testing.T) {
+	_, svc := destructive(t)
+	ctx := context.Background()
+	anchorOn(t, svc, "invoice totals", "24:24")
+
+	_, refusal := svc.EditDimensions(ctx, service.DimensionRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
+		Action: service.DimDelete, Dimension: "rows", Band: "24:24",
+	})
+	if refusal == nil {
+		t.Fatal("an unconfirmed delete went through")
+	}
+	res, err := svc.EditDimensions(ctx, service.DimensionRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
+		Action: service.DimDelete, Dimension: "rows", Band: "24:24", Confirm: true,
+	})
+	if err != nil {
+		t.Fatalf("the confirmed delete: %v", err)
+	}
+	const quoted = `"invoice totals"`
+	if !strings.Contains(refusal.Error(), quoted) {
+		t.Errorf("the refusal does not quote the anchor: %v", refusal)
+	}
+	if !strings.Contains(res.Summary, quoted) {
+		t.Errorf("the result does not quote the anchor the way the refusal did:\n%s", res.Summary)
+	}
 }

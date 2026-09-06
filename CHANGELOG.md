@@ -179,6 +179,16 @@ and this project follows [semantic versioning](https://semver.org).
 
 ### Changed
 
+- **Two things the live run found that nothing had failed on.** A
+  refusal told a `read_range` caller that "any A1 band works here
+  instead" — a band being something `read_range` does not take, and the
+  wording arrived when a review pass merged the range and band lookups
+  and kept one noun. The test asserted the message contained "A1", which
+  both wordings do. And a delete quoted an anchor's name in its refusal
+  and printed it bare in the result a moment later, the same act
+  described two ways. 169 steps, none failed, and the count said nothing
+  about either.
+
 - **A resource stopped rendering the cells it was about to throw away.**
   `SheetCSV` rendered the whole fetched window and then sliced to the
   used range, and wrote its CSV through a fresh `csv.Writer` — with a

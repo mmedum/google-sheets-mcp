@@ -387,7 +387,7 @@ const AnchorPrefix = a1.AnchorPrefix
 // now.
 func (s *Service) resolveAnchorRange(ctx context.Context, ref Reference, sheet, name string) (SheetRef, error) {
 	name = strings.TrimSpace(name)
-	at, err := s.anchorPosition(ctx, ref.ID, name)
+	at, err := s.anchorPosition(ctx, ref.ID, name, "range")
 	if err != nil {
 		return SheetRef{}, err
 	}
@@ -507,7 +507,7 @@ func (s *Service) resolveBand(ctx context.Context, id string, props *gsheets.She
 		}
 		return b, nil
 	}
-	at, err := s.anchorPosition(ctx, id, strings.TrimSpace(name))
+	at, err := s.anchorPosition(ctx, id, strings.TrimSpace(name), "band")
 	if err != nil {
 		return plan.Band{}, err
 	}
@@ -555,9 +555,14 @@ func (s *Service) resolveBand(ctx context.Context, id string, props *gsheets.She
 
 // anchorPosition resolves a name to where it points now, refusing the
 // same things a range resolution refuses.
-func (s *Service) anchorPosition(ctx context.Context, id, name string) (plan.AnchorAt, error) {
+// The caller says which kind of argument it is resolving, because the
+// advice at the end of the refusal is different for each and a caller of
+// read_range told to "pass an A1 band" has been told something read_range
+// does not take. The live run printed exactly that, from a dedup that
+// merged the two paths and kept one noun.
+func (s *Service) anchorPosition(ctx context.Context, id, name, kind string) (plan.AnchorAt, error) {
 	if name == "" {
-		return plan.AnchorAt{}, Errorf("invalid", "name an anchor after %q", AnchorPrefix)
+		return plan.AnchorAt{}, Errorf("invalid", "name an anchor after %q, or give an A1 %s", AnchorPrefix, kind)
 	}
 	md, err := s.findAnchor(ctx, id, name)
 	if err != nil {
@@ -566,7 +571,7 @@ func (s *Service) anchorPosition(ctx context.Context, id, name string) (plan.Anc
 	if md == nil {
 		return plan.AnchorAt{}, Errorf("not_found",
 			"this spreadsheet has no anchor called %q. manage_anchor with action=list shows the ones it has, and "+
-				"any A1 band works here instead", name)
+				"any A1 %s works here instead", name, kind)
 	}
 	return plan.Where(md), nil
 }
@@ -577,5 +582,6 @@ func anchorNote(names []string) string {
 	if len(names) == 0 {
 		return ""
 	}
-	return "It" + render.AnchorsTaken(names) + "; Google's reply does not mention them.\n"
+	return "It took the anchor(s) " + render.AnchorNames(names) +
+		" with it; Google's reply does not mention them.\n"
 }

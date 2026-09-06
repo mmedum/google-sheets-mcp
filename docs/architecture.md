@@ -1,19 +1,23 @@
 # Architecture — google-sheets-mcp
 
-**Status: phase 3 built (2026-09-06), live verification outstanding, not
+**Status: phase 3 built (2026-09-06), the evals outstanding, not
 tagged.** Reading, writing, formatting, the objects attached to a range,
 `gsheets://` resources and durable anchors all work, and `make check` is
 green. Spike K ran against a real account and §18 carries what it found.
 
-**What is not done: the live driver run and the evals.** The stored
-refresh token vanished from the keyring four times during the session —
-once before spike K, and again twice after the maintainer
-re-authenticated, with the keyring daemon running and unlocked. Spike K
-got through on one of the windows; `make live` and `make evals` did not.
-Both are written, both are covered by the gates that can run without
-credentials, and neither has touched the network. §16's rule stands:
-green gates are not done, and phase 3 is not closed until those two have
-run and their transcripts have been read.
+**The live driver has run and its transcript has been read: 169 steps,
+none failed, one undetermined.** Reading it found two defects the count
+could not — a refusal telling a `read_range` caller to pass an A1 *band*,
+and a delete quoting an anchor's name in its refusal and not in its
+result. Both are §18 rows and both are fixed.
+
+**What is not done: the evals.** The stored refresh token vanished from
+the keyring five times during the session, the last time within minutes
+of the driver finishing, with the daemon running and unlocked. `make
+evals` is written and its table is checked by `go test` without
+credentials, but it has not touched the network. §16's rule stands:
+green gates are not done, and phase 3 is not closed until the evals have
+run and their transcript has been read.
 
 Phase 2 is what that rule is made of. It took three runs of the driver to
 reach 143 steps with none failed, and the first failed five — three of
@@ -1537,10 +1541,11 @@ formulas. Plus the §17a decision the phase owed: the structural tools'
 English moved into the renderer.
 
 **Phase 3 — resources, anchors, evals, performance (v0.3.0). Built
-2026-09-06; the live driver run and the evals are outstanding, because
-the keyring gave up the refresh token four times during the session and
-only spike K got a window. Not closed until both have run and their
-transcripts have been read.**
+2026-09-06. Spike K ran; the live driver ran (169 steps, 0 failed, 1
+undetermined) and its transcript was read, which found two defects the
+count could not. The evals are outstanding: the keyring gave up the
+refresh token five times during the session, the last within minutes of
+the driver finishing. Not closed until they have run and been read.**
 `gsheets://` resources; developer metadata as durable anchors (§6.4); the
 agent evals and the fixes they force; `make bench` and the numbers in
 §11; `/simplify` and `/code-review high` over the tree, with findings
@@ -2305,6 +2310,21 @@ carries the sheet-level metadata is unanswered, for the same reason three
 of spike E's error shapes are: this machine's token is not a read-only
 one. `GSHEETS_READ_ONLY=true` therefore does not register the anchor
 tool at all, which is true whichever way that question resolves.
+
+**The live driver on phase 3's surface, run 2026-09-06 (`make live`).**
+169 steps, none failed, one undetermined (Drive's content index again).
+Nothing failed and reading it still found two defects, which is the
+argument for reading in its purest form so far — the count was perfect.
+
+| What the transcript showed | What it was | Effect |
+|---|---|---|
+| `read_range` with an anchor nobody had set: "…and any A1 **band** works here instead" | **A wrong instruction**, and one no test could see. A review pass had deduplicated the range path and the band path onto one lookup, and the merged refusal kept the band's noun — so a caller of `read_range` was told to pass a thing `read_range` does not accept. The unit test asserted the message contained "A1", which both wordings do | The lookup takes the noun from its caller, and the two tests now assert the word each path must use *and* that neither carries the other's |
+| A delete refusing with `the anchor(s) "third row"` and then succeeding with `the anchor(s) third row` | **The same act described two ways, a moment apart.** The clause was added to the refusal and the sentence to the result, each quoting differently — §17a.9's exact failure, reintroduced by fixing one half of a pair | One `render.AnchorNames`, used by both. The refusal also stopped reading "…with them, and takes the anchor(s) X with them", which is what a clause written for one sentence and pasted into another sounds like |
+
+Everything else in the run held: the anchor followed ten inserted rows to
+row 13, a sort to row 14 with its values, a move to row 12 keeping the
+note that a field mask could have blanked, and the delete took it and
+said so. The band path resolved an anchor and refused the wrong axis.
 
 **The live driver, run 2026-09-06 (`make live`).** Five steps failed on
 the first run of phase 2's surface, and the split is worth recording:

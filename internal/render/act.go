@@ -120,7 +120,7 @@ func dimensionNotes(b *strings.Builder, a DimensionAct, took, moved string) {
 	}
 	if len(a.Anchors) > 0 {
 		fmt.Fprintf(b, "It %s the anchor(s) %s with it; Google's reply does not mention them.\n",
-			took, strings.Join(a.Anchors, ", "))
+			took, AnchorNames(a.Anchors))
 	}
 	if a.Shifted {
 		fmt.Fprintf(b, "Addresses after the band %s: a checkpoint or an address from before this call no longer "+
