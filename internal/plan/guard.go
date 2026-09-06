@@ -18,6 +18,7 @@ import (
 
 	"github.com/mmedum/google-sheets-mcp/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
 )
 
 // MaxCellChars is the longest string one cell holds.
@@ -59,6 +60,21 @@ func (c *Cells) Add(addr string) {
 
 // Any reports whether anything was recorded.
 func (c Cells) Any() bool { return c.Total > 0 }
+
+// Merge folds another set into this one, keeping the cap.
+//
+// Here rather than at the caller, because "name a few and count the
+// rest" is this type's rule: the version outside it had to add the
+// names back one at a time and then patch Total by hand to undo the cap
+// Add applies, which is a caller knowing how Add works.
+func (c *Cells) Merge(o Cells) {
+	for _, name := range o.Named {
+		c.Add(name)
+	}
+	// The names are capped and the totals are not, so what is left is
+	// the count of everything Add would have refused to name.
+	c.Total += o.Total - len(o.Named)
+}
 
 // verb agrees with how many cells were recorded. "A1 are not empty" is
 // the kind of sentence that makes a careful message read as a template.
@@ -112,6 +128,18 @@ type Report struct {
 	CrossSpreadsheet Cells
 	// TooLong are cells whose text is past MaxCellChars.
 	TooLong Cells
+	// Discarded are cells a merge would throw away. Sheets keeps the
+	// top-left value of a merge and drops the rest without saying so,
+	// which is the one formatting operation that loses data.
+	Discarded Cells
+	// NoteReplaced are cells whose note a note op would overwrite. A
+	// note is invisible in a values read, so a caller replacing one
+	// cannot have seen what was there.
+	NoteReplaced Cells
+	// Formatted are cells carrying a format of their own, which
+	// clear_format removes. Cells that only inherit the sheet's defaults
+	// are not counted: clearing takes nothing from them.
+	Formatted Cells
 }
 
 // Blocker is one reason a write is refused, and the argument that would
@@ -160,6 +188,28 @@ func (r Report) Blockers(ack Ack) []Blocker {
 			Why: fmt.Sprintf("%s would hold an IMPORTRANGE, which pulls another spreadsheet's data into this one "+
 				"and embeds that spreadsheet's id", r.CrossSpreadsheet),
 			Allow: "allow_external_formulas",
+		})
+	}
+
+	if r.Discarded.Any() && !ack.Overwrite {
+		out = append(out, Blocker{
+			Why: fmt.Sprintf("merging would keep the top-left value and discard %s, which %s not empty",
+				r.Discarded, r.Discarded.verb("is", "are")),
+			Allow: "overwrite",
+		})
+	}
+	if r.NoteReplaced.Any() && !ack.Overwrite {
+		out = append(out, Blocker{
+			Why: fmt.Sprintf("%s already %s a note, which no values read shows, so this would replace or remove "+
+				"something you have not seen", r.NoteReplaced, r.NoteReplaced.verb("has", "have")),
+			Allow: "overwrite",
+		})
+	}
+	if r.Formatted.Any() && !ack.Overwrite {
+		out = append(out, Blocker{
+			Why: fmt.Sprintf("%s %s formatting of its own, which clearing removes", r.Formatted,
+				r.Formatted.verb("has", "have")),
+			Allow: "overwrite",
 		})
 	}
 
@@ -229,6 +279,7 @@ var (
 // drifted, the external-formula gate would open silently.
 func Check(g *grid.Grid, values [][]any, formulasEvaluated bool) Report {
 	r := CheckDestination(g)
+	CheckPartialMerges(&r, g)
 	for i, row := range g.Cells {
 		for j, cell := range row {
 			addr := g.Address(i, j)
@@ -256,23 +307,24 @@ func Check(g *grid.Grid, values [][]any, formulasEvaluated bool) Report {
 	return r
 }
 
-// CheckDestination is what refuses any write to a rectangle, whatever
-// the write is and whatever the caller acknowledged: a protected range
-// this account may not edit, and a merge the write would cut across.
+// CheckDestination is what refuses any request touching a rectangle,
+// whatever it is and whatever the caller acknowledged: a protected range
+// this account may not edit.
 //
-// Separate from Check because clear_values needs exactly these and none
+// Separate from Check because clear_values needs exactly this and none
 // of the rest. It used to call Check and switch the other findings off
 // with acknowledgements it does not offer — which worked, and meant any
 // blocker added later applied to a clear silently.
+//
+// The partial-merge scan used to be here too, and phase 2 brought that
+// mistake back in a new shape: two of the three callers ran this and
+// then deleted r.Merges, because naming a range or setting a validation
+// rule does not care about a merge. A finding two thirds of the callers
+// throw away is a rule decided after the fact at each call site — so it
+// is CheckPartialMerges now, and the callers that write values into
+// cells ask for it.
 func CheckDestination(g *grid.Grid) Report {
 	var r Report
-	for _, m := range g.Merges {
-		// A merge wholly inside the target is replaced along with
-		// everything else. One the write cuts across is the problem.
-		if !g.Rect.Contains(m) {
-			r.Merges = append(r.Merges, m)
-		}
-	}
 	for _, p := range g.Protected {
 		// WarningOnly protection is a nudge in the interface and does
 		// not refuse an API write, so it is not treated as one here.
@@ -281,6 +333,23 @@ func CheckDestination(g *grid.Grid) Report {
 		}
 	}
 	return r
+}
+
+// CheckPartialMerges records the merged ranges a write covers only part
+// of, which is a refusal nothing can acknowledge.
+//
+// It applies to whatever writes into the cells: Sheets applies such a
+// write to the merge's anchor and silently ignores the rest. It does not
+// apply to what is merely attached to the range, which is why it is
+// asked for rather than always produced.
+func CheckPartialMerges(r *Report, g *grid.Grid) {
+	for _, m := range g.Merges {
+		// A merge wholly inside the target is replaced along with
+		// everything else. One the write cuts across is the problem.
+		if !g.Rect.Contains(m) {
+			r.Merges = append(r.Merges, m)
+		}
+	}
 }
 
 // CheckValues is the half of the guard that reads only what is being
@@ -322,4 +391,97 @@ func CheckValues(r *Report, values [][]any, formulasEvaluated bool, label func(i
 // write whose destination the server cannot know in advance.
 func Position(i, j int) string {
 	return fmt.Sprintf("row %d, column %d of the values", i+1, j+1)
+}
+
+// CheckMerge records what a merge would throw away.
+//
+// Sheets keeps one value per merged block — the top-left of it — and
+// drops the others with nothing in the response saying so. Which cell
+// survives depends on the merge type, so the anchor is worked out here
+// rather than assumed to be the rectangle's corner: merging by rows
+// keeps the leftmost cell of every row, and by columns the top cell of
+// every column.
+func CheckMerge(r *Report, g *grid.Grid, kind string) {
+	for i, row := range g.Cells {
+		for j, cell := range row {
+			if cell.Empty() || anchors(kind, i, j) {
+				continue
+			}
+			r.Discarded.Add(g.Address(i, j))
+		}
+	}
+}
+
+// anchors reports whether the cell at this position in the rectangle is
+// the one its merge keeps.
+func anchors(kind string, i, j int) bool {
+	switch kind {
+	case gsheets.MergeRows:
+		return j == 0
+	case gsheets.MergeColumns:
+		return i == 0
+	default:
+		return i == 0 && j == 0
+	}
+}
+
+// CheckNoteReplace records the notes a note op would overwrite or
+// remove.
+//
+// Both, and an earlier version returned early for a removal on the
+// grounds that removing is what the caller asked for. That was wrong for
+// the reason the guard exists at all: a note is invisible in a values
+// read, so a caller clearing notes across a column has not seen what is
+// in them either. Setting the note that is already there changes
+// nothing and is not held back.
+//
+// Called only when the request carries a note op, so "no note op" is the
+// caller's business rather than an empty string standing in for it.
+func CheckNoteReplace(r *Report, g *grid.Grid, note string) {
+	for i, row := range g.Cells {
+		for j, cell := range row {
+			if cell.Note != "" && cell.Note != note {
+				r.NoteReplaced.Add(g.Address(i, j))
+			}
+		}
+	}
+}
+
+// CheckClearFormat records the cells whose own formatting a clear would
+// remove.
+//
+// The cell's own format, not the one that applies to it. A cell showing
+// the sheet's default font has nothing to lose, and counting it would
+// make the refusal fire on every range in every spreadsheet, which is a
+// guard nobody reads.
+func CheckClearFormat(r *Report, g *grid.Grid) {
+	for i, row := range g.Cells {
+		for j, cell := range row {
+			if cell.Format != nil {
+				r.Formatted.Add(g.Address(i, j))
+			}
+		}
+	}
+}
+
+// Merge folds another report's findings into this one.
+//
+// Every field, and next to the struct rather than in whichever package
+// needed it first. The service had a four-field version of this for a
+// paste's destination, so a paste onto cells carrying notes or
+// validation rules reported neither — and a field added to Report later
+// would have been dropped there in silence.
+func (r *Report) Merge(o Report) {
+	r.NonEmpty.Merge(o.NonEmpty)
+	r.Formulas.Merge(o.Formulas)
+	r.Notes.Merge(o.Notes)
+	r.Validation.Merge(o.Validation)
+	r.Fetching.Merge(o.Fetching)
+	r.CrossSpreadsheet.Merge(o.CrossSpreadsheet)
+	r.TooLong.Merge(o.TooLong)
+	r.Discarded.Merge(o.Discarded)
+	r.NoteReplaced.Merge(o.NoteReplaced)
+	r.Formatted.Merge(o.Formatted)
+	r.Merges = append(r.Merges, o.Merges...)
+	r.Protected = append(r.Protected, o.Protected...)
 }

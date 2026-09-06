@@ -261,35 +261,11 @@ func ParseBand(dimension, band string) (Band, error) {
 	}
 }
 
-// Count is how many rows or columns the band covers.
-func (b Band) Count() int { return b.Last - b.First + 1 }
-
 // Rows reports whether the band runs down rather than across.
 func (b Band) Rows() bool { return b.Dimension == gsheets.DimensionRows }
 
-// Unit names what the band is made of, for a message that counts them.
-func (b Band) Unit() string {
-	if b.Rows() {
-		return "row(s)"
-	}
-	return "column(s)"
-}
-
-// Start names where the band begins, the way a person says it.
-func (b Band) Start() string {
-	if b.Rows() {
-		return fmt.Sprintf("row %d", b.First)
-	}
-	name, _ := a1.ColumnName(b.First)
-	return "column " + name
-}
-
-// String renders a band the way it was given.
-func (b Band) String() string {
-	if b.Rows() {
-		return fmt.Sprintf("rows %d:%d", b.First, b.Last)
-	}
-	first, _ := a1.ColumnName(b.First)
-	last, _ := a1.ColumnName(b.Last)
-	return fmt.Sprintf("columns %s:%s", first, last)
-}
+// A band has no String, Unit, Start or Count. It used to, and they are
+// render.Band's now: this package is below the renderer, and phrasing
+// decided below it is phrasing the goldens cannot cover (§17a.9). The
+// count went with them because counting is what the phrasing wanted it
+// for.

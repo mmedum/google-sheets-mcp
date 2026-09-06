@@ -50,15 +50,15 @@ type SpreadsheetProperties struct {
 
 // Sheet is one tab.
 type Sheet struct {
-	Properties         *SheetProperties  `json:"properties,omitempty"`
-	Data               []*GridData       `json:"data,omitempty"`
-	Merges             []*GridRange      `json:"merges,omitempty"`
-	ProtectedRanges    []*ProtectedRange `json:"protectedRanges,omitempty"`
-	FilterViews        []*FilterView     `json:"filterViews,omitempty"`
-	Tables             []*Table          `json:"tables,omitempty"`
-	Charts             []*EmbeddedChart  `json:"charts,omitempty"`
-	BandedRanges       []*BandedRange    `json:"bandedRanges,omitempty"`
-	ConditionalFormats []json.RawMessage `json:"conditionalFormats,omitempty"`
+	Properties         *SheetProperties         `json:"properties,omitempty"`
+	Data               []*GridData              `json:"data,omitempty"`
+	Merges             []*GridRange             `json:"merges,omitempty"`
+	ProtectedRanges    []*ProtectedRange        `json:"protectedRanges,omitempty"`
+	FilterViews        []*FilterView            `json:"filterViews,omitempty"`
+	Tables             []*Table                 `json:"tables,omitempty"`
+	Charts             []*EmbeddedChart         `json:"charts,omitempty"`
+	BandedRanges       []*BandedRange           `json:"bandedRanges,omitempty"`
+	ConditionalFormats []*ConditionalFormatRule `json:"conditionalFormats,omitempty"`
 }
 
 // SheetProperties describe one tab.
@@ -168,12 +168,16 @@ func (e *ErrorValue) Display() string {
 	return "#" + e.Type
 }
 
-// CellFormat is the subset of a cell's format phase 0 reports.
+// CellFormat is a cell's format: what read_formatting reports and what
+// format_cells writes.
 type CellFormat struct {
-	NumberFormat    *NumberFormat `json:"numberFormat,omitempty"`
-	HorizontalAlign string        `json:"horizontalAlignment,omitempty"`
-	VerticalAlign   string        `json:"verticalAlignment,omitempty"`
-	WrapStrategy    string        `json:"wrapStrategy,omitempty"`
+	NumberFormat         *NumberFormat `json:"numberFormat,omitempty"`
+	BackgroundColorStyle *ColorStyle   `json:"backgroundColorStyle,omitempty"`
+	Borders              *Borders      `json:"borders,omitempty"`
+	TextFormat           *TextFormat   `json:"textFormat,omitempty"`
+	HorizontalAlign      string        `json:"horizontalAlignment,omitempty"`
+	VerticalAlign        string        `json:"verticalAlignment,omitempty"`
+	WrapStrategy         string        `json:"wrapStrategy,omitempty"`
 }
 
 // NumberFormat is a cell's number format.
@@ -246,10 +250,14 @@ type TableColumn struct {
 	ColumnType  string `json:"columnType,omitempty"`
 }
 
-// BandedRange is alternating-colour banding over a range.
+// BandedRange is alternating-colour banding over a range. Exactly one
+// of the two property sets is used: banding runs down rows or across
+// columns, not both.
 type BandedRange struct {
-	BandedRangeID int        `json:"bandedRangeId,omitempty"`
-	Range         *GridRange `json:"range,omitempty"`
+	BandedRangeID    int                `json:"bandedRangeId,omitempty"`
+	Range            *GridRange         `json:"range,omitempty"`
+	RowProperties    *BandingProperties `json:"rowProperties,omitempty"`
+	ColumnProperties *BandingProperties `json:"columnProperties,omitempty"`
 }
 
 // EmbeddedChart is a chart on a sheet. Phase 0 reports only that one
@@ -372,13 +380,54 @@ type Request struct {
 	AutoResizeDimensions      *AutoResizeDimensionsRequest      `json:"autoResizeDimensions,omitempty"`
 	AddDimensionGroup         *DimensionGroupRequest            `json:"addDimensionGroup,omitempty"`
 	DeleteDimensionGroup      *DimensionGroupRequest            `json:"deleteDimensionGroup,omitempty"`
+
+	// Phase 2: formatting, the objects attached to a range, and the
+	// transforms that move data without the caller naming its address.
+	RepeatCell                  *RepeatCellRequest                  `json:"repeatCell,omitempty"`
+	UpdateBorders               *UpdateBordersRequest               `json:"updateBorders,omitempty"`
+	MergeCells                  *MergeCellsRequest                  `json:"mergeCells,omitempty"`
+	UnmergeCells                *UnmergeCellsRequest                `json:"unmergeCells,omitempty"`
+	AddNamedRange               *AddNamedRangeRequest               `json:"addNamedRange,omitempty"`
+	UpdateNamedRange            *UpdateNamedRangeRequest            `json:"updateNamedRange,omitempty"`
+	DeleteNamedRange            *DeleteNamedRangeRequest            `json:"deleteNamedRange,omitempty"`
+	AddProtectedRange           *AddProtectedRangeRequest           `json:"addProtectedRange,omitempty"`
+	UpdateProtectedRange        *UpdateProtectedRangeRequest        `json:"updateProtectedRange,omitempty"`
+	DeleteProtectedRange        *DeleteProtectedRangeRequest        `json:"deleteProtectedRange,omitempty"`
+	SetDataValidation           *SetDataValidationRequest           `json:"setDataValidation,omitempty"`
+	AddTable                    *AddTableRequest                    `json:"addTable,omitempty"`
+	UpdateTable                 *UpdateTableRequest                 `json:"updateTable,omitempty"`
+	DeleteTable                 *DeleteTableRequest                 `json:"deleteTable,omitempty"`
+	AddBanding                  *AddBandingRequest                  `json:"addBanding,omitempty"`
+	UpdateBanding               *UpdateBandingRequest               `json:"updateBanding,omitempty"`
+	DeleteBanding               *DeleteBandingRequest               `json:"deleteBanding,omitempty"`
+	AddConditionalFormatRule    *AddConditionalFormatRuleRequest    `json:"addConditionalFormatRule,omitempty"`
+	UpdateConditionalFormatRule *UpdateConditionalFormatRuleRequest `json:"updateConditionalFormatRule,omitempty"`
+	DeleteConditionalFormatRule *DeleteConditionalFormatRuleRequest `json:"deleteConditionalFormatRule,omitempty"`
+	SortRange                   *SortRangeRequest                   `json:"sortRange,omitempty"`
+	FindReplace                 *FindReplaceRequest                 `json:"findReplace,omitempty"`
+	TrimWhitespace              *TrimWhitespaceRequest              `json:"trimWhitespace,omitempty"`
+	DeleteDuplicates            *DeleteDuplicatesRequest            `json:"deleteDuplicates,omitempty"`
+	TextToColumns               *TextToColumnsRequest               `json:"textToColumns,omitempty"`
+	RandomizeRange              *RandomizeRangeRequest              `json:"randomizeRange,omitempty"`
+	AutoFill                    *AutoFillRequest                    `json:"autoFill,omitempty"`
+	CopyPaste                   *CopyPasteRequest                   `json:"copyPaste,omitempty"`
+	CutPaste                    *CutPasteRequest                    `json:"cutPaste,omitempty"`
 }
 
 // Reply is one member of the reply union, in the same order as the
-// requests. Only the replies phase 1 reads are here.
+// requests. Only the replies this server reads are here.
 type Reply struct {
 	AddSheet       *AddSheetReply       `json:"addSheet,omitempty"`
 	DuplicateSheet *DuplicateSheetReply `json:"duplicateSheet,omitempty"`
+
+	AddNamedRange               *AddNamedRangeReply               `json:"addNamedRange,omitempty"`
+	AddProtectedRange           *AddProtectedRangeReply           `json:"addProtectedRange,omitempty"`
+	AddTable                    *AddTableReply                    `json:"addTable,omitempty"`
+	AddBanding                  *AddBandingReply                  `json:"addBanding,omitempty"`
+	DeleteConditionalFormatRule *DeleteConditionalFormatRuleReply `json:"deleteConditionalFormatRule,omitempty"`
+	FindReplace                 *FindReplaceReply                 `json:"findReplace,omitempty"`
+	TrimWhitespace              *TrimWhitespaceReply              `json:"trimWhitespace,omitempty"`
+	DeleteDuplicates            *DeleteDuplicatesReply            `json:"deleteDuplicates,omitempty"`
 }
 
 // NewSheetProperties is a sheet that does not exist yet.

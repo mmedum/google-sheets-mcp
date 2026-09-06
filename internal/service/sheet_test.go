@@ -137,7 +137,7 @@ func TestManageSheetActions(t *testing.T) {
 			name: "hide",
 			req:  service.SheetRequest{Action: service.SheetHide, Sheet: sheetstest.SecondSheet},
 			want: func(t *testing.T, r *service.SheetResult) {
-				if !strings.Contains(r.Render(), "hide") {
+				if !strings.Contains(r.Render(), "Hide") {
 					t.Errorf("hide gave %q", r.Render())
 				}
 			},
@@ -177,7 +177,7 @@ func TestManageSheetActions(t *testing.T) {
 			name: "freeze",
 			req:  service.SheetRequest{Action: service.SheetFreeze, Sheet: sheetstest.SecondSheet, Rows: 1},
 			want: func(t *testing.T, r *service.SheetResult) {
-				if !strings.Contains(r.Render(), "freeze 1 row") {
+				if !strings.Contains(r.Render(), "Freeze 1 row") {
 					t.Errorf("freeze gave %q", r.Render())
 				}
 			},

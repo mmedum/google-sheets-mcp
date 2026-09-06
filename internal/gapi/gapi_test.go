@@ -116,6 +116,27 @@ func TestGetSpreadsheetRefusesUnboundedReads(t *testing.T) {
 	if _, err := c.BatchGetValues(context.Background(), "id", nil, ValueOptions{}); !errors.Is(err, ErrInvalid) {
 		t.Errorf("a batch with no ranges = %v", err)
 	}
+	// And the third way to ask, which the option guard above cannot see:
+	// `includeGridData` is ignored when a field mask is set, so a mask
+	// naming `data(` is a grid read whatever the option says. With no
+	// range that is every cell of every sheet.
+	if _, err := c.GetSpreadsheet(context.Background(), "id", GetOptions{Fields: FormatFields}); !errors.Is(err, ErrInvalid) {
+		t.Errorf("a mask naming cell data with no range = %v", err)
+	}
+}
+
+// The other side of that rule: a mask naming no cell fields is a
+// metadata read and goes through with no range, which is how the card
+// and the conditional format rules are read.
+func TestMetadataMasksNeedNoRange(t *testing.T) {
+	c, _ := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"spreadsheetId":"id"}`))
+	})
+	for name, fields := range map[string]string{"card": CardFields, "rules": RuleFields} {
+		if _, err := c.GetSpreadsheet(context.Background(), "id", GetOptions{Fields: fields}); err != nil {
+			t.Errorf("the %s mask was refused: %v", name, err)
+		}
+	}
 }
 
 func TestValueOptionsReachTheWire(t *testing.T) {

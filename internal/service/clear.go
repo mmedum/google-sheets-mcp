@@ -38,20 +38,11 @@ func (r ClearResult) Render() string { return r.Summary }
 // first so the confirmation says what is there, and so a caller who
 // meant a narrower rectangle finds out before rather than after.
 func (s *Service) Clear(ctx context.Context, req ClearRequest) (*ClearResult, error) {
-	ref, err := s.Resolve(ctx, req.Spreadsheet)
+	at, err := s.locateRect(ctx, req.Spreadsheet, req.Sheet, req.Range)
 	if err != nil {
 		return nil, err
 	}
-	sh, err := s.ResolveRange(ctx, ref, req.Sheet, req.Range)
-	if err != nil {
-		return nil, err
-	}
-	rows, cols := extent(sh.Props)
-	if sh.Rect.FirstRow > rows || sh.Rect.FirstCol > cols {
-		return nil, Errorf("not_found", "%s is past the end of %q, which has %d rows and %d columns",
-			a1.FormatRect(sh.Rect), sh.Props.Title, rows, cols)
-	}
-	full := sh.Rect.Clamp(rows, cols)
+	ref, props, full := at.ref, at.props, at.rect
 	// Refused rather than read in part. The clear is sent for the whole
 	// range, so a guard that read only as much as the budget allowed
 	// would pass a range with a protected block in the part it never
@@ -63,15 +54,15 @@ func (s *Service) Clear(ctx context.Context, req ClearRequest) (*ClearResult, er
 				"in it; clear it in parts",
 			a1.FormatRect(full), cells, MaxWriteCells)
 	}
-	before, err := s.readTarget(ctx, target{ref: ref, props: sh.Props, rect: full})
+	before, err := s.readTarget(ctx, target{ref: ref, props: props, rect: full})
 	if err != nil {
 		return nil, err
 	}
 	counts := before.Count()
 
 	res := &ClearResult{
-		Spreadsheet: ref.ID, Sheet: sh.Props.Title,
-		Range:    a1.Format(sh.Props.Title, full),
+		Spreadsheet: ref.ID, Sheet: props.Title,
+		Range:    a1.Format(props.Title, full),
 		Cells:    counts.NonEmpty,
 		Formulas: counts.Formulas,
 	}

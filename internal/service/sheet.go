@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/mmedum/google-sheets-mcp/internal/a1"
@@ -237,13 +236,13 @@ func (s *Service) ManageSheet(ctx context.Context, req SheetRequest) (*SheetResu
 		return s.copySheet(ctx, ref, props, req, res)
 	}
 
-	op, what, err := sheetRequest(req, sp, props)
+	op, act, err := sheetRequest(req, sp, props)
 	if err != nil {
 		return nil, err
 	}
 	if req.DryRun {
 		res.DryRun = true
-		res.Summary = render.Changes("Dry run: nothing was sent. This would:", []render.Change{{What: what}})
+		res.Summary = render.SheetPreview(act)
 		return res, nil
 	}
 	got, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{Requests: []*gsheets.Request{op}})
@@ -259,19 +258,18 @@ func (s *Service) ManageSheet(ctx context.Context, req SheetRequest) (*SheetResu
 		return nil, err
 	}
 	res.Sheets, _ = sheetTitles(after)
-	res.Summary = render.Changes(fmt.Sprintf("Done: %s.", what), []render.Change{
-		{What: "the spreadsheet now has", Detail: strconv.Itoa(len(res.Sheets)) + " sheet(s): " + strings.Join(res.Sheets, ", ")},
-	})
+	res.Summary = render.SheetDone(act, res.Sheets)
 	return res, nil
 }
 
-// sheetRequest compiles one action into one union member, and says in
-// plain words what it will do — which is what both the dry run and the
-// result report, so the two cannot describe different things.
+// sheetRequest compiles one action into one union member, and returns
+// the parts of the sentence describing it. The sentence itself is the
+// renderer's, so a preview and a result cannot phrase the same act
+// differently (§17a.9).
 //
 // Split three ways by what the action touches: the sheet's identity, its
 // place among the others, and the grid on it.
-func sheetRequest(req SheetRequest, sp *gsheets.Spreadsheet, props *gsheets.SheetProperties) (*gsheets.Request, string, error) {
+func sheetRequest(req SheetRequest, sp *gsheets.Spreadsheet, props *gsheets.SheetProperties) (*gsheets.Request, render.SheetAct, error) {
 	switch req.Action {
 	case SheetAdd, SheetRename, SheetDuplicate:
 		return namingRequest(req, sp, props)
@@ -280,101 +278,100 @@ func sheetRequest(req SheetRequest, sp *gsheets.Spreadsheet, props *gsheets.Shee
 	case SheetResize, SheetFreeze, SheetTabColor:
 		return gridRequest(req, props)
 	}
-	return nil, "", Errorf("invalid",
+	return nil, render.SheetAct{}, Errorf("invalid",
 		"action %q is not one of add, rename, duplicate, copy_to, hide, unhide, reorder, resize, freeze, tab_color",
 		req.Action)
 }
 
 // namingRequest is the actions that give a sheet a name.
-func namingRequest(req SheetRequest, sp *gsheets.Spreadsheet, props *gsheets.SheetProperties) (*gsheets.Request, string, error) {
+func namingRequest(req SheetRequest, sp *gsheets.Spreadsheet, props *gsheets.SheetProperties) (*gsheets.Request, render.SheetAct, error) {
 	title := strings.TrimSpace(req.Title)
+	act := render.SheetAct{Action: req.Action, Title: title}
+	if props != nil {
+		act.Sheet = props.Title
+	}
 	if req.Action != SheetDuplicate && title == "" {
-		return nil, "", Errorf("invalid", "%s needs a title for the new sheet", req.Action)
+		return nil, act, Errorf("invalid", "%s needs a title for the new sheet", req.Action)
 	}
 	if title != "" {
 		if err := titleIsFree(sp, title); err != nil {
-			return nil, "", err
+			return nil, act, err
 		}
 	}
 	switch req.Action {
 	case SheetAdd:
-		return plan.AddSheet(title, req.Index, req.Rows, req.Cols), fmt.Sprintf("add a sheet called %q", title), nil
+		return plan.AddSheet(title, req.Index, req.Rows, req.Cols), act, nil
 	case SheetRename:
-		return plan.RenameSheet(props.SheetID, title), fmt.Sprintf("rename %q to %q", props.Title, title), nil
+		return plan.RenameSheet(props.SheetID, title), act, nil
 	default:
-		return plan.DuplicateSheet(props.SheetID, title, req.Index),
-			fmt.Sprintf("duplicate %q", props.Title), nil
+		return plan.DuplicateSheet(props.SheetID, title, req.Index), act, nil
 	}
 }
 
 // placementRequest is the actions that move a sheet or take it out of
 // the way.
-func placementRequest(req SheetRequest, sp *gsheets.Spreadsheet, props *gsheets.SheetProperties) (*gsheets.Request, string, error) {
+func placementRequest(req SheetRequest, sp *gsheets.Spreadsheet, props *gsheets.SheetProperties) (*gsheets.Request, render.SheetAct, error) {
+	act := render.SheetAct{Action: req.Action, Sheet: props.Title}
 	if req.Action == SheetReorder {
 		if req.Index == nil {
-			return nil, "", Errorf("invalid", "reorder needs index, a zero-based position")
+			return nil, act, Errorf("invalid", "reorder needs index, a zero-based position")
 		}
 		if *req.Index < 0 || *req.Index >= len(sp.Sheets) {
-			return nil, "", Errorf("invalid", "index %d is outside 0..%d, which is what this spreadsheet has room for",
+			return nil, act, Errorf("invalid", "index %d is outside 0..%d, which is what this spreadsheet has room for",
 				*req.Index, len(sp.Sheets)-1)
 		}
-		return plan.ReorderSheet(props.SheetID, deref(props.Index), *req.Index),
-			fmt.Sprintf("move %q to position %d", props.Title, *req.Index), nil
+		act.Index = *req.Index
+		return plan.ReorderSheet(props.SheetID, deref(props.Index), *req.Index), act, nil
 	}
 	hide := req.Action == SheetHide
 	// A spreadsheet must keep one visible sheet, and a file where every
 	// tab is hidden is one nobody can open properly.
 	if hide && visibleSheets(sp) < 2 {
-		return nil, "", Errorf("invalid",
+		return nil, act, Errorf("invalid",
 			"%q is the only visible sheet and a spreadsheet must have one; add another before hiding this", props.Title)
 	}
-	verb := "unhide"
-	if hide {
-		verb = "hide"
-	}
-	return plan.HideSheet(props.SheetID, hide), fmt.Sprintf("%s %q", verb, props.Title), nil
+	return plan.HideSheet(props.SheetID, hide), act, nil
 }
 
 // gridRequest is the actions that change the sheet itself rather than
 // its name or its place.
-func gridRequest(req SheetRequest, props *gsheets.SheetProperties) (*gsheets.Request, string, error) {
+func gridRequest(req SheetRequest, props *gsheets.SheetProperties) (*gsheets.Request, render.SheetAct, error) {
 	rows, cols := extent(props)
+	act := render.SheetAct{Action: req.Action, Sheet: props.Title, Rows: req.Rows, Cols: req.Cols}
 	switch req.Action {
 	case SheetResize:
+		act.Rows, act.Cols = or(req.Rows, rows), or(req.Cols, cols)
 		if req.Rows <= 0 && req.Cols <= 0 {
-			return nil, "", Errorf("invalid", "resize needs rows, cols, or both")
+			return nil, act, Errorf("invalid", "resize needs rows, cols, or both")
 		}
 		if req.Rows > a1.MaxRows || req.Cols > a1.MaxColumns {
-			return nil, "", Errorf("invalid", "a sheet has at most %d rows and %d columns", a1.MaxRows, a1.MaxColumns)
+			return nil, act, Errorf("invalid", "a sheet has at most %d rows and %d columns", a1.MaxRows, a1.MaxColumns)
 		}
 		// Shrinking takes the data on the rows or columns it removes,
 		// and nothing in Sheets brings it back. Refused here rather than
 		// gated: manage_sheet is not a destructive tool, and
 		// edit_dimensions delete is where removing lives.
 		if (req.Rows > 0 && req.Rows < rows) || (req.Cols > 0 && req.Cols < cols) {
-			return nil, "", Errorf("blocked",
+			return nil, act, Errorf("blocked",
 				"%q is %d by %d and this would shrink it, taking whatever is on the rows or columns it removes. "+
 					"Growing is fine; to remove rows or columns use edit_dimensions, which says what is on them first",
 				props.Title, rows, cols)
 		}
-		return plan.ResizeGrid(props.SheetID, req.Rows, req.Cols),
-			fmt.Sprintf("resize %q to %d rows and %d columns", props.Title, or(req.Rows, rows), or(req.Cols, cols)), nil
+		return plan.ResizeGrid(props.SheetID, req.Rows, req.Cols), act, nil
 	case SheetFreeze:
 		if req.Rows < 0 || req.Cols < 0 {
-			return nil, "", Errorf("invalid", "freeze takes rows and cols of zero or more; zero unfreezes")
+			return nil, act, Errorf("invalid", "freeze takes rows and cols of zero or more; zero unfreezes")
 		}
-		return plan.Freeze(props.SheetID, req.Rows, req.Cols),
-			fmt.Sprintf("freeze %d row(s) and %d column(s) on %q", req.Rows, req.Cols, props.Title), nil
+		return plan.Freeze(props.SheetID, req.Rows, req.Cols), act, nil
 	default:
 		style, err := plan.ParseColour(req.Colour)
 		if err != nil {
-			return nil, "", Errorf("invalid", "%s", err)
+			return nil, act, Errorf("invalid", "%s", err)
 		}
-		what := fmt.Sprintf("set the tab colour of %q to %s", props.Title, req.Colour)
-		if style == nil {
-			what = fmt.Sprintf("clear the tab colour of %q", props.Title)
+		if style != nil {
+			act.Colour = strings.TrimSpace(req.Colour)
 		}
-		return plan.TabColour(props.SheetID, style), what, nil
+		return plan.TabColour(props.SheetID, style), act, nil
 	}
 }
 
@@ -390,10 +387,10 @@ func (s *Service) copySheet(ctx context.Context, ref Reference, props *gsheets.S
 	// Named the way the caller named it. A truncated id is what a log
 	// line needs; a result should hand back the reference the caller
 	// used, which is the one they will recognise.
-	what := fmt.Sprintf("copy %q into the spreadsheet %q", props.Title, strings.TrimSpace(req.Destination))
+	act := render.SheetAct{Action: SheetCopyTo, Sheet: props.Title, Destination: strings.TrimSpace(req.Destination)}
 	if req.DryRun {
 		res.DryRun = true
-		res.Summary = render.Changes("Dry run: nothing was sent. This would:", []render.Change{{What: what}})
+		res.Summary = render.SheetPreview(act)
 		return res, nil
 	}
 	copied, err := s.api.CopySheetTo(ctx, ref.ID, props.SheetID, dest.ID)
@@ -402,9 +399,7 @@ func (s *Service) copySheet(ctx context.Context, ref Reference, props *gsheets.S
 	}
 	s.forget(dest.ID)
 	res.Sheet, res.SheetID = copied.Title, copied.SheetID
-	res.Summary = render.Changes(fmt.Sprintf("Done: %s.", what), []render.Change{
-		{What: "the copy is called", Detail: strconv.Quote(copied.Title) + ", in the destination spreadsheet"},
-	})
+	res.Summary = render.CopyDone(act, copied.Title)
 	return res, nil
 }
 

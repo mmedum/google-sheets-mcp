@@ -57,6 +57,11 @@ type Sheet struct {
 	FilterViews []*gsheets.FilterView
 	Tables      []*gsheets.Table
 	Charts      []*gsheets.EmbeddedChart
+	Bandings    []*gsheets.BandedRange
+	// Conditional are the sheet's conditional format rules, in the order
+	// they are evaluated. The order is the API's identifier for them, so
+	// the fake keeps a slice rather than a map.
+	Conditional []*gsheets.ConditionalFormatRule
 }
 
 // Find returns the sheet with this title.
@@ -192,4 +197,11 @@ func Numbers(seed uint64, n int) []float64 {
 		out[i] = float64(r.IntN(90000)+1000) / 100
 	}
 	return out
+}
+
+// WithFormat attaches a cell format, which is what read_formatting
+// summarises and what clear_format takes away.
+func WithFormat(c *gsheets.CellData, f *gsheets.CellFormat) *gsheets.CellData {
+	c.UserEnteredFormat = f
+	return c
 }

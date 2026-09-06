@@ -72,7 +72,7 @@ func coverageFloor(profile string, minimum float64) error {
 		}
 		checked++
 		floor := floorFor(pkg, minimum)
-		pct := covered.percent(module + "/" + pkg + "/")
+		pct := covered.percent(module + "/" + pkg)
 		note := ""
 		if floor != minimum {
 			note = fmt.Sprintf("   (floor %.0f%%)", floor)
@@ -99,10 +99,18 @@ type statements struct {
 	hit   map[string]bool
 }
 
-func (s statements) percent(prefix string) float64 {
+// percent is the coverage of one package: the blocks whose file sits in
+// that directory, and not the ones in a package under it.
+//
+// A prefix match is what this used to do, and it meant a package was
+// scored on its subpackages as well. It held for two phases because the
+// only subpackage was small and well covered; the moment sheetstest grew
+// it dragged gapi under a floor gapi was meeting on its own, and the
+// number the gate printed for gapi was a number for neither package.
+func (s statements) percent(pkg string) float64 {
 	var total, cov int
 	for block, n := range s.total {
-		if !strings.HasPrefix(block, prefix) {
+		if packageOf(block) != pkg {
 			continue
 		}
 		total += n
@@ -114,6 +122,20 @@ func (s statements) percent(prefix string) float64 {
 		return 0
 	}
 	return 100 * float64(cov) / float64(total)
+}
+
+// packageOf is the import path a coverage block belongs to: everything
+// before the file name in "path/to/file.go:1.2,3.4".
+func packageOf(block string) string {
+	file, _, ok := strings.Cut(block, ":")
+	if !ok {
+		return ""
+	}
+	i := strings.LastIndexByte(file, '/')
+	if i < 0 {
+		return ""
+	}
+	return file[:i]
 }
 
 func readProfile(path string) (statements, error) {

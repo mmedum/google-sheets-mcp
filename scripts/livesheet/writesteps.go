@@ -24,6 +24,9 @@ func (d *driver) writeAll() {
 	d.checkpointSteps()
 	sec("append_rows")
 	d.run(d.appendSteps()...)
+	// Phase 2 before the dimension steps: those insert and delete rows,
+	// which would move the band the transforms assert about.
+	d.formatAll()
 	sec("edit_dimensions")
 	d.run(d.dimensionSteps()...)
 	sec("delete_dimensions")

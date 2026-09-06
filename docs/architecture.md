@@ -1,17 +1,19 @@
 # Architecture — google-sheets-mcp
 
-**Status: phase 1 complete (2026-09-06), not yet tagged.** Reading and
-writing both work, `make check` is green, and the live driver ran 86
-steps with none failed. It took several runs: reading the transcript of
-each one found something the green count hid, and the two review passes
-found four more after the driver was already green. The write guard, the
-coercion report, checkpoints and `dry_run` are in, and every one of them
-was exercised against a real account.
+**Status: phase 2 code complete (2026-09-06), live work outstanding, not
+tagged.** Reading, writing, formatting and the objects attached to a
+range all work against the fake, and `make check` is green. Sixteen
+tools, and the write guard now covers what formatting can destroy: a
+merge keeps the top-left value and discards the rest, a clear takes
+formatting Sheets cannot return, a note replaces one no read would have
+shown, and a paste or a split lands on cells the caller never named.
 
-Phase 2 (§16) — formatting and structure — starts on an explicit go.
-Spike G runs before `format_cells` is designed. Six of §17a's entries are
-open; none blocks phase 2, and two of them are best done while phase 2 is
-already in those files.
+**Nothing in phase 2 has been run against a real account.** Spike G and
+the live driver both need credentials the machine this was written on
+does not have, and by this project's own rule green gates are not done.
+§16 says what is outstanding and which two commands close it. Phase 3 —
+resources, durable anchors, evals and performance — starts after that,
+on an explicit go.
 
 Everything here was checked against the Sheets API v4 discovery document
 (`sheets.googleapis.com/$discovery/rest?version=v4`, revision 20260831),
@@ -515,10 +517,26 @@ addressed grid (§4.2).
   what a values read cannot show.
 - Every read returns the `checkpoint` (§6.3).
 
-`read_formatting` (phase 2) answers the other question: for a range, the
-number format, font, colours, borders, alignment, wrapping, conditional
-format rules and banding that apply, summarised per contiguous block
-rather than per cell.
+`read_formatting` answers the other question: for a range, the number
+format, font, colours, borders, alignment and wrapping, summarised per
+block of identically formatted cells rather than per cell — a format
+repeated down a column is one fact, and a thousand lines of it is none.
+
+A cell with no format of its own is counted rather than listed, so what
+comes back is what somebody set rather than the sheet's defaults
+repeated. The read carries both of the API's formats for that reason:
+`userEnteredFormat` is what the cell was given and decides the blocks,
+`effectiveFormat` is what applies once Google has merged the defaults in,
+and the difference between them is what tells a caller whether clearing
+would take anything away.
+
+It also lists what is attached to the range and decides how a cell looks
+without being on the cell — merges, conditional format rules with their
+index, banding, validation rules, notes and protected ranges — because an
+answer built only from cell formats would describe a green column as
+plain. The cell budget bounds the read; there is no character budget,
+because the answer is per block and the cell budget already bounds how
+many blocks there can be.
 
 `find_in_spreadsheet` searches text or an RE2 regex across sheets and
 returns A1 addresses with context and the matching cell's kind (value,
@@ -619,21 +637,78 @@ value.
 
 ### 7.5 Formatting and structure (phase 2)
 
-- `format_cells`: ops over a range — `number_format`, `text_style`,
-  `background`, `borders`, `alignment`, `wrap`, `merge`, `unmerge`,
-  `clear_format`, `note`, and the conditional-format ops `rule_add`,
-  `rule_update`, `rule_delete`. Borders take a shorthand
-  (`1pt solid #cccccc`), as in the Docs server, rather than fifteen flat
-  fields.
+- `format_cells`: ops over a range — `number_format`, the font
+  switches, `text_colour`, `background`, `borders`, `horizontal`,
+  `vertical`, `wrap`, `merge`, `unmerge`, `clear_format` and `note`.
+  Every field set is one op and they travel together in one atomic
+  batch, so a header row that is bold, centred and shaded is one call.
+  Borders take a shorthand (`1pt solid #cccccc`), as in the Docs server,
+  rather than fifteen flat fields, and a number format names its type
+  (`date:yyyy-mm-dd`) rather than leaving the type to be guessed from the
+  pattern. Clearing is applied before setting, so "clear this and then
+  make it bold" is one call rather than a clear that undoes the bold.
+
+  **Three of these destroy something, and each is refused until
+  acknowledged**: a merge keeps the top-left value of every merged block
+  and discards the rest with nothing in the response saying so;
+  `clear_format` removes formatting Sheets cannot bring back; and a note
+  replaces one that no values read would have shown the caller. The cells
+  are read only when one of the three is asked for, so an ordinary "make
+  it bold" costs one request and not two.
 - `manage_range`: things attached to a range — `named_range`,
-  `protected_range`, `data_validation`, `table`, `banding`, each with
-  `add`, `update` and `delete`. A table's dropdown column carries its
-  `ONE_OF_LIST` rule, which the API requires.
+  `protected_range`, `data_validation`, `table`, `banding` and
+  `conditional_format`, each with `add`, `update` and `delete`. A table's
+  dropdown column carries its `ONE_OF_LIST` rule, which the API requires.
+
+  **The conditional-format ops are here rather than on `format_cells`,
+  which is a change from an earlier draft of this section.** A rule is
+  attached to a range and has add, update and delete, which is exactly
+  this tool's shape; and it needs a format of its own, so on
+  `format_cells` the style fields would have meant two different things
+  depending on whether a condition was also given. One argument that
+  means two things is how a caller sets the wrong one.
+
+  **An existing object is named by the range it covers, not by an id.**
+  A caller who can say "the protection on B2:B10" has not had to fetch
+  an id first, and A1 is this server's contract everywhere else (§17.1).
+  The range has to match exactly — a protection over a column and one
+  over a cell inside it are different objects — and a range matching
+  several is refused with the list rather than picked from. A
+  conditional format rule is the one exception: the API identifies those
+  by position in the sheet's list, so they take an `index`, which
+  `read_formatting` reports beside each rule.
+
+  A protection never blocks the request that lifts it. Anything else
+  would be a trap rather than a guard.
 - `transform_range`: `sort`, `find_replace`, `trim_whitespace`,
   `remove_duplicates`, `text_to_columns`, `randomize`, `auto_fill`,
-  `copy_paste`, `cut_paste`. Each reports the rows affected. These are
-  the operations that move data without the caller naming its new
-  address, so each one runs the guard over its destination.
+  `copy_paste`, `cut_paste`. Each reports what the API said it did.
+  These are the operations that move data without the caller naming its
+  new address, so each one runs the guard over its destination — and
+  there are three shapes of destination, each read only when the action
+  has one:
+
+  - A paste and an auto-fill land on cells the caller never named, so
+    the landing rectangle is read and guarded like any other write
+    target.
+  - A `text_to_columns` spills into the columns to the right of its
+    source. How far is not knowable before the call unless the delimiter
+    is given, so with Google detecting it the guard reads a window to the
+    right and treats all of it as at risk, and says that is what it is
+    doing.
+  - A `find_replace` with `in_formulas` rewrites what a cell computes
+    rather than what it shows, which is the same invisible loss
+    `overwrite_formulas` exists for, so it asks for the same
+    acknowledgement.
+
+  `sort`, `randomize`, `remove_duplicates` and `cut_paste` all move rows,
+  so each result says that an address or a checkpoint from before the
+  call no longer points where it did.
+
+  A sort key is a column of the sheet, not an offset into the range: the
+  API's `dimensionIndex` is absolute, and the live driver sorts a range
+  starting at B by its second column so that a relative reading would
+  leave the rows where they are and be caught.
 
 ### 7.6 Charts, pivot tables and data sources (phase 4)
 
@@ -663,8 +738,8 @@ registers only the readOnly rows and requests read-only scopes.
 | `edit_dimensions` | insert, move, resize, auto_resize, group, ungroup rows or columns | — | 1 |
 | `delete_dimensions` | Gated: remove rows or columns and the data on them | destructive | 1 |
 | `read_formatting` | Number formats, styles, borders, conditional rules over a range | readOnly | 2 |
-| `format_cells` | Number format, styles, borders, alignment, merges, notes, conditional rules | — | 2 |
-| `manage_range` | Named ranges, protected ranges, data validation, tables, banding | — | 2 |
+| `format_cells` | Number format, styles, borders, alignment, wrapping, merges, notes | idempotent | 2 |
+| `manage_range` | Named ranges, protected ranges, data validation, tables, banding, conditional format rules | — | 2 |
 | `transform_range` | sort, find_replace, trim, dedupe, text_to_columns, fill, copy/cut-paste | — | 2 |
 | `clear_values` | Gated: clear a range's values, keeping formatting | destructive | 1 |
 | `delete_sheet` | Gated: delete a sheet and everything on it | destructive | 1 |
@@ -1205,8 +1280,14 @@ forgotten. Results go into §18.
   decides whether the guard's "the write removed notes on A1" is true;
   and whether `moveDimension`'s `destinationIndex` is read against the
   sheet before or after the move.
-- **G. Size behaviour** (phase 2): what a write past 10 million cells or
-  column ZZZ returns, and how a 50 000-character cell round-trips.
+- **G. Size behaviour** (phase 2, **written and not yet run**): what a
+  write past 10 million cells or column ZZZ returns, and how a
+  50 000-character cell round-trips. The probe is `spikeG` in
+  `scripts/spikes`; it needs credentials this machine does not have, so
+  the phase's own record says so rather than the row implying a run that
+  did not happen. The character half was answered during phase 1 and is
+  in §18; what is unrun is the boundary at exactly 50 000, the column
+  ceiling and the ten-million-cell one.
 
 ## 16. Delivery phases
 
@@ -1252,11 +1333,34 @@ first. Then `create_spreadsheet`, `write_values`, `append_rows`,
 phase owed: one `service.Budget`, the scratch-file cleanup, and the three
 error classes that were declared and not yet emitted.
 
-**Phase 2 — formatting and structure (v0.2.0).** Spike G first. Then
-`read_formatting`, `format_cells`, `manage_range`, `transform_range`;
-the union builders for formatting, validation, protection, tables and
-conditional formatting; the guard extended over the transforms'
-destinations.
+**Phase 2 — formatting and structure (v0.2.0). Code complete
+2026-09-06; the live work is not done, and the phase is not closed until
+it is.** `read_formatting`, `format_cells`, `manage_range` and
+`transform_range` are written, `make check` is green, and the driver has
+a step for every option of all four — 156 of 158 exercised, the same two
+excused as before. What is outstanding is the part that cannot be done
+from this machine: spike G and the live driver both need credentials that
+are not here, so **no line of phase 2 has been run against a real
+account**, and by this project's own rule (green gates are not done) that
+is what stands between the code and the tag. `make live` and `go run
+-tags=live ./scripts/spikes -only G` are the two commands, and the
+transcripts have to be read rather than counted.
+
+Spike G was written first in the plan and second in fact. That is a
+deviation and it is recorded rather than smoothed over: the questions it
+asks — the column ceiling, the ten-million-cell ceiling, a cell at
+exactly 50 000 characters — bear on the refusals this server writes
+before sending, not on the shape of the four tools, so building them
+first cost nothing that a run before the tag will not still catch.
+Everything the four tools *do* depend on was verified in phase 0 or 1.
+
+The union builders for formatting, validation, protection, tables,
+banding and conditional formatting are in `internal/plan`, and the guard
+now covers what formatting and the transforms destroy: a merge's
+discarded values, a cleared format, a replaced note, a paste's landing
+rectangle, a split's spill to the right, and a replacement inside
+formulas. Plus the §17a decision the phase owed: the structural tools'
+English moved into the renderer.
 
 **Phase 3 — resources, anchors, evals, performance (v0.3.0).**
 `gsheets://` resources; developer metadata as durable anchors (§6.4); the
@@ -1322,10 +1426,13 @@ they are not reopened.
 
 ## 17a. Deferred cleanups
 
-Six open, five closed in phase 1. A closed entry keeps its text and the
-decision that closed it, so nobody reopens a question that was answered;
-four of the six open ones were raised by phase 1's own review passes and
-are recorded here rather than fixed in passing.
+Ten open, six closed. A closed entry keeps its text and the decision that
+closed it, so nobody reopens a question that was answered. Five of the
+open ones were raised by phase 2's own review passes and are recorded
+here rather than fixed in passing; two of those (entries 12 and 14) are
+about phase 1's tools as much as phase 2's, and entry 14 is left alone
+because changing it would alter behaviour that was verified live and
+cannot be verified again yet.
 
 1. **The live driver cannot trash the spreadsheets it creates.**
    **Decided 2026-09-06: accept the manual cleanup, and make it one
@@ -1407,7 +1514,11 @@ are recorded here rather than fixed in passing.
    renderer's goldens cannot cover. The fix is to return the parts —
    action, band, count, title — and let `render` own the template, which
    is what `render.Write` and `render.Append` already do. Phase 2 touches
-   both tools and is the moment to do it.
+   both tools and is the moment to do it. **Closed 2026-09-06:**
+   `render.SheetAct`, `render.DimensionAct` and `render.Band` carry the
+   parts and own the templates, and `plan.Band` lost its `String`, `Unit`
+   and `Start` with it — the words are in one place, which is what stops
+   a refusal and a result phrasing the same act differently.
 10. **`edit_dimensions delete` was hidden from the tool's description,
    not from its schema.** **Closed 2026-09-06** by making it
    `delete_dimensions`, its own destructive tool. The description hid the
@@ -1415,11 +1526,64 @@ are recorded here rather than fixed in passing.
    no enum to omit it from — and `edit_dimensions`, registered as a plain
    write, advertised `destructiveHint: false` while offering an
    irreversible action. See §7.4.
-11. **`leaks history` spawns one `git cat-file` per blob.** A single
+11. **A protection cannot name its editors.** `manage_range
+   protected_range` sets a description and the warning-only flag, and the
+   API's `editors` — the accounts allowed to edit past a protection — is
+   not offered. The default with no editors is the strongest form, which
+   is the one worth having, and the field takes email addresses: hard
+   rule 1 makes an address an awkward thing for the live driver to send
+   and for a transcript to carry. **Still open**, and it wants a decision
+   about how the driver would exercise it before the argument exists.
+12. **`transform_range` takes twenty-one arguments.** Nine actions, each
+   reading a different handful, and an argument that means nothing for
+   the action given is silently ignored rather than refused: a `sort_by`
+   passed with `action: trim_whitespace` does nothing and says nothing.
+   The tools that came before it have the same shape and the same hole
+   — `manage_sheet` ignores `pixels`, `edit_dimensions` ignores
+   `colour` — so the fix belongs at the registration layer rather than in
+   one tool: a per-action list of the arguments it reads, checked once,
+   the way `dry_run` is found by reflection rather than remembered per
+   tool. **Still open**, raised by phase 2 and applying to phase 1's
+   tools as much as its own.
+13. **`manage_range banding` only makes row bandings.** The API bands
+   rows or columns, and this offers rows: an `add` always writes
+   `rowProperties`. A column banding made in the Sheets interface can be
+   recoloured and deleted through this tool — the update reads which axis
+   the banding already has, after a review found it writing
+   `rowProperties` onto one and leaving it carrying both sets, which the
+   API rejects — but there is no way to create one here. It wants a
+   `columns` argument, which is a fifth thing for a caller to get right
+   on a tool that already takes eighteen, and it is worth deciding
+   alongside entry 12 rather than before it. **Still open.**
+14. **`dry_run` is answered by three tools and refused by two.**
+   `write_values` and phase 2's three previews come before the guard, for
+   the reason `write.go` gives: a dry run sends nothing, so there is
+   nothing to guard, and the refusal's own advice is to use one.
+   `clear_values` and `manage_sheet` call `refuse` first, so a dry run
+   over a protected range is refused rather than answered — the same bug
+   phase 1 fixed in `write_values` and left in its neighbours.
+   Registration guarantees by reflection that the flag exists and nothing
+   guarantees it is honoured the same way, which is the second half of
+   the rule the reflection check exists for; the fix is one service
+   helper that decides the ordering once. **Still open**, and left alone
+   deliberately: it changes the behaviour of two tools that were verified
+   live in phase 1, and phase 2 has had no live run to verify them again.
+15. **`manage_range` reads the conditional format rules in a request of
+   their own.** Counting them for an update or a delete costs a
+   `spreadsheets.get` that the card could carry: `conditionalFormats` is
+   sheet metadata, and the card is already in hand and cached. That would
+   make a rule update two requests instead of three, and the model is
+   steered into the shape that pays it twice — `read_formatting` reports
+   the index, then `manage_range` fetches the rules again to check it.
+   It needs a live probe first (rule 12): the fake returns
+   `conditionalFormats` whatever the mask says, so no test here can tell
+   whether the card mask accepts the field or what it adds to a payload
+   every `get_spreadsheet` pays for. **Still open.**
+16. **`leaks history` spawns one `git cat-file` per blob.** A single
    `git cat-file --batch` fed the ids on stdin would do it in one
    process. It is a manual gate, so the cost is nobody's per-push
    problem, but it grows monotonically with the history. **Still open.**
-12. Nothing further. The tool-version problem that was here — a
+17. Nothing further. The tool-version problem that was here — a
    distribution `golangci-lint` built with an older Go refusing this
    module, and a stale `go-licenses` failing on the standard library —
    was fixed rather than deferred: the Makefile fetches all three tools
@@ -1746,3 +1910,21 @@ not do. Four answers, none of them found by running anything.
 | A build tag hides code from the compiler, not from CI | **Refuted**: the two things that validate the write path against a real account, the live driver and the spikes, were compiled by nothing CI ran. The breakage would surface at the phase-closing step, which is the worst moment and the one where a maintainer has least appetite for a compile error | `go vet -tags=live ./...` runs in CI, and the parity gate holds it there |
 | The coverage floor covers what ships | **Refuted**: `-coverpkg=./internal/...`, and the gate derived its package list the same way, so `cmd/` was outside the profile entirely. 571 lines of `login`, `logout`, `status` and `doctor` had no tests, and nothing could report that they had none — the gate's own comment promises a package is under the floor from its first commit, and that promise only ever covered one of the two trees that ship | Both trees are listed, `cmd/` carries a floor of its own at 40% against 48% reached, and the gate has a test asserting a package from each tree is under a floor. The lower number is a floor rather than an exemption: what remains uncovered opens a browser, holds a token or serves stdio |
 | A secret scanner is worth having before it has ever fired | **Confirmed the hard way**: the first local `make secrets` run failed on a test fixture written twenty minutes earlier — a realistic-shaped OAuth client id, put in a test whose whole point is that such ids get masked. The repository already had one blessed fixture allowed by value in `.gitleaks.toml`, and the fix was to use it rather than to add a second exception | The test uses the canonical fixture. Worth recording because the finding was in new code, in a test about redaction, written by someone who had just read the rule — which is the argument for the scanner rather than against the author |
+
+**Phase 2's conventions, 2026-09-06.** Every row here was decided from
+the discovery document or from the code path, and **none of it has been
+run against a real account** — this machine has no credentials, and §16
+says which two commands close that. The last row is the one that most
+wants a live answer, and the driver is written to give it.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| A cell format can be written as a struct, with the mask beside it | **Refuted by the API's own rule.** A field named in an `updateSheetProperties` or `repeatCell` mask and absent from the body is set back to its default — which is how bold is turned off and a background cleared. A struct carrying `bold: false` says nothing about whether the caller asked for it, and a mask written by hand beside it is a second place to be wrong | `plan.Patch` is built by setters, each of which records its own mask entry. The caller's three-way choice (on, off, leave alone) lives in the tool's input as a `*bool`, and "leave alone" is expressed by never calling the setter, so the field cannot reach the mask |
+| A number format can be given as a pattern and its type inferred | **Rejected.** The API's `NumberFormat` needs a type as well as a pattern, and a pattern alone would have to be classified — `yyyy` is a date and `#,##0` is a number. A wrong guess formats somebody's column as the wrong kind of thing and looks like it worked | `number_format` names the type and optionally the pattern after a colon: `currency`, `date:yyyy-mm-dd`. A bare pattern is refused with the list of types |
+| A merge is a formatting operation | **Refuted.** Sheets keeps the top-left value of every merged block and discards the rest, and nothing in the response says so. Which cell survives depends on the merge type: by rows it is the leftmost of each row, by columns the top of each column | `plan.CheckMerge` names the cells that would go and the merge is refused without `overwrite`. It is the one op in `format_cells` that loses data the way a value write does, and the reason that tool reads its target at all |
+| Every formatting call should read its target first | **Rejected as written.** Three ops can destroy something — a merge, `clear_format`, a note that replaces one — and the rest cannot. Reading for all of them would double the cost of "make this bold", which is the commonest formatting call there is | The protections and merges come from the card, which the range resolution has already fetched; the cells are read only when one of the three is asked for. An ordinary formatting call costs one request, and a test asserts the count rather than the intention |
+| Clearing a format takes the cell's formatting | **Refined**: it takes what the cell was *given*, not what applies to it. A cell showing only the sheet's defaults has nothing to lose, and a guard built on `effectiveFormat` would fire on every range in every spreadsheet — which is a guard nobody reads | The read asks for both formats. `userEnteredFormat` decides the blocks `read_formatting` reports and what a clear would remove; `effectiveFormat` is what a caller sees. `grid.Cell` carries the pair for the same reason |
+| An attached object is named by an id | **Rejected.** A protected range, a banding and a table all have ids, and a caller would have to fetch one before deleting anything. A1 is this server's contract everywhere else (§17.1) | `manage_range` names an existing object by the range it covers, matched exactly; a range matching several is `[ambiguous]` with the list rather than a guess. The exception is a conditional format rule, which the API identifies by position — so those take an `index`, and `read_formatting` reports it beside each rule |
+| A protected range refuses every write into it | **Refined**: it must not refuse the request that lifts it. The destination check runs for every kind `manage_range` handles except `protected_range` itself | Anything else is a trap rather than a guard, and a spreadsheet with a protection nobody can remove through this server |
+| `includeGridData: false` is enough to keep a `spreadsheets.get` off the grid | **Refuted, and it was a live bug in this phase's own code.** The parameter is documented as ignored when a field mask is set, so a mask naming `data(...)` is a grid read whatever the option says. `manage_range`'s rule count was reading conditional format rules with the formatting mask and no range, which is the entered and effective format of every cell of every sheet — the whole-spreadsheet read §4.6 forbids, walking straight past the guard in `GetSpreadsheet`, which can only see the option. The fake hid it: it returns grid data only when the option is set, so no test could tell the two apart | A second guard in `GetSpreadsheet`, on the mask rather than the option: a mask containing `data(` with no range is refused before anything is sent. `gapi.RuleFields` names the rules and the sheet ids and nothing else. Found by a review pass reading the reference, not by anything running |
+| `sortRange`'s `dimensionIndex` is an offset into the sorted range | **Read as absolute — the sheet's own column — and not yet verified live.** The discovery document describes it as the dimension the sort applies to, which reads as the sheet's index and matches how every other `DimensionRange` in the API is numbered, but the reference does not say so in as many words, and rule 12 says prose is not evidence | `plan.ParseSort` converts a column letter to the sheet's zero-based index, and the service refuses a key outside the range. The live driver settles it: it sorts `B31:C34` by column C, having seeded B counting up and C counting down, so a reading relative to the range would sort by B and leave the rows where they are. **Until that runs, this row is a belief with a test waiting for it** |

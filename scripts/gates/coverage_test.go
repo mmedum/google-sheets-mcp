@@ -65,3 +65,38 @@ func TestExemptionsCarryReasons(t *testing.T) {
 		}
 	}
 }
+
+// A package's number is its own. It used to include everything under it,
+// which made a well-covered package fail on its subpackage's coverage
+// and printed a percentage that described neither of them.
+func TestAPackageIsNotScoredOnItsSubpackages(t *testing.T) {
+	s := statements{total: map[string]int{}, hit: map[string]bool{}}
+	// Ten statements in the parent, all covered; ten in the child, none.
+	for i := range 10 {
+		parent := "example.com/m/internal/gapi/client.go:" + itoa(i)
+		child := "example.com/m/internal/gapi/sheetstest/server.go:" + itoa(i)
+		s.total[parent], s.hit[parent] = 1, true
+		s.total[child] = 1
+	}
+	if got := s.percent("example.com/m/internal/gapi"); got != 100 {
+		t.Errorf("the parent scored %.1f%%, and every one of its own statements is covered", got)
+	}
+	if got := s.percent("example.com/m/internal/gapi/sheetstest"); got != 0 {
+		t.Errorf("the child scored %.1f%%, and none of its statements are covered", got)
+	}
+}
+
+func TestPackageOfReadsTheDirectory(t *testing.T) {
+	for block, want := range map[string]string{
+		"example.com/m/internal/a1/a1.go:12.3,14.4": "example.com/m/internal/a1",
+		"example.com/m/cmd/x/main.go:1.1,2.2":       "example.com/m/cmd/x",
+		"nocolon":                                   "",
+		"noslash.go:1.1,2.2":                        "",
+	} {
+		if got := packageOf(block); got != want {
+			t.Errorf("packageOf(%q) = %q, want %q", block, got, want)
+		}
+	}
+}
+
+func itoa(i int) string { return string(rune('0' + i)) }

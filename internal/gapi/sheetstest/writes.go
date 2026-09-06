@@ -434,21 +434,50 @@ func (s *Server) sheetsCopyTo(w http.ResponseWriter, r *http.Request) {
 }
 
 // clone copies a Doc deeply enough for a batch to be undone by throwing
-// it away: the sheet list, each sheet's properties, and its cells. A
-// CellData is replaced wholesale by a write rather than mutated in
-// place, except by values.clear, which is not part of a batch.
+// it away: the sheet list, each sheet's properties and cells, and the
+// objects attached to its ranges.
+//
+// The attached objects are copied one level deep as well, because
+// phase 2's requests edit them in place — an updateProtectedRange sets a
+// field on the protection it finds, and a slice shared with the original
+// would leave that edit behind when the batch failed.
 func (d *Doc) clone() *Doc {
 	out := *d
+	out.NamedRanges = clonePointers(d.NamedRanges)
 	out.Sheets = make([]*Sheet, len(d.Sheets))
 	for i, sh := range d.Sheets {
 		copied := *sh
 		copied.Cells = make(map[[2]int]*gsheets.CellData, len(sh.Cells))
 		for k, v := range sh.Cells {
-			copied.Cells[k] = v
+			// The cell itself is copied too: a repeatCell edits the
+			// format on the cell it finds rather than replacing it.
+			cell := *v
+			copied.Cells[k] = &cell
 		}
+		copied.Merges = append([]*gsheets.GridRange(nil), sh.Merges...)
+		copied.Protected = clonePointers(sh.Protected)
+		copied.Tables = clonePointers(sh.Tables)
+		copied.Bandings = clonePointers(sh.Bandings)
+		copied.Conditional = append([]*gsheets.ConditionalFormatRule(nil), sh.Conditional...)
 		out.Sheets[i] = &copied
 	}
 	return &out
+}
+
+// clonePointers copies a slice of pointers and what each one points at.
+func clonePointers[T any](in []*T) []*T {
+	if in == nil {
+		return nil
+	}
+	out := make([]*T, len(in))
+	for i, p := range in {
+		if p == nil {
+			continue
+		}
+		copied := *p
+		out[i] = &copied
+	}
+	return out
 }
 
 // applyRequest is the fake's half of the batchUpdate union: the members
@@ -514,6 +543,12 @@ func applyRequest(d *Doc, req *gsheets.Request) (*gsheets.Reply, error) {
 
 	case req.UpdateSheetProperties != nil:
 		return updateProperties(d, req.UpdateSheetProperties)
+	}
+	if reply, handled, err := applyFormat(d, req); handled {
+		return reply, err
+	}
+	if reply, handled, err := applyTransform(d, req); handled {
+		return reply, err
 	}
 	return applyDimension(d, req)
 }

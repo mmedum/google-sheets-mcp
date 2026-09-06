@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/mmedum/google-sheets-mcp/internal/a1"
@@ -94,9 +93,15 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 			"deleting rows or columns is off in this server; start it with GSHEETS_ENABLE_DESTRUCTIVE=true to turn it on")
 	}
 
-	res := &DimensionResult{
-		Spreadsheet: ref.ID, Sheet: props.Title, Action: req.Action, Band: band.String(),
+	act := render.DimensionAct{
+		Action: req.Action, Sheet: props.Title,
+		Band: render.Band{Rows: band.Rows(), First: band.First, Last: band.Last},
+		To:   req.To, Pixels: req.Pixels,
 		Shifted: req.Action == DimInsert || req.Action == DimMove || req.Action == DimDelete,
+	}
+	res := &DimensionResult{
+		Spreadsheet: ref.ID, Sheet: props.Title, Action: req.Action, Band: act.Band.String(),
+		Shifted: act.Shifted,
 	}
 
 	// A delete is counted before it is confirmed, so the confirmation
@@ -107,22 +112,23 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 			return nil, err
 		}
 		res.Cells, res.Formulas = counts.NonEmpty, counts.Formulas
+		act.Cells, act.Formulas = counts.NonEmpty, counts.Formulas
 	}
 
-	op, what, err := dimensionRequest(req, band, props)
+	op, err := dimensionRequest(req, band, props)
 	if err != nil {
 		return nil, err
 	}
 	if req.DryRun {
 		res.DryRun = true
-		res.Summary = render.DimensionPreview(what, res.Cells, res.Formulas, res.Shifted)
+		res.Summary = render.DimensionPreview(act)
 		return res, nil
 	}
 	if req.Action == DimDelete && !req.Confirm {
 		return nil, Errorf("blocked",
 			"deleting %s on %q takes %d non-empty cell(s) and %d formula(s) with them, and Sheets cannot undo it. "+
 				"Pass confirm to go ahead",
-			band, props.Title, res.Cells, res.Formulas)
+			act.Band, props.Title, res.Cells, res.Formulas)
 	}
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{op},
@@ -130,43 +136,39 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 		return nil, wrap(err)
 	}
 	s.forget(ref.ID)
-	res.Summary = render.DimensionDone(what, res.Cells, res.Formulas, res.Shifted)
+	res.Summary = render.DimensionDone(act)
 	return res, nil
 }
 
-// dimensionRequest compiles one action into one union member and says
-// what it does, so the dry run and the result describe the same act.
-func dimensionRequest(req DimensionRequest, b plan.Band, props *gsheets.SheetProperties) (*gsheets.Request, string, error) {
+// dimensionRequest compiles one action into one union member.
+//
+// It no longer says what the action does: the words are the renderer's,
+// which is what keeps a preview, a result and a refusal describing the
+// same act in the same terms (§17a.9).
+func dimensionRequest(req DimensionRequest, b plan.Band, props *gsheets.SheetProperties) (*gsheets.Request, error) {
 	switch req.Action {
 	case DimInsert:
-		return plan.InsertDimension(props.SheetID, b.Dimension, b.First, b.Last, req.Inherit),
-			fmt.Sprintf("insert %d %s before %s on %q", b.Count(), b.Unit(), b.Start(), props.Title), nil
+		return plan.InsertDimension(props.SheetID, b.Dimension, b.First, b.Last, req.Inherit), nil
 	case DimDelete:
-		return plan.DeleteDimension(props.SheetID, b.Dimension, b.First, b.Last),
-			fmt.Sprintf("delete %s on %q", b, props.Title), nil
+		return plan.DeleteDimension(props.SheetID, b.Dimension, b.First, b.Last), nil
 	case DimMove:
 		if req.To < 1 {
-			return nil, "", Errorf("invalid", "move needs to, a one-based row or column to move the band in front of")
+			return nil, Errorf("invalid", "move needs to, a one-based row or column to move the band in front of")
 		}
-		return plan.MoveDimension(props.SheetID, b.Dimension, b.First, b.Last, req.To),
-			fmt.Sprintf("move %s on %q to position %d", b, props.Title, req.To), nil
+		return plan.MoveDimension(props.SheetID, b.Dimension, b.First, b.Last, req.To), nil
 	case DimResize:
 		if req.Pixels < 1 {
-			return nil, "", Errorf("invalid", "resize needs pixels, a size greater than zero")
+			return nil, Errorf("invalid", "resize needs pixels, a size greater than zero")
 		}
-		return plan.ResizeDimension(props.SheetID, b.Dimension, b.First, b.Last, req.Pixels),
-			fmt.Sprintf("set %s on %q to %d pixels", b, props.Title, req.Pixels), nil
+		return plan.ResizeDimension(props.SheetID, b.Dimension, b.First, b.Last, req.Pixels), nil
 	case DimAutoResize:
-		return plan.AutoResizeDimensions(props.SheetID, b.Dimension, b.First, b.Last),
-			fmt.Sprintf("size %s on %q to fit their contents", b, props.Title), nil
+		return plan.AutoResizeDimensions(props.SheetID, b.Dimension, b.First, b.Last), nil
 	case DimGroup:
-		return plan.GroupDimensions(props.SheetID, b.Dimension, b.First, b.Last),
-			fmt.Sprintf("group %s on %q", b, props.Title), nil
+		return plan.GroupDimensions(props.SheetID, b.Dimension, b.First, b.Last), nil
 	case DimUngroup:
-		return plan.UngroupDimensions(props.SheetID, b.Dimension, b.First, b.Last),
-			fmt.Sprintf("ungroup %s on %q", b, props.Title), nil
+		return plan.UngroupDimensions(props.SheetID, b.Dimension, b.First, b.Last), nil
 	}
-	return nil, "", Errorf("invalid",
+	return nil, Errorf("invalid",
 		"action %q is not one of insert, move, resize, auto_resize, group, ungroup", req.Action)
 }
 
@@ -179,11 +181,12 @@ func bandFits(b plan.Band, props *gsheets.SheetProperties) error {
 	if !b.Rows() {
 		limit, what = cols, "columns"
 	}
+	named := render.Band{Rows: b.Rows(), First: b.First, Last: b.Last}
 	if b.First < 1 {
-		return Errorf("invalid", "%s starts before the first %s", b, strings.TrimSuffix(what, "s"))
+		return Errorf("invalid", "%s starts before the first %s", named, strings.TrimSuffix(what, "s"))
 	}
 	if b.Last > limit {
-		return Errorf("invalid", "%s is past the end of %q, which has %d %s", b, props.Title, limit, what)
+		return Errorf("invalid", "%s is past the end of %q, which has %d %s", named, props.Title, limit, what)
 	}
 	return nil
 }

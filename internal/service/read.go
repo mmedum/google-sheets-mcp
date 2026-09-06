@@ -90,41 +90,27 @@ func (s *Service) Read(ctx context.Context, req ReadRequest) (*ReadResult, error
 	if err != nil {
 		return nil, err
 	}
-	ref, err := s.Resolve(ctx, req.Spreadsheet)
+	at, err := s.locateRect(ctx, req.Spreadsheet, req.Sheet, req.Range)
 	if err != nil {
 		return nil, err
 	}
-	sh, err := s.ResolveRange(ctx, ref, req.Sheet, req.Range)
-	if err != nil {
-		return nil, err
-	}
-	rowCount, colCount := extent(sh.Props)
-	// Clamp pulls a rectangle back inside the sheet, which is right for
-	// one that overlaps it and wrong for one that misses entirely: a
-	// read of A50:B60 on a ten-row sheet would come back holding row
-	// ten's data, which is a plausible answer to a question nobody
-	// asked. Refused with the size, so the caller can see why.
-	if sh.Rect.FirstRow > rowCount || sh.Rect.FirstCol > colCount {
-		return nil, Errorf("not_found", "%s is past the end of %q, which has %d rows and %d columns",
-			a1.FormatRect(sh.Rect), sh.Props.Title, rowCount, colCount)
-	}
-	full := sh.Rect.Clamp(rowCount, colCount)
+	ref, sh, full := at.ref, at.props, at.rect
 
 	window := full
 	if req.ContinueFrom > 0 {
 		if req.ContinueFrom > full.LastRow {
 			return nil, Errorf("stale", "continue_from is row %d, past row %d where %s ends; the read is already complete",
-				req.ContinueFrom, full.LastRow, a1.Format(sh.Props.Title, full))
+				req.ContinueFrom, full.LastRow, a1.Format(sh.Title, full))
 		}
 		if req.ContinueFrom < full.FirstRow {
 			return nil, Errorf("invalid", "continue_from is row %d, before row %d where %s starts",
-				req.ContinueFrom, full.FirstRow, a1.Format(sh.Props.Title, full))
+				req.ContinueFrom, full.FirstRow, a1.Format(sh.Title, full))
 		}
 		window.FirstRow = req.ContinueFrom
 	}
 
 	window, cellsCut := fit(window, bud.Cells)
-	rangeA1 := a1.Format(sh.Props.Title, window)
+	rangeA1 := a1.Format(sh.Title, window)
 
 	got, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{
 		Fields: gapi.GridFields, Ranges: []string{rangeA1}, IncludeGridData: true,
@@ -132,12 +118,12 @@ func (s *Service) Read(ctx context.Context, req ReadRequest) (*ReadResult, error
 	if err != nil {
 		return nil, wrap(err)
 	}
-	data, merges, protected := sheetData(got, sh.Props.SheetID)
+	data, merges, protected := sheetData(got, sh.SheetID)
 	formatted := grid.AsRaw
 	if req.Formatted {
 		formatted = grid.AsFormatted
 	}
-	g := grid.Build(sh.Props.Title, sh.Props.SheetID, window, data, formatted)
+	g := grid.Build(sh.Title, sh.SheetID, window, data, formatted)
 	g.Merges = overlapping(merges, window)
 	g.Protected = protections(protected, window)
 
@@ -172,7 +158,7 @@ func (s *Service) Read(ctx context.Context, req ReadRequest) (*ReadResult, error
 	res := &ReadResult{
 		Grid:        rendered.Text,
 		Spreadsheet: ref.ID,
-		Sheet:       sh.Props.Title,
+		Sheet:       sh.Title,
 		Range:       rangeA1,
 		Checkpoint:  grid.Checkpoint(ref.ID, g),
 		Truncated:   continueFrom > 0,
@@ -232,6 +218,45 @@ func parseFormat(v string) (string, error) {
 		return v, nil
 	}
 	return "", Errorf("invalid", "format %q is not one of grid, json, csv, tsv", v)
+}
+
+// area is a resolved rectangle on a resolved sheet: what every tool
+// taking a spreadsheet, a sheet and a range starts from.
+type area struct {
+	ref   Reference
+	props *gsheets.SheetProperties
+	// rect is the caller's range, clamped to the sheet.
+	rect a1.Rect
+}
+
+// locateRect resolves a spreadsheet, a sheet and a range, and clamps the
+// range to the sheet.
+//
+// Clamp pulls a rectangle back inside the sheet, which is right for one
+// that overlaps it and wrong for one that misses entirely: a read of
+// A50:B60 on a ten-row sheet would come back holding row ten's data,
+// which is a plausible answer to a question nobody asked. Refused with
+// the size, so the caller can see why.
+//
+// Five tools opened with these fifteen lines before this existed, and
+// the fifth copy is what made it worth having: the refusal is the same
+// sentence each time, and a sentence in five places is a sentence that
+// will not stay the same.
+func (s *Service) locateRect(ctx context.Context, spreadsheet, sheet, rangeA1 string) (area, error) {
+	ref, err := s.Resolve(ctx, spreadsheet)
+	if err != nil {
+		return area{}, err
+	}
+	sh, err := s.ResolveRange(ctx, ref, sheet, rangeA1)
+	if err != nil {
+		return area{}, err
+	}
+	rows, cols := extent(sh.Props)
+	if sh.Rect.FirstRow > rows || sh.Rect.FirstCol > cols {
+		return area{}, Errorf("not_found", "%s is past the end of %q, which has %d rows and %d columns",
+			a1.FormatRect(sh.Rect), sh.Props.Title, rows, cols)
+	}
+	return area{ref: ref, props: sh.Props, rect: sh.Rect.Clamp(rows, cols)}, nil
 }
 
 // extent is the sheet's allocated size, which is what an open-ended

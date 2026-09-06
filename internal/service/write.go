@@ -273,9 +273,17 @@ func anchorOnly(r a1.Rect) bool {
 // mask that carries what a values read cannot show. One request, and the
 // only one an ordinary write adds.
 func (s *Service) readTarget(ctx context.Context, t target) (*grid.Grid, error) {
+	return s.readTargetFields(ctx, t, gapi.GridFields)
+}
+
+// readTargetFields is the same read with the mask the caller needs.
+// A formatting write asks for the cell formats as well, because the
+// difference between a cell's own format and the one it inherits is what
+// decides whether clearing takes anything away.
+func (s *Service) readTargetFields(ctx context.Context, t target, fields string) (*grid.Grid, error) {
 	rangeA1 := a1.Format(t.props.Title, t.rect)
 	got, err := s.api.GetSpreadsheet(ctx, t.ref.ID, gapi.GetOptions{
-		Fields: gapi.GridFields, Ranges: []string{rangeA1}, IncludeGridData: true,
+		Fields: fields, Ranges: []string{rangeA1}, IncludeGridData: true,
 	})
 	if err != nil {
 		return nil, wrap(err)

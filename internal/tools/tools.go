@@ -62,6 +62,7 @@ func Register(s *mcp.Server, d Deps) {
 	}
 	registerRead(s, d)
 	registerWrite(s, d)
+	registerFormat(s, d)
 }
 
 // Def is one tool.

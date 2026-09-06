@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
 )
@@ -33,10 +34,56 @@ const CardFields = "spreadsheetId," +
 // userEnteredValue and effectiveValue are both here because a formula
 // and its result render identically, and the difference between them is
 // what the write guard is built on.
-const GridFields = "spreadsheetId," +
-	"sheets(properties(sheetId,title,index,gridProperties),merges," +
-	"protectedRanges(protectedRangeId,range,description,warningOnly,requestingUserCanEdit)," +
+const GridFields = sheetHead +
 	"data(startRow,startColumn,rowData(values(userEnteredValue,effectiveValue,formattedValue,note,dataValidation,hyperlink))))"
+
+// sheetHead is what every mask that reads cells asks for around them:
+// the sheet's identity and size, its merges, and its protected ranges.
+//
+// Written out three times before this. A field the guard needs, added to
+// two of the three, produces a zero value rather than an error —
+// CheckDestination would simply stop seeing protections on the path that
+// was missed.
+const sheetHead = "spreadsheetId," +
+	"sheets(properties(sheetId,title,index,gridProperties),merges," +
+	"protectedRanges(protectedRangeId,range,description,warningOnly,requestingUserCanEdit),"
+
+// FormatFields is the field mask behind read_formatting: what a cell
+// looks like, and the things attached to the sheet that decide it.
+//
+// No values at all. A formatting read answers a different question from
+// a values read, and asking for both would double a 5 000-cell response
+// to carry data the summary never prints.
+//
+// The entered format only. The effective format is what applies once
+// Google has merged the sheet's defaults in, and it was asked for here
+// until nothing turned out to read it: every answer this server gives is
+// about what somebody set, so the second format doubled the per-cell
+// response of the largest read there is for no reader at all.
+const FormatFields = sheetHead +
+	"bandedRanges(bandedRangeId,range,rowProperties,columnProperties),conditionalFormats," +
+	"data(startRow,startColumn,rowData(values(userEnteredFormat,note,dataValidation))))"
+
+// FormatTargetFields is the field mask behind a formatting write's own
+// read of its target.
+//
+// Values as well as formats, because the guard needs both: a merge
+// discards every value but the top-left one, and clearing a format takes
+// only what the cell was explicitly given.
+const FormatTargetFields = sheetHead +
+	"data(startRow,startColumn,rowData(values(userEnteredValue,effectiveValue,userEnteredFormat,note,dataValidation))))"
+
+// RuleFields is the field mask for reading a sheet's conditional format
+// rules and nothing else.
+//
+// Its own mask rather than FormatFields, and the difference matters:
+// `includeGridData` is ignored when a field mask is set, so a mask that
+// names `data(...)` returns cells whether or not the option asked for
+// them. FormatFields names them, so using it without a range would have
+// fetched the entered and effective format of every cell of every sheet
+// — the whole-spreadsheet grid read §4.6 forbids, walking straight past
+// the guard in GetSpreadsheet, which can only see the option.
+const RuleFields = "spreadsheetId,sheets(properties(sheetId),conditionalFormats)"
 
 // GetOptions select what spreadsheets.get returns.
 type GetOptions struct {
@@ -59,6 +106,14 @@ func (c *Client) GetSpreadsheet(ctx context.Context, id string, o GetOptions) (*
 	}
 	if o.IncludeGridData && len(o.Ranges) == 0 {
 		return nil, fmt.Errorf("%w: grid data was asked for without a range, which is the whole spreadsheet", ErrInvalid)
+	}
+	// The option is not the only way to ask for cells. `includeGridData`
+	// is ignored when a field mask is set, so a mask naming `data(` is a
+	// grid read however the option is set — and without a range that is
+	// every cell of every sheet. The guard above could not see it: it
+	// reads the option, and the mask is what decides.
+	if len(o.Ranges) == 0 && strings.Contains(o.Fields, "data(") {
+		return nil, fmt.Errorf("%w: the field mask asks for cell data and no range was given, which is the whole spreadsheet", ErrInvalid)
 	}
 	v := url.Values{}
 	v.Set("fields", o.Fields)

@@ -14,10 +14,13 @@ It works inside a spreadsheet. Finding, sharing, moving and trashing
 files, and their comment threads and revisions, belong to a Drive server
 built on the Drive API. A cell **note** is a Sheets field and is here.
 
-**Status: v0.1.0, phase 1 of five.** Reading and writing work;
-formatting and structure are phase 2. The design, the platform
-constraints it is built on, the decided trade-offs, the phase plan and
-the evidence log are in [docs/architecture.md](docs/architecture.md).
+**Status: phase 2, not yet released.** Reading, writing, formatting and
+the objects attached to a range all work, and phase 2 has not yet been
+run against a real account — see the status line in
+[docs/architecture.md](docs/architecture.md). Resources, durable anchors and
+the agent evals are phase 3; charts and pivot tables phase 4. The design,
+the platform constraints it is built on, the decided trade-offs, the
+phase plan and the evidence log are all in that document.
 
 ## Tools
 
@@ -32,12 +35,15 @@ the evidence log are in [docs/architecture.md](docs/architecture.md).
 | `append_rows` | Add rows after a block of data and report where they actually landed — Google decides the destination, and the same sheet given different ranges appends in different places. |
 | `manage_sheet` | Add, rename, duplicate, copy to another spreadsheet, hide, unhide, reorder, resize, freeze or colour a sheet. |
 | `edit_dimensions` | Insert, move, resize, auto-size, group or ungroup rows and columns. |
+| `read_formatting` | What a range looks like — number formats, fonts, colours, borders, alignment — summarised per block of identically formatted cells, with the merges, conditional rules, banding, validation and notes that decide how a cell looks without being on the cell. |
+| `format_cells` | Number format, font, colours, borders, alignment, wrapping, merges and notes, applied in one atomic batch. A merge, a clear and a note replacement are the three that take something away, and each is refused until acknowledged. |
+| `manage_range` | Add, update or delete what is attached to a range: a named range, a protected range, a validation rule, a table, banding, or a conditional format rule. Existing ones are named by the range they cover, not by an id. |
+| `transform_range` | Sort, replace, trim, de-duplicate, split, shuffle, fill, copy or move a range — the operations that move data without you naming its new address, so each reads what it would land on first. |
 | `delete_dimensions` | Destructive, off by default: remove rows or columns and the data on them, having counted what that is. |
 | `clear_values` | Destructive, off by default: clear a range's values and keep its formatting, notes and validation rules. |
 | `delete_sheet` | Destructive, off by default: delete a sheet and everything on it, having counted what that is. |
 
-Formatting and structure arrive in v0.2.0; charts and pivot tables in
-v0.4.0.
+Charts, pivot tables and Connected Sheets data sources arrive in v0.4.0.
 
 ## What makes it different
 

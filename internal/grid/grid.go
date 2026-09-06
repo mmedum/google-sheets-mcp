@@ -57,6 +57,20 @@ type Cell struct {
 	Note       string
 	Validation string
 	Hyperlink  string
+
+	// Format is what the cell was explicitly given, and nil unless the
+	// read asked for it: a write's pre-read does not, and
+	// read_formatting does.
+	//
+	// The cell's own format, not the one that applies to it. The API
+	// offers both and this asks for one, because both questions this
+	// server answers are about what somebody set: clear_format removes
+	// exactly this and nothing else, and a formatting read that
+	// described the sheet's defaults would report every cell of every
+	// spreadsheet as formatted. The effective format was carried here
+	// for a while with nothing reading it, which doubled the response of
+	// the largest read this server does.
+	Format *gsheets.CellFormat
 }
 
 // Empty reports whether the cell holds no value.
@@ -168,6 +182,7 @@ func cell(cd *gsheets.CellData, formatted Formatted) Cell {
 		Kind:      KindEmpty,
 		Note:      cd.Note,
 		Hyperlink: cd.Hyperlink,
+		Format:    cd.UserEnteredFormat,
 	}
 	if cd.DataValidation != nil {
 		c.Validation = describeValidation(cd.DataValidation)

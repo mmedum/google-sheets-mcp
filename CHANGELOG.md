@@ -7,6 +7,45 @@ and this project follows [semantic versioning](https://semver.org).
 
 ### Added
 
+- Four tools for formatting and structure: `read_formatting`,
+  `format_cells`, `manage_range` and `transform_range`.
+- **`read_formatting`** is the other half of a read: what the cells look
+  like, summarised per block of identically formatted cells rather than
+  per cell. A cell with no format of its own is counted, not listed, so
+  what comes back is what somebody set. It also reports what is attached
+  to the range and decides how a cell looks without being on the cell —
+  merges, conditional format rules with the index `manage_range` needs,
+  banding, validation rules, notes and protected ranges.
+- **`format_cells`** applies everything in one call as one atomic batch:
+  number format, font, colours, borders, alignment, wrapping, merges and
+  notes. A header row that is bold, centred and shaded is one request.
+  Clearing is applied before setting, so "clear this and then make it
+  bold" is one call rather than a clear that undoes the bold.
+- **The guard extended over what formatting can destroy.** Three ops
+  take something away and each is refused until acknowledged: a merge
+  keeps the top-left value of every merged block and discards the rest,
+  `clear_format` removes formatting Sheets cannot bring back, and a note
+  replaces one no values read would have shown the caller. The cells are
+  read only when one of the three is asked for, so an ordinary "make it
+  bold" still costs one request.
+- **`manage_range`** adds, updates and deletes what is attached to a
+  range: a named range, a protected range, a validation rule, a table,
+  banding, or a conditional format rule. An existing one is named by the
+  range it covers rather than by an id, so nothing has to be fetched
+  first; a range matching several is refused with the list. A protection
+  never blocks the request that lifts it.
+- **`transform_range`** sorts, replaces, trims, de-duplicates, splits,
+  shuffles, fills, copies and moves. These are the operations that move
+  data without the caller naming its new address, so each reads what it
+  would land on and refuses first: a paste lands on cells nobody named, a
+  split spills into the columns to its right, and a replacement inside
+  formulas rewrites what a cell computes rather than what it shows.
+- `internal/plan` grows the union builders for formatting, validation,
+  protection, tables, banding, conditional formats and the transforms —
+  typed, like the rest, so no request is sent that no code here has read.
+- The colour, border, number-format, alignment, condition and sort-key
+  parsers, each taking the spelling a person has in their hand: `1pt
+  solid #cccccc`, `date:yyyy-mm-dd`, `B asc, C desc`.
 - `make parity` (`gates parity`): `make check` and `ci.yml` have to run
   the same things, and the gate fails when either side has something the
   other lacks. The Makefile has said "everything CI runs" since phase 0
@@ -24,6 +63,66 @@ and this project follows [semantic versioning](https://semver.org).
 - `cmd/` is under the coverage floor, at 40% against 48% reached. It was
   outside the profile entirely, so 571 lines of `login`, `logout`,
   `status` and `doctor` had no tests and nothing could report that.
+
+### Changed
+
+- **The structural tools' English moved into the renderer** (§17a.9).
+  `manage_sheet` and `edit_dimensions` used to compose a sentence
+  fragment that the renderer then capitalised and wrapped, which is
+  phrasing the goldens could not cover and had to agree with itself
+  across a refusal, a preview and a result. They now return the parts and
+  the renderer owns the template. `plan.Band` lost its words with it.
+
+### Fixed
+
+- **A field mask could ask for the whole grid.** `includeGridData` is
+  ignored when a field mask is set, so a mask naming `data(...)` is a
+  grid read whatever the option says — and `manage_range`'s rule count
+  was using the formatting mask with no range, which is the entered and
+  effective format of every cell of every sheet. `GetSpreadsheet` now
+  refuses a mask naming cell data with no range, and the rule count has
+  a mask of its own. The fake could not have caught it: it returns grid
+  data only when the option is set.
+- **Clearing a note was not guarded.** Setting one is refused until
+  acknowledged because a note is invisible in a values read; removing one
+  takes the same unseen thing, and `clear_note` went through with no
+  read, no blocker and nothing in the result. Asking for `note` and
+  `clear_note` together is now refused rather than silently doing the
+  second.
+- Two of the three transform guard reads had no cell cap, so an
+  unbounded range — which clamps to the whole sheet — meant reading
+  every cell on it to decide what to refuse.
+- An `auto_fill` destination was checked against a spreadsheet's limits
+  rather than the sheet's own size, so filling past the last row gave
+  Google's "exceeds grid limits" instead of the refusal that names the
+  sheet and the tool that grows it.
+- A protection, table or banding stored with an unbounded range — what
+  the Sheets interface writes for a whole sheet — could never be named,
+  because the caller's range is clamped and the stored one was not. The
+  refusal also formatted that range as the empty string.
+- A banding update always wrote `rowProperties`, so updating a column
+  banding left it carrying both sets, which the API rejects.
+- `delimiter: " "` became autodetect, because the string was trimmed
+  before it was read.
+- An explicitly white background read as "no formatting of its own"
+  while `clear_format` still refused over it and named the cell — the
+  read and the guard describing the same cell differently.
+- **A package's coverage number was its subtree's.** The floor gate
+  matched a package by prefix, so `internal/gapi` was scored on
+  `internal/gapi/sheetstest` as well — and the number it printed
+  described neither. It held for two phases because the only subpackage
+  was small and well covered. `internal/gapi` is 90% on its own and was
+  reported as 69%.
+
+### Notes
+
+- **None of this has been run against a real account.** Spike G and the
+  live driver both need credentials the machine this was written on does
+  not have. `make check` is green and the driver has a step for every
+  option of all four new tools, but green gates are not done in this
+  project: `make live` and `go run -tags=live ./scripts/spikes -only G`
+  close the phase, and their transcripts have to be read rather than
+  counted.
 
 ## [0.1.0] - 2026-09-06
 

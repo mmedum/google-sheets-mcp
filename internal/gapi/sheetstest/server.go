@@ -331,12 +331,14 @@ func docCard(d *Doc) *gsheets.Spreadsheet {
 	for _, sh := range d.Sheets {
 		props := sh.Props
 		out.Sheets = append(out.Sheets, &gsheets.Sheet{
-			Properties:      &props,
-			Merges:          sh.Merges,
-			ProtectedRanges: sh.Protected,
-			FilterViews:     sh.FilterViews,
-			Tables:          sh.Tables,
-			Charts:          sh.Charts,
+			Properties:         &props,
+			Merges:             sh.Merges,
+			ProtectedRanges:    sh.Protected,
+			FilterViews:        sh.FilterViews,
+			Tables:             sh.Tables,
+			Charts:             sh.Charts,
+			BandedRanges:       sh.Bandings,
+			ConditionalFormats: sh.Conditional,
 		})
 	}
 	return out

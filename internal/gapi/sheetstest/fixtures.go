@@ -64,6 +64,44 @@ func Fixture() (*Doc, *gapi.File) {
 		FilterViewID: 21, Title: "Grivet over 500",
 		Range: a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 4, LastRow: 21}.GridRange(0),
 	}}
+	// Formatting, so a formatting read has something to summarise and a
+	// clear has something to take: a bold, shaded, centred heading row
+	// and a money column under it.
+	heading := &gsheets.CellFormat{
+		TextFormat:           &gsheets.TextFormat{Bold: true},
+		BackgroundColorStyle: &gsheets.ColorStyle{RGBColor: &gsheets.Color{Red: 0.85, Green: 0.886, Blue: 0.953, Alpha: 1}},
+		HorizontalAlign:      "CENTER",
+	}
+	for i := range headings {
+		WithFormat(first.At(1, i+1), heading)
+	}
+	money := &gsheets.CellFormat{
+		NumberFormat: &gsheets.NumberFormat{Type: "CURRENCY", Pattern: `"$"#,##0.00`},
+	}
+	for r := range 20 {
+		WithFormat(first.At(r+2, 2), money)
+	}
+	// A conditional rule and a banding, which colour cells that carry no
+	// format of their own — the reason a formatting answer lists what is
+	// attached to the range as well as what is on the cells.
+	first.Conditional = []*gsheets.ConditionalFormatRule{{
+		Ranges: []*gsheets.GridRange{a1.Rect{FirstCol: 2, FirstRow: 2, LastCol: 2, LastRow: 21}.GridRange(0)},
+		BooleanRule: &gsheets.BooleanRule{
+			Condition: &gsheets.BooleanCondition{
+				Type: "NUMBER_GREATER", Values: []*gsheets.ConditionValue{{UserEnteredValue: "500"}},
+			},
+			Format: &gsheets.CellFormat{
+				BackgroundColorStyle: &gsheets.ColorStyle{RGBColor: &gsheets.Color{Red: 0.851, Green: 0.918, Blue: 0.827, Alpha: 1}},
+			},
+		},
+	}}
+	first.Bandings = []*gsheets.BandedRange{{
+		BandedRangeID: 31,
+		Range:         a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 4, LastRow: 21}.GridRange(0),
+		RowProperties: &gsheets.BandingProperties{
+			SecondBandColorStyle: &gsheets.ColorStyle{RGBColor: &gsheets.Color{Red: 0.95, Green: 0.95, Blue: 0.95, Alpha: 1}},
+		},
+	}}
 	first.Tables = []*gsheets.Table{{
 		TableID: "tbl-fixture-1", Name: "Oblisk",
 		Range: a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 4, LastRow: 21}.GridRange(0),

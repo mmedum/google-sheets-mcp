@@ -216,14 +216,16 @@ func TestParseBandChecksTheTwoAgainstEachOther(t *testing.T) {
 	}
 }
 
+// A band carries what it parsed and nothing about how it reads: the
+// words are render.Band's, and its own test covers them (§17a.9).
 func TestBandReadsBackTheWayItWasGiven(t *testing.T) {
 	rows, _ := plan.ParseBand("rows", "2:5")
-	if rows.String() != "rows 2:5" || rows.Count() != 4 {
-		t.Errorf("rows band = %q, %d", rows, rows.Count())
+	if !rows.Rows() || rows.First != 2 || rows.Last != 5 {
+		t.Errorf("rows band = %+v", rows)
 	}
 	cols, _ := plan.ParseBand("columns", "B:D")
-	if cols.String() != "columns B:D" || cols.Count() != 3 {
-		t.Errorf("columns band = %q, %d", cols, cols.Count())
+	if cols.Rows() || cols.First != 2 || cols.Last != 4 {
+		t.Errorf("columns band = %+v", cols)
 	}
 }
 

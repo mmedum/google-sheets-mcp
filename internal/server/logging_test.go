@@ -99,6 +99,32 @@ var toolCalls = map[string][]map[string]any{
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.ApostropheName, "dry_run": true},
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.ApostropheName},
 	},
+	"read_formatting": {
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.FirstSheet, "range": "A1:D6"},
+		{"spreadsheet": sheetstest.FixtureID, "sheet": searchTerm, "range": "A1:B2"},
+	},
+	// A note and a validation message are cell content the caller
+	// supplied, and both travel in a request body: the same route a
+	// value takes, and the one a read cannot test.
+	"format_cells": {
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
+			"bold": true, "background": "#d9e2f3", "note": searchTerm, "overwrite": true},
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
+			"number_format": searchTerm},
+	},
+	"manage_range": {
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
+			"kind": "data_validation", "action": "add", "condition": "one_of_list",
+			"values": []any{searchTerm}, "message": searchTerm},
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
+			"kind": "named_range", "action": "delete", "name": searchTerm},
+	},
+	"transform_range": {
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
+			"action": "find_replace", "find": searchTerm, "replace": searchTerm},
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
+			"action": "sort", "sort_by": searchTerm},
+	},
 }
 
 func TestEveryToolIsDriven(t *testing.T) {

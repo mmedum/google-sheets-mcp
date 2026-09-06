@@ -46,14 +46,17 @@ func connect(t *testing.T, s *mcp.Server) *mcp.ClientSession {
 	return cs
 }
 
-// phase0Tools is the surface this phase ships. It is written out so a
-// tool appearing or disappearing is a decision somebody made rather than
-// something that happened.
-var readTools = []string{"find_in_spreadsheet", "get_spreadsheet", "read_range", "search_spreadsheets"}
+// The surface this phase ships. It is written out so a tool appearing or
+// disappearing is a decision somebody made rather than something that
+// happened.
+var readTools = []string{"find_in_spreadsheet", "get_spreadsheet", "read_formatting", "read_range", "search_spreadsheets"}
 
 // writeTools are registered unless the server is read-only;
 // destructiveTools need the destructive flag as well.
-var writeTools = []string{"append_rows", "create_spreadsheet", "edit_dimensions", "manage_sheet", "write_values"}
+var writeTools = []string{
+	"append_rows", "create_spreadsheet", "edit_dimensions", "format_cells",
+	"manage_range", "manage_sheet", "transform_range", "write_values",
+}
 
 var destructiveTools = []string{"clear_values", "delete_dimensions", "delete_sheet"}
 
@@ -113,6 +116,14 @@ func TestToolsNameEachOther(t *testing.T) {
 		{"find_in_spreadsheet", "search_spreadsheets"},
 		{"read_range", "get_spreadsheet"},
 		{"get_spreadsheet", "read_range"},
+		// Phase 2's four overlap the same way: a formatting read is the
+		// other half of a values read, and a conditional format rule is
+		// attached to a range rather than written into one, so the tool
+		// that does not do it says which one does.
+		{"read_formatting", "read_range"},
+		{"format_cells", "manage_range"},
+		{"manage_range", "read_formatting"},
+		{"transform_range", "checkpoint"},
 	} {
 		if !strings.Contains(byName[pair[0]], pair[1]) {
 			t.Errorf("%s never mentions %s, so a model choosing between them has nothing to go on", pair[0], pair[1])

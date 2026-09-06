@@ -113,29 +113,6 @@ func writeNotes(b *strings.Builder, w Write) {
 	}
 }
 
-// Change is one structural change a batch made, as its result reports it.
-type Change struct {
-	What   string
-	Detail string
-}
-
-// Changes renders what a structural write did, one line each.
-func Changes(heading string, changes []Change) string {
-	var b strings.Builder
-	b.WriteString(heading)
-	if !strings.HasSuffix(heading, "\n") {
-		b.WriteString("\n")
-	}
-	for _, c := range changes {
-		if c.Detail == "" {
-			fmt.Fprintf(&b, "  %s\n", c.What)
-			continue
-		}
-		fmt.Fprintf(&b, "  %s — %s\n", c.What, c.Detail)
-	}
-	return b.String()
-}
-
 // quote renders one side of a coercion. Text is quoted because its edges
 // are the point — a leading zero, a trailing space — and a number is
 // not, because `number "7"` reads as a string of one digit.
@@ -273,34 +250,6 @@ func DeletePreview(sheet string, cells, formulas, charts int) string {
 func DeleteDone(sheet string, cells, formulas, charts int, left []string) string {
 	return fmt.Sprintf("Deleted %q, with %d non-empty cell(s), %d formula(s) and %d chart(s).\nThe sheets left are: %s\n",
 		sheet, cells, formulas, charts, strings.Join(left, ", "))
-}
-
-// DimensionPreview and DimensionDone render a change to rows or columns.
-// Both say when addresses moved, because a checkpoint or an address the
-// caller is holding no longer points where it did.
-func DimensionPreview(what string, cells, formulas int, shifted bool) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "Dry run: nothing was sent. This would %s.\n", what)
-	dimensionNotes(&b, cells, formulas, shifted, "would take", "would move")
-	return b.String()
-}
-
-// DimensionDone renders what the change did.
-func DimensionDone(what string, cells, formulas int, shifted bool) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "Done: %s.\n", strings.ToUpper(what[:1])+what[1:])
-	dimensionNotes(&b, cells, formulas, shifted, "took", "moved")
-	return b.String()
-}
-
-func dimensionNotes(b *strings.Builder, cells, formulas int, shifted bool, took, moved string) {
-	if cells > 0 || formulas > 0 {
-		fmt.Fprintf(b, "It %s %d non-empty cell(s) and %d formula(s) with it.\n", took, cells, formulas)
-	}
-	if shifted {
-		fmt.Fprintf(b, "Addresses after the band %s: a checkpoint or an address from before this call no longer "+
-			"points where it did.\n", moved)
-	}
 }
 
 // ClearPreview and ClearDone render a clear. Both name what the range
