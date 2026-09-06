@@ -16,6 +16,7 @@
 //	go run ./scripts/gates smoke ./google-sheets-mcp
 //	go run ./scripts/gates staleness ./google-sheets-mcp
 //	go run ./scripts/gates schema-diff ./google-sheets-mcp
+//	go run ./scripts/gates parity
 //	go run ./scripts/gates precommit
 package main
 
@@ -27,7 +28,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fail("usage: gates coverage PROFILE MIN | classes | leaks [history] | transcript | pins | smoke BIN | staleness BIN | schema-diff BIN | precommit")
+		fail("usage: gates coverage PROFILE MIN | classes | leaks [history] | transcript | pins | smoke BIN | staleness BIN | schema-diff BIN | parity | precommit")
 	}
 	root, err := repoRoot()
 	if err != nil {
@@ -64,6 +65,8 @@ func main() {
 		check(staleness(binArg()), "staleness")
 	case "schema-diff":
 		check(schemaDiff(binArg()), "schema diff")
+	case "parity":
+		check(parityGate(), "make check and CI agree")
 	case "precommit":
 		check(precommit(), "pre-commit")
 	default:

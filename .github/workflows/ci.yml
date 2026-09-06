@@ -54,7 +54,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go build ./...
-      - run: go test -race -coverpkg=./internal/... -coverprofile=cov.out -covermode=atomic ./...
+      - run: go test -race -coverpkg=./internal/...,./cmd/... -coverprofile=cov.out -covermode=atomic ./...
       - name: coverage floor
         run: go run ./scripts/gates coverage cov.out 80
       - name: error classes
@@ -65,6 +65,8 @@ jobs:
         run: go run ./scripts/gates transcript
       - name: workflow pins
         run: go run ./scripts/gates pins
+      - name: make check and CI agree
+        run: go run ./scripts/gates parity
       - name: build the server
         run: go build -o google-sheets-mcp ./cmd/google-sheets-mcp
       - name: stdio smoke
@@ -94,6 +96,16 @@ jobs:
       - name: gofmt
         run: out=$(gofmt -l .); [ -z "$out" ] || { echo "$out"; exit 1; }
       - run: go vet ./...
+      # The live driver and the spikes sit behind a build tag, so
+      # `go build ./...`, `go test ./...` and a bare `go vet` compile
+      # none of them — `go list ./scripts/livesheet` returns one stub
+      # file. Without this, a change that breaks the driver stays green
+      # here and fails when somebody next runs it, which is the step that
+      # closes a phase.
+      - name: vet the tagged code
+        run: go vet -tags=live ./...
+      - name: go.mod is tidy
+        run: go mod tidy -diff
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.13.2

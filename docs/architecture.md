@@ -9,9 +9,9 @@ coercion report, checkpoints and `dry_run` are in, and every one of them
 was exercised against a real account.
 
 Phase 2 (§16) — formatting and structure — starts on an explicit go.
-Spike G runs before `format_cells` is designed. Five of §17a's entries are
-open; none blocks phase 2, and two of them (7 and 8) are best done while
-phase 2 is already in those files.
+Spike G runs before `format_cells` is designed. Six of §17a's entries are
+open; none blocks phase 2, and two of them are best done while phase 2 is
+already in those files.
 
 Everything here was checked against the Sheets API v4 discovery document
 (`sheets.googleapis.com/$discovery/rest?version=v4`, revision 20260831),
@@ -1322,7 +1322,7 @@ they are not reopened.
 
 ## 17a. Deferred cleanups
 
-Five open, five closed in phase 1. A closed entry keeps its text and the
+Six open, five closed in phase 1. A closed entry keeps its text and the
 decision that closed it, so nobody reopens a question that was answered;
 four of the six open ones were raised by phase 1's own review passes and
 are recorded here rather than fixed in passing.
@@ -1347,7 +1347,17 @@ are recorded here rather than fixed in passing.
    are off. The gate's `plannedClasses` list is empty, and it still
    reads from both sides, so a class listed there and emitted anyway is
    as much a failure as one declared and never emitted.
-3. **The fetch window is bounded by cells, the rendering by
+3. **`cmd/` is under a lower coverage floor than `internal/`.** It was
+   outside the coverage profile entirely until phase 1's audit —
+   `-coverpkg=./internal/...` and a gate that derived its package list
+   the same way — so 571 lines of `login`, `logout`, `status` and
+   `doctor` had no tests and nothing could report that they had none. It
+   is now measured, at 48% against a floor of 40. What is left uncovered
+   opens a browser, holds a token or serves stdio; the live driver and
+   the smoke gate cover those against the real thing. Raising the floor
+   to `internal/`'s 80 needs either a fake OAuth endpoint or a way to
+   drive `serve` in-process, and neither is phase 2's business.
+4. **The fetch window is bounded by cells, the rendering by
    characters.** At the default budgets they land within a few rows of
    each other, but a caller who raises `max_cells` — which the tool
    description invites — fetches rows that no rendering can reach, and
@@ -1357,16 +1367,16 @@ are recorded here rather than fixed in passing.
    measures rather than guesses. **Still open**, and phase 1 met it
    once: a test asserting the cell default had to raise the character
    budget out of the way to see it.
-4. **Budget policy sat at three altitudes.** **Closed 2026-09-06, before
+5. **Budget policy sat at three altitudes.** **Closed 2026-09-06, before
    the five write tools were written rather than after.**
    `service.Budget` defaults and clamps in one place, `max_matches` has
    a maximum for the first time, and an over-range budget is refused
    rather than silently reduced — a caller who asks for 200 000 cells
    and gets 50 000 reads a footer describing a window they never asked
    for. The tools pass the caller's numbers through untouched.
-5. **The live driver cannot clean up after itself.** The other end of
+6. **The live driver cannot clean up after itself.** The other end of
    §17a.1, and closed with it.
-6. **A structural write costs a card re-read it could avoid.**
+7. **A structural write costs a card re-read it could avoid.**
    `manage_sheet`, `delete_sheet` and `edit_dimensions` each send a
    `batchUpdate` and then re-read the card, because the write invalidated
    the cached one and the result lists the sheets afterwards.
@@ -1380,7 +1390,7 @@ are recorded here rather than fixed in passing.
    rather than just fill the result. It needs a live probe before it is
    adopted (rule 12), which is why phase 1 recorded it rather than
    guessing. The wire fields are not written until then.
-7. **A refusal names the tool's argument from inside the guard.**
+8. **A refusal names the tool's argument from inside the guard.**
    `plan.Blocker.Allow` holds `"overwrite"`, `"overwrite_formulas"` and
    `"allow_external_formulas"` — the JSON names `internal/tools`
    publishes — so the bottom layer knows the top layer's schema, and
@@ -1390,7 +1400,7 @@ are recorded here rather than fixed in passing.
    longer imports `plan`); this half waits, because the messages it would
    touch were verified live and are worth changing on purpose rather than
    in passing.
-8. **The service composes the English that the renderer decorates.**
+9. **The service composes the English that the renderer decorates.**
    `manage_sheet` and `edit_dimensions` build a sentence fragment
    ("insert 2 row(s) before row 2 on %q") that `render` then capitalises
    and wraps. Phrasing decided above the renderer is phrasing the
@@ -1398,23 +1408,24 @@ are recorded here rather than fixed in passing.
    action, band, count, title — and let `render` own the template, which
    is what `render.Write` and `render.Append` already do. Phase 2 touches
    both tools and is the moment to do it.
-9. **`edit_dimensions delete` was hidden from the tool's description,
+10. **`edit_dimensions delete` was hidden from the tool's description,
    not from its schema.** **Closed 2026-09-06** by making it
    `delete_dimensions`, its own destructive tool. The description hid the
    action while `confirm`'s description still named it and `action` had
    no enum to omit it from — and `edit_dimensions`, registered as a plain
    write, advertised `destructiveHint: false` while offering an
    irreversible action. See §7.4.
-10. **`leaks history` spawns one `git cat-file` per blob.** A single
+11. **`leaks history` spawns one `git cat-file` per blob.** A single
    `git cat-file --batch` fed the ids on stdin would do it in one
    process. It is a manual gate, so the cost is nobody's per-push
    problem, but it grows monotonically with the history. **Still open.**
-11. Nothing further. The tool-version problem that was here — a
+12. Nothing further. The tool-version problem that was here — a
    distribution `golangci-lint` built with an older Go refusing this
    module, and a stale `go-licenses` failing on the standard library —
-   was fixed rather than deferred: the Makefile now fetches all three
-   tools at the versions CI uses, through `go run <module>@<version>`,
-   so `make check` is what its first line says it is.
+   was fixed rather than deferred: the Makefile fetches all three tools
+   at the versions CI uses, through `go run <module>@<version>`. That it
+   needed fixing a second and a third time, by different routes, is why
+   `gates parity` now holds the claim rather than a comment doing it.
 
 ## 17b. Deviations from the shared Go MCP server standard
 
@@ -1723,3 +1734,15 @@ checked — which is spike I, run to settle them.
 | A checkpoint is a checkpoint | **Refuted**: a read hashes what it renders, and `formatted: true` renders `£1,234.50` where the cell stores `1234.5`. A write reads raw and hashes raw, so a checkpoint from a formatted read could never match — every date or currency in the range made `expect_checkpoint` report a conflict that had not happened. The live driver reads unformatted, so no transcript would ever have shown it | `Cell.Raw` carries the unformatted value whatever `Display` holds, and the checkpoint hashes that. A checkpoint is over what the cells store, not over what they show |
 | An action can be gated inside a tool | **Refuted in the schema this repository publishes.** `edit_dimensions delete` was hidden by leaving it out of the description, while `confirm`'s description still said "required by delete" and `action` carried no enum for anything to be absent from. The tool was registered as a plain write, so it advertised `destructiveHint: false` while offering an irreversible action, and got no `requiresUserInteraction` mark | `delete_dimensions` is its own tool with `Kind: Destructive`, and inherits the registration gate, the annotation and the mark from the one place that decides them. §8's rule was already the right one — "Kind is an enum over which world a tool touches" — and a tool whose destructiveness depends on an argument is the matrix that rule exists to prevent |
 | A guard that reads part of a range guards the range | **Refuted**: `clear_values` bounded its read by the cell budget and then sent the clear for the whole range, so a protected block in the part it never read was not named, and the count it reported was a floor it did not say was one | A clear larger than one read is refused with the size, the way an oversized write is. The alternative — clearing only what was read — would answer a different question from the one asked |
+
+**An audit of the gates themselves, 2026-09-06.** Prompted by a sibling
+server hitting two release failures no rehearsal could catch, and by the
+question it raised here: what else does `make check` claim that it does
+not do. Four answers, none of them found by running anything.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| `make check` is what CI runs, as its first line says | **Refuted three times over.** The Makefile ran `go vet -tags=live` and CI did not, so nothing in CI compiled the live driver or the spikes — `go list ./scripts/livesheet` returns one stub file. CI scanned for secrets with gitleaks and the Makefile had no such target. And `go mod tidy` was in neither, running only inside a release, in the one form that writes | `gates parity` compares the Makefile's `check:` line against `ci.yml` and fails when either side has something the other lacks, with the gate list read from the dispatcher so a new gate is covered from its first commit. It found itself missing from both lists on its first run. §17a's earlier note that this claim had already been broken once, by tool versions, is the third time it has needed fixing — hence a gate rather than a fourth correction |
+| A build tag hides code from the compiler, not from CI | **Refuted**: the two things that validate the write path against a real account, the live driver and the spikes, were compiled by nothing CI ran. The breakage would surface at the phase-closing step, which is the worst moment and the one where a maintainer has least appetite for a compile error | `go vet -tags=live ./...` runs in CI, and the parity gate holds it there |
+| The coverage floor covers what ships | **Refuted**: `-coverpkg=./internal/...`, and the gate derived its package list the same way, so `cmd/` was outside the profile entirely. 571 lines of `login`, `logout`, `status` and `doctor` had no tests, and nothing could report that they had none — the gate's own comment promises a package is under the floor from its first commit, and that promise only ever covered one of the two trees that ship | Both trees are listed, `cmd/` carries a floor of its own at 40% against 48% reached, and the gate has a test asserting a package from each tree is under a floor. The lower number is a floor rather than an exemption: what remains uncovered opens a browser, holds a token or serves stdio |
+| A secret scanner is worth having before it has ever fired | **Confirmed the hard way**: the first local `make secrets` run failed on a test fixture written twenty minutes earlier — a realistic-shaped OAuth client id, put in a test whose whole point is that such ids get masked. The repository already had one blessed fixture allowed by value in `.gitleaks.toml`, and the fix was to use it rather than to add a second exception | The test uses the canonical fixture. Worth recording because the finding was in new code, in a test about redaction, written by someone who had just read the rule — which is the argument for the scanner rather than against the author |

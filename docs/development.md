@@ -109,6 +109,28 @@ Reading the transcript is not a formality. Phase 1 ran the driver five
 times; every run was green or nearly so, and every transcript held
 something the count did not — including a hole in the write guard.
 
+## `make check` and CI
+
+`make check` is what CI runs, and `make parity` is what makes that
+sentence true rather than aspirational. It compares the Makefile's
+`check:` prerequisites against `.github/workflows/ci.yml` and fails when
+either side has something the other lacks; the list of gates comes from
+the dispatcher in `scripts/gates/main.go`, so a gate added there is under
+the comparison from its first commit.
+
+It exists because the claim was false three times over. The Makefile ran
+`go vet -tags=live` and CI did not, so **nothing in CI compiled the live
+driver or the spikes** — `go list ./scripts/livesheet` returns one stub
+file, and a change that broke the driver stayed green until somebody
+tried to run it, which is the step that closes a phase. CI scanned for
+secrets and the Makefile had no such target, so the drift ran the other
+way too. And `go mod tidy` was in neither: it ran only inside a release,
+in the one form that writes, where a rewrite would fail the tag on a
+dirty tree while every `--snapshot` rehearsal stayed green.
+
+Adding a check means adding it to both and, if it is not a gate, a row in
+`parityChecks`. Leaving it out of either fails.
+
 ## Branches and releases
 
 `main` is released code and is never pushed to directly, release commits

@@ -11,16 +11,29 @@ import (
 )
 
 // exemptFromFloor are the packages the coverage floor does not apply to,
-// each with its reason. It is empty, and every package under internal/
-// meets the floor.
+// each with its reason.
 //
-// The list it *does* apply to is derived from `go list ./internal/...`,
-// so a package added under internal/ is under the floor from its first
-// commit. A hand-written list of covered packages goes stale in silence;
-// a hand-written list of exemptions cannot, because every entry has to
-// be written here where a reviewer sees it — and an entry with no reason
-// is refused below.
+// The list it *does* apply to is derived from `go list`, so a package
+// added under internal/ or cmd/ is under a floor from its first commit.
+// A hand-written list of covered packages goes stale in silence; a
+// hand-written list of exemptions cannot, because every entry has to be
+// written here where a reviewer sees it — and an entry with no reason is
+// refused below.
 var exemptFromFloor = map[string]string{}
+
+// cmdFloor is the floor for the command package, which is lower than the
+// one internal/ meets and is a floor rather than an exemption.
+//
+// cmd/ was outside the profile entirely until phase 1's audit: nothing
+// measured it, so nothing could notice it had no tests at all — 571
+// lines of login, logout, status and doctor. Most of what is left
+// uncovered opens a browser, holds a token or serves stdio, and the live
+// driver and the smoke gate cover those against the real thing. The
+// number is a little under what the tests reach today, so it ratchets
+// rather than describing an ambition. The gap is for the matrix: which
+// branch `tokenStore` and `logout` take depends on whether a keyring is
+// available, and that differs on macOS and Windows.
+const cmdFloor = 40.0
 
 // coverageFloor enforces statement coverage per package.
 //
@@ -32,12 +45,12 @@ func coverageFloor(profile string, minimum float64) error {
 	if err != nil {
 		return err
 	}
-	pkgs, err := internalPackages(module)
+	pkgs, err := coveredPackages(module)
 	if err != nil {
 		return err
 	}
 	if len(pkgs) < 5 {
-		return fmt.Errorf("only %d packages under internal/; the list is not being read", len(pkgs))
+		return fmt.Errorf("only %d packages under internal/ and cmd/; the list is not being read", len(pkgs))
 	}
 	covered, err := readProfile(profile)
 	if err != nil {
@@ -58,17 +71,22 @@ func coverageFloor(profile string, minimum float64) error {
 			continue
 		}
 		checked++
+		floor := floorFor(pkg, minimum)
 		pct := covered.percent(module + "/" + pkg + "/")
-		fmt.Printf("%-30s %6.1f%%\n", pkg, pct)
-		if pct < minimum {
-			below = append(below, fmt.Sprintf("%s (%.1f%%)", pkg, pct))
+		note := ""
+		if floor != minimum {
+			note = fmt.Sprintf("   (floor %.0f%%)", floor)
+		}
+		fmt.Printf("%-30s %6.1f%%%s\n", pkg, pct, note)
+		if pct < floor {
+			below = append(below, fmt.Sprintf("%s (%.1f%%, floor %.0f%%)", pkg, pct, floor))
 		}
 	}
 	if checked == 0 {
 		return fmt.Errorf("every package is exempt; the floor is holding nothing")
 	}
 	if len(below) > 0 {
-		return fmt.Errorf("coverage below %.0f%% in: %s", minimum, strings.Join(below, ", "))
+		return fmt.Errorf("coverage below its floor in: %s", strings.Join(below, ", "))
 	}
 	return nil
 }
@@ -153,10 +171,15 @@ func moduleName() (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func internalPackages(module string) ([]string, error) {
-	out, err := exec.Command("go", "list", "./internal/...").Output()
+// coveredPackages is everything under a floor: internal/ and cmd/.
+//
+// scripts/ is deliberately absent — the gates have their own tests and
+// the live drivers are behind a build tag — but the two that ship in the
+// binary are both here.
+func coveredPackages(module string) ([]string, error) {
+	out, err := exec.Command("go", "list", "./internal/...", "./cmd/...").Output()
 	if err != nil {
-		return nil, fmt.Errorf("go list ./internal/...: %w", err)
+		return nil, fmt.Errorf("go list: %w", err)
 	}
 	var pkgs []string
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
@@ -167,4 +190,12 @@ func internalPackages(module string) ([]string, error) {
 	}
 	sort.Strings(pkgs)
 	return pkgs, nil
+}
+
+// floorFor is the minimum this package has to meet.
+func floorFor(pkg string, minimum float64) float64 {
+	if strings.HasPrefix(pkg, "cmd/") {
+		return cmdFloor
+	}
+	return minimum
 }

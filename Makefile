@@ -22,6 +22,10 @@ GATES     ?= ./.gates
 GOLANGCI_LINT ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 GOVULNCHECK   ?= golang.org/x/vuln/cmd/govulncheck@v1.7.0
 GOLICENSES    ?= github.com/google/go-licenses@v1.6.0
+# The module path is zricethezav, not gitleaks: the project moved
+# organisation and the module path did not follow it. The version has to
+# match the one the CI action bundles, which the pin gate checks.
+GITLEAKS      ?= github.com/zricethezav/gitleaks/v8@v8.30.1
 
 .PHONY: all
 all: check
@@ -49,7 +53,7 @@ lint:
 
 .PHONY: test
 test: ## Unit tests with the race detector and coverage
-	$(GO) test -race -coverpkg=./internal/... -coverprofile=cov.out -covermode=atomic ./...
+	$(GO) test -race -coverpkg=./internal/...,./cmd/... -coverprofile=cov.out -covermode=atomic ./...
 
 .PHONY: gates
 gates: ## Build the repository's own checks
@@ -63,6 +67,10 @@ cover: test gates ## Enforce the coverage floor per package
 bench: ## Benchmarks (phase 3 fills these in)
 	$(GO) test -run XXX -bench . -benchmem ./internal/...
 
+.PHONY: tidy
+tidy: ## go.mod and go.sum are what `go mod tidy` would write
+	$(GO) mod tidy -diff
+
 .PHONY: vuln
 vuln:
 	$(GO) run $(GOVULNCHECK) ./...
@@ -74,6 +82,10 @@ licenses:
 .PHONY: classes
 classes: gates ## The error vocabulary, held closed from both sides
 	@$(GATES) classes
+
+.PHONY: secrets
+secrets: ## Credentials, as CI scans for them
+	$(GO) run $(GITLEAKS) dir . --config .gitleaks.toml --no-banner
 
 .PHONY: leaks
 leaks: gates ## Identifiers and data in the working tree
@@ -90,6 +102,10 @@ transcript: gates ## The live drivers print only through their redactor
 .PHONY: live-cover
 live-cover: build gates ## The live driver must exercise every tool option
 	@$(GATES) live-cover $(BIN)
+
+.PHONY: parity
+parity: gates ## `make check` and ci.yml run the same things
+	@$(GATES) parity
 
 .PHONY: pins
 pins: gates ## Actions pinned by SHA, tool versions exact, shells pinned
@@ -120,7 +136,7 @@ live: build ## Drive the built binary against a real account (see docs/developme
 	$(GO) run -tags=live ./scripts/livesheet -bin $(BIN)
 
 .PHONY: check
-check: fmt vet lint cover vuln licenses classes leaks transcript live-cover pins schema-diff smoke staleness ## Everything CI runs
+check: fmt vet tidy lint cover vuln licenses secrets classes leaks transcript live-cover parity pins schema-diff smoke staleness ## Everything CI runs
 
 .PHONY: clean
 clean:

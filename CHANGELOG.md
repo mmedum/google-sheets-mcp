@@ -5,6 +5,26 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- `make parity` (`gates parity`): `make check` and `ci.yml` have to run
+  the same things, and the gate fails when either side has something the
+  other lacks. The Makefile has said "everything CI runs" since phase 0
+  and has been wrong three times.
+- CI vets the build-tagged code, so the live driver and the spikes are
+  compiled by something other than a maintainer's laptop. Nothing in CI
+  compiled them before: `go list ./scripts/livesheet` returns one stub
+  file, and a break would have surfaced at the step that closes a phase.
+- `make tidy` and a CI step: `go mod tidy -diff` fails when go.mod is not
+  what tidy would write. It ran nowhere before — only inside a release,
+  in the form that writes, where a rewrite fails the tag on a dirty tree
+  while every rehearsal stays green.
+- `make secrets` runs gitleaks at the version CI uses. CI scanned and the
+  Makefile did not, so the drift ran both ways.
+- `cmd/` is under the coverage floor, at 40% against 48% reached. It was
+  outside the profile entirely, so 571 lines of `login`, `logout`,
+  `status` and `doctor` had no tests and nothing could report that.
+
 ## [0.1.0] - 2026-09-06
 
 Writing, with a guard in front of it.
