@@ -35,7 +35,9 @@ nothing" print the same sentence otherwise.
 | `go run ./scripts/gates pins` | Every action pinned to a full commit SHA, every tool version exact, and every workflow pinning its shell at the workflow level. |
 | `go run ./scripts/gates smoke` | Drives the built binary over stdio without credentials and asserts a clean exit when stdin closes. |
 | `go run ./scripts/gates schema-diff` | Dumps the tool schemas and compares them with the last tag's, built in a throwaway worktree. A removed tool or field, or a new required field, is breaking. |
-| `go run ./scripts/gates staleness` | The README's tool table against the registered tools, `docs/configuration.md` against the settings `config.go` registers, and the CHANGELOG against what changed since the last tag. |
+| `go run ./scripts/gates mcpb` | The Claude Desktop bundle's manifest against the files the packer will stage: `entry_point`, `mcp_config.command`, every `platform_overrides.*.command`, and every `${user_config.x}` an env value spends. It needs no build, because the staged *names* are static — so a manifest naming something that will never exist fails today rather than at the tag. The packing itself is `mcpb-pack`, which runs at release time and is excused from `parity` by name. |
+| `go run ./scripts/gates parity` | `make check` and `ci.yml` run the same things. The gate list is derived from the dispatcher's own case labels, so it catches the third direction two lists compared with each other cannot: a gate the program implements that neither file runs. An excused gate needs a written reason, and an empty reason is itself a failure. |
+| `go run ./scripts/gates staleness` | The README's tool table against the registered tools, `docs/configuration.md` against the settings `config.go` registers, the CHANGELOG against what changed since the last tag, every repository path the documents link to, the architecture's package tree against the packages that exist, and a status line claiming a version nothing can confirm. |
 
 ## Tests
 
@@ -146,6 +148,20 @@ The CHANGELOG entries move out of `[Unreleased]` and under the new
 version heading in the release commit, which is what lets the staleness
 gate pass on a release pull request — a gate without that exception fails
 on the one pull request it was written to guard.
+
+The tag builds the archives, the SBOMs, the signed `checksums.txt` and
+the Claude Desktop bundle. To see what a release will produce without
+tagging anything:
+
+```bash
+go run github.com/goreleaser/goreleaser/v2@v2.18.1 release   --snapshot --clean --skip=sign,publish
+```
+
+Then check the version in five places before believing it — the bundle
+filename, the archive filenames, the manifest inside the bundle, the
+binary's own `--version`, and `checksums.txt`. Four of the five agreeing
+is what shipping unsigned looks like from the outside, and is how the
+missing `checksum.extra_files` entry was found (§12).
 
 ## Phases
 
