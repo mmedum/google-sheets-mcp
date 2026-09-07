@@ -103,6 +103,17 @@ reasons. In short, and in the order `doctor` checks things in:
    | `https://www.googleapis.com/auth/spreadsheets` | Everything this server does inside a spreadsheet |
    | `https://www.googleapis.com/auth/drive.readonly` | `search_spreadsheets`, and nothing else |
 
+   And a third, **only** if you want Connected Sheets:
+
+   | Scope | What it is for |
+   |---|---|
+   | `https://www.googleapis.com/auth/bigquery.readonly` | `manage_data_source`, and only with `GSHEETS_ENABLE_DATA_SOURCES=true` |
+
+   `login` asks for it only when that setting is on, so leaving it off
+   means the consent screen is exactly the two scopes above. Google
+   refuses `addDataSource` without it — "Please include bigquery.readonly
+   scope" — so there is no half-working middle state to be surprised by.
+
    `drive.readonly` rather than `drive` or `drive.file` on purpose: this
    server finds spreadsheets and never creates, moves or trashes a file,
    and the narrower scope is what makes that a guarantee rather than a
@@ -198,15 +209,27 @@ Sheets scope; in read-only mode the read tools ask for
 | `manage_range` | Add, update or delete what is attached to a range: a named range, a protected range, a validation rule, a table, banding, or a conditional format rule. Existing ones are named by the range they cover, not by an id | `spreadsheets` |
 | `transform_range` | Sort, replace, trim, de-duplicate, split, shuffle, fill, copy or move a range — the operations that move data without you naming its new address, so each reads what it would land on first | `spreadsheets` |
 | `manage_anchor` | Label a row, column or sheet so it can be found again after the spreadsheet has been edited around it. An anchor follows its row through inserts, deletes, moves and sorts, where an A1 address goes stale the moment somebody inserts a row. Pass `anchor:<name>` anywhere a range or band is taken, including the two tools that delete rows | `spreadsheets` |
+| `manage_chart` | Add, update, move, delete or list charts and slicers. A chart floats above the grid, so adding one overwrites nothing, and its data is named in A1, one range per series. A listing reports which charts have lost their series — what deleting a charted column does, and what nothing in Sheets tells you | `spreadsheets` |
+| `manage_pivot_table` | Add, update, delete or list pivot tables. Columns are named in A1 or by their heading, never by counting, and every result reports the rectangle the table covers right now: the size is computed from the data rather than chosen | `spreadsheets` |
+| `manage_data_source` | Off by default: connect a BigQuery data source through Connected Sheets, refresh it, cancel a refresh, or list what is connected. `get_spreadsheet` already says whether a spreadsheet has one, with no extra scope | `spreadsheets`, `bigquery.readonly` |
 | `manage_sheet` | Add, rename, duplicate, copy to another spreadsheet, hide, unhide, reorder, resize, freeze or colour a sheet | `spreadsheets` |
 | `edit_dimensions` | Insert, move, resize, auto-size, group or ungroup rows and columns | `spreadsheets` |
 | `delete_dimensions` | Destructive, off by default: remove rows or columns and the data on them, having counted what that is | `spreadsheets` |
 | `clear_values` | Destructive, off by default: clear a range's values and keep its formatting, notes and validation rules | `spreadsheets` |
 | `delete_sheet` | Destructive, off by default: delete a sheet and everything on it, having counted what that is | `spreadsheets` |
+| `delete_data_source` | Destructive, off by default: delete a Connected Sheets data source, the sheet Google made for it, and everything on that sheet. Needs no BigQuery scope, so it reaches a source somebody else connected | `spreadsheets` |
 
-The three destructive tools are **not registered at all** unless
+The four destructive tools are **not registered at all** unless
 `GSHEETS_ENABLE_DESTRUCTIVE=true`, and each still needs `confirm: true`
 on the call.
+
+`manage_data_source` is not registered either, unless
+`GSHEETS_ENABLE_DATA_SOURCES=true` — and that setting is also what makes
+`login` ask for a third scope. It is off by default because Connected
+Sheets needs a Cloud project with BigQuery enabled and billing attached
+before it does anything, and a spreadsheet server whose consent screen
+asks for BigQuery is asking most people to grant access to a product they
+do not have.
 
 ## What keeps you safe
 

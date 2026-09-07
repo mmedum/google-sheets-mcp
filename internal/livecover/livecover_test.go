@@ -72,3 +72,26 @@ func TestEveryExemptionHasARealReason(t *testing.T) {
 		}
 	}
 }
+
+// TestAToolCanBeExcusedWholesale is the other half of Undrivable, and
+// the distinction is the point: an option nobody sends is a gap in the
+// driver, and a tool nobody can call is a limit of the account.
+func TestAToolCanBeExcusedWholesale(t *testing.T) {
+	tools := []Tool{{Name: "manage_data_source", Options: []string{"action", "project"}}}
+	r := Check(map[string]map[string]bool{}, tools)
+	if len(r.NoCaller) != 0 {
+		t.Errorf("NoCaller = %v, want the excused tool left out of it", r.NoCaller)
+	}
+	if len(r.Excused) != 1 || !strings.Contains(r.Excused[0], "BigQuery") {
+		t.Errorf("Excused = %v, want the reason", r.Excused)
+	}
+	if err := Err(r); err != nil {
+		t.Errorf("an excused tool still failed the gate: %v", err)
+	}
+	// A tool with no reason recorded is still a failure, or the excuse
+	// would be a way to make the gate quiet rather than a record.
+	r = Check(map[string]map[string]bool{}, []Tool{{Name: "manage_chart", Options: []string{"action"}}})
+	if err := Err(r); err == nil {
+		t.Error("a tool nobody calls and nobody excused passed the gate")
+	}
+}

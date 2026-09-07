@@ -15,11 +15,11 @@ import (
 )
 
 func TestScopes(t *testing.T) {
-	full := Scopes(false)
+	full := Scopes(false, false)
 	if len(full) != 2 || full[0] != ScopeSpreadsheets || full[1] != ScopeDriveReadonly {
 		t.Errorf("full scopes are %v", full)
 	}
-	ro := Scopes(true)
+	ro := Scopes(true, false)
 	if len(ro) != 2 || ro[0] != ScopeSpreadsheetsReadonly {
 		t.Errorf("read-only scopes are %v", ro)
 	}
@@ -35,7 +35,7 @@ func TestScopes(t *testing.T) {
 
 func TestParseClientSecret(t *testing.T) {
 	installed := `{"installed":{"client_id":"cid","client_secret":"sec","auth_uri":"https://auth.example.test/a","token_uri":"https://auth.example.test/t"}}`
-	cfg, err := ParseClientSecret([]byte(installed), Scopes(false))
+	cfg, err := ParseClientSecret([]byte(installed), Scopes(false, false))
 	if err != nil {
 		t.Fatalf("ParseClientSecret: %v", err)
 	}
@@ -274,11 +274,39 @@ func TestInspectAndRevoke(t *testing.T) {
 
 func TestMissingScopes(t *testing.T) {
 	granted := []string{ScopeSpreadsheetsReadonly, ScopeDriveReadonly}
-	missing := MissingScopes(granted, Scopes(false))
+	missing := MissingScopes(granted, Scopes(false, false))
 	if len(missing) != 1 || missing[0] != ScopeSpreadsheets {
 		t.Errorf("MissingScopes = %v", missing)
 	}
-	if got := MissingScopes(granted, Scopes(true)); len(got) != 0 {
+	if got := MissingScopes(granted, Scopes(true, false)); len(got) != 0 {
 		t.Errorf("MissingScopes on a satisfied set = %v", got)
+	}
+}
+
+// TestScopesAreOptIn is the check behind §17.6a: turning data sources on
+// adds one scope and changes nothing else, so a login made with the
+// setting off asks for exactly what this server has always asked for.
+func TestScopesAreOptIn(t *testing.T) {
+	for _, readOnly := range []bool{false, true} {
+		base := Scopes(readOnly, false)
+		wider := Scopes(readOnly, true)
+		if len(wider) != len(base)+1 {
+			t.Fatalf("data sources changed the scope set from %v to %v", base, wider)
+		}
+		for i, scope := range base {
+			if wider[i] != scope {
+				t.Errorf("scope %d = %q, want %q; the opt-in must add rather than replace", i, wider[i], scope)
+			}
+		}
+		if wider[len(wider)-1] != ScopeBigQueryReadonly {
+			t.Errorf("the added scope is %q, want bigquery.readonly", wider[len(wider)-1])
+		}
+		// The token this server holds must never carry BigQuery unless
+		// somebody asked for it: that is the whole of the decision.
+		for _, scope := range base {
+			if scope == ScopeBigQueryReadonly {
+				t.Error("bigquery.readonly is in the default scope set")
+			}
+		}
 	}
 }

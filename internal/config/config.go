@@ -72,6 +72,12 @@ type Config struct {
 	LogFormat         LogFormat
 	ReadOnly          bool
 	EnableDestructive bool
+	// EnableDataSources registers manage_data_source and adds the
+	// bigquery.readonly scope to what login asks for. Off by default:
+	// Connected Sheets cannot be reached without that scope (§17.6a),
+	// and a Sheets server whose login screen asks for BigQuery is asking
+	// most of its users to grant access to a product they do not have.
+	EnableDataSources bool
 	MaxCells          int
 	MaxChars          int
 	HTTPTimeout       time.Duration
@@ -87,6 +93,7 @@ type Settings struct {
 	LogFormat         string
 	ReadOnly          string
 	EnableDestructive string
+	EnableDataSources string
 	MaxCells          string
 	MaxChars          string
 	HTTPTimeout       string
@@ -114,6 +121,7 @@ func Define(fs *flag.FlagSet, env func(string) string) *Settings {
 	def(&s.LogFormat, "log-format", "LOG_FORMAT", string(LogText), "log format: text, json")
 	def(&s.ReadOnly, "read-only", "READ_ONLY", "false", "register only read tools and request read-only scopes")
 	def(&s.EnableDestructive, "enable-destructive", "ENABLE_DESTRUCTIVE", "false", "register the destructive tools; each still needs confirm on the call")
+	def(&s.EnableDataSources, "enable-data-sources", "ENABLE_DATA_SOURCES", "false", "register manage_data_source and ask for the bigquery.readonly scope at login")
 	def(&s.MaxCells, "max-cells", "MAX_CELLS", strconv.Itoa(DefaultMaxCells), "default cell budget for a read")
 	def(&s.MaxChars, "max-chars", "MAX_CHARS", strconv.Itoa(DefaultMaxChars), "default character budget for a read")
 	def(&s.HTTPTimeout, "http-timeout", "HTTP_TIMEOUT", "60s", "per-attempt timeout for a read")
@@ -152,6 +160,9 @@ func (s *Settings) Build() (Config, error) {
 
 	var err error
 	if c.ReadOnly, err = parseBool("read-only", s.ReadOnly); err != nil {
+		errs = append(errs, err)
+	}
+	if c.EnableDataSources, err = parseBool("enable-data-sources", s.EnableDataSources); err != nil {
 		errs = append(errs, err)
 	}
 	if c.EnableDestructive, err = parseBool("enable-destructive", s.EnableDestructive); err != nil {

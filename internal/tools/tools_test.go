@@ -92,13 +92,17 @@ func TestRegistrationGatesAreServerSide(t *testing.T) {
 		cfg  config.Config
 		want map[Kind]bool
 	}{
-		{"default", config.Config{}, map[Kind]bool{Read: true, Write: true, IdempotentWrite: true, Destructive: false}},
+		{"default", config.Config{}, map[Kind]bool{Read: true, Write: true, IdempotentWrite: true, Destructive: false, Connected: false}},
 		{"destructive enabled", config.Config{EnableDestructive: true},
-			map[Kind]bool{Read: true, Write: true, IdempotentWrite: true, Destructive: true}},
+			map[Kind]bool{Read: true, Write: true, IdempotentWrite: true, Destructive: true, Connected: false}},
+		{"data sources enabled", config.Config{EnableDataSources: true},
+			map[Kind]bool{Read: true, Write: true, IdempotentWrite: true, Destructive: false, Connected: true}},
 		{"read only", config.Config{ReadOnly: true},
-			map[Kind]bool{Read: true, Write: false, IdempotentWrite: false, Destructive: false}},
+			map[Kind]bool{Read: true, Write: false, IdempotentWrite: false, Destructive: false, Connected: false}},
 		{"read only wins over destructive", config.Config{ReadOnly: true, EnableDestructive: true},
-			map[Kind]bool{Read: true, Write: false, IdempotentWrite: false, Destructive: false}},
+			map[Kind]bool{Read: true, Write: false, IdempotentWrite: false, Destructive: false, Connected: false}},
+		{"read only wins over data sources", config.Config{ReadOnly: true, EnableDataSources: true},
+			map[Kind]bool{Read: true, Write: false, IdempotentWrite: false, Destructive: false, Connected: false}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for kind, want := range tc.want {
@@ -126,6 +130,18 @@ func TestAnnotationsFollowTheKind(t *testing.T) {
 	destructive := annotationsFor(Destructive)
 	if destructive.DestructiveHint == nil || !*destructive.DestructiveHint {
 		t.Errorf("destructive annotations = %+v", destructive)
+	}
+	// The one Kind that reaches outside the spreadsheet, and the only
+	// one whose open-world hint is true. That distinction is the reason
+	// it is a Kind rather than a flag on an existing one.
+	connected := annotationsFor(Connected)
+	if connected.OpenWorldHint == nil || !*connected.OpenWorldHint {
+		t.Errorf("connected annotations = %+v", connected)
+	}
+	for _, k := range []Kind{Read, Write, IdempotentWrite, Destructive} {
+		if a := annotationsFor(k); a.OpenWorldHint == nil || *a.OpenWorldHint {
+			t.Errorf("kind %v claims an open world; only Connected reaches one", k)
+		}
 	}
 }
 
@@ -193,6 +209,52 @@ func listTools(t *testing.T, s *mcp.Server) map[string]*mcp.Tool {
 	out := map[string]*mcp.Tool{}
 	for _, tool := range res.Tools {
 		out[tool.Name] = tool
+	}
+	return out
+}
+
+// TestFullSurfaceRegistersEverything is the claim FullSurface makes,
+// held by a test rather than by its comment.
+//
+// The schema dump describes the whole tool surface, and it built that
+// configuration by hand for three phases: ReadOnly off, EnableDestructive
+// on. Phase 4 added a second gate and the tool behind it vanished from
+// the dump — and so from the schema diff, which is the gate that would
+// have said a tool had appeared. Every test was still green.
+//
+// So this enumerates the gates instead of naming them: no combination of
+// them may register a tool the full surface does not.
+func TestFullSurfaceRegistersEverything(t *testing.T) {
+	full := registeredUnder(t, FullSurface(config.Config{}))
+	if len(full) == 0 {
+		t.Fatal("the full surface registers nothing, so this test is reading nothing")
+	}
+	for _, readOnly := range []bool{false, true} {
+		for _, destructive := range []bool{false, true} {
+			for _, dataSources := range []bool{false, true} {
+				cfg := config.Config{
+					ReadOnly: readOnly, EnableDestructive: destructive, EnableDataSources: dataSources,
+				}
+				for name := range registeredUnder(t, cfg) {
+					if !full[name] {
+						t.Errorf("%s registers with read_only=%v destructive=%v data_sources=%v "+
+							"and is missing from the full surface, so the schema dump would not carry it",
+							name, readOnly, destructive, dataSources)
+					}
+				}
+			}
+		}
+	}
+}
+
+// registeredUnder is the tool surface one configuration produces.
+func registeredUnder(t *testing.T, cfg config.Config) map[string]bool {
+	t.Helper()
+	s := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+	Register(s, Deps{Service: service.New(service.Deps{Config: cfg}), Config: cfg})
+	out := map[string]bool{}
+	for name := range listTools(t, s) {
+		out[name] = true
 	}
 	return out
 }

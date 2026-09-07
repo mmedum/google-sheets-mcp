@@ -54,7 +54,7 @@ func spikeK(ctx context.Context) {
 	const key = "spike-anchor"
 	line("")
 	line("  the anchor is created on row 3, which holds %q at the start.", "row3")
-	status, body := metaWrite(ctx, map[string]any{"createDeveloperMetadata": map[string]any{
+	status, body := batchOne(ctx, map[string]any{"createDeveloperMetadata": map[string]any{
 		"developerMetadata": map[string]any{
 			"metadataKey":   key,
 			"metadataValue": "row3",
@@ -133,7 +133,7 @@ func spikeK(ctx context.Context) {
 
 	line("")
 	line("  Q6: two entries under one key — is a name unique, or must this server make it so?")
-	status, body = metaWrite(ctx, map[string]any{"createDeveloperMetadata": map[string]any{
+	status, body = batchOne(ctx, map[string]any{"createDeveloperMetadata": map[string]any{
 		"developerMetadata": map[string]any{
 			"metadataKey": key, "metadataValue": "a second entry under the same key",
 			"visibility": "DOCUMENT", "location": rowLocation(sheetID, 6),
@@ -146,14 +146,14 @@ func spikeK(ctx context.Context) {
 	line("  Q7: what a search matches — location type, and exact against intersecting.")
 	sheetKey := key + "-sheet"
 	ssKey := key + "-spreadsheet"
-	status, _ = metaWrite(ctx, map[string]any{"createDeveloperMetadata": map[string]any{
+	status, _ = batchOne(ctx, map[string]any{"createDeveloperMetadata": map[string]any{
 		"developerMetadata": map[string]any{
 			"metadataKey": sheetKey, "metadataValue": "on the sheet",
 			"visibility": "DOCUMENT", "location": map[string]any{"sheetId": sheetID},
 		},
 	}})
 	line("    an anchor on the sheet             -> HTTP %d", status)
-	status, _ = metaWrite(ctx, map[string]any{"createDeveloperMetadata": map[string]any{
+	status, _ = batchOne(ctx, map[string]any{"createDeveloperMetadata": map[string]any{
 		"developerMetadata": map[string]any{
 			"metadataKey": ssKey, "metadataValue": "on the spreadsheet",
 			"visibility": "DOCUMENT", "location": map[string]any{"spreadsheet": true},
@@ -233,7 +233,7 @@ func spikeK(ctx context.Context) {
 
 	line("")
 	line("  Q8: PROJECT visibility, with a per-user OAuth client and no service account.")
-	status, body = metaWrite(ctx, map[string]any{"createDeveloperMetadata": map[string]any{
+	status, body = batchOne(ctx, map[string]any{"createDeveloperMetadata": map[string]any{
 		"developerMetadata": map[string]any{
 			"metadataKey": key + "-project", "metadataValue": "project visible",
 			"visibility": "PROJECT", "location": rowLocation(sheetID, 5),
@@ -257,7 +257,7 @@ func spikeK(ctx context.Context) {
 			"sheetId": sheetID, "dimension": "ROWS"}}},
 	}
 	for _, r := range refusals {
-		status, body := metaWrite(ctx, map[string]any{"createDeveloperMetadata": map[string]any{
+		status, body := batchOne(ctx, map[string]any{"createDeveloperMetadata": map[string]any{
 			"developerMetadata": map[string]any{
 				"metadataKey": key + "-bad", "metadataValue": "should not exist",
 				"visibility": "DOCUMENT", "location": r.location,
@@ -328,12 +328,6 @@ func mutate(ctx context.Context, what string, req map[string]any) {
 		return
 	}
 	line("    %s", what)
-}
-
-// metaWrite sends one developer-metadata batchUpdate request.
-func metaWrite(ctx context.Context, req map[string]any) (int, string) {
-	return call(ctx, http.MethodPost, sheetsBase+"/spreadsheets/"+scratchID+":batchUpdate",
-		map[string]any{"requests": []any{req}})
 }
 
 // rowLocation is a one-row location, in the 1-based row a person would

@@ -125,24 +125,35 @@ covers is left alone.
 
 ```
 go run -tags=live ./scripts/spikes -only K
+go run -tags=live ./scripts/spikes -only L,M,N,P
 ```
 
 The probes §15 lists, each answering a question the reference does not
-pin down. `-only` runs one, because every run creates a scratch
-spreadsheet it cannot trash and a narrower run is a smaller mess.
+pin down. `-only` takes a list, because every run creates a scratch
+spreadsheet it cannot trash: one run answering a phase's four questions
+leaves one file behind where four runs leave four.
 
 They are written to be *read*, not to pass. A spike prints what the API
 did, and the verdict goes into the evidence log in `docs/architecture.md`
-§18 rather than into somebody's memory. Two of them have now had a first
+§18 rather than into somebody's memory. Four of them have now had a first
 run that answered nothing while looking like an answer: spike G measured
-the length of a JSON body and called it the length of a cell, and spike K
+the length of a JSON body and called it the length of a cell; spike K
 aimed four of its eleven questions at a row its own subject had already
-moved. Both were visible only by reading the output against what the step
+moved; spike L asked what an invalid chart *spec* does with two requests
+the API refused on their *position*, never reaching the spec; and spike M
+asked two different questions about an invalid pivot and got the same
+answer to both, because a validation it did not know about ran first.
+Every one was visible only by reading the output against what the step
 claimed to be asking.
 
-The rule that came out of the second one: **a step that names a position
-asks where the thing is at that moment.** A constant in a probe about
-movement is a stale constant, and its answer reads as a finding.
+Three rules came out of them. **A step that names a position asks where
+the thing is at that moment** — a constant in a probe about movement is a
+stale constant, and its answer reads as a finding. **A probe about one
+half of a request makes the other half valid**, or the refusal it gets is
+about the wrong thing. And **a mask a probe builds is checked before it
+is sent**: spike P reported a field unsupported on a mask this repository
+had written with one parenthesis missing, and the balance check that now
+guards it is four lines.
 
 ## The evals
 

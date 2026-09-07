@@ -24,7 +24,9 @@ const CardFields = "spreadsheetId," +
 	"sheets(properties(sheetId,title,index,sheetType,hidden,rightToLeft,gridProperties,tabColorStyle)," +
 	"merges,protectedRanges(protectedRangeId,range,namedRangeId,description,warningOnly,requestingUserCanEdit,editors)," +
 	"filterViews(filterViewId,title,range),tables(tableId,name,range,columnProperties)," +
-	"charts(chartId),bandedRanges(bandedRangeId,range))," +
+	"charts(chartId,spec(title)),slicers(slicerId,spec(title))," +
+	"bandedRanges(bandedRangeId,range),conditionalFormats(ranges))," +
+	"dataSources(dataSourceId,sheetId,spec(bigQuery(projectId)))," +
 	"namedRanges"
 
 // GridFields is the field mask behind a read of cells. It asks for what
@@ -35,7 +37,8 @@ const CardFields = "spreadsheetId," +
 // and its result render identically, and the difference between them is
 // what the write guard is built on.
 const GridFields = sheetHead +
-	"data(startRow,startColumn,rowData(values(userEnteredValue,effectiveValue,formattedValue,note,dataValidation,hyperlink))))"
+	"data(startRow,startColumn,rowData(values(userEnteredValue,effectiveValue,formattedValue,note,dataValidation," +
+	"hyperlink,pivotTable(source)))))"
 
 // sheetHead is what every mask that reads cells asks for around them:
 // the sheet's identity and size, its merges, and its protected ranges.
@@ -47,6 +50,33 @@ const GridFields = sheetHead +
 const sheetHead = "spreadsheetId," +
 	"sheets(properties(sheetId,title,index,gridProperties),merges," +
 	"protectedRanges(protectedRangeId,range,description,warningOnly,requestingUserCanEdit),"
+
+// ChartFields is the field mask behind manage_chart.
+//
+// The whole spec, because an update replaces it whole and has to send
+// back what it read (spike L). It is deliberately not the card's mask:
+// live, one chart's full spec is about 2 KB against the 72 bytes a title
+// costs, so the card carries the title and this carries the rest.
+const ChartFields = "spreadsheetId,sheets(properties(sheetId,title),charts,slicers)"
+
+// PivotFields is the field mask behind manage_pivot_table.
+//
+// A pivot table has no index in the API: the only way to find one is to
+// read cells and look for the field. So this asks for the pivot and
+// nothing else — no values, no formats — over a range the caller named.
+const PivotFields = "spreadsheetId,sheets(properties(sheetId,title)," +
+	"data(startRow,startColumn,rowData(values(pivotTable))))"
+
+// PivotExtentFields is the field mask behind measuring what a pivot
+// draws: the two value fields and nothing else.
+//
+// Its own mask rather than GridFields, which asks for six more fields
+// per cell. The measurement reads only whether a cell has an effective
+// value and no entered one, over a rectangle up to the cell budget — so
+// every other field is fetched and dropped on the largest read in the
+// pivot path.
+const PivotExtentFields = "spreadsheetId,sheets(properties(sheetId)," +
+	"data(startRow,startColumn,rowData(values(userEnteredValue,effectiveValue))))"
 
 // FormatFields is the field mask behind read_formatting: what a cell
 // looks like, and the things attached to the sheet that decide it.

@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -40,6 +41,9 @@ type CardSheet struct {
 	// Holds names the objects on the sheet — a table, a chart, a pivot
 	// table, a data source — which no read of the values would reveal.
 	Holds []string
+	// Charts are those charts by name. A count says a sheet has three
+	// charts; the names say which one a caller means.
+	Charts []string
 }
 
 // NamedItem is a named thing with an A1 range.
@@ -108,6 +112,12 @@ func Spreadsheet(c Card) string {
 			fmt.Fprintf(&b, ", holds %s", strings.Join(s.Holds, ", "))
 		}
 		b.WriteString(")\n")
+		// The charts by name, indented under the sheet that holds them.
+		// A count is what the line above already gives; the names are
+		// what a caller needs to say which chart they mean.
+		if len(s.Charts) > 0 {
+			fmt.Fprintf(&b, "    charts: %s\n", strings.Join(quoteAll(s.Charts), ", "))
+		}
 	}
 
 	section(&b, "named ranges", c.NamedRanges)
@@ -115,6 +125,16 @@ func Spreadsheet(c Card) string {
 	section(&b, "protected ranges", c.Protected)
 	section(&b, "filter views", c.FilterViews)
 	return b.String()
+}
+
+// quoteAll quotes each of a list, for a line that names things somebody
+// will type back.
+func quoteAll(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		out = append(out, strconv.Quote(s))
+	}
+	return out
 }
 
 // Plural is the one place this project pluralises a count, so the card

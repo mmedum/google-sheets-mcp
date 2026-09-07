@@ -16,6 +16,7 @@ import (
 	"github.com/mmedum/google-sheets-mcp/internal/gapi/sheetstest"
 	"github.com/mmedum/google-sheets-mcp/internal/server"
 	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/internal/tools"
 )
 
 func newServer(t *testing.T, cfg config.Config, log *slog.Logger) (*mcp.Server, *sheetstest.Server) {
@@ -56,15 +57,20 @@ var readTools = []string{"find_in_spreadsheet", "get_spreadsheet", "read_formatt
 // destructiveTools need the destructive flag as well.
 var writeTools = []string{
 	"append_rows", "create_spreadsheet", "edit_dimensions", "format_cells",
-	"manage_anchor", "manage_range", "manage_sheet", "transform_range", "write_values",
+	"manage_anchor", "manage_chart", "manage_pivot_table", "manage_range", "manage_sheet", "transform_range", "write_values",
 }
 
-var destructiveTools = []string{"clear_values", "delete_dimensions", "delete_sheet"}
+var destructiveTools = []string{"clear_values", "delete_data_source", "delete_dimensions", "delete_sheet"}
+
+// connectedTools reach outside the spreadsheet and need
+// GSHEETS_ENABLE_DATA_SOURCES, which is also what asks for the third
+// scope at login.
+var connectedTools = []string{"manage_data_source"}
 
 // allTools is the surface this phase ships, which is what the schema
 // dump carries.
 func allTools() []string {
-	all := append(append(append([]string{}, readTools...), writeTools...), destructiveTools...)
+	all := append(append(append(append([]string{}, readTools...), writeTools...), destructiveTools...), connectedTools...)
 	slices.Sort(all)
 	return all
 }
@@ -227,7 +233,12 @@ func TestDumpSchemas(t *testing.T) {
 	// The full surface, as --dump-schemas builds it: a dump that showed
 	// only what this configuration registers would let a destructive
 	// tool's schema change without the diff gate ever seeing it.
-	s, _ := newServer(t, config.Config{EnableDestructive: true}, nil)
+	//
+	// Through tools.FullSurface rather than a configuration written out
+	// here. Written out, this test agreed with the command for three
+	// phases and then disagreed with it silently: phase 4's second gate
+	// was set in neither, and the tool behind it was missing from both.
+	s, _ := newServer(t, tools.FullSurface(config.Config{}), nil)
 	var buf bytes.Buffer
 	if err := server.DumpSchemas(context.Background(), s, &buf, "test"); err != nil {
 		t.Fatal(err)

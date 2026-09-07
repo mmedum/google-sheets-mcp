@@ -464,17 +464,24 @@ func (s *Service) rulesOver(ctx context.Context, ref Reference, sheetID int, rec
 
 // ruleCount reads how many conditional format rules a sheet has.
 //
-// Its own mask, naming the rules and the sheet ids and nothing else.
-// FormatFields was used here first and was wrong: `includeGridData` is
-// ignored when a field mask is set, so a mask naming `data(` fetches
-// cells whether or not the option asks for them — and with no range,
-// every cell of every sheet.
+// From the card, which carries the rules' ranges and is cached. It had a
+// mask of its own before that, for a reason worth keeping written down:
+// FormatFields was used here first and was wrong, because
+// `includeGridData` is ignored when a field mask is set — so a mask
+// naming `data(` fetches cells whether or not the option asks for them,
+// and with no range, every cell of every sheet.
+//
+// rulesOver next door still needs RuleFields: it renders each rule, and
+// the card carries only where they reach.
 func (s *Service) ruleCount(ctx context.Context, ref Reference, sheetID int) (int, error) {
-	got, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{Fields: gapi.RuleFields})
+	// §17a.15: a request of its own made a rule update three where two
+	// will do. Measured before the mask was widened — 294 bytes for one
+	// rule's ranges against the 651 a whole rule costs.
+	sp, err := s.card(ctx, ref.ID)
 	if err != nil {
-		return 0, wrap(err)
+		return 0, err
 	}
-	return len(sheetOf(got, sheetID).ConditionalFormats), nil
+	return len(sheetOf(sp, sheetID).ConditionalFormats), nil
 }
 
 // matchOne finds the one object covering exactly this rectangle.

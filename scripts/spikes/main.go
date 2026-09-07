@@ -55,10 +55,13 @@ const sheetsBase = "https://sheets.googleapis.com/v4"
 var client *http.Client
 var scratchID string
 
-// only names one spike to run, so re-probing a single question does not
+// only names the spikes to run, so re-probing a single question does not
 // mean re-running every other one. Each run creates a scratch
-// spreadsheet it cannot trash, so a narrower run is a smaller mess.
-var only = flag.String("only", "", "run one spike by letter (A, B, C, E, F, G, H, I, J, K); default runs all")
+// spreadsheet it cannot trash, so a narrower run is a smaller mess — and
+// a list rather than one letter, because a phase asking four questions
+// otherwise leaves four spreadsheets behind.
+var only = flag.String("only", "",
+	"run these spikes, comma-separated (A, B, C, E, F, G, H, I, J, K, L, M, N, P); default runs all")
 
 func main() {
 	flag.Parse()
@@ -101,12 +104,29 @@ func run(ctx context.Context) error {
 		{"G", func() { spikeG(ctx) }},
 		{"J", func() { spikeJ(ctx) }},
 		{"K", func() { spikeK(ctx) }},
+		{"L", func() { spikeL(ctx) }},
+		{"M", func() { spikeM(ctx) }},
+		{"N", func() { spikeN(ctx) }},
+		{"P", func() { spikeP(ctx) }},
 	} {
-		if *only == "" || strings.EqualFold(*only, p.letter) {
+		if wanted(p.letter) {
 			p.probe()
 		}
 	}
 	return nil
+}
+
+// wanted reads the -only list. An empty list is every spike.
+func wanted(letter string) bool {
+	if strings.TrimSpace(*only) == "" {
+		return true
+	}
+	for _, want := range strings.Split(*only, ",") {
+		if strings.EqualFold(strings.TrimSpace(want), letter) {
+			return true
+		}
+	}
+	return false
 }
 
 func tokenSource(ctx context.Context) (oauth2.TokenSource, error) {
@@ -115,7 +135,7 @@ func tokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := auth.LoadClientSecret(secret, auth.Scopes(false))
+	cfg, err := auth.LoadClientSecret(secret, auth.Scopes(false, false))
 	if err != nil {
 		return nil, err
 	}
@@ -257,6 +277,15 @@ func put(ctx context.Context, rangeA1 string, values [][]any) error {
 		return fmt.Errorf("put %s: HTTP %d: %s", rangeA1, status, body)
 	}
 	return nil
+}
+
+// batchOne sends one batchUpdate request and returns the status and the
+// body. Every spike that writes structure goes through it, so a probe
+// reads as the one request it is rather than as a batch whose ordering
+// could explain the result.
+func batchOne(ctx context.Context, req map[string]any) (int, string) {
+	return call(ctx, http.MethodPost, sheetsBase+"/spreadsheets/"+scratchID+":batchUpdate",
+		map[string]any{"requests": []any{req}})
 }
 
 // getValues asks for one range and reports what came back.
