@@ -1,7 +1,6 @@
 # Architecture — google-sheets-mcp
 
-**Status: v0.3.1, with phase 4 code complete and unreleased
-(2026-09-07).** Reading, writing, formatting, the objects attached to a
+**Status: v0.4.0 (2026-09-07).** Reading, writing, formatting, the objects attached to a
 range, `gsheets://` resources, durable anchors and now charts, pivot
 tables and Connected Sheets all work, and `make check` is green. Spikes
 L, M, N and P ran against a real account and §18 carries what they
@@ -69,10 +68,12 @@ counting: `deleteDimension` takes the anchors on the band and says
 nothing, and spike K's own first run answered four of eleven questions
 against rows the anchor had already left.
 
-**Phase 4 is code complete and not released.** What it still owes is the
-maintainer's decision on the version, the release commit and the tag.
-§17a carries sixteen open cleanups; the three that wanted a live probe
-were probed in this phase and are closed.
+**Phase 5 does not exist: what follows phase 4 is v1.0.0, and §16 says
+what it waits for** — use in anger, and a further eval round with a
+second client. §17a carries sixteen open cleanups; the three that wanted
+a live probe were probed in this phase and are closed. The evals cover
+phases 0 to 3 and not the three tools this phase added, which is the
+most obvious thing to do next.
 
 Everything here was checked against the Sheets API v4 discovery document
 (`sheets.googleapis.com/$discovery/rest?version=v4`, revision 20260831),
@@ -1777,11 +1778,11 @@ keeping ten — 28 000 allocations on a 5 000-cell write, now 25. The
 first fix for that was wrong and the benchmark is what said so: the
 number did not move.
 
-**Phase 4 — charts, pivots, data sources (v0.4.0). Code complete
-2026-09-07, including the live work: spikes L, M, N and P ran, the live
-driver ran five times (206 steps, 0 failed, 1 undetermined — Drive's
-content index again), and both review passes ran with every finding
-fixed. Not tagged: `main` is the maintainer's.** `manage_chart`,
+**Phase 4 — charts, pivots, data sources (v0.4.0). Done 2026-09-07,
+including the live work: spikes L, M, N and P ran, the live driver ran
+five times (206 steps, 0 failed, 1 undetermined — Drive's content index
+again), and both review passes ran with every finding fixed. Not tagged:
+`main` is the maintainer's.** `manage_chart`,
 `manage_pivot_table`, `manage_data_source`, each verified live before it
 is designed in detail. Then the discovery document is diffed against what
 the client calls, and every one of the 69 union members is either used or
