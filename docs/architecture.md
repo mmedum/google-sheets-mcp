@@ -1867,6 +1867,24 @@ counting it could not, and the first two here were in the fake as much
 as the server: a unit test cannot refuse a request the fake accepts, and
 the fake accepted both.
 
+**The evals cover the new tools now: 18 tasks, 18 passing.** Three were
+added — charting a column, summarising with a pivot table, and the one
+that matters most, a write aimed into a pivot table's output. That last
+is the phase 4 half of what the formula task does for phase 1: the model
+is told to put a number in a cell, the cell is inside something a values
+read makes look ordinary, and what is scored is whether the guard
+refused before anything landed. It did.
+
+Reading the run found two things the count did not, and neither is a
+failure. The pivot refusal reads `[blocked] G3 is not empty`, which is
+true and says nothing about the pivot table it is protecting — §17a.27,
+now demonstrated rather than described. And a model handed a
+`checkpoint` by a read passed it back to a write as `checkpoint`, which
+that tool spells `expect_checkpoint`: it cost a call, and it came back
+as a schema validation message rather than one of §6.5's twelve classes,
+which is the first path found where a caller sees a message from outside
+this server's vocabulary. §17a.28a carries it.
+
 **The two review passes found nineteen things between them and every one
 was fixed.** `/code-review high` found eleven, of which three matter
 beyond their own line: a listing field that could never be populated
@@ -1886,8 +1904,23 @@ once before. The same pass also found a phrasing literal being used as a
 control flag, where rewording a preview would have silently switched a
 branch.
 
-**v1.0.0** waits for use in anger and a further eval round with a second
-client.
+**v1.0.0** waited for use in anger and a further eval round with a second
+client. **Amended 2026-09-07: neither is waited for, on the maintainer's
+decision.** The eval round happened — 18 tasks covering charts, pivot
+tables and the guard that protects one — and the second client did not.
+
+What that changes is what 1.0.0 claims. It is a promise about the tool
+surface rather than a report on how much use the server has had: the
+twenty-one tools, their arguments and their error classes are stable,
+and a breaking change to any of them needs a major version. The schema
+diff gate is what makes that a promise rather than an intention, and it
+has been running since phase 0.
+
+What it does not claim is written here so nobody has to infer it: this
+server has not been driven by a second MCP client, and Claude Desktop
+via the `.mcpb` bundle is the obvious one. Every eval result in this
+document comes from one client, and §13's own argument — that a green
+count and a correct result are different things — applies to that too.
 
 ### Closing a phase
 
@@ -2300,6 +2333,32 @@ cannot be verified again yet.
    open**, found by reading the first live run of phase 4: the count was
    green and the refusal said "I3 is not empty" under a step whose whole
    subject was pivot tables.
+
+   **The eval run demonstrates the cost rather than describing it.** The
+   task "do not write over a pivot table" passes — the guard fires and
+   the model does not blindly acknowledge — and the refusal it reads is
+   `[blocked] G3 is not empty; pass overwrite to allow it`. A model that
+   passed `overwrite` there would have been told nothing about what it
+   was breaking, and the task passes because the model went and looked
+   rather than because the message told it to.
+28a. **A read hands back `checkpoint` and a write takes
+   `expect_checkpoint`.** The read's own description says to "pass this
+   to a later write as expect_checkpoint", and the eval run watched a
+   model pass it as `checkpoint` anyway — reading the field's name
+   rather than its description, which is what anybody does. It cost a
+   call and came back as `validating "arguments": unexpected additional
+   properties ["checkpoint"]`, which is the SDK's schema validation
+   rather than one of §6.5's twelve classes: the one path found so far
+   where a caller gets a message outside this server's own vocabulary.
+
+   Two fixes and they are not the same. Accepting `checkpoint` as an
+   alias makes the natural thing work and puts two names for one
+   argument in the schema. Renaming the read's field to
+   `expect_checkpoint` makes them match and is a breaking change to
+   every read's structured half. **Still open**, and the second half —
+   a schema refusal arriving outside the error vocabulary — is worth
+   more attention than the naming: §6.5's gate holds the classes this
+   server emits and cannot see one the SDK emits above it.
 29. **The fake ignores the field mask, so no test can catch a mask that
    asks for the wrong thing.** `sheetstest`'s `spreadsheets.get` refuses
    an *empty* `fields` — which is the rule it exists to hold — and then

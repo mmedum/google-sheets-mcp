@@ -27,6 +27,13 @@ type Fixture struct {
 	ErrorCell   string
 	EmptyCell   string
 	AnchorRow   int
+	// PivotAnchor is where the fixture puts the pivot table the guard
+	// task writes into, and where that task is told to write.
+	PivotAnchor string
+	// PivotOutputCell is inside what that pivot draws: the cell the
+	// guard task aims at, one row below the anchor so it is output
+	// rather than the definition.
+	PivotOutputCell string
 	// DataLastRow is where the seeded block ends.
 	DataLastRow int
 }
@@ -57,12 +64,20 @@ const (
 	WorkCopy   = "copy"
 	WorkFix    = "fix"
 	WorkAnchor = "anchor"
+	WorkChart  = "chart"
+	WorkPivot  = "pivot"
+	// WorkPivotGuard carries a pivot table the fixture writes, so the
+	// guard task has one to collide with. A task that had to build its
+	// own would be scoring whether the model can make a pivot table —
+	// which is the task above it — rather than what the guard does.
+	WorkPivotGuard = "pivot guard"
 )
 
 // WorkSheets is every per-task copy the fixture makes.
 var WorkSheets = []string{
 	WorkTotal, WorkAppend, WorkGuard, WorkAck, WorkFormat,
 	WorkSort, WorkValid, WorkCopy, WorkFix, WorkAnchor,
+	WorkChart, WorkPivot, WorkPivotGuard,
 }
 
 // SheetFor is the sheet a task works in. Derived rather than stored, so

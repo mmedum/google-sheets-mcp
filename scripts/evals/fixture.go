@@ -66,6 +66,11 @@ func build(ctx context.Context, bin string) (Fixture, func(), error) {
 		EmptyCell:   "F2",
 		AnchorRow:   10,
 		DataLastRow: 21,
+		// Clear of the seeded block in A:D, so the pivot's own output is
+		// the only thing in those columns and a write into it means one
+		// thing.
+		PivotAnchor:     "F1",
+		PivotOutputCell: "G3",
 	}
 
 	sec("Fixture")
@@ -148,6 +153,25 @@ func build(ctx context.Context, bin string) (Fixture, func(), error) {
 		return Fixture{}, nil, err
 	}
 	line("filled %s with 900 rows, past a default read's budget", f.LongSheet)
+
+	// A pivot table for the guard task to collide with, on its own work
+	// sheet. Anchored at F1, clear of the seeded block in A:D, so the
+	// output it draws is the only thing in those columns and a write
+	// into it is unambiguous.
+	//
+	// The fixture builds it rather than a task, because the task under
+	// test is what the guard does when a write lands on a pivot's
+	// output — not whether the model can make one, which is the task
+	// before it.
+	if _, err := call("manage_pivot_table", map[string]any{
+		"spreadsheet": f.ID, "sheet": f.SheetFor(WorkPivotGuard), "action": "add",
+		"anchor": f.PivotAnchor, "source": "A1:D21",
+		"group_rows": []any{"A"}, "values": []any{"B sum"},
+	}); err != nil {
+		closeSession()
+		return Fixture{}, nil, err
+	}
+	line("anchored a pivot table at %s on %q, for the write guard to refuse", f.PivotAnchor, f.SheetFor(WorkPivotGuard))
 
 	return f, closeSession, nil
 }

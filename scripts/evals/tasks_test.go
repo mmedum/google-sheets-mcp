@@ -258,6 +258,7 @@ func TestPromptsDoNotNameTools(t *testing.T) {
 		"get_spreadsheet", "read_range", "write_values", "append_rows", "format_cells",
 		"manage_range", "transform_range", "manage_sheet", "edit_dimensions", "find_in_spreadsheet",
 		"search_spreadsheets", "read_formatting", "create_spreadsheet", "manage_anchor",
+		"manage_chart", "manage_pivot_table", "manage_data_source", "delete_data_source",
 	}
 	for _, task := range Tasks(fixture()) {
 		for _, tool := range tools {
