@@ -1,0 +1,124 @@
+package main
+
+import (
+	"go/parser"
+	"go/token"
+	"strings"
+	"testing"
+)
+
+// TestPrintsOutside is the rule watched failing. The load-bearing case
+// is a print in an ordinary step function: it is what a contributor
+// adds while debugging and then leaves, and it is invisible in review
+// because it looks exactly like the ones that are allowed.
+func TestPrintsOutside(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		src  string
+		want int
+	}{
+		{
+			name: "the redacting helper may print",
+			src:  "package main\nimport \"fmt\"\nfunc line(s string) { fmt.Println(s) }\n",
+			want: 0,
+		},
+		{
+			name: "the section header must go through the helper too",
+			src:  "package main\nimport \"fmt\"\nfunc sec(t string) { fmt.Printf(\"== %s\", t) }\n",
+			want: 1,
+		},
+		{
+			name: "a step may not",
+			src:  "package main\nimport \"fmt\"\nfunc step() { fmt.Println(\"raw\") }\n",
+			want: 1,
+		},
+		{
+			name: "Printf and Print count too",
+			src:  "package main\nimport \"fmt\"\nfunc step() { fmt.Printf(\"a\"); fmt.Print(\"b\") }\n",
+			want: 2,
+		},
+		{
+			// The hole this closed: justified by "Fprintf to a
+			// caller-supplied writer does not reach the terminal",
+			// which is true of a caller-supplied writer and not of
+			// os.Stdout.
+			name: "Fprintln to os.Stdout is a print",
+			src:  "package main\nimport (\n\"fmt\"\n\"os\"\n)\nfunc step() { fmt.Fprintln(os.Stdout, \"raw\") }\n",
+			want: 1,
+		},
+		{
+			name: "Fprintf to os.Stderr is not",
+			src:  "package main\nimport (\n\"fmt\"\n\"os\"\n)\nfunc step() { fmt.Fprintf(os.Stderr, \"a\") }\n",
+			want: 0,
+		},
+		{
+			name: "Fprintf to a caller's writer is not",
+			src:  "package main\nimport (\n\"fmt\"\n\"io\"\n)\nfunc step(w io.Writer) { fmt.Fprintf(w, \"a\") }\n",
+			want: 0,
+		},
+		{
+			// The residual this gate had recorded as needing a type
+			// checker. Matching the mention rather than the call closes
+			// it at the assignment, for nothing.
+			name: "a print smuggled through a function value",
+			src:  "package main\nimport \"fmt\"\nfunc step() { p := fmt.Println; p(\"raw\") }\n",
+			want: 1,
+		},
+		{
+			name: "os.Stdout aliased and then written to",
+			src:  "package main\nimport (\n\"fmt\"\n\"os\"\n)\nfunc step() { w := os.Stdout; fmt.Fprintln(w, \"raw\") }\n",
+			want: 1,
+		},
+		{
+			// A child process inheriting stdout puts its bytes on the
+			// terminal without this program formatting a thing.
+			name: "handing os.Stdout to a subprocess",
+			src:  "package main\nimport (\n\"os\"\n\"os/exec\"\n)\nfunc step(c *exec.Cmd) { c.Stdout = os.Stdout }\n",
+			want: 1,
+		},
+		{
+			name: "Sprintf is not a print",
+			src:  "package main\nimport \"fmt\"\nfunc step() string { return fmt.Sprintf(\"a\") }\n",
+			want: 0,
+		},
+		{
+			name: "Fprintf to a caller's writer is not a print",
+			src:  "package main\nimport (\"fmt\"; \"io\")\nfunc step(w io.Writer) { fmt.Fprintf(w, \"a\") }\n",
+			want: 0,
+		},
+		{
+			name: "a nested closure does not hide one",
+			src:  "package main\nimport \"fmt\"\nfunc step() { f := func() { fmt.Println(\"x\") }; f() }\n",
+			want: 1,
+		},
+		{
+			name: "something else called Println is not fmt's",
+			src:  "package main\ntype l struct{}\nfunc (l) Println(string) {}\nvar log l\nfunc step() { log.Println(\"a\") }\n",
+			want: 0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, "x.go", tc.src, 0)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			got := printsOutside(fset, file, allowedIn)
+			if len(got) != tc.want {
+				t.Errorf("found %d prints, want %d: %v", len(got), tc.want, got)
+			}
+			// A finding has to name what it found and where. The gate
+			// reports mentions rather than calls now, so a finding may
+			// name os.Stdout rather than a fmt function — but it names
+			// one of them, with a position, or it is not actionable.
+			for _, g := range got {
+				if !strings.Contains(g, "fmt.") && !strings.Contains(g, "os.Stdout") {
+					t.Errorf("finding names neither a printer nor os.Stdout: %q", g)
+				}
+				if !strings.Contains(g, "x.go:") {
+					t.Errorf("finding has no position: %q", g)
+				}
+			}
+		})
+	}
+}

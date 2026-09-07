@@ -1,0 +1,24 @@
+Formatting of 'Vandel'!A1:D10
+
+  A1:D1          bold, background #d9e2f3, center
+  B2:B10         currency "$"#,##0.00, right
+
+Merged:
+  A8:C8
+
+Conditional rules on this sheet:
+  B2:B10 (index 0) — number greater 100 -> background #d9ead3
+
+Banding:
+  A1:D10 — rows #d9e2f3
+
+Validation:
+  A9 — one of list: Quorbin, Vandel
+
+Notes:
+  A2 — reconciliation pending
+
+Protected:
+  A1:D1 (headings) — you may edit it
+
+14 cell(s) carry no format of their own

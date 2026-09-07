@@ -1,0 +1,12 @@
+    A            B        C        D
+1 | Plimth     | Nardle | Grivet | Oblisk
+2 | Quorbin-01 | 243.4  | 419.79 | 663.19
+  |            |        |        | =B2+C2
+3 | Vandel-02  | 268.12 | 149.62 | 417.74
+  |            |        |        | =B3+C3
+4 | Skerry-03  | 701.7  | 903.63 | 1605.33
+  |            |        |        | =B4+C4
+notes: A2 Quorbin reconciliation pending
+validation: A3 one of list: Skerry, Plimth, Nardle
+protected: A1:D1 (heading row; you may not edit it)
+rows 1-4 of 200; columns A:D; formulas under values

@@ -1,0 +1,41 @@
+# Nothing deployer-specific may enter this repository: no OAuth client
+# ids or secrets, no refresh tokens, no real spreadsheet ids. gitleaks
+# covers the things with a credential's shape; `go run ./scripts/gates
+# leaks` covers identifiers and data, which are not secrets and pass a
+# credential scanner untouched.
+title = "google-sheets-mcp"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "google-oauth-client-id"
+description = "Google OAuth client id"
+regex = '''[0-9]{8,}-[a-z0-9]{20,}\.apps\.googleusercontent\.com'''
+
+[[rules]]
+id = "google-oauth-client-secret"
+description = "Google OAuth client secret"
+regex = '''GOCSPX-[A-Za-z0-9_-]{20,}'''
+
+[[rules]]
+id = "google-refresh-token"
+description = "Google OAuth refresh token"
+regex = '''1//0[A-Za-z0-9_-]{30,}'''
+
+[allowlist]
+paths = [
+  '''go\.sum$''',
+]
+# The identifier scan has to contain an example of every shape it
+# catches, or nobody can tell whether its rules match anything. This is
+# that example — twelve counting digits and the alphabet — allowed as a
+# literal value rather than by path, so a real client id in the same file
+# is still a finding.
+#
+# An inline `gitleaks:allow` comment does not serve here: the CI job
+# scans a pull request's commits, and a comment can only clear the commit
+# that carries it, never the one that introduced the line.
+regexes = [
+  '''123456789012-abcdefghijklmnopqrstuvwxyz012345\.apps\.googleusercontent\.com''', # leakcheck:allow
+]

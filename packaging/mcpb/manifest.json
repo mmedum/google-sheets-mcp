@@ -1,0 +1,62 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/mcpb/main/schemas/mcpb-manifest-v0.3.schema.json",
+  "manifest_version": "0.3",
+  "name": "google-sheets-mcp",
+  "display_name": "Google Sheets",
+  "version": "0.0.0-dev",
+  "description": "Google Sheets as MCP tools: read a range and see where every value sits, write without destroying the formula underneath, format, sort and validate.",
+  "long_description": "A single Go binary that speaks MCP over stdio, on your own machine, against your own Google account. macOS, Windows and Linux, on both architectures each. There is no server to host and no service account.\n\nThe bundle does NOT log you in. You need your own Google OAuth client and one login first: create an OAuth 2.0 Client ID of type Desktop app, download the JSON, and pick it during install. Then run `google-sheets-mcp login -secret <that file>` once from a terminal; the refresh token goes to your OS keyring. The README has the full setup, which needs the Sheets API and the Drive API enabled in a Cloud project you own.\n\nEvery other setting keeps its default, and two are worth knowing. GSHEETS_READ_ONLY asks Google for read-only scopes and registers only the tools that read. Nothing that removes something is registered at all unless GSHEETS_ENABLE_DESTRUCTIVE is set, and each of those still needs confirm on the call: clearing a range, deleting rows or columns, and deleting a sheet are off by default. Both take the manual client configuration in the README.",
+  "author": {
+    "name": "mmedum",
+    "url": "https://github.com/mmedum"
+  },
+  "homepage": "https://github.com/mmedum/google-sheets-mcp",
+  "documentation": "https://github.com/mmedum/google-sheets-mcp#readme",
+  "support": "https://github.com/mmedum/google-sheets-mcp/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mmedum/google-sheets-mcp"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "google-sheets",
+    "sheets",
+    "spreadsheet",
+    "google-workspace",
+    "stdio"
+  ],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/google-sheets-mcp",
+    "mcp_config": {
+      "command": "${__dirname}/server/google-sheets-mcp",
+      "args": [],
+      "env": {
+        "GSHEETS_CLIENT_SECRET": "${user_config.client_secret}"
+      },
+      "platform_overrides": {
+        "linux": {
+          "command": "${__dirname}/server/linux-launch.sh"
+        },
+        "win32": {
+          "command": "${__dirname}/server/google-sheets-mcp.exe"
+        }
+      }
+    }
+  },
+  "user_config": {
+    "client_secret": {
+      "type": "file",
+      "title": "OAuth client JSON",
+      "description": "The client_secret JSON you downloaded when you created the Desktop OAuth client. The same file you passed to `google-sheets-mcp login -secret`.",
+      "required": true
+    }
+  },
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ]
+  }
+}

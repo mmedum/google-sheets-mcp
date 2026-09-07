@@ -1,0 +1,110 @@
+version: 2
+
+project_name: google-sheets-mcp
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: server
+    main: ./cmd/google-sheets-mcp
+    binary: google-sheets-mcp
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    # The commit's time rather than the build's, so rebuilding a tag
+    # produces byte-identical binaries.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w -X github.com/mmedum/google-sheets-mcp/internal/version.Version={{.Version}}
+
+# A macOS universal binary, for the Claude Desktop bundle only.
+#
+# `ids` keeps it out of the ordinary archives: a manifest names a command
+# per platform and has no key for the architecture, so the bundle needs
+# one macOS binary that runs on both — and a fourth macOS download on the
+# release page is a choice nobody should have to make.
+universal_binaries:
+  - id: universal
+    ids: [server]
+    replace: false
+    hooks:
+      # The one point in the pipeline where every binary exists and
+      # checksums.txt has not been written. Packing here is what puts the
+      # bundle into that file, and therefore under the same signature as
+      # the archives — the signature is over the checksum file. Anywhere
+      # later and it ships unsigned while looking no different.
+      post: go run ./scripts/gates mcpb-pack {{ .Version }} dist
+
+archives:
+  - ids: [server]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [LICENSE, README.md]
+
+checksum:
+  name_template: checksums.txt
+  # The bundle is not an archive goreleaser built, so packing it in the
+  # post hook is only half of what puts it here: the checksum step covers
+  # its own artifacts, and a file a hook dropped into dist/ is not one.
+  # Naming it is the other half — and being in checksums.txt is what gets
+  # it signed, because the signature is over that file.
+  #
+  # Found by checking rather than by reading: the first snapshot build
+  # packed a bundle, agreed about the version in four places and left it
+  # out of the fifth, which is exactly the shape of shipping unsigned
+  # while looking no different.
+  extra_files:
+    - glob: ./dist/*.mcpb
+
+# One SBOM per archive, so a deployer can see what is inside a binary
+# they did not build.
+sboms:
+  - artifacts: archive
+
+# The checksum file is signed with a keyless Sigstore certificate tied to
+# the workflow's OIDC identity: no private key to hold or leak. cosign 3
+# replaced --output-signature and --output-certificate with --bundle,
+# which writes everything a verifier needs into one file.
+signs:
+  - cmd: cosign
+    signature: "${artifact}.bundle"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
+changelog:
+  use: github
+  filters:
+    exclude: ["^docs:", "^test:", "^chore:"]
+
+release:
+  # A tag is the decision. A draft nobody remembers to publish is how
+  # releases go missing.
+  draft: false
+  prerelease: auto
+  # Checksummed is not uploaded. Without this the bundle is named in
+  # checksums.txt and absent from the release, which is a hash of
+  # something nobody can download.
+  extra_files:
+    - glob: ./dist/*.mcpb
+  footer: |
+    Built by GoReleaser from the tag. Verify a download against
+    `checksums.txt`; every archive carries the binary, LICENSE and README.
+
+    `.mcpb` is the Claude Desktop bundle: open it and Claude Desktop
+    installs the server and asks for your OAuth client JSON, with no
+    config file to edit. It covers macOS, Windows and Linux on both
+    architectures. It does **not** log you in — install the binary as
+    well, run `google-sheets-mcp login -secret <your client JSON>` once,
+    and the bundle picks up the same credentials. Its SHA-256 is in the
+    same signed `checksums.txt`.

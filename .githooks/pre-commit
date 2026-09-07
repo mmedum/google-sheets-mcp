@@ -1,0 +1,8 @@
+#!/bin/sh
+# Point git here with `make hooks`.
+#
+# The checks themselves are Go, in scripts/gates: this file is git
+# plumbing and nothing more. The leak scan runs at commit time rather
+# than only in CI because a leak reaches the history the moment it is
+# committed, and one deleted from the tip is still in the log.
+exec go run ./scripts/gates precommit

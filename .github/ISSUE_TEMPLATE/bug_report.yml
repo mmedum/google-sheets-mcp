@@ -1,0 +1,68 @@
+name: Bug report
+description: Something the server did that it should not have
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Please do not paste anything from a real spreadsheet.** Not cell
+        values, not formulas, not sheet or spreadsheet titles, not a
+        spreadsheet id or a link, and not your account address. A
+        spreadsheet id is enough to identify the file, and a formula can
+        carry another spreadsheet's id inside a string.
+
+        **A tool result is spreadsheet content too.** `read_range` returns
+        your cells and `search_spreadsheets` returns titles, ids and the
+        owner's address. Those are answers to you, not things this server
+        masks — describe what came back rather than pasting it, or
+        reproduce it against a scratch spreadsheet you filled yourself.
+
+        `doctor`, `status` and a debug log **are** safe to paste, and that
+        is enforced rather than hoped: the log carries the method, the
+        tool, the outcome, the duration and a truncated spreadsheet id;
+        `doctor` and `status` mask the account address and the OAuth
+        client id; and a test fails the build if anything else reaches a
+        log line.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you asked for, and what the server did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: doctor output
+      description: "`google-sheets-mcp doctor`, with -spreadsheet if the problem is with one."
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Debug log
+      description: "Run the server with GSHEETS_LOG_LEVEL=debug and paste the lines around the failure."
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`google-sheets-mcp --version`"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it was installed
+      options: [release archive, go install, built from source, other]
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      description: Which client, and its version.
+  - type: textarea
+    id: flags
+    attributes:
+      label: Configuration
+      description: "Which GSHEETS_* settings are set. Names and values, but not GSHEETS_REFRESH_TOKEN."

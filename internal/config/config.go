@@ -1,0 +1,227 @@
+// Package config loads and validates runtime configuration.
+//
+// Environment variables (GSHEETS_*) are the source of truth because
+// every MCP client that matters passes only command, args and env to a
+// stdio server. Each setting also has a flag bound to the same name; a
+// flag given explicitly overrides the environment. Validation runs once
+// at start so a misconfigured server fails before it announces itself.
+package config
+
+import (
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"log/slog"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// EnvPrefix is prepended to every environment variable name.
+const EnvPrefix = "GSHEETS_"
+
+// LogLevel is a typed enum constrained at load time.
+type LogLevel string
+
+// Allowed LogLevel values.
+const (
+	LogDebug LogLevel = "debug"
+	LogInfo  LogLevel = "info"
+	LogWarn  LogLevel = "warn"
+	LogError LogLevel = "error"
+)
+
+// Slog returns the slog.Level for this level.
+func (l LogLevel) Slog() slog.Level {
+	switch l {
+	case LogDebug:
+		return slog.LevelDebug
+	case LogWarn:
+		return slog.LevelWarn
+	case LogError:
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
+// LogFormat is a typed enum constrained at load time.
+type LogFormat string
+
+// Allowed LogFormat values.
+const (
+	LogText LogFormat = "text"
+	LogJSON LogFormat = "json"
+)
+
+// Read budgets. The defaults keep a read well inside a client's result
+// limit; the maxima keep it inside the process.
+const (
+	DefaultMaxCells = 5000
+	MaxMaxCells     = 50000
+	DefaultMaxChars = 20000
+	MaxMaxChars     = 400000
+)
+
+// Config is the validated runtime configuration.
+type Config struct {
+	Profile           string
+	LogLevel          LogLevel
+	LogFormat         LogFormat
+	ReadOnly          bool
+	EnableDestructive bool
+	MaxCells          int
+	MaxChars          int
+	HTTPTimeout       time.Duration
+	WriteTimeout      time.Duration
+	ClientSecretPath  string
+}
+
+// Settings holds the raw string values before validation. Flags and the
+// environment both feed it; Build turns it into a Config.
+type Settings struct {
+	Profile           string
+	LogLevel          string
+	LogFormat         string
+	ReadOnly          string
+	EnableDestructive string
+	MaxCells          string
+	MaxChars          string
+	HTTPTimeout       string
+	WriteTimeout      string
+	ClientSecretPath  string
+}
+
+// Define registers one flag per setting on fs. Each flag defaults to the
+// matching GSHEETS_* variable, so a flag on the command line wins over
+// the environment and the environment wins over the built-in default.
+//
+// The staleness gate reads these def() calls to learn the setting names,
+// so the documentation cannot fall behind a setting added here.
+func Define(fs *flag.FlagSet, env func(string) string) *Settings {
+	s := &Settings{}
+	def := func(p *string, name, key, fallback, usage string) {
+		v := env(EnvPrefix + key)
+		if v == "" {
+			v = fallback
+		}
+		fs.StringVar(p, name, v, usage+" [env "+EnvPrefix+key+"]")
+	}
+	def(&s.Profile, "profile", "PROFILE", "default", "named configuration profile")
+	def(&s.LogLevel, "log-level", "LOG_LEVEL", string(LogInfo), "log level: debug, info, warn, error")
+	def(&s.LogFormat, "log-format", "LOG_FORMAT", string(LogText), "log format: text, json")
+	def(&s.ReadOnly, "read-only", "READ_ONLY", "false", "register only read tools and request read-only scopes")
+	def(&s.EnableDestructive, "enable-destructive", "ENABLE_DESTRUCTIVE", "false", "register the destructive tools; each still needs confirm on the call")
+	def(&s.MaxCells, "max-cells", "MAX_CELLS", strconv.Itoa(DefaultMaxCells), "default cell budget for a read")
+	def(&s.MaxChars, "max-chars", "MAX_CHARS", strconv.Itoa(DefaultMaxChars), "default character budget for a read")
+	def(&s.HTTPTimeout, "http-timeout", "HTTP_TIMEOUT", "60s", "per-attempt timeout for a read")
+	def(&s.WriteTimeout, "write-timeout", "WRITE_TIMEOUT", "180s", "timeout for a write, matching the 180s Sheets allows a request")
+	def(&s.ClientSecretPath, "client-secret", "CLIENT_SECRET", "", "path to the OAuth Desktop client JSON (overrides the stored profile setting)")
+	return s
+}
+
+var (
+	profilePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+	logLevels      = map[LogLevel]bool{LogDebug: true, LogInfo: true, LogWarn: true, LogError: true}
+	logFormats     = map[LogFormat]bool{LogText: true, LogJSON: true}
+)
+
+// ErrInvalid wraps every validation failure.
+var ErrInvalid = errors.New("config: invalid")
+
+// Build validates the settings and returns a Config.
+func (s *Settings) Build() (Config, error) {
+	var c Config
+	var errs []error
+
+	c.Profile = strings.ToLower(strings.TrimSpace(s.Profile))
+	if !profilePattern.MatchString(c.Profile) {
+		errs = append(errs, fmt.Errorf("%w: profile %q must match %s", ErrInvalid, s.Profile, profilePattern))
+	}
+
+	c.LogLevel = LogLevel(strings.ToLower(strings.TrimSpace(s.LogLevel)))
+	if !logLevels[c.LogLevel] {
+		errs = append(errs, fmt.Errorf("%w: log level %q (want debug, info, warn, error)", ErrInvalid, s.LogLevel))
+	}
+	c.LogFormat = LogFormat(strings.ToLower(strings.TrimSpace(s.LogFormat)))
+	if !logFormats[c.LogFormat] {
+		errs = append(errs, fmt.Errorf("%w: log format %q (want text, json)", ErrInvalid, s.LogFormat))
+	}
+
+	var err error
+	if c.ReadOnly, err = parseBool("read-only", s.ReadOnly); err != nil {
+		errs = append(errs, err)
+	}
+	if c.EnableDestructive, err = parseBool("enable-destructive", s.EnableDestructive); err != nil {
+		errs = append(errs, err)
+	}
+
+	if c.MaxCells, err = parseCount("max-cells", s.MaxCells, DefaultMaxCells, MaxMaxCells); err != nil {
+		errs = append(errs, err)
+	}
+	if c.MaxChars, err = parseCount("max-chars", s.MaxChars, DefaultMaxChars, MaxMaxChars); err != nil {
+		errs = append(errs, err)
+	}
+
+	if c.HTTPTimeout, err = parseTimeout("http-timeout", s.HTTPTimeout); err != nil {
+		errs = append(errs, err)
+	}
+	if c.WriteTimeout, err = parseTimeout("write-timeout", s.WriteTimeout); err != nil {
+		errs = append(errs, err)
+	}
+
+	c.ClientSecretPath = strings.TrimSpace(s.ClientSecretPath)
+
+	if len(errs) > 0 {
+		return Config{}, errors.Join(errs...)
+	}
+	return c, nil
+}
+
+func parseBool(name, v string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "0", "false", "no", "off":
+		return false, nil
+	case "1", "true", "yes", "on":
+		return true, nil
+	}
+	return false, fmt.Errorf("%w: %s %q (want true or false)", ErrInvalid, name, v)
+}
+
+func parseCount(name, v string, fallback, maxValue int) (int, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return fallback, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %s %q is not a number", ErrInvalid, name, v)
+	}
+	if n < 1 || n > maxValue {
+		return 0, fmt.Errorf("%w: %s %d must be between 1 and %d", ErrInvalid, name, n, maxValue)
+	}
+	return n, nil
+}
+
+func parseTimeout(name, v string) (time.Duration, error) {
+	d, err := time.ParseDuration(strings.TrimSpace(v))
+	if err != nil {
+		return 0, fmt.Errorf("%w: %s %q: %w", ErrInvalid, name, v, err)
+	}
+	if d <= 0 || d > 10*time.Minute {
+		return 0, fmt.Errorf("%w: %s %s must be between 1s and 10m", ErrInvalid, name, d)
+	}
+	return d, nil
+}
+
+// NewLogger builds the process logger. It writes to w, which must be
+// stderr on the server path: stdout carries only JSON-RPC frames.
+func NewLogger(c Config, w io.Writer) *slog.Logger {
+	opts := &slog.HandlerOptions{Level: c.LogLevel.Slog()}
+	if c.LogFormat == LogJSON {
+		return slog.New(slog.NewJSONHandler(w, opts))
+	}
+	return slog.New(slog.NewTextHandler(w, opts))
+}

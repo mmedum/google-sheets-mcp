@@ -1,0 +1,149 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Every `run` block goes to a shell, so the shell is pinned here rather
+# than per job. On Windows the default is PowerShell, which read
+# `-coverprofile=cov.out` as a file called `cov` and let a sibling's
+# suite carry on believing it had a profile. A job-level block would fix
+# the jobs that exist today and leave the next one bare, which is why the
+# gate checks for this one at the workflow level.
+#
+# Naming bash explicitly is not the same as the implicit default: it runs
+# `bash --noprofile --norc -eo pipefail`, so pipefail is on and profile
+# and rc files are out. Both are what we want; neither is an accident.
+defaults:
+  run:
+    shell: bash
+
+# A push supersedes the run before it on the same ref. Not on main,
+# though: cancelling a superseded branch run costs nothing, while
+# cancelling one on the default branch leaves a merged commit with no
+# verdict, and whoever bisects later walks a green history with a hole in
+# it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # Every gate runs on every platform in the matrix. A check conditioned
+  # on runner.os runs on one while the matrix advertises three, and that
+  # blind spot is what hid the PowerShell bug above.
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The schema diff builds the last tag, and the staleness gate
+          # asks what changed since it.
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go test -race -coverpkg=./internal/...,./cmd/... -coverprofile=cov.out -covermode=atomic ./...
+      - name: coverage floor
+        run: go run ./scripts/gates coverage cov.out 80
+      - name: error classes
+        run: go run ./scripts/gates classes
+      - name: leak scan
+        run: go run ./scripts/gates leaks
+      - name: transcript redaction
+        run: go run ./scripts/gates transcript
+      - name: workflow pins
+        run: go run ./scripts/gates pins
+      - name: bundle manifest
+        run: go run ./scripts/gates mcpb
+      - name: make check and CI agree
+        run: go run ./scripts/gates parity
+      - name: build the server
+        # The .exe matters on Windows and nowhere else. `go build -o
+        # <name>` writes exactly <name> on every platform, and a file
+        # without an executable extension cannot be run on Windows at
+        # all — so an extensionless build there produces a binary every
+        # gate can stat and none can exec.
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            go build -o google-sheets-mcp.exe ./cmd/google-sheets-mcp
+          else
+            go build -o google-sheets-mcp ./cmd/google-sheets-mcp
+          fi
+      - name: stdio smoke
+        run: go run ./scripts/gates smoke
+      - name: live driver coverage
+        run: go run ./scripts/gates live-cover
+      - name: schema diff
+        run: go run ./scripts/gates schema-diff
+      - name: staleness
+        run: go run ./scripts/gates staleness
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: schemas
+          path: schemas.json
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: out=$(gofmt -l .); [ -z "$out" ] || { echo "$out"; exit 1; }
+      - run: go vet ./...
+      # The live driver and the spikes sit behind a build tag, so
+      # `go build ./...`, `go test ./...` and a bare `go vet` compile
+      # none of them — `go list ./scripts/livesheet` returns one stub
+      # file. Without this, a change that breaks the driver stays green
+      # here and fails when somebody next runs it, which is the step that
+      # closes a phase.
+      - name: vet the tagged code
+        run: go vet -tags=live ./...
+      - name: go.mod is tidy
+        run: go mod tidy -diff
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.13.2
+          install-mode: goinstall
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+      - name: licences
+        run: go run github.com/google/go-licenses@v1.6.0 check ./... --allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC
+
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The action reads this from the environment rather than
+          # taking an input, which is why the pin check named a
+          # `gitleaks-version` input that has never existed and so
+          # covered nothing. The SHA already pins which scanner runs —
+          # the action hard-codes a version rather than fetching latest —
+          # so this is not a floating dependency. It is here to make the
+          # answer a line in the workflow instead of a constant inside
+          # somebody else's bundle.
+          GITLEAKS_VERSION: "8.30.1"
