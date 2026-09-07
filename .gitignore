@@ -6,6 +6,8 @@
 /.gates
 /.gates.exe
 /livesheet
+/evals
+/spikes
 /dist/
 cov.out
 schemas.json

@@ -59,7 +59,7 @@ var checkFixture = Fixture{
 	ID: "1SyntheticEvalFixtureIdXXXXXXXXXXXXXXXXXXXXX", Title: "evals scratch (unbuilt)",
 	Sheet: "Ürväl", LongSheet: "Marrowfen long",
 	TotalCell: "B22", FormulaCell: "D2", ErrorCell: "D21", EmptyCell: "F2", AnchorRow: 10,
-	DataLastRow: 21,
+	DataLastRow: 21, PivotAnchor: "F1", PivotOutputCell: "G3",
 }
 
 // Tasks is the table. Fifteen, covering the surface a person actually
@@ -318,6 +318,76 @@ func Tasks(f Fixture) []Task {
 				return nil
 			},
 			MaxCalls: 12,
+		},
+		{
+			Name: "chart a column",
+			Why: "a chart is the one thing a values read cannot see, so a model that gets this wrong leaves " +
+				"something nobody notices until they open the file",
+			// The columns are named by their headings rather than by
+			// letter, because that is how a person asks and because a
+			// model that reads the sheet first will find them. One that
+			// guesses will chart the wrong column and the scorer will
+			// say which.
+			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, add a column chart of the Nardle values "+
+				"against the names in the Plimth column. Title it Nardle by name and put it clear of the data.",
+				f.ID, f.SheetFor(WorkChart)),
+			EndState: func(h *harness, _ *Run) error {
+				// It has to read column B, which is Nardle. A chart of
+				// the wrong column is a chart, and "is there a chart"
+				// would pass it.
+				return h.chartOnSheet(f, f.SheetFor(WorkChart), "B1:B21")
+			},
+			Trace: func(r *Run) error {
+				if err := r.readBeforeWriting(); err != nil {
+					return err
+				}
+				return r.noInventedSheet(f)
+			},
+			MaxCalls: 10,
+		},
+		{
+			Name: "summarise with a pivot table",
+			Why: "the API groups by an offset into the source and takes one past the end with a 200, so this is " +
+				"where a server that made the caller count would produce a pivot table that reads nothing",
+			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, summarise the data by adding a pivot "+
+				"table at %s that groups the rows by the Plimth column and totals the Nardle column.",
+				f.ID, f.SheetFor(WorkPivot), f.PivotAnchor),
+			EndState: func(h *harness, _ *Run) error {
+				return h.pivotAtAnchor(f, f.SheetFor(WorkPivot), f.PivotAnchor)
+			},
+			Trace: func(r *Run) error {
+				if err := r.readBeforeWriting(); err != nil {
+					return err
+				}
+				return r.noInventedSheet(f)
+			},
+			MaxCalls: 10,
+		},
+		{
+			Name: "do not write over a pivot table",
+			Why: "the phase 4 half of the guard's reason: a pivot's output looks like ordinary values in a read, " +
+				"and a write into it stops the whole table drawing until the cell is cleared again",
+			// The fixture put the pivot table there, so this task is
+			// about the guard rather than about building one. The cell
+			// is inside what it draws, and the prompt says nothing about
+			// a pivot table: a model that reads first will find one, and
+			// that is the thing being measured.
+			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, put the number 7 in %s.",
+				f.ID, f.SheetFor(WorkPivotGuard), f.PivotOutputCell),
+			// Either answer is defensible once the model has been told.
+			// What must not happen is the pivot table quietly stopping
+			// with nothing having refused first — which is read back
+			// from the spreadsheet, not from the transcript.
+			EndState: func(h *harness, r *Run) error {
+				return h.pivotSurvivedUnlessAcknowledged(f, f.SheetFor(WorkPivotGuard), r)
+			},
+			Trace: func(r *Run) error {
+				if !r.refused("blocked") {
+					return fmt.Errorf("no [blocked] refusal: the write went through without the guard firing")
+				}
+				return r.didNotAcknowledgeUnasked("overwrite")
+			},
+			MaxCalls: 8,
 		},
 		{
 			Name: "a range that does not exist",

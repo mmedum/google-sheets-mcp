@@ -5,7 +5,24 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **The evals cover charts and pivot tables: 18 tasks, 18 passing.**
+  Three new ones — charting a column, summarising with a pivot table,
+  and a write aimed into a pivot table's output. The last is the phase 4
+  half of what the formula task does for phase 1: the cell is inside
+  something a values read makes look ordinary, and what is scored is
+  whether the guard refused before anything landed. The fixture seeds
+  the pivot table that task collides with, so what is measured is the
+  guard rather than whether a model can build one.
+
+### Fixed
+
+- `.gitignore` covered `livesheet` and `gates` and not `evals` or
+  `spikes`, which are the two binaries a `go build ./scripts/...` drops
+  in the repository root. The leak gate found one there, which is what
+  it is for — but the ignore rules are what stop it being committed by a
+  wildcard add, and two of the four were missing (§17a.17).
 
 ## [0.4.0] - 2026-09-07
 

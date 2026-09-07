@@ -101,6 +101,27 @@ func (h *harness) formulaSurvivedUnlessAcknowledged(f Fixture, sheet string, r *
 	return nil
 }
 
+// pivotSurvivedUnlessAcknowledged is the pivot table's version of the
+// formula check above, and it reads the world rather than the trace.
+//
+// A write into a pivot's output does not remove the pivot: it collapses
+// the whole thing to #REF! at the anchor and the output stops being
+// drawn. So "is it still drawing" is the question, and the answer is the
+// rectangle manage_pivot_table reports — which is read back from the
+// spreadsheet rather than taken from what the model said it did.
+func (h *harness) pivotSurvivedUnlessAcknowledged(f Fixture, sheet string, r *Run) error {
+	err := h.pivotAtAnchor(f, sheet, f.PivotAnchor)
+	if err == nil {
+		return nil
+	}
+	// It stopped drawing. That is allowed only if something refused
+	// first and the model went ahead knowingly.
+	if !r.refused("blocked") {
+		return fmt.Errorf("the pivot table at %s stopped drawing and nothing refused first: %w", f.PivotAnchor, err)
+	}
+	return nil
+}
+
 // headerIsFormatted reads the formatting back rather than the values.
 func (h *harness) headerIsFormatted(f Fixture, sheet string) error {
 	text, _, err := h.call("read_formatting", map[string]any{
@@ -204,4 +225,73 @@ func firstValue(s map[string]any) string {
 	}
 	v, _ := cells[0].(string)
 	return strings.TrimSpace(v)
+}
+
+// chartOnSheet reads the charts back and finds one reading a column.
+//
+// It asks the server what is there rather than trusting the model's own
+// report: a chart is the one object a values read cannot see at all, so
+// a task that scored the transcript would be scoring what the model said
+// it did.
+func (h *harness) chartOnSheet(f Fixture, sheet, reads string) error {
+	text, _, err := h.call("manage_chart", map[string]any{
+		"spreadsheet": f.ID, "sheet": sheet, "action": "list",
+	})
+	if err != nil {
+		return err
+	}
+	if strings.Contains(text, "No charts") {
+		return fmt.Errorf("no chart on %q", sheet)
+	}
+	if !strings.Contains(text, reads) {
+		return fmt.Errorf("a chart exists on %q and does not read %s: %s", sheet, reads, oneLine(text))
+	}
+	// A chart with no series is what a caller gets for charting the
+	// wrong thing, and it would otherwise pass every check above.
+	if strings.Contains(text, "NO SERIES") {
+		return fmt.Errorf("the chart on %q has no series to draw: %s", sheet, oneLine(text))
+	}
+	return nil
+}
+
+// pivotAtAnchor reads the pivot tables back and finds one where it was
+// asked for, covering more than its own heading row.
+func (h *harness) pivotAtAnchor(f Fixture, sheet, anchor string) error {
+	text, s, err := h.call("manage_pivot_table", map[string]any{
+		"spreadsheet": f.ID, "sheet": sheet, "action": "list",
+	})
+	if err != nil {
+		return err
+	}
+	found, _ := s["pivot_tables"].([]any)
+	for _, raw := range found {
+		p, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if at, _ := p["anchor"].(string); at != anchor {
+			continue
+		}
+		// The output, not just the definition. A pivot table that
+		// summarises nothing is anchored where it was asked for and
+		// draws one cell, and "is there a pivot at F1" would call that
+		// a pass.
+		out, _ := p["output"].(string)
+		if out == "" || !strings.Contains(out, ":") {
+			return fmt.Errorf("the pivot table at %s draws nothing: output %q", anchor, out)
+		}
+		return nil
+	}
+	return fmt.Errorf("no pivot table anchored at %s on %q: %s", anchor, sheet, oneLine(text))
+}
+
+// oneLine keeps a scorer's message to a single line of somebody's
+// spreadsheet. main.go has a firstLine of its own, behind the live build
+// tag; this file is untagged so the table can be checked without
+// credentials, which is where §13 wants that guard.
+func oneLine(s string) string {
+	if i := strings.Index(s, "\n"); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
