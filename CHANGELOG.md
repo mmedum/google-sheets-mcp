@@ -5,7 +5,19 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **The profile now records `account_email`, as the sibling servers do.**
+  It was the one field this server's profile lacked, found by comparing
+  the four config files rather than by anything failing. It is not taken
+  from the token: `tokeninfo` returns an address only for a token
+  carrying an email scope, and this server asks for neither `openid` nor
+  `userinfo.email` — adding a third scope to record a string would be the
+  wrong way to match a convention. It comes from the Drive call this
+  server already makes, and is stored whole and printed masked.
+- `login` with no `-secret` lands on `~/.config/google-sheets-mcp/client_secret.json`,
+  which is the siblings' convention and was already this server's default.
+  A path passed to `-secret` is still recorded and still wins.
 
 ## [0.3.0] - 2026-09-06
 

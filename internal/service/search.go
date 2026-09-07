@@ -113,9 +113,29 @@ func looksLikeRFC3339(v string) bool {
 // paste: enough for somebody to recognise their own account, and nothing
 // for a reader of the report. A person's name is not enough for that.
 func (s *Service) Describe(ctx context.Context) (string, error) {
+	addr, err := s.Account(ctx)
+	if err != nil {
+		return "", err
+	}
+	return redact.Email(addr), nil
+}
+
+// Account is the signed-in address as Drive reports it, unredacted.
+//
+// For the profile to record, and nothing else: Describe is the form for
+// anything printed, and the two share a call so a change to one cannot
+// leave the other reading a different account. §17.8 masks what is meant
+// to be pasted — a log, `doctor`, `status` — rather than what is stored
+// locally, which is why this exists and why it has exactly one caller.
+//
+// It comes from Drive rather than from the token because tokeninfo
+// returns an address only for a token carrying an email scope, and this
+// server asks for neither `openid` nor `userinfo.email` (§17.6). The
+// Drive call is one this server already makes.
+func (s *Service) Account(ctx context.Context) (string, error) {
 	u, err := s.api.About(ctx)
 	if err != nil {
 		return "", wrap(err)
 	}
-	return redact.Email(u.EmailAddress), nil
+	return u.EmailAddress, nil
 }

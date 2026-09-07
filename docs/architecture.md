@@ -1947,6 +1947,26 @@ cannot be verified again yet.
    needed fixing a second and a third time, by different routes, is why
    `gates parity` now holds the claim rather than a comment doing it.
 
+### 17c. Where the profile follows the sibling servers
+
+The four Google MCP servers share a shape for their on-disk state, and it
+is worth writing down because it was matched by comparing four config
+files field by field rather than by reading a specification.
+
+The OAuth client JSON lives at `~/.config/<server>/client_secret.json`,
+which is this server's default for the `default` profile. A path given to
+`login -secret` is recorded and wins, which is right for somebody keeping
+it elsewhere — and it meant this profile pointed at a download directory
+for a session, so `login` with no argument now lands on the convention.
+
+The profile records `account_email`, and this one did not. `tokeninfo`
+returns an address only for a token carrying an email scope; one sibling
+asks for `openid` and `userinfo.email` and two do not, and adding a third
+scope to record a string would be the wrong way to match a convention.
+It comes from the Drive `about.get` this server already makes. Stored
+whole and printed masked: §17.8 masks what is meant to be pasted — a log,
+`doctor`, `status` — and not what is kept locally.
+
 ## 17b. Deviations from the shared Go MCP server standard
 
 The shared standard the sibling Go MCP servers run on was adopted here on
