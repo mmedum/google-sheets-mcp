@@ -22,9 +22,13 @@ Getting there needed a detour: the refresh token vanished five times and
 config directory and the environment override and could not redirect the
 OS keyring, so a logout test removed the real one under the default
 profile. Fixed and watched both ways with a decoy. §18 carries it,
-including the confident wrong diagnosis that came first. §16's rule stands:
-green gates are not done, and phase 3 is not closed until the evals have
-run and their transcript has been read.
+including the confident wrong diagnosis that came first.
+
+v0.3.1 followed the same day, from comparing this server against its
+siblings rather than from anything failing: the README's setup step told
+people to add "the two scopes below" and listed neither, and the profile
+was missing the `account_email` the other three record. §17c has the
+conventions and the destructive line this server draws.
 
 Phase 2 is what that rule is made of. It took three runs of the driver to
 reach 143 steps with none failed, and the first failed five — three of
@@ -36,8 +40,10 @@ counting: `deleteDimension` takes the anchors on the band and says
 nothing, and spike K's own first run answered four of eleven questions
 against rows the anchor had already left.
 
-Phase 4 — charts, pivots and data sources — starts on an explicit go,
-after phase 3's live work is done.
+**Phase 4 — charts, pivots and data sources — starts on an explicit
+go.** Phase 3 is closed: its spikes, its live driver run and its evals
+have all run, and every transcript was read. §17a carries seventeen open
+cleanups, three of which want a live probe before they can be decided.
 
 Everything here was checked against the Sheets API v4 discovery document
 (`sheets.googleapis.com/$discovery/rest?version=v4`, revision 20260831),
