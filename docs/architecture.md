@@ -1791,6 +1791,19 @@ listed here as deliberately out.
 built and 15 are not.** Each of the fifteen is out for a reason, and the
 reasons fall into four groups.
 
+**A gate holds this now rather than this paragraph doing it.**
+`testdata/api-surface.json` is what Google publishes, written by `gates
+api-diff` from the discovery documents; `testdata/api-coverage.tsv` is
+one verdict per item, by hand; and `gates api-coverage` runs offline in
+`make check` and holds the two files and the code to each other. A
+published item with no verdict fails, a verdict for something no longer
+published fails, a request some builder constructs while the record
+calls it out fails, and a verdict of `used` that no code backs fails.
+So a capability Google adds stops the build rather than aging quietly
+into a paragraph that used to be true — which is what §17a.26 says about
+claims a comment holds. The groups below are why; the file is the
+record.
+
 *A filter view is a saved view of somebody else's screen* —
 `addFilterView`, `updateFilterView`, `deleteFilterView`,
 `duplicateFilterView`, `setBasicFilter`, `clearBasicFilter`. The card

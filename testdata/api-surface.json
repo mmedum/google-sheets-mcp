@@ -1,0 +1,932 @@
+{
+  "fetched": "2026-09-07",
+  "note": "Written by `gates api-diff`; nobody edits this. One verdict per item lives in testdata/api-coverage.tsv. A `method` is an API method; a `request` is a member of the Sheets batchUpdate union, which is where this API keeps most of its capability.",
+  "apis": [
+    {
+      "api": "sheets",
+      "version": "v4",
+      "revision": "20260831",
+      "url": "https://sheets.googleapis.com/$discovery/rest?version=v4"
+    },
+    {
+      "api": "drive",
+      "version": "v3",
+      "revision": "20260901",
+      "url": "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
+    }
+  ],
+  "items": [
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.about.get",
+      "verb": "GET",
+      "path": "about"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.accessproposals.get",
+      "verb": "GET",
+      "path": "files/{fileId}/accessproposals/{proposalId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.accessproposals.list",
+      "verb": "GET",
+      "path": "files/{fileId}/accessproposals"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.accessproposals.resolve",
+      "verb": "POST",
+      "path": "files/{fileId}/accessproposals/{proposalId}:resolve"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.approvals.approve",
+      "verb": "POST",
+      "path": "files/{fileId}/approvals/{approvalId}:approve"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.approvals.cancel",
+      "verb": "POST",
+      "path": "files/{fileId}/approvals/{approvalId}:cancel"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.approvals.comment",
+      "verb": "POST",
+      "path": "files/{fileId}/approvals/{approvalId}:comment"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.approvals.decline",
+      "verb": "POST",
+      "path": "files/{fileId}/approvals/{approvalId}:decline"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.approvals.get",
+      "verb": "GET",
+      "path": "files/{fileId}/approvals/{approvalId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.approvals.list",
+      "verb": "GET",
+      "path": "files/{fileId}/approvals"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.approvals.reassign",
+      "verb": "POST",
+      "path": "files/{fileId}/approvals/{approvalId}:reassign"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.approvals.start",
+      "verb": "POST",
+      "path": "files/{fileId}/approvals:start"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.apps.get",
+      "verb": "GET",
+      "path": "apps/{appId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.apps.list",
+      "verb": "GET",
+      "path": "apps"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.changes.getStartPageToken",
+      "verb": "GET",
+      "path": "changes/startPageToken"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.changes.list",
+      "verb": "GET",
+      "path": "changes"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.changes.watch",
+      "verb": "POST",
+      "path": "changes/watch"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.channels.stop",
+      "verb": "POST",
+      "path": "channels/stop"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.comments.create",
+      "verb": "POST",
+      "path": "files/{fileId}/comments"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.comments.delete",
+      "verb": "DELETE",
+      "path": "files/{fileId}/comments/{commentId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.comments.get",
+      "verb": "GET",
+      "path": "files/{fileId}/comments/{commentId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.comments.list",
+      "verb": "GET",
+      "path": "files/{fileId}/comments"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.comments.update",
+      "verb": "PATCH",
+      "path": "files/{fileId}/comments/{commentId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.drives.create",
+      "verb": "POST",
+      "path": "drives"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.drives.delete",
+      "verb": "DELETE",
+      "path": "drives/{driveId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.drives.get",
+      "verb": "GET",
+      "path": "drives/{driveId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.drives.hide",
+      "verb": "POST",
+      "path": "drives/{driveId}/hide"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.drives.list",
+      "verb": "GET",
+      "path": "drives"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.drives.unhide",
+      "verb": "POST",
+      "path": "drives/{driveId}/unhide"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.drives.update",
+      "verb": "PATCH",
+      "path": "drives/{driveId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.files.copy",
+      "verb": "POST",
+      "path": "files/{fileId}/copy"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.files.create",
+      "verb": "POST",
+      "path": "files"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.files.delete",
+      "verb": "DELETE",
+      "path": "files/{fileId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.files.download",
+      "verb": "POST",
+      "path": "files/{fileId}/download"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.files.emptyTrash",
+      "verb": "DELETE",
+      "path": "files/trash"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.files.export",
+      "verb": "GET",
+      "path": "files/{fileId}/export"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.files.generateCseToken",
+      "verb": "GET",
+      "path": "files/generateCseToken"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.files.generateIds",
+      "verb": "GET",
+      "path": "files/generateIds"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.files.get",
+      "verb": "GET",
+      "path": "files/{fileId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.files.list",
+      "verb": "GET",
+      "path": "files"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.files.listLabels",
+      "verb": "GET",
+      "path": "files/{fileId}/listLabels"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.files.modifyLabels",
+      "verb": "POST",
+      "path": "files/{fileId}/modifyLabels"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.files.update",
+      "verb": "PATCH",
+      "path": "files/{fileId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.files.watch",
+      "verb": "POST",
+      "path": "files/{fileId}/watch"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.operations.get",
+      "verb": "GET",
+      "path": "operations/{name}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.permissions.create",
+      "verb": "POST",
+      "path": "files/{fileId}/permissions"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.permissions.delete",
+      "verb": "DELETE",
+      "path": "files/{fileId}/permissions/{permissionId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.permissions.get",
+      "verb": "GET",
+      "path": "files/{fileId}/permissions/{permissionId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.permissions.list",
+      "verb": "GET",
+      "path": "files/{fileId}/permissions"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.permissions.update",
+      "verb": "PATCH",
+      "path": "files/{fileId}/permissions/{permissionId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.replies.create",
+      "verb": "POST",
+      "path": "files/{fileId}/comments/{commentId}/replies"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.replies.delete",
+      "verb": "DELETE",
+      "path": "files/{fileId}/comments/{commentId}/replies/{replyId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.replies.get",
+      "verb": "GET",
+      "path": "files/{fileId}/comments/{commentId}/replies/{replyId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.replies.list",
+      "verb": "GET",
+      "path": "files/{fileId}/comments/{commentId}/replies"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.replies.update",
+      "verb": "PATCH",
+      "path": "files/{fileId}/comments/{commentId}/replies/{replyId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.revisions.delete",
+      "verb": "DELETE",
+      "path": "files/{fileId}/revisions/{revisionId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.revisions.get",
+      "verb": "GET",
+      "path": "files/{fileId}/revisions/{revisionId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.revisions.list",
+      "verb": "GET",
+      "path": "files/{fileId}/revisions"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.revisions.update",
+      "verb": "PATCH",
+      "path": "files/{fileId}/revisions/{revisionId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.teamdrives.create",
+      "verb": "POST",
+      "path": "teamdrives"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.teamdrives.delete",
+      "verb": "DELETE",
+      "path": "teamdrives/{teamDriveId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.teamdrives.get",
+      "verb": "GET",
+      "path": "teamdrives/{teamDriveId}"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.teamdrives.list",
+      "verb": "GET",
+      "path": "teamdrives"
+    },
+    {
+      "api": "drive",
+      "kind": "method",
+      "name": "drive.teamdrives.update",
+      "verb": "PATCH",
+      "path": "teamdrives/{teamDriveId}"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "developerMetadata.get",
+      "verb": "GET",
+      "path": "v4/spreadsheets/{spreadsheetId}/developerMetadata/{metadataId}"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "developerMetadata.search",
+      "verb": "POST",
+      "path": "v4/spreadsheets/{spreadsheetId}/developerMetadata:search"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "sheets.copyTo",
+      "verb": "POST",
+      "path": "v4/spreadsheets/{spreadsheetId}/sheets/{sheetId}:copyTo"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "spreadsheets.batchUpdate",
+      "verb": "POST",
+      "path": "v4/spreadsheets/{spreadsheetId}:batchUpdate"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "spreadsheets.create",
+      "verb": "POST",
+      "path": "v4/spreadsheets"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "spreadsheets.get",
+      "verb": "GET",
+      "path": "v4/spreadsheets/{spreadsheetId}"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "spreadsheets.getByDataFilter",
+      "verb": "POST",
+      "path": "v4/spreadsheets/{spreadsheetId}:getByDataFilter"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "values.append",
+      "verb": "POST",
+      "path": "v4/spreadsheets/{spreadsheetId}/values/{range}:append"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "values.batchClear",
+      "verb": "POST",
+      "path": "v4/spreadsheets/{spreadsheetId}/values:batchClear"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "values.batchClearByDataFilter",
+      "verb": "POST",
+      "path": "v4/spreadsheets/{spreadsheetId}/values:batchClearByDataFilter"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "values.batchGet",
+      "verb": "GET",
+      "path": "v4/spreadsheets/{spreadsheetId}/values:batchGet"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "values.batchGetByDataFilter",
+      "verb": "POST",
+      "path": "v4/spreadsheets/{spreadsheetId}/values:batchGetByDataFilter"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "values.batchUpdate",
+      "verb": "POST",
+      "path": "v4/spreadsheets/{spreadsheetId}/values:batchUpdate"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "values.batchUpdateByDataFilter",
+      "verb": "POST",
+      "path": "v4/spreadsheets/{spreadsheetId}/values:batchUpdateByDataFilter"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "values.clear",
+      "verb": "POST",
+      "path": "v4/spreadsheets/{spreadsheetId}/values/{range}:clear"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "values.get",
+      "verb": "GET",
+      "path": "v4/spreadsheets/{spreadsheetId}/values/{range}"
+    },
+    {
+      "api": "sheets",
+      "kind": "method",
+      "name": "values.update",
+      "verb": "PUT",
+      "path": "v4/spreadsheets/{spreadsheetId}/values/{range}"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "addBanding"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "addChart"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "addConditionalFormatRule"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "addDataSource"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "addDimensionGroup"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "addFilterView"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "addNamedRange"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "addProtectedRange"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "addSheet"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "addSlicer"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "addTable"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "appendCells"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "appendDimension"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "autoFill"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "autoResizeDimensions"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "cancelDataSourceRefresh"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "clearBasicFilter"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "copyPaste"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "createDeveloperMetadata"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "cutPaste"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "deleteBanding"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "deleteConditionalFormatRule"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "deleteDataSource"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "deleteDeveloperMetadata"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "deleteDimension"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "deleteDimensionGroup"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "deleteDuplicates"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "deleteEmbeddedObject"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "deleteFilterView"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "deleteNamedRange"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "deleteProtectedRange"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "deleteRange"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "deleteSheet"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "deleteTable"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "duplicateFilterView"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "duplicateSheet"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "findReplace"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "insertDimension"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "insertRange"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "mergeCells"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "moveDimension"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "pasteData"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "randomizeRange"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "refreshDataSource"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "repeatCell"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "setBasicFilter"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "setDataValidation"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "sortRange"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "textToColumns"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "trimWhitespace"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "unmergeCells"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateBanding"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateBorders"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateCells"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateChartSpec"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateConditionalFormatRule"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateDataSource"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateDeveloperMetadata"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateDimensionGroup"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateDimensionProperties"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateEmbeddedObjectBorder"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateEmbeddedObjectPosition"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateFilterView"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateNamedRange"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateProtectedRange"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateSheetProperties"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateSlicerSpec"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateSpreadsheetProperties"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateTable"
+    }
+  ]
+}

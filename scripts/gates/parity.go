@@ -70,6 +70,9 @@ var precommitOnly = map[string]string{
 	"leaks":     "run by CI and by `make check` under its own target; the history sweep is manual (§17a)",
 	"mcpb-pack": "runs at release time, as the universal binary's post hook, where the binaries it packs " +
 		"exist; `mcpb` is the half that runs on every commit, against the names it will pack",
+	"api-diff": "reaches Google's discovery documents, and a gate that fails when Google is slow is one " +
+		"people learn to re-run until it passes; `api-coverage` is the half that runs on every commit, " +
+		"against the snapshot this writes",
 }
 
 func parityGate() error {

@@ -108,6 +108,20 @@ and this project follows [semantic versioning](https://semver.org).
   every offset one too high *and* disabled the bounds check that exists
   because the API accepts an out-of-range offset with a 200.
 
+- **An API coverage gate, so §16's completeness claim is checked rather
+  than written down.** Every method the Sheets and Drive discovery
+  documents publish, and every one of the 69 `batchUpdate` request
+  kinds, is now either used — naming the code that implements it — or
+  written off with a reason, in `testdata/api-coverage.tsv`. `gates
+  api-coverage` runs offline in `make check` and holds that file, the
+  generated `testdata/api-surface.json` and the code to each other, so a
+  capability Google adds fails the build instead of aging quietly into a
+  paragraph that used to be true. `gates api-diff` refetches and reports
+  NEW, GONE and CHANGED with verb and path, and stays manual: a gate
+  that fails when Google is slow is one people learn to re-run until it
+  passes. Prompted by google-chat-mcp, which built one first and passed
+  on the two mistakes it had made.
+
 ### Changed
 
 - **`get_spreadsheet` names the charts on each sheet**, and counts
