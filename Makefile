@@ -1,7 +1,9 @@
 # Common dev tasks. CI runs the same gates from .github/workflows/ci.yml.
 
 GO        ?= go
-BIN       ?= ./google-sheets-mcp
+# .exe on Windows, where a file without one cannot be executed at all.
+EXE       := $(if $(filter Windows_NT,$(OS)),.exe,)
+BIN       ?= ./google-sheets-mcp$(EXE)
 VERSION   ?= dev
 PKG        = github.com/mmedum/google-sheets-mcp
 LDFLAGS    = -s -w -X $(PKG)/internal/version.Version=$(VERSION)

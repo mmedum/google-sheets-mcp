@@ -70,7 +70,17 @@ jobs:
       - name: make check and CI agree
         run: go run ./scripts/gates parity
       - name: build the server
-        run: go build -o google-sheets-mcp ./cmd/google-sheets-mcp
+        # The .exe matters on Windows and nowhere else. `go build -o
+        # <name>` writes exactly <name> on every platform, and a file
+        # without an executable extension cannot be run on Windows at
+        # all — so an extensionless build there produces a binary every
+        # gate can stat and none can exec.
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            go build -o google-sheets-mcp.exe ./cmd/google-sheets-mcp
+          else
+            go build -o google-sheets-mcp ./cmd/google-sheets-mcp
+          fi
       - name: stdio smoke
         run: go run ./scripts/gates smoke
       - name: live driver coverage

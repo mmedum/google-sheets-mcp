@@ -9,6 +9,19 @@ Nothing yet.
 
 ## [0.3.0] - 2026-09-06
 
+### Fixed
+
+- **Windows could build the server and never run it.** `go build -o
+  <name>` writes exactly `<name>` on every platform, and a file with no
+  extension in `PATHEXT` cannot be executed on Windows at all — so the
+  build produced a binary every gate could stat and none could exec. The
+  first CI run on `windows-latest` said so in as many words. The build
+  produces a `.exe` there now. The comment that reasoned its way to the
+  wrong answer is worth more than the fix: it was right that `-o` writes
+  the name given, and that had nothing to do with whether the result
+  runs. The test beside it asserted the binary could be *stat'd*, which
+  is the exact state that failed.
+
 ### Added
 
 

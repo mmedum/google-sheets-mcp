@@ -15,24 +15,28 @@ const Binary = "google-sheets-mcp"
 
 // defaultBinary is where `make build` and CI put the server.
 //
-// No .exe, on any platform: `go build -o <name>` writes exactly that
-// name, and both the Makefile and the workflow pass a name. Guessing an
-// extension here would have failed every gate on the Windows leg of the
-// matrix — three of them take no argument in CI — which is the shape of
-// bug a three-platform matrix exists to catch and would have caught only
-// on the first run.
+// On Windows that is the .exe, and this used to say the opposite. The
+// reasoning was that `go build -o <name>` writes exactly <name> on every
+// platform, which is true — and irrelevant, because Windows cannot
+// execute a file with no extension in PATHEXT. So an extensionless build
+// there produces a binary every gate can stat and none can run, and the
+// first Windows CI run said exactly that: `exec: ".\google-sheets-mcp":
+// executable file not found in %PATH%`.
 //
-// A person who built without -o on Windows has the .exe, so that is
-// checked second rather than first.
+// The comment that got it wrong was a reasoned one, which is worse than
+// no comment: it explained the choice convincingly enough that a reader
+// checking this would have stopped. The build produces a .exe on Windows
+// now, and the extensionless name is checked second, for a tree built
+// before this change.
 func defaultBinary() string {
 	plain := "." + string(filepath.Separator) + Binary
 	if runtime.GOOS != "windows" {
 		return plain
 	}
-	if _, err := os.Stat(plain); err == nil {
-		return plain
+	if _, err := os.Stat(plain + ".exe"); err == nil {
+		return plain + ".exe"
 	}
-	return plain + ".exe"
+	return plain
 }
 
 // repoRoot walks up from the working directory to the module root, so a
