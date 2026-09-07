@@ -5,6 +5,22 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.0.0] - 2026-09-07
+
+**A stable tool surface.** Twenty-one tools, their arguments and the
+twelve error classes are what this server promises from here: a breaking
+change to any of them needs a major version, and the schema diff gate is
+what makes that a promise rather than an intention — it has compared
+every commit against the last tag since phase 0.
+
+What 1.0.0 does not claim is worth saying in the same breath. This
+server has been driven by one MCP client. §16 waited on a further eval
+round with a second one, and that condition was set aside rather than
+met; Claude Desktop through the `.mcpb` bundle is the obvious next one,
+and every eval number in this repository comes from the CLI harness.
+
 ### Added
 
 - **The evals cover charts and pivot tables: 18 tasks, 18 passing.**
@@ -755,7 +771,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.4.0...v1.0.0
 [0.4.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/mmedum/google-sheets-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.2.0...v0.3.0

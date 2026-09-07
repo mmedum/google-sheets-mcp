@@ -20,11 +20,13 @@ It works **inside** a spreadsheet. Finding, sharing, moving and trashing
 files, and their comment threads and revisions, belong to a server built
 on the Drive API. A cell **note** is a Sheets field and is here.
 
-> **Status: v0.4.0, phase 4 of five.** Reading, writing, formatting, the
-> objects attached to a range, `gsheets://` resources, durable anchors,
-> charts, pivot tables and Connected Sheets data sources all work. What
-> is left before v1.0.0 is use in anger and a second eval round with
-> another client. The phase plan is §16 of
+> **Status: v1.0.0.** Reading, writing, formatting, the objects attached
+> to a range, `gsheets://` resources, durable anchors, charts, pivot
+> tables and Connected Sheets data sources all work. The twenty-one
+> tools and their arguments are stable: a breaking change needs a major
+> version, and a gate compares every commit against the last tag.
+> It has been driven by one MCP client, which is what to know before
+> trusting it in a second. The history is §16 of
 > [`docs/architecture.md`](docs/architecture.md).
 
 ## Resources
