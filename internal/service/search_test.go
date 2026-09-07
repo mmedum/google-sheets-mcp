@@ -131,3 +131,41 @@ func TestDescribeNamesTheAccount(t *testing.T) {
 		t.Errorf("Describe = %q", who)
 	}
 }
+
+// The profile records the signed-in address and `doctor` masks it, and
+// both come from one call so they cannot end up describing different
+// accounts.
+//
+// Every sibling server records one; this did not until the convention
+// was compared field by field. It is not taken from the token, because
+// tokeninfo returns an address only for a token carrying an email scope
+// and this server asks for neither.
+func TestAccountIsStoredWholeAndPrintedMasked(t *testing.T) {
+	_, svc := standard(t)
+	ctx := context.Background()
+
+	stored, err := svc.Account(ctx)
+	if err != nil {
+		t.Fatalf("Account: %v", err)
+	}
+	if !strings.Contains(stored, "@") {
+		t.Fatalf("Account() = %q, want the address as Drive reports it", stored)
+	}
+
+	shown, err := svc.Describe(ctx)
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if shown == stored {
+		t.Errorf("Describe() = %q, the same as what is stored; doctor's output is meant to be pasteable", shown)
+	}
+	// Masked rather than replaced: somebody has to recognise their own
+	// account in it.
+	if !strings.Contains(shown, "@") {
+		t.Errorf("Describe() = %q, which nobody could recognise", shown)
+	}
+	local, domain, _ := strings.Cut(stored, "@")
+	if strings.Contains(shown, local) || strings.Contains(shown, domain) {
+		t.Errorf("Describe() = %q leaks a whole half of %q", shown, stored)
+	}
+}

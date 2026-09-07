@@ -175,6 +175,28 @@ func (l *lazyTokenSource) Token() (*oauth2.Token, error) {
 	return l.inner.Token()
 }
 
+// recordAccount fills in the address the profile carries.
+//
+// Every sibling server records one and this did not, which is the
+// difference a `status` output shows and nobody can act on. It is not
+// from the token: `tokeninfo` returns an address only when the token
+// carries an email scope, and this server asks for neither `openid` nor
+// `userinfo.email` (§17.6) — one of the siblings does, and adding a
+// third scope to record a string would be the wrong way to match a
+// convention. It comes from the Drive call this server already makes.
+//
+// Best effort. The token is saved by the time this runs, so a failure
+// here costs a field in a config file and never a login.
+func recordAccount(ctx context.Context, cfg config.Config, out io.Writer, uc *userconfig.Config) {
+	svc, _, err := build(ctx, cfg, config.NewLogger(cfg, out))
+	if err != nil {
+		return
+	}
+	if addr, err := svc.Account(ctx); err == nil {
+		uc.AccountEmail = addr
+	}
+}
+
 func tokenStore(cfg config.Config, log *slog.Logger) (*credentials.Store, error) {
 	path, err := userconfig.TokenFilePath(cfg.Profile)
 	if err != nil {
@@ -294,6 +316,7 @@ func login(ctx context.Context, cfg config.Config, secretFlag string, out io.Wri
 	uc.ClientSecretPath = secretPath
 	uc.TokenStore = string(source)
 	uc.Scopes = scopes
+	recordAccount(ctx, cfg, out, &uc)
 	if info, err := auth.Inspect(ctx, boundedClient(cfg), tok.AccessToken); err == nil {
 		uc.AccountEmail = info.Email
 		uc.Scopes = info.Scopes

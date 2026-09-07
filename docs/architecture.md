@@ -1,6 +1,6 @@
 # Architecture — google-sheets-mcp
 
-**Status: v0.3.0 (2026-09-06).** Reading, writing, formatting, the objects attached to a range,
+**Status: v0.3.1 (2026-09-07).** Reading, writing, formatting, the objects attached to a range,
 `gsheets://` resources and durable anchors all work, and `make check` is
 green. Spike K ran against a real account and §18 carries what it found.
 
@@ -1946,6 +1946,49 @@ cannot be verified again yet.
    at the versions CI uses, through `go run <module>@<version>`. That it
    needed fixing a second and a third time, by different routes, is why
    `gates parity` now holds the claim rather than a comment doing it.
+
+### 17c. Where the profile and the guards follow the sibling servers
+
+**The destructive model is two layers, and three of the four servers
+arrived at it independently.** A tool that removes something a person
+cannot get back by reading is not registered at all without
+`GSHEETS_ENABLE_DESTRUCTIVE`, and still refuses the call without
+`confirm`. Here that is exactly three: `clear_values`, `delete_sheet` and
+`delete_dimensions`. Two sibling servers gate two and five tools the same
+way on the same criterion; the fourth gates none, which is how an outside
+setup report noticed the family was inconsistent at all — from installing
+three of them in one sitting, which is the only vantage point that shows
+it.
+
+Everything else that destroys is guarded per call rather than gated,
+because it removes something the caller can read first and is named in
+the refusal: a merge's discarded values, a cleared format, a replaced
+note, a paste's landing rectangle, a table delete's conditional format
+rules, the anchors on a deleted band. A named range and an anchor are
+labels rather than data — the range each covers is on the card before it
+goes — so removing one is a plain write. That is the line, and it is
+written down here because it was drawn once and would otherwise be
+redrawn differently by whoever adds the next tool.
+
+
+
+The four Google MCP servers share a shape for their on-disk state, and it
+is worth writing down because it was matched by comparing four config
+files field by field rather than by reading a specification.
+
+The OAuth client JSON lives at `~/.config/<server>/client_secret.json`,
+which is this server's default for the `default` profile. A path given to
+`login -secret` is recorded and wins, which is right for somebody keeping
+it elsewhere — and it meant this profile pointed at a download directory
+for a session, so `login` with no argument now lands on the convention.
+
+The profile records `account_email`, and this one did not. `tokeninfo`
+returns an address only for a token carrying an email scope; one sibling
+asks for `openid` and `userinfo.email` and two do not, and adding a third
+scope to record a string would be the wrong way to match a convention.
+It comes from the Drive `about.get` this server already makes. Stored
+whole and printed masked: §17.8 masks what is meant to be pasted — a log,
+`doctor`, `status` — and not what is kept locally.
 
 ## 17b. Deviations from the shared Go MCP server standard
 

@@ -20,7 +20,7 @@ It works **inside** a spreadsheet. Finding, sharing, moving and trashing
 files, and their comment threads and revisions, belong to a server built
 on the Drive API. A cell **note** is a Sheets field and is here.
 
-> **Status: v0.3.0, phase 3 of five.** Reading, writing,
+> **Status: v0.3.1, phase 3 of five.** Reading, writing,
 > formatting, the objects attached to a range, `gsheets://` resources and
 > durable anchors all work. Charts, pivot tables and Connected Sheets data
 > sources are phase 4. The phase plan is §16 of
@@ -96,7 +96,21 @@ reasons. In short, and in the order `doctor` checks things in:
 3. Configure the consent screen: **Internal** for a Workspace account,
    **External + Testing** for a consumer one — which means re-running
    `login` weekly, because Google expires a testing app's refresh token.
-4. Add the two scopes below.
+4. Add these two scopes, which are exactly what `login` requests:
+
+   | Scope | What it is for |
+   |---|---|
+   | `https://www.googleapis.com/auth/spreadsheets` | Everything this server does inside a spreadsheet |
+   | `https://www.googleapis.com/auth/drive.readonly` | `search_spreadsheets`, and nothing else |
+
+   `drive.readonly` rather than `drive` or `drive.file` on purpose: this
+   server finds spreadsheets and never creates, moves or trashes a file,
+   and the narrower scope is what makes that a guarantee rather than a
+   promise. It is also why the live driver cannot clean up after itself.
+
+   With `GSHEETS_READ_ONLY=true`, `login` asks for
+   `https://www.googleapis.com/auth/spreadsheets.readonly` instead of the
+   first, and the write tools are not registered at all.
 5. Create an **OAuth 2.0 Client ID** of type **Desktop app** and download
    the JSON.
 

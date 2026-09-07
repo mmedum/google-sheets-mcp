@@ -7,6 +7,31 @@ and this project follows [semantic versioning](https://semver.org).
 
 Nothing yet.
 
+## [0.3.1] - 2026-09-07
+
+### Fixed
+
+- **The profile now records `account_email`, as the sibling servers do.**
+  It was the one field this server's profile lacked, found by comparing
+  the four config files rather than by anything failing. It is not taken
+  from the token: `tokeninfo` returns an address only for a token
+  carrying an email scope, and this server asks for neither `openid` nor
+  `userinfo.email` — adding a third scope to record a string would be the
+  wrong way to match a convention. It comes from the Drive call this
+  server already makes, and is stored whole and printed masked.
+- **The README told people to add "the two scopes below" and never listed
+  them.** No scope URL appeared anywhere in the file, so a reader
+  following setup step 4 had nothing to add — a dangling reference that
+  every gate passed, because no gate compared the setup instructions with
+  the code. Both are listed now, in full, with what each is for and what
+  read-only mode asks for instead; and the staleness gate fails when the
+  README omits a scope `login` requests. Prompted by an outside setup
+  report against a sibling server, which found the same class of gap
+  there.
+- `login` with no `-secret` lands on `~/.config/google-sheets-mcp/client_secret.json`,
+  which is the siblings' convention and was already this server's default.
+  A path passed to `-secret` is still recorded and still wins.
+
 ## [0.3.0] - 2026-09-06
 
 ### Fixed
@@ -573,7 +598,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/mmedum/google-sheets-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.0.1...v0.1.0
