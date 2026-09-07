@@ -1,6 +1,6 @@
 # Architecture — google-sheets-mcp
 
-**Status: v0.3.0 (2026-09-06).** Reading, writing, formatting, the objects attached to a range,
+**Status: v0.3.1 (2026-09-07).** Reading, writing, formatting, the objects attached to a range,
 `gsheets://` resources and durable anchors all work, and `make check` is
 green. Spike K ran against a real account and §18 carries what it found.
 
