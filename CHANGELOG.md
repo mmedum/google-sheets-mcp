@@ -15,6 +15,15 @@ and this project follows [semantic versioning](https://semver.org).
   `userinfo.email` — adding a third scope to record a string would be the
   wrong way to match a convention. It comes from the Drive call this
   server already makes, and is stored whole and printed masked.
+- **The README told people to add "the two scopes below" and never listed
+  them.** No scope URL appeared anywhere in the file, so a reader
+  following setup step 4 had nothing to add — a dangling reference that
+  every gate passed, because no gate compared the setup instructions with
+  the code. Both are listed now, in full, with what each is for and what
+  read-only mode asks for instead; and the staleness gate fails when the
+  README omits a scope `login` requests. Prompted by an outside setup
+  report against a sibling server, which found the same class of gap
+  there.
 - `login` with no `-secret` lands on `~/.config/google-sheets-mcp/client_secret.json`,
   which is the siblings' convention and was already this server's default.
   A path passed to `-secret` is still recorded and still wins.

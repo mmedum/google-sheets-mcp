@@ -1947,7 +1947,30 @@ cannot be verified again yet.
    needed fixing a second and a third time, by different routes, is why
    `gates parity` now holds the claim rather than a comment doing it.
 
-### 17c. Where the profile follows the sibling servers
+### 17c. Where the profile and the guards follow the sibling servers
+
+**The destructive model is two layers, and three of the four servers
+arrived at it independently.** A tool that removes something a person
+cannot get back by reading is not registered at all without
+`GSHEETS_ENABLE_DESTRUCTIVE`, and still refuses the call without
+`confirm`. Here that is exactly three: `clear_values`, `delete_sheet` and
+`delete_dimensions`. Two sibling servers gate two and five tools the same
+way on the same criterion; the fourth gates none, which is how an outside
+setup report noticed the family was inconsistent at all — from installing
+three of them in one sitting, which is the only vantage point that shows
+it.
+
+Everything else that destroys is guarded per call rather than gated,
+because it removes something the caller can read first and is named in
+the refusal: a merge's discarded values, a cleared format, a replaced
+note, a paste's landing rectangle, a table delete's conditional format
+rules, the anchors on a deleted band. A named range and an anchor are
+labels rather than data — the range each covers is on the card before it
+goes — so removing one is a plain write. That is the line, and it is
+written down here because it was drawn once and would otherwise be
+redrawn differently by whoever adds the next tool.
+
+
 
 The four Google MCP servers share a shape for their on-disk state, and it
 is worth writing down because it was matched by comparing four config

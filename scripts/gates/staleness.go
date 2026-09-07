@@ -9,6 +9,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/mmedum/google-sheets-mcp/internal/auth"
 )
 
 var (
@@ -33,6 +35,43 @@ type schemaDump struct {
 			Properties map[string]json.RawMessage `json:"properties"`
 		} `json:"inputSchema"`
 	} `json:"tools"`
+}
+
+// scopesAreDocumented checks the README lists every scope `login` asks
+// for, in full.
+//
+// Setup step 4 said "add the two scopes below" and no scope appeared
+// anywhere in the file — a dangling reference, so a reader following the
+// instructions had nothing to add. It survived every gate because no
+// gate compared the setup instructions with the code, and it was found
+// by an outside setup report against a sibling server rather than by
+// anything here.
+//
+// The full URL, because that is what somebody pastes into a consent
+// screen. A bare "spreadsheets" in a table column is not the string the
+// Cloud console takes.
+func scopesAreDocumented() []string {
+	body, err := os.ReadFile("README.md")
+	if err != nil {
+		return []string{"README.md cannot be read to check its scopes: " + err.Error()}
+	}
+	want := map[string]bool{}
+	for _, readOnly := range []bool{false, true} {
+		for _, scope := range auth.Scopes(readOnly) {
+			want[scope] = true
+		}
+	}
+	if len(want) < 2 {
+		return []string{"auth.Scopes returned fewer than two distinct scopes; this check is reading nothing"}
+	}
+	var problems []string
+	for scope := range want {
+		if !strings.Contains(string(body), scope) {
+			problems = append(problems, "README.md does not list the scope "+scope+", which `login` requests")
+		}
+	}
+	sort.Strings(problems)
+	return problems
 }
 
 // staleness fails when the documentation drifts from the code.
@@ -111,6 +150,7 @@ func staleness(bin string) error {
 	if err := changelogDocumentsTheChange(); err != nil {
 		problems = append(problems, err.Error())
 	}
+	problems = append(problems, scopesAreDocumented()...)
 	problems = append(problems, pathsExist()...)
 	problems = append(problems, packageMapIsComplete()...)
 	problems = append(problems, statusLineIsTrue()...)
