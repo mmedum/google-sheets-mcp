@@ -124,6 +124,15 @@ func (c Cells) String() string {
 // It is the same value behind a refusal and behind a dry run: one
 // describes what stopped the write, the other what would have.
 type Report struct {
+	// Pivots are the cells that anchor a pivot table. A write over one
+	// replaces the pivot outright and takes its whole output, and the
+	// API's reply says nothing (spike M) — so it is worth naming rather
+	// than counting among the non-empty cells it is also in.
+	//
+	// Only the anchor. A pivot's output cells are ordinary computed
+	// values on the wire, and finding the anchor from one of them would
+	// mean reading up and left of every guarded write. §17a records that.
+	Pivots Cells
 	// NonEmpty and Formulas are what a value write destroys. Formulas
 	// are counted in NonEmpty too: a formula is a non-empty cell.
 	NonEmpty Cells
@@ -246,6 +255,13 @@ func (r Report) Blockers(ack Ack) []Blocker {
 			Allow: "overwrite_formulas (and overwrite)",
 		})
 	}
+	if r.Pivots.Any() && !ack.Overwrite {
+		out = append(out, Blocker{
+			Why: fmt.Sprintf("%s %s a pivot table, and a write there replaces it and clears everything it draws",
+				r.Pivots, r.Pivots.verb("anchors", "anchor")),
+			Allow: "overwrite",
+		})
+	}
 	if r.NonEmpty.Any() && !ack.Overwrite {
 		out = append(out, Blocker{
 			Why:   fmt.Sprintf("%s %s not empty", r.NonEmpty, r.NonEmpty.verb("is", "are")),
@@ -315,6 +331,9 @@ func Check(g *grid.Grid, values [][]any, formulasEvaluated bool) Report {
 				r.NonEmpty.AddCell(g, i, j)
 			} else if !cell.Empty() {
 				r.NonEmpty.AddCell(g, i, j)
+			}
+			if cell.Pivot {
+				r.Pivots.AddCell(g, i, j)
 			}
 			if cell.Note != "" {
 				r.Notes.AddCell(g, i, j)
@@ -510,6 +529,7 @@ func CheckClearFormat(r *Report, g *grid.Grid) {
 // would have been dropped there in silence.
 func (r *Report) Merge(o Report) {
 	r.NonEmpty.Merge(o.NonEmpty)
+	r.Pivots.Merge(o.Pivots)
 	r.Formulas.Merge(o.Formulas)
 	r.Notes.Merge(o.Notes)
 	r.Validation.Merge(o.Validation)

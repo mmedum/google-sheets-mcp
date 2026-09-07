@@ -35,6 +35,9 @@ func (d *driver) writeAll() {
 	// delete rows to prove an anchor survives all three, which would
 	// move every band the steps above assert about.
 	d.anchorAll()
+	// Phase 4, also on a sheet of its own: it deletes a charted column
+	// to watch what the API does not say about it.
+	d.chartAll()
 	sec("clear_values")
 	d.run(d.clearSteps()...)
 	sec("delete_sheet")

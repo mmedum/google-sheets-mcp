@@ -16,6 +16,8 @@
 //	go run ./scripts/gates smoke ./google-sheets-mcp
 //	go run ./scripts/gates staleness ./google-sheets-mcp
 //	go run ./scripts/gates schema-diff ./google-sheets-mcp
+//	go run ./scripts/gates api-coverage
+//	go run ./scripts/gates api-diff
 //	go run ./scripts/gates parity
 //	go run ./scripts/gates precommit
 package main
@@ -30,7 +32,7 @@ func main() {
 	if len(os.Args) < 2 {
 		fail("usage: gates coverage PROFILE MIN | classes | leaks [history] | transcript | " +
 			"live-cover BIN | pins | smoke BIN | staleness BIN | schema-diff BIN | mcpb | " +
-			"mcpb-pack VERSION [DIST] | parity | precommit")
+			"mcpb-pack VERSION [DIST] | api-coverage | api-diff | parity | precommit")
 	}
 	root, err := repoRoot()
 	if err != nil {
@@ -78,6 +80,12 @@ func main() {
 			dist = os.Args[3]
 		}
 		check(mcpbPack(os.Stdout, os.Args[2], dist), "bundle packed")
+	case "api-coverage":
+		check(apiCoverageGate(), "API coverage")
+	case "api-diff":
+		// Manual: it reaches the network. What CI holds is the snapshot
+		// this writes, not the fetch itself.
+		check(apiDiff(os.Stdout), "API diff")
 	case "parity":
 		check(parityGate(), "make check and CI agree")
 	case "precommit":

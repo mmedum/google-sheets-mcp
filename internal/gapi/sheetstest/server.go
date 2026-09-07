@@ -333,6 +333,7 @@ func docCard(d *Doc) *gsheets.Spreadsheet {
 			Title: d.Title, Locale: d.Locale, TimeZone: d.TimeZone, AutoRecalc: d.AutoRecalc,
 		},
 		NamedRanges: d.NamedRanges,
+		DataSources: d.DataSources,
 	}
 	for _, sh := range d.Sheets {
 		props := sh.Props
@@ -343,6 +344,7 @@ func docCard(d *Doc) *gsheets.Spreadsheet {
 			FilterViews:        sh.FilterViews,
 			Tables:             sh.Tables,
 			Charts:             sh.Charts,
+			Slicers:            sh.Slicers,
 			BandedRanges:       sh.Bandings,
 			ConditionalFormats: sh.Conditional,
 		})

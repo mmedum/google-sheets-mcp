@@ -23,6 +23,19 @@ Drive is used for exactly one thing: turning a spreadsheet title into an
 id. A missing scope becomes `[forbidden]` naming the scope and telling
 you to run `login` again.
 
+`bigquery.readonly` is requested **only** with
+`GSHEETS_ENABLE_DATA_SOURCES=true`, which is also the setting that
+registers `manage_data_source`. Google refuses `addDataSource` without
+it, so Connected Sheets cannot be reached at all otherwise — and asking
+for it by default would put BigQuery on the consent screen of everyone
+running a spreadsheet server, most of whom have no BigQuery project. A
+login made with the setting off asks for exactly the two scopes above,
+and a test holds that: turning data sources on adds one scope and
+changes nothing else. `doctor` prints the scopes the stored token
+actually carries, which is what answers "I turned it on and it still
+fails" — an existing token does not gain a scope, so that case needs a
+fresh `login`.
+
 ## Where the token lives
 
 The refresh token goes to the OS keyring — Secret Service on Linux,

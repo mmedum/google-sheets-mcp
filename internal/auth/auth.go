@@ -35,6 +35,12 @@ const (
 	ScopeSpreadsheets         = "https://www.googleapis.com/auth/spreadsheets"
 	ScopeSpreadsheetsReadonly = "https://www.googleapis.com/auth/spreadsheets.readonly"
 	ScopeDriveReadonly        = "https://www.googleapis.com/auth/drive.readonly"
+	// ScopeBigQueryReadonly is asked for only with
+	// GSHEETS_ENABLE_DATA_SOURCES. Connected Sheets cannot be reached
+	// without it — addDataSource under the other two returns 403 naming
+	// this scope — and asking for it by default would put BigQuery on
+	// the consent screen of every user of a spreadsheet server (§17.6a).
+	ScopeBigQueryReadonly = "https://www.googleapis.com/auth/bigquery.readonly"
 )
 
 // Scopes returns the scope set for the requested access level.
@@ -43,11 +49,18 @@ const (
 // spreadsheets.readonly the API itself refuses getByDataFilter, the
 // data-filter value reads and both developer-metadata reads, so those
 // paths are unavailable rather than merely unused.
-func Scopes(readOnly bool) []string {
+// dataSources adds the third scope, which is opt-in: it is a separate
+// argument rather than a wider default so that a login with the setting
+// off is byte for byte the login this server has always made.
+func Scopes(readOnly, dataSources bool) []string {
+	out := []string{ScopeSpreadsheets, ScopeDriveReadonly}
 	if readOnly {
-		return []string{ScopeSpreadsheetsReadonly, ScopeDriveReadonly}
+		out = []string{ScopeSpreadsheetsReadonly, ScopeDriveReadonly}
 	}
-	return []string{ScopeSpreadsheets, ScopeDriveReadonly}
+	if dataSources {
+		out = append(out, ScopeBigQueryReadonly)
+	}
+	return out
 }
 
 // ErrNotDesktopClient means the JSON is not a "Desktop app" OAuth client.

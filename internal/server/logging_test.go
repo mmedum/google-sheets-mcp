@@ -13,6 +13,7 @@ import (
 
 	"github.com/mmedum/google-sheets-mcp/internal/config"
 	"github.com/mmedum/google-sheets-mcp/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/internal/tools"
 )
 
 // searchTerm is a word that exists nowhere else, so finding it in a log
@@ -124,6 +125,35 @@ var toolCalls = map[string][]map[string]any{
 			"action": "add", "name": searchTerm, "note": searchTerm},
 		{"spreadsheet": sheetstest.FixtureID, "action": "list"},
 	},
+	// A chart's title and its axis title are caller-supplied text in a
+	// request body, which is the route a value takes and the one a read
+	// cannot test.
+	"manage_chart": {
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.FirstSheet, "action": "add",
+			"chart_type": "column", "title": searchTerm, "axis_title": searchTerm,
+			"domain": "A1:A6", "series": []any{"B1:B6"}, "anchor": "E2"},
+		{"spreadsheet": sheetstest.FixtureID, "action": "list"},
+	},
+	// A pivot table's value names are caller text in a request body too,
+	// and the heading lookup sends the source's first row nowhere near
+	// a log.
+	"manage_pivot_table": {
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.FirstSheet, "action": "add",
+			"anchor": "F1", "source": "A1:C6", "group_rows": []any{"A"},
+			"values": []any{"B sum as " + searchTerm}},
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.FirstSheet, "action": "list"},
+	},
+	// A query is the most sensitive thing this server ever sends: it is
+	// somebody's SQL, and it travels in a request body like a value.
+	"manage_data_source": {
+		{"spreadsheet": sheetstest.FixtureID, "action": "add",
+			"project": "example-project", "query": "SELECT " + searchTerm},
+		{"spreadsheet": sheetstest.FixtureID, "action": "list"},
+	},
+	"delete_data_source": {
+		{"spreadsheet": sheetstest.FixtureID, "id": searchTerm, "confirm": true},
+		{"spreadsheet": sheetstest.FixtureID, "id": searchTerm, "dry_run": true},
+	},
 	"transform_range": {
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
 			"action": "find_replace", "find": searchTerm, "replace": searchTerm},
@@ -133,7 +163,7 @@ var toolCalls = map[string][]map[string]any{
 }
 
 func TestEveryToolIsDriven(t *testing.T) {
-	s, _ := newServer(t, config.Config{EnableDestructive: true}, nil)
+	s, _ := newServer(t, tools.FullSurface(config.Config{}), nil)
 	res, err := connect(t, s).ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -171,7 +201,7 @@ func TestLogsCarryNothingFromTheSpreadsheet(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
 		Level: slog.LevelDebug, ReplaceAttr: dropGenerated,
 	}))
-	s, fake := newServer(t, config.Config{EnableDestructive: true}, log)
+	s, fake := newServer(t, tools.FullSurface(config.Config{}), log)
 	cs := connect(t, s)
 
 	ctx := context.Background()

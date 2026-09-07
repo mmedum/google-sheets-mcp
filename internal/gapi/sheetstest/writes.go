@@ -400,6 +400,16 @@ func (s *Server) spreadsheetsBatchUpdate(w http.ResponseWriter, r *http.Request)
 		reply, err := applyRequest(working, req)
 		if err != nil {
 			s.mu.Unlock()
+			// Not every refusal is a 400. Google answers a basicChart
+			// with neither domains nor series with a 500, and §6.5
+			// classes a 500 as retryable — so a fake that flattened it
+			// to 400 would hide the reason manage_chart validates that
+			// shape itself.
+			var se *statusError
+			if errors.As(err, &se) {
+				writeError(w, se.status, se.code, se.message)
+				return
+			}
 			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
 			return
 		}
@@ -476,6 +486,8 @@ func (d *Doc) clone() *Doc {
 		copied.Protected = clonePointers(sh.Protected)
 		copied.Tables = clonePointers(sh.Tables)
 		copied.Bandings = clonePointers(sh.Bandings)
+		copied.Charts = clonePointers(sh.Charts)
+		copied.Slicers = clonePointers(sh.Slicers)
 		copied.Conditional = append([]*gsheets.ConditionalFormatRule(nil), sh.Conditional...)
 		out.Sheets[i] = &copied
 	}
@@ -483,6 +495,7 @@ func (d *Doc) clone() *Doc {
 	// by having its location rewritten in place. Sharing them would let
 	// a batch that failed halfway leave anchors where it put them.
 	out.Metadata = clonePointers(d.Metadata)
+	out.DataSources = clonePointers(d.DataSources)
 	for _, md := range out.Metadata {
 		if md == nil || md.Location == nil {
 			continue
@@ -577,6 +590,9 @@ func applyRequest(d *Doc, req *gsheets.Request) (*gsheets.Reply, error) {
 	case req.UpdateSheetProperties != nil:
 		return updateProperties(d, req.UpdateSheetProperties)
 	}
+	if reply, handled, err := applyChart(d, req); handled {
+		return reply, err
+	}
 	if reply, handled, err := applyMetadata(d, req); handled {
 		return reply, err
 	}
@@ -587,6 +603,16 @@ func applyRequest(d *Doc, req *gsheets.Request) (*gsheets.Reply, error) {
 		return reply, err
 	}
 	return applyDimension(d, req)
+}
+
+// bandRect is a dimension range as a rectangle, one-based, for the
+// comparisons a chart's sources need.
+func bandRect(r *gsheets.DimensionRange) a1.Rect {
+	first, last := a1.OneBased(r.StartIndex), r.EndIndex
+	if r.Dimension == "ROWS" {
+		return a1.Rect{FirstRow: first, LastRow: last}
+	}
+	return a1.Rect{FirstCol: first, LastCol: last}
 }
 
 // applyDimension is the half of the union that acts on a band of rows or
@@ -608,6 +634,11 @@ func applyDimension(d *Doc, req *gsheets.Request) (*gsheets.Reply, error) {
 		return dimension(d, req.DeleteDimension.Range, func(sh *Sheet, r *gsheets.DimensionRange) {
 			deleteBand(sh, r)
 			shiftMetadata(d, r.SheetID, r.Dimension, r.StartIndex, r.StartIndex-r.EndIndex)
+			// The silent half: a chart reading the deleted columns keeps
+			// its place and loses its series, and the reply says nothing
+			// (spike L). The fake does it too, or the refusal this
+			// server writes about it could never be tested.
+			dropChartedColumns(d, r.SheetID, bandRect(r), r.Dimension == "ROWS")
 		})
 	// The rest change how the band looks rather than what is on it, so
 	// the fake validates the range and stores nothing.

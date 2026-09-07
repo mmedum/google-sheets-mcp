@@ -57,6 +57,8 @@ jobs:
       - run: go test -race -coverpkg=./internal/...,./cmd/... -coverprofile=cov.out -covermode=atomic ./...
       - name: coverage floor
         run: go run ./scripts/gates coverage cov.out 80
+      - name: API coverage
+        run: go run ./scripts/gates api-coverage
       - name: error classes
         run: go run ./scripts/gates classes
       - name: leak scan

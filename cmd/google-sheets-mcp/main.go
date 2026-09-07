@@ -37,6 +37,7 @@ import (
 	"github.com/mmedum/google-sheets-mcp/internal/redact"
 	"github.com/mmedum/google-sheets-mcp/internal/server"
 	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/internal/tools"
 	"github.com/mmedum/google-sheets-mcp/internal/userconfig"
 	"github.com/mmedum/google-sheets-mcp/internal/version"
 )
@@ -154,7 +155,7 @@ type lazyTokenSource struct {
 
 func (l *lazyTokenSource) Token() (*oauth2.Token, error) {
 	l.once.Do(func() {
-		oauthCfg, err := auth.LoadClientSecret(l.secretPath, auth.Scopes(l.cfg.ReadOnly))
+		oauthCfg, err := auth.LoadClientSecret(l.secretPath, auth.Scopes(l.cfg.ReadOnly, l.cfg.EnableDataSources))
 		if err != nil {
 			l.inner = gapi.NoCredentials{Reason: err}
 			return
@@ -275,10 +276,10 @@ func cleanDisconnect(err error) bool {
 func dump(ctx context.Context, cfg config.Config, log *slog.Logger, stdout io.Writer) error {
 	// The dump must describe the whole surface, not the surface this
 	// configuration happens to register, or a diff would swing with an
-	// environment variable.
-	full := cfg
-	full.ReadOnly = false
-	full.EnableDestructive = true
+	// environment variable. Which flags that takes is the registration
+	// layer's to say: listed here, the list went stale the first time a
+	// gate was added.
+	full := tools.FullSurface(cfg)
 	svc := service.New(service.Deps{API: nil, Config: full, Logger: log})
 	s := server.New(server.Deps{Service: svc, Config: full, Logger: log, Version: version.String()})
 	return server.DumpSchemas(ctx, s, stdout, version.String())
@@ -293,7 +294,7 @@ func login(ctx context.Context, cfg config.Config, secretFlag string, out io.Wri
 	if err != nil {
 		return err
 	}
-	scopes := auth.Scopes(cfg.ReadOnly)
+	scopes := auth.Scopes(cfg.ReadOnly, cfg.EnableDataSources)
 	oauthCfg, err := auth.LoadClientSecret(secretPath, scopes)
 	if err != nil {
 		return fmt.Errorf("%w\n\nCreate a Desktop app OAuth client in your own Google Cloud project, download its JSON, "+
@@ -456,7 +457,7 @@ func doctor(ctx context.Context, cfg config.Config, spreadsheet string, out io.W
 	}
 
 	var oauthCfg *oauth2.Config
-	scopes := auth.Scopes(cfg.ReadOnly)
+	scopes := auth.Scopes(cfg.ReadOnly, cfg.EnableDataSources)
 
 	step("OAuth client JSON", func() (string, error) {
 		path, err := userconfig.ResolveClientSecretPath(cfg.Profile, cfg.ClientSecretPath)

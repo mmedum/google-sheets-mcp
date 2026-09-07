@@ -55,6 +55,10 @@ type DimensionResult struct {
 	// Anchors are the durable labels a delete takes with the band. The
 	// API's reply never mentions them.
 	Anchors []string `json:"anchors_removed,omitempty" jsonschema:"the anchors that were on the deleted rows or columns and went with them"`
+	// Charts are the charts reading the band. A chart is not deleted
+	// with its data: it stays where it is and loses the series, and
+	// nothing in the API's reply says so (spike L).
+	Charts []render.ChartLoss `json:"charts_affected,omitempty" jsonschema:"the charts reading the deleted rows or columns, which stay in place and lose those series"`
 	// Cells and Formulas are what a delete took with it.
 	Cells    int  `json:"cells,omitempty"`
 	Formulas int  `json:"formulas,omitempty"`
@@ -125,6 +129,16 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 			return nil, err
 		}
 		res.Anchors, act.Anchors = doomed, doomed
+		// A chart reading the band is the other silent loss, and it is
+		// worse than the anchors: the chart survives the delete, keeps
+		// its place and its title, and simply stops drawing anything.
+		// Live, deleting a charted column left a chart with one domain
+		// and zero series and the reply was `{}` (spike L).
+		charts, err := s.chartsOnBand(ctx, ref, props, band)
+		if err != nil {
+			return nil, err
+		}
+		res.Charts, act.Charts = charts, charts
 	}
 
 	op, err := dimensionRequest(req, band, props)
@@ -138,9 +152,10 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 	}
 	if req.Action == DimDelete && !req.Confirm {
 		return nil, Errorf("blocked",
-			"deleting %s on %q takes %d non-empty cell(s) and %d formula(s) with them%s, and Sheets cannot undo it. "+
+			"deleting %s on %q takes %d non-empty cell(s) and %d formula(s) with them%s%s, and Sheets cannot undo it. "+
 				"Pass confirm to go ahead",
-			act.Band, props.Title, res.Cells, res.Formulas, render.AnchorsTaken(res.Anchors))
+			act.Band, props.Title, res.Cells, res.Formulas,
+			render.AnchorsTaken(res.Anchors), chartClause(res.Charts))
 	}
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{op},
@@ -215,4 +230,15 @@ func (s *Service) countBand(ctx context.Context, ref Reference, props *gsheets.S
 	}
 	window, _ := fit(rect, s.cfg.MaxCells)
 	return s.count(ctx, ref, props, window)
+}
+
+// chartClause is the refusal's chart sentence. The renderer owns the
+// words; this owns where they sit in the sentence around them, which is
+// the join the first version got wrong — a clause written for one
+// sentence read as a run-on in the other.
+func chartClause(losses []render.ChartLoss) string {
+	if len(losses) == 0 {
+		return ""
+	}
+	return "; the chart(s) stay where they are and " + render.ChartsAffected(losses)
 }

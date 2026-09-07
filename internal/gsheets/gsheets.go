@@ -38,6 +38,12 @@ type Spreadsheet struct {
 	Sheets         []*Sheet               `json:"sheets,omitempty"`
 	NamedRanges    []*NamedRange          `json:"namedRanges,omitempty"`
 	SpreadsheetURL string                 `json:"spreadsheetUrl,omitempty"`
+	// DataSources are the Connected Sheets sources. The card asks for
+	// them whatever the configuration: the field mask is accepted under
+	// the ordinary scopes and returns nothing where there are none, so
+	// reporting that a spreadsheet has one costs no scope and no consent
+	// (§17.6a).
+	DataSources []*DataSource `json:"dataSources,omitempty"`
 }
 
 // SpreadsheetProperties are the file-wide settings.
@@ -57,6 +63,7 @@ type Sheet struct {
 	FilterViews        []*FilterView            `json:"filterViews,omitempty"`
 	Tables             []*Table                 `json:"tables,omitempty"`
 	Charts             []*EmbeddedChart         `json:"charts,omitempty"`
+	Slicers            []*Slicer                `json:"slicers,omitempty"`
 	BandedRanges       []*BandedRange           `json:"bandedRanges,omitempty"`
 	ConditionalFormats []*ConditionalFormatRule `json:"conditionalFormats,omitempty"`
 }
@@ -260,12 +267,6 @@ type BandedRange struct {
 	ColumnProperties *BandingProperties `json:"columnProperties,omitempty"`
 }
 
-// EmbeddedChart is a chart on a sheet. Phase 0 reports only that one
-// exists; phase 4 builds them.
-type EmbeddedChart struct {
-	ChartID int `json:"chartId,omitempty"`
-}
-
 // DataValidationRule is a cell's validation rule.
 type DataValidationRule struct {
 	Condition    *BooleanCondition `json:"condition,omitempty"`
@@ -417,6 +418,23 @@ type Request struct {
 	CreateDeveloperMetadata *CreateDeveloperMetadataRequest `json:"createDeveloperMetadata,omitempty"`
 	UpdateDeveloperMetadata *UpdateDeveloperMetadataRequest `json:"updateDeveloperMetadata,omitempty"`
 	DeleteDeveloperMetadata *DeleteDeveloperMetadataRequest `json:"deleteDeveloperMetadata,omitempty"`
+
+	// Phase 4: charts, slicers and pivot tables. A pivot table has no
+	// request of its own — it is a field of a cell, so it goes through
+	// updateCells like any other cell write.
+	AddChart                     *AddChartRequest                     `json:"addChart,omitempty"`
+	UpdateChartSpec              *UpdateChartSpecRequest              `json:"updateChartSpec,omitempty"`
+	AddSlicer                    *AddSlicerRequest                    `json:"addSlicer,omitempty"`
+	UpdateSlicerSpec             *UpdateSlicerSpecRequest             `json:"updateSlicerSpec,omitempty"`
+	DeleteEmbeddedObject         *DeleteEmbeddedObjectRequest         `json:"deleteEmbeddedObject,omitempty"`
+	UpdateEmbeddedObjectPosition *UpdateEmbeddedObjectPositionRequest `json:"updateEmbeddedObjectPosition,omitempty"`
+	UpdateCells                  *UpdateCellsRequest                  `json:"updateCells,omitempty"`
+
+	// Connected Sheets, behind GSHEETS_ENABLE_DATA_SOURCES (§17.6a).
+	AddDataSource           *AddDataSourceRequest           `json:"addDataSource,omitempty"`
+	RefreshDataSource       *RefreshDataSourceRequest       `json:"refreshDataSource,omitempty"`
+	CancelDataSourceRefresh *CancelDataSourceRefreshRequest `json:"cancelDataSourceRefresh,omitempty"`
+	DeleteDataSource        *DeleteDataSourceRequest        `json:"deleteDataSource,omitempty"`
 }
 
 // Reply is one member of the reply union, in the same order as the
@@ -437,6 +455,13 @@ type Reply struct {
 	CreateDeveloperMetadata *CreateDeveloperMetadataReply `json:"createDeveloperMetadata,omitempty"`
 	UpdateDeveloperMetadata *UpdateDeveloperMetadataReply `json:"updateDeveloperMetadata,omitempty"`
 	DeleteDeveloperMetadata *DeleteDeveloperMetadataReply `json:"deleteDeveloperMetadata,omitempty"`
+
+	AddChart                     *AddChartReply                     `json:"addChart,omitempty"`
+	AddSlicer                    *AddSlicerReply                    `json:"addSlicer,omitempty"`
+	UpdateEmbeddedObjectPosition *UpdateEmbeddedObjectPositionReply `json:"updateEmbeddedObjectPosition,omitempty"`
+
+	AddDataSource     *AddDataSourceReply     `json:"addDataSource,omitempty"`
+	RefreshDataSource *RefreshDataSourceReply `json:"refreshDataSource,omitempty"`
 }
 
 // NewSheetProperties is a sheet that does not exist yet.

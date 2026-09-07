@@ -48,6 +48,10 @@ type Doc struct {
 	// anchors of §6.4. It hangs off the document rather than the sheet
 	// because an entry can be attached to the spreadsheet itself.
 	Metadata []*gsheets.DeveloperMetadata
+	// DataSources are the Connected Sheets sources. They hang off the
+	// document, like the metadata, because the card reports them at the
+	// spreadsheet level rather than per sheet.
+	DataSources []*gsheets.DataSource
 }
 
 // Sheet is one tab of a Doc. Cells are keyed by zero-based row and
@@ -61,6 +65,7 @@ type Sheet struct {
 	FilterViews []*gsheets.FilterView
 	Tables      []*gsheets.Table
 	Charts      []*gsheets.EmbeddedChart
+	Slicers     []*gsheets.Slicer
 	Bandings    []*gsheets.BandedRange
 	// Conditional are the sheet's conditional format rules, in the order
 	// they are evaluated. The order is the API's identifier for them, so

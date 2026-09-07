@@ -1,0 +1,107 @@
+# One verdict per published API item. `gates api-coverage` holds this,
+# testdata/api-surface.json and the code to each other, and runs in
+# make check with no network.
+#
+# A `method` is an API method. A `request` is a member of the Sheets
+# batchUpdate union — the axis that matters here, because this API
+# publishes seventeen methods and sixty-nine request kinds inside one
+# of them, and the union is where Google adds capability.
+#
+# `used` names the code that implements it. `out` says why this server
+# does not call it. A `*` row stands for the rest of one API and may
+# only say `out`; Drive has one, because §1 puts file management in a
+# server built on the Drive API rather than this one.
+#
+# api	kind	name	verdict	reason
+sheets	method	developerMetadata.get	out	addresses an anchor by id; §6.4 addresses them by name, through developerMetadata.search
+sheets	method	developerMetadata.search	used	gapi.SearchDeveloperMetadata, behind manage_anchor
+sheets	method	sheets.copyTo	used	gapi.CopySheetTo, behind manage_sheet copy_to
+sheets	method	spreadsheets.batchUpdate	used	gapi.BatchUpdate, behind every structural write
+sheets	method	spreadsheets.create	used	gapi.CreateSpreadsheet, behind create_spreadsheet
+sheets	method	spreadsheets.get	used	gapi.GetSpreadsheet, behind the card and every grid read
+sheets	method	spreadsheets.getByDataFilter	out	needs a write-capable scope, so read-only mode could not call it; §18 has the per-method scope row
+sheets	method	values.append	used	gapi.AppendValues, behind append_rows
+sheets	method	values.batchClear	out	clear_values clears the one range it names, so the count in its refusal is the count it removes
+sheets	method	values.batchClearByDataFilter	out	a data filter, and a write-capable scope with it
+sheets	method	values.batchGet	used	gapi.GetValues' batching, behind read_range
+sheets	method	values.batchGetByDataFilter	out	as values.batchClearByDataFilter
+sheets	method	values.batchUpdate	out	write_values writes the one range it names; §7.3
+sheets	method	values.batchUpdateByDataFilter	out	as values.batchUpdate, and a write-capable scope with it
+sheets	method	values.clear	used	gapi.ClearValues, behind clear_values
+sheets	method	values.get	used	gapi.GetValues, behind read_range
+sheets	method	values.update	used	gapi.UpdateValues, behind write_values
+
+sheets	request	addBanding	used	internal/plan builds it
+sheets	request	addChart	used	internal/plan builds it
+sheets	request	addConditionalFormatRule	used	internal/plan builds it
+sheets	request	addDataSource	used	internal/plan builds it
+sheets	request	addDimensionGroup	used	internal/plan builds it
+sheets	request	addFilterView	out	a saved view of somebody else's screen; the card reports the ones that exist, and creating one changes what everybody sees on opening the file
+sheets	request	addNamedRange	used	internal/plan builds it
+sheets	request	addProtectedRange	used	internal/plan builds it
+sheets	request	addSheet	used	internal/plan builds it
+sheets	request	addSlicer	used	internal/plan builds it
+sheets	request	addTable	used	internal/plan builds it
+sheets	request	appendCells	out	a second way to append, without the table detection values.append does; append_rows would lose the answer to where the rows landed
+sheets	request	appendDimension	out	manage_sheet resize covers it with a size the caller states rather than a count they have to work out
+sheets	request	autoFill	used	internal/plan builds it
+sheets	request	autoResizeDimensions	used	internal/plan builds it
+sheets	request	cancelDataSourceRefresh	used	internal/plan builds it
+sheets	request	clearBasicFilter	out	as setBasicFilter
+sheets	request	copyPaste	used	internal/plan builds it
+sheets	request	createDeveloperMetadata	used	internal/plan builds it
+sheets	request	cutPaste	used	internal/plan builds it
+sheets	request	deleteBanding	used	internal/plan builds it
+sheets	request	deleteConditionalFormatRule	used	internal/plan builds it
+sheets	request	deleteDataSource	used	internal/plan builds it
+sheets	request	deleteDeveloperMetadata	used	internal/plan builds it
+sheets	request	deleteDimension	used	internal/plan builds it
+sheets	request	deleteDimensionGroup	used	internal/plan builds it
+sheets	request	deleteDuplicates	used	internal/plan builds it
+sheets	request	deleteEmbeddedObject	used	internal/plan builds it
+sheets	request	deleteFilterView	out	as addFilterView
+sheets	request	deleteNamedRange	used	internal/plan builds it
+sheets	request	deleteProtectedRange	used	internal/plan builds it
+sheets	request	deleteRange	out	as insertRange
+sheets	request	deleteSheet	used	internal/plan builds it
+sheets	request	deleteTable	used	internal/plan builds it
+sheets	request	duplicateFilterView	out	as addFilterView
+sheets	request	duplicateSheet	used	internal/plan builds it
+sheets	request	findReplace	used	internal/plan builds it
+sheets	request	insertDimension	used	internal/plan builds it
+sheets	request	insertRange	out	shifts cells sideways inside a rectangle; every shape this server offers moves whole rows or columns, where what moves is visible in the address
+sheets	request	mergeCells	used	internal/plan builds it
+sheets	request	moveDimension	used	internal/plan builds it
+sheets	request	pasteData	out	takes a delimited string and splits it; write_values takes the grid the caller already has
+sheets	request	randomizeRange	used	internal/plan builds it
+sheets	request	refreshDataSource	used	internal/plan builds it
+sheets	request	repeatCell	used	internal/plan builds it
+sheets	request	setBasicFilter	out	as addFilterView: a filter is a preference rather than data
+sheets	request	setDataValidation	used	internal/plan builds it
+sheets	request	sortRange	used	internal/plan builds it
+sheets	request	textToColumns	used	internal/plan builds it
+sheets	request	trimWhitespace	used	internal/plan builds it
+sheets	request	unmergeCells	used	internal/plan builds it
+sheets	request	updateBanding	used	internal/plan builds it
+sheets	request	updateBorders	used	internal/plan builds it
+sheets	request	updateCells	used	internal/plan builds it
+sheets	request	updateChartSpec	used	internal/plan builds it
+sheets	request	updateConditionalFormatRule	used	internal/plan builds it
+sheets	request	updateDataSource	out	changes a source's query in place; delete and add is two calls and one refresh, and cannot half-apply a query change to a sheet somebody is reading
+sheets	request	updateDeveloperMetadata	used	internal/plan builds it
+sheets	request	updateDimensionGroup	out	collapses a group edit_dimensions creates; as updateEmbeddedObjectBorder
+sheets	request	updateDimensionProperties	used	internal/plan builds it
+sheets	request	updateEmbeddedObjectBorder	out	cosmetic on an object this server manages; worth having and not worth a nineteenth argument yet
+sheets	request	updateEmbeddedObjectPosition	used	internal/plan builds it
+sheets	request	updateFilterView	out	as addFilterView
+sheets	request	updateNamedRange	used	internal/plan builds it
+sheets	request	updateProtectedRange	used	internal/plan builds it
+sheets	request	updateSheetProperties	used	internal/plan builds it
+sheets	request	updateSlicerSpec	used	internal/plan builds it
+sheets	request	updateSpreadsheetProperties	out	renames the file, which is Drive's (§1), and changes the locale, which rewrites how every number in the spreadsheet is parsed
+sheets	request	updateTable	used	internal/plan builds it
+
+drive	method	drive.about.get	used	gapi.About, behind doctor and the profile's account_email
+drive	method	drive.files.get	used	gapi.GetFile, behind resolving a title and the card's owner
+drive	method	drive.files.list	used	gapi.SearchSpreadsheets, behind search_spreadsheets
+drive	method	*	out	file management belongs to a server built on the Drive API (§1); this server holds drive.readonly and uses Drive to turn a title into an id and to read a file's owner and modified time, and nothing else

@@ -70,6 +70,9 @@ type DimensionAct struct {
 	Cells    int
 	Formulas int
 	Anchors  []string
+	// Charts are the charts that read the band. They are not taken with
+	// it: they stay, and draw less.
+	Charts []ChartLoss
 	// Shifted says addresses after the band moved.
 	Shifted bool
 }
@@ -102,7 +105,7 @@ func (a DimensionAct) Phrase() string {
 func DimensionPreview(a DimensionAct) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Dry run: nothing was sent. This would %s.\n", a.Phrase())
-	dimensionNotes(&b, a, "would take", "would move")
+	dimensionNotes(&b, a, true, "would take", "would move")
 	return b.String()
 }
 
@@ -110,17 +113,30 @@ func DimensionPreview(a DimensionAct) string {
 func DimensionDone(a DimensionAct) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Done: %s.\n", upperFirst(a.Phrase()))
-	dimensionNotes(&b, a, "took", "moved")
+	dimensionNotes(&b, a, false, "took", "moved")
 	return b.String()
 }
 
-func dimensionNotes(b *strings.Builder, a DimensionAct, took, moved string) {
+// dimensionNotes writes what a change takes with it.
+//
+// preview says which tense to use, as a flag rather than by comparing
+// `took` against a phrasing literal. It was the literal for an hour:
+// rewording the preview would have flipped the chart clause to the wrong
+// case with nothing failing to say so.
+func dimensionNotes(b *strings.Builder, a DimensionAct, preview bool, took, moved string) {
 	if a.Cells > 0 || a.Formulas > 0 {
 		fmt.Fprintf(b, "It %s %d non-empty cell(s) and %d formula(s) with it.\n", took, a.Cells, a.Formulas)
 	}
 	if len(a.Anchors) > 0 {
 		fmt.Fprintf(b, "It %s the anchor(s) %s with it; Google's reply does not mention them.\n",
 			took, AnchorNames(a.Anchors))
+	}
+	if len(a.Charts) > 0 {
+		if preview {
+			b.WriteString("Those cells are charted: " + ChartsAffected(a.Charts) + ".\n")
+		} else {
+			b.WriteString(ChartsLost(a.Charts))
+		}
 	}
 	if a.Shifted {
 		fmt.Fprintf(b, "Addresses after the band %s: a checkpoint or an address from before this call no longer "+

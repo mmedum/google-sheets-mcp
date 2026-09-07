@@ -470,6 +470,17 @@ func (r Rect) Bounded() bool {
 	return r.FirstCol != 0 && r.FirstRow != 0 && r.LastCol != 0 && r.LastRow != 0
 }
 
+// OneCell says the rectangle is exactly one cell.
+//
+// Bounded on both axes and a single row and column: "E2" is one cell,
+// "E2:E2" is the same rectangle, and "E:E" is not one because a column
+// with no end is not a cell. Two callers wrote this out by hand before
+// it lived here, which is two places for the same off-by-one.
+func (r Rect) OneCell() bool {
+	return r.FirstCol != 0 && r.FirstRow != 0 &&
+		r.FirstCol == r.LastCol && r.FirstRow == r.LastRow
+}
+
 // Rows and Cols are the sizes of a bounded rectangle, and 0 otherwise.
 func (r Rect) Rows() int {
 	if r.FirstRow == 0 || r.LastRow == 0 {

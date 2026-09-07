@@ -1,10 +1,38 @@
 # Architecture — google-sheets-mcp
 
-**Status: v0.3.1 (2026-09-07).** Reading, writing, formatting, the objects attached to a range,
-`gsheets://` resources and durable anchors all work, and `make check` is
-green. Spike K ran against a real account and §18 carries what it found.
+**Status: v0.4.0 (2026-09-07).** Reading, writing, formatting, the objects attached to a
+range, `gsheets://` resources, durable anchors and now charts, pivot
+tables and Connected Sheets all work, and `make check` is green. Spikes
+L, M, N and P ran against a real account and §18 carries what they
+found.
 
-**The live driver has run and its transcript has been read: 169 steps,
+**Phase 4 added three tools and found four things the reference does not
+mention.** `updateChartSpec` replaces a chart's spec whole and refuses a
+partial one, so an update reads before it writes and a caller's rename
+cannot silently drop the series. A `basicChart` with neither domains nor
+series comes back **HTTP 500**, which §6.5 classes retryable — the only
+defence is never sending it. Deleting a charted column leaves the chart
+in place with nothing to draw, and deleting a pivot's source rows leaves
+a header and a grand total; both are silent, and they are the third and
+fourth silent destroy this project has found. A pivot table is not a
+request in the union at all: it is a field of one cell, and its output's
+size is in no request and no reply, so every result reads it back.
+
+**§17.6 was reopened and amended.** `addDataSource` refuses under this
+server's two scopes, naming `bigquery.readonly`, so Connected Sheets
+cannot be reached without a third scope. `manage_data_source` and that
+scope are both behind `GSHEETS_ENABLE_DATA_SOURCES`, off by default;
+§17.6a has the reasoning, including the recommendation that was made
+against it and overruled.
+
+**Phase 4's live driver has run three times and every transcript was
+read: 206 steps, none failed, one undetermined.** The first run failed
+three steps and the second passed all of them — and reading the second
+still found two defects, a refusal whose clause did not compose into its
+sentence and a guard message §7.6 had promised more of than the read
+makes possible. §16 has the detail.
+
+**Phase 3's live driver run and its transcript: 169 steps,
 none failed, one undetermined.** Reading it found two defects the count
 could not — a refusal telling a `read_range` caller to pass an A1 *band*,
 and a delete quoting an anchor's name in its refusal and not in its
@@ -40,10 +68,12 @@ counting: `deleteDimension` takes the anchors on the band and says
 nothing, and spike K's own first run answered four of eleven questions
 against rows the anchor had already left.
 
-**Phase 4 — charts, pivots and data sources — starts on an explicit
-go.** Phase 3 is closed: its spikes, its live driver run and its evals
-have all run, and every transcript was read. §17a carries seventeen open
-cleanups, three of which want a live probe before they can be decided.
+**Phase 5 does not exist: what follows phase 4 is v1.0.0, and §16 says
+what it waits for** — use in anger, and a further eval round with a
+second client. §17a carries sixteen open cleanups; the three that wanted
+a live probe were probed in this phase and are closed. The evals cover
+phases 0 to 3 and not the three tools this phase added, which is the
+most obvious thing to do next.
 
 Everything here was checked against the Sheets API v4 discovery document
 (`sheets.googleapis.com/$discovery/rest?version=v4`, revision 20260831),
@@ -775,10 +805,125 @@ value.
 
 ### 7.6 Charts, pivot tables and data sources (phase 4)
 
-`manage_chart` (`add`, `update`, `delete`, `move`), `manage_pivot_table`
-and `manage_data_source` for Connected Sheets, each verified live before
-it is designed in detail (§16). Slicers and embedded-object positioning
-go with the charts.
+Designed after spikes L, M and N ran, and shaped by what they found
+rather than by the reference (§18 carries every row).
+
+**`manage_chart`** — `add`, `update`, `move`, `delete`, `list`, over
+charts and slicers alike, since both are embedded objects with one
+delete between them.
+
+- `add` takes a chart kind, a title, one domain range and one or more
+  series ranges, all in A1, and either an anchor cell or `new_sheet`.
+  **Domain and series are checked before the request is built**: a
+  `basicChart` with neither returns HTTP 500 from Google, and a 500 is
+  retryable by §6.5, so a client that trusts the status sends it again.
+  This is the one place in the project where the API's own error class
+  is wrong for the request that caused it, and the request is what
+  changes.
+- `update` **reads the spec, edits it and sends it back whole.**
+  `UpdateChartSpecRequest` carries no field mask and refuses a partial
+  spec outright, so there is no merge to do; the alternative — filling
+  in a chart kind to make the request valid — would rebuild somebody's
+  pie chart as a column chart and report success.
+- `move` sends `updateEmbeddedObjectPosition`, which **requires** its
+  own `fields` mask; the tool sets it from the arguments given.
+- `delete` sends `deleteEmbeddedObject`, whose reply is `{}`. The result
+  is composed from the card read before the delete, so it can say what
+  went. Deleting an id twice is a clean 400 and maps to `[not_found]`.
+- `list` reads titles and positions. The card's own mask widens only to
+  `charts(chartId,spec(title))` — 72 bytes a chart, so a name is
+  affordable on every `get_spreadsheet` — and the fuller read with
+  positions stays inside `manage_chart list`, at about 370 bytes a
+  chart.
+
+A chart on its own sheet is `sheetType: OBJECT` **with no
+`gridProperties`**, and it goes when that sheet goes. Nothing reading a
+card may assume a sheet has a grid; that hole predates phase 4, since a
+chart sheet made in the Sheets interface reaches every tool already
+shipped.
+
+**`manage_pivot_table`** — `add`, `update`, `delete`, `list`. A pivot is
+not a request in the `batchUpdate` union: it is a `pivotTable` field on
+one `CellData`, written through `updateCells` at its anchor and deleted
+by an `updateCells` naming that field with an empty cell, which takes
+the whole output with it.
+
+- **Columns are named in A1, never as offsets.** The API groups and
+  summarises by `sourceColumnOffset` into the source rectangle. A caller
+  says `B` or the header text; the server converts against the source,
+  the way hard rule 4 requires. It also **checks the offset against the
+  source's width**, because an offset past the end is accepted with a
+  200 and produces a pivot that means nothing.
+- **An anchor inside the source is refused** before the request is
+  built. The API accepts it and evaluates to `Circular dependency
+  detected`.
+- The output's size is not in the request: it is computed from the data,
+  and a group added inside the source makes it taller. So every result
+  reads the anchor's rectangle back rather than describing what was
+  asked for.
+- `list` takes a range to look in rather than scanning a sheet. There is
+  no pivot index in the API, and a whole-sheet grid read for a field
+  that nothing else needs would cost a read of the sheet to find at most
+  a handful of anchors.
+
+**The read path gains one field.** `gapi.GridFields` asks for
+`pivotTable(source)`, which costs nothing on a cell that has no pivot.
+Without it the guard sees a pivot's output as ten anonymous non-empty
+cells — it already refuses the write, which is the important half, but
+it cannot say what it is refusing.
+
+**It names the anchor, and only the anchor**, and the first live run is
+why that sentence is here. A pivot's *output* cells carry no
+`pivotTable` field: on the wire they are ordinary computed values, and
+the definition sits on the top-left cell alone. So a write over the
+anchor is refused with what it would cost — "F1 anchors a pivot table,
+and a write there replaces it and clears everything it draws" — and a
+write into the middle of the output is refused as a non-empty cell,
+which is true and less useful. Naming the pivot from one of its output
+cells would mean reading up and left of every guarded write on the
+chance that one is there. §17a.27 carries that with its cost.
+
+**What a write into a pivot does is worth stating exactly**, because the
+refusal has to be true. A `values.update` over one output cell returns
+200 and collapses the entire pivot to `#REF!` at the anchor — and
+clearing that one cell brings all of it back. The damage is total and
+completely reversible, so the refusal says the pivot will stop drawing
+until the cell is cleared. An `updateCells` over the **anchor** is a
+different act, and that one replaces the pivot outright and silently.
+
+**`manage_data_source`** — `list`, `add`, `refresh`, `cancel_refresh`,
+and **registered only with `GSHEETS_ENABLE_DATA_SOURCES=true`** (§17.6a).
+
+**Deleting one is `delete_data_source`, its own gated tool**, for the
+reason `edit_dimensions`' delete became `delete_dimensions` (§7.4,
+§17a.10): an action that removes what nobody can read back does not
+belong inside a tool whose annotations say it is not destructive, and a
+host in an auto-approve mode reads those annotations and asks nobody. It
+meets §17c's criterion more severely than an action already gated —
+`deleteDataSource` takes the DATA_SOURCE sheet and everything on it,
+which is strictly more than `delete_sheet` does, and what goes cannot be
+read back without re-running a billed query.
+
+It is `Destructive` rather than `Connected`, and needs no BigQuery
+scope: spike N sent `deleteDataSource` under this server's two scopes
+and got a 400 about the id rather than a 403 about the scope. So it is
+reachable — and therefore worth gating — wherever a data source exists,
+including one somebody else connected. The first version of this phase
+put the delete inside `manage_data_source` behind `confirm` alone; the
+cleanup pass found it, and §18 carries the row. `addDataSource` under this server's two scopes returns 403
+naming `bigquery.readonly`, so the tool needs a third scope that most
+users of a Sheets server should not be asked to grant. `list` is the
+exception and needs no scope at all: `fields=dataSources` is accepted as
+it stands and returns `{}` where there are none, so `get_spreadsheet`
+reports a connected source whatever the configuration.
+
+**Two shipped tools change.** `delete_dimensions` counts the charts and
+pivot tables whose ranges intersect the band and names them before the
+confirm gate, beside the anchors it already names — deleting a charted
+column leaves the chart alive with zero series, and deleting a pivot's
+source rows leaves a header and a grand total, and both are silent. That
+is the third and fourth silent destroy this project has found on an API
+whose reference mentions none of them.
 
 ## 8. Tool surface
 
@@ -809,7 +954,8 @@ registers only the readOnly rows and requests read-only scopes.
 | `delete_sheet` | Gated: delete a sheet and everything on it | destructive | 1 |
 | `manage_chart` | Charts and slicers: add, update, delete, move | — | 4 |
 | `manage_pivot_table` | Pivot tables on a range | — | 4 |
-| `manage_data_source` | Connected Sheets data sources: add, refresh, delete | — | 4 |
+| `manage_data_source` | Connected Sheets data sources: add, refresh, cancel a refresh, list | — | 4 |
+| `delete_data_source` | Gated: remove a data source, its sheet and everything on it | destructive | 4 |
 
 There is deliberately no bulk tool that spans spreadsheets: one
 spreadsheet per call, so a wrong id costs one refusal rather than a
@@ -830,7 +976,7 @@ or a hash, and `net/url` would read each of those as structure and hand
 back a title with the end missing.
 
 **Registration.** One `Kind` per tool — read, write, idempotent write,
-destructive — decides the annotations, whether read-only mode leaves the
+destructive, connected — decides the annotations, whether read-only mode leaves the
 tool registered, whether the client is asked to involve a person, and
 that the reply is rendered. Four rules kept by hand at twenty call sites
 is four ways to be quietly wrong. `Kind` is an enum over *which world a
@@ -1429,6 +1575,17 @@ forgotten. Results go into §18.
   troubleshooting page documents only 400, 500 and 503, so the class
   mapping in §6.5 is otherwise built from the Drive API's documented
   error vocabulary rather than from Sheets itself.
+
+  **The 429 was observed on 2026-09-07**, unplanned and by this
+  repository's own doing: four runs of the live driver inside a few
+  minutes, on top of the spikes, spent the sixty-reads-per-minute-per-user
+  allowance. `spreadsheets.get` came back `HTTP 429 RESOURCE_EXHAUSTED
+  (RATE_LIMIT_EXCEEDED): Quota exceeded for quota metric 'Read requests'
+  and limit 'Read requests per minute per user'`. The class mapping made
+  it `[rate_limited]` and the message said to retry shortly, which was
+  true — the next run passed. Two of the six shapes are still
+  unobserved: a second account, and a read-only token attempting a
+  write.
 - **F. Checkpoint economics** (phase 1, **run 2026-09-06**, rejected):
   whether Drive's `files.get` `version` field changes on every Sheets
   edit, which would give a cheaper spreadsheet-wide staleness check than
@@ -1470,6 +1627,39 @@ forgotten. Results go into §18.
   the eleven questions against rows the anchor had already left, which
   looked like a verdict and was a stale constant; every step that names a
   row now asks where the anchor is at that moment.
+- **L. What a chart is once it exists, and what it survives** (phase 4,
+  **run 2026-09-07**): whether `updateChartSpec` merges or replaces,
+  since it carries no field mask; what a chart's source range does when
+  the column under it is deleted; what `deleteEmbeddedObject` says it
+  did; and what the card's `charts(chartId)` mask leaves unread. Results
+  in §18. Its first run answered the invalid-spec question against the
+  wrong half of the request: both probes omitted a position, so the API
+  refused them on the position and never looked at the spec, under a
+  heading that said "spec".
+- **M. What a pivot table is on the wire** (phase 4, **run 2026-09-07**):
+  a pivot is not a `batchUpdate` request at all but a field of
+  `CellData`, and its output "is computed dynamically", so its footprint
+  is in no request. What the server's own grid mask sees over that
+  output decides whether the write guard can see a pivot at all. Results
+  in §18. Its first run asked two invalid-pivot questions that both came
+  back "No sort order specified", because the probe left out a
+  `sortOrder` and a validation order this server did not know about
+  answered first.
+- **N. Whether a data source is reachable at all** (phase 4, **run
+  2026-09-07**): `addDataSource` "requires an additional
+  `bigquery.readonly` OAuth scope" and a BigQuery source needs a
+  billing-attached Cloud project. §17.6 had fixed this server's scopes
+  at two. So the spike asks not how the tool should be shaped but
+  whether its calls can be made, and what a caller sees when they
+  cannot. Results in §18, and they reopened §17.6.
+- **P. The three deferred cleanups that wanted a probe** (phase 4, **run
+  2026-09-07**): §17a.7, §17a.15 and §17a.20 were each left undecided
+  under hard rule 12, because the fake returns whatever a test asks it
+  for and so cannot say whether a field mask is accepted. Phase 4 is the
+  phase with a live run. All three are answered and all three are now
+  closed in §17a. Its first run reported §17a.20 unsupported on a mask
+  whose parentheses this spike had got wrong by one; the mask is printed
+  and balance-checked before it is sent now.
 
 ## 16. Delivery phases
 
@@ -1588,11 +1778,113 @@ keeping ten — 28 000 allocations on a 5 000-cell write, now 25. The
 first fix for that was wrong and the benchmark is what said so: the
 number did not move.
 
-**Phase 4 — charts, pivots, data sources (v0.4.0).** `manage_chart`,
+**Phase 4 — charts, pivots, data sources (v0.4.0). Done 2026-09-07,
+including the live work: spikes L, M, N and P ran, the live driver ran
+five times (206 steps, 0 failed, 1 undetermined — Drive's content index
+again), and both review passes ran with every finding fixed. Not tagged:
+`main` is the maintainer's.** `manage_chart`,
 `manage_pivot_table`, `manage_data_source`, each verified live before it
 is designed in detail. Then the discovery document is diffed against what
 the client calls, and every one of the 69 union members is either used or
 listed here as deliberately out.
+
+**The diff, run 2026-09-07 against revision 20260831: 54 of the 69 are
+built and 15 are not.** Each of the fifteen is out for a reason, and the
+reasons fall into four groups.
+
+**A gate holds this now rather than this paragraph doing it.**
+`testdata/api-surface.json` is what Google publishes, written by `gates
+api-diff` from the discovery documents; `testdata/api-coverage.tsv` is
+one verdict per item, by hand; and `gates api-coverage` runs offline in
+`make check` and holds the two files and the code to each other. A
+published item with no verdict fails, a verdict for something no longer
+published fails, a request some builder constructs while the record
+calls it out fails, and a verdict of `used` that no code backs fails.
+So a capability Google adds stops the build rather than aging quietly
+into a paragraph that used to be true — which is what §17a.26 says about
+claims a comment holds. The groups below are why; the file is the
+record.
+
+*A filter view is a saved view of somebody else's screen* —
+`addFilterView`, `updateFilterView`, `deleteFilterView`,
+`duplicateFilterView`, `setBasicFilter`, `clearBasicFilter`. The card
+reports the filter views a spreadsheet has, because one changes what a
+person sees when they open it. Creating them is a preference rather than
+data, and a model that leaves a saved filter behind has changed how the
+spreadsheet looks to everyone who opens it next.
+
+*Four are a second way to do something this server already does*, and
+the second way is worse. `appendCells` appends without the table
+detection `values.append` does, so `append_rows` would lose the answer
+to "where did it land". `appendDimension` adds rows at the end, which
+`manage_sheet resize` covers with a size the caller states rather than a
+count they have to work out. `pasteData` takes a delimited string and
+splits it, where `write_values` takes the grid the caller already has.
+`insertRange` and `deleteRange` shift cells sideways within a
+rectangle — the operation a spreadsheet interface calls "insert cells,
+shift right" — and every shape of it this server offers moves whole rows
+or columns, where what moves is visible in the address rather than in
+the option.
+
+*Two are cosmetic on an object this server manages*:
+`updateEmbeddedObjectBorder` puts a border on a chart, and
+`updateDimensionGroup` collapses a group that `edit_dimensions group`
+creates. Both are worth having and neither is worth a nineteenth
+argument yet.
+
+*One is out because §17.6a drew the line where it did*:
+`updateDataSource` changes a source's query in place, which is the one
+Connected Sheets verb `manage_data_source` does not offer. Delete and
+add is two calls and one refresh, and it cannot half-apply a query
+change to a sheet somebody is reading.
+
+*And one is a decision rather than an omission*:
+`updateSpreadsheetProperties` renames the file, changes its locale and
+its recalculation setting. Renaming is Drive's, and §1 says so. The
+locale decides how every number in the spreadsheet is parsed and
+displayed, and changing it under somebody is a rewrite of the whole
+file's meaning that no result could summarise.
+
+**Three runs of the driver, and each of the first two found something
+the count could not.** The first failed three steps: a `stackedType` on
+a LINE chart, which Google refuses outright and this server now refuses
+first; an `updateSlicerSpec` with no field mask, which the code had
+never set while a comment three lines above claimed it did; and a step
+whose own assumption was wrong, asserting that a two-series chart under
+a one-column delete would be left with nothing to draw.
+
+That third one is the finding, because the step was wrong *and* the
+server was: the refusal had been saying "nothing to draw" for every
+chart the band touched. It counts now. The second run passed 206 steps
+and reading it found two more things a pass hides — a refusal whose
+clause did not compose into its sentence ("the chart(s) "X", which would
+be left with nothing to draw in place"), and the guard refusing a write
+into a pivot's *output* as merely "not empty", which is true, less
+useful than it looked in §7.6, and now §17a.27.
+
+That is four phases in four where reading a transcript found what
+counting it could not, and the first two here were in the fake as much
+as the server: a unit test cannot refuse a request the fake accepts, and
+the fake accepted both.
+
+**The two review passes found nineteen things between them and every one
+was fixed.** `/code-review high` found eleven, of which three matter
+beyond their own line: a listing field that could never be populated
+against the real API and passed its test only because the fake ignores
+field masks (§17a.29); an `add` that replaced an existing pivot table
+and its whole output in silence; and a pivot's reported footprint
+absorbing anything computed below and right of it, which handed a caller
+a rectangle of cells to avoid that were never the pivot's.
+
+`/simplify` found eight, and its best is one no gate could have caught:
+`manage_data_source` carried a `delete` that removes a whole sheet under
+a `Kind` whose annotations say `destructiveHint: false`, reachable with
+`GSHEETS_ENABLE_DESTRUCTIVE` off. §17c states the criterion this
+project already applies three times; the delete met it more severely
+than an action already gated, and the fix is the split §17a.10 made
+once before. The same pass also found a phrasing literal being used as a
+control flag, where rewording a preview would have silently switched a
+branch.
 
 **v1.0.0** waits for use in anger and a further eval round with a second
 client.
@@ -1632,6 +1924,33 @@ they are not reopened.
    cell-anchored comments turn out to be reachable and useful.
 6. **No `drive.file`, no full `drive`.** `spreadsheets` plus
    `drive.readonly`; file management belongs to the Drive server.
+   **Amended 2026-09-07 by §17.6a**, which adds a third scope for one
+   gated tool. The rule above still holds for everything else: no scope
+   is added to reach a file, and none is added by default.
+
+6a. **`bigquery.readonly`, requested only when
+   `GSHEETS_ENABLE_DATA_SOURCES=true`** (decided 2026-09-07, after spike
+   N). `addDataSource` refuses under this server's two scopes with `403
+   … Please include bigquery.readonly scope`, and refreshing a real
+   BigQuery source needs it too; the 200s spike N got from `refresh` and
+   `cancel` came from a spreadsheet with nothing to refresh and prove
+   nothing. So Connected Sheets cannot be reached at all without it.
+
+   The scope is real and the recommendation against taking it was
+   weighed and overruled: a Sheets server whose login screen asks for
+   BigQuery is asking most of its users to grant access to a product
+   they do not have, for a tool that needs a billing-attached Cloud
+   project before it does anything. What settles it is that the cost is
+   avoidable — the scope is requested only when the setting is on, so
+   the default login is unchanged and a user who wants Connected Sheets
+   opts in and logs in again. `doctor` says which scopes the token
+   actually carries, so the "I turned it on and it still fails" case
+   answers itself.
+
+   `list` is deliberately outside the gate. `fields=dataSources` is
+   accepted under the existing scopes, so `get_spreadsheet` reports that
+   a spreadsheet is connected to a data source for every user, at no
+   cost and no consent.
 7. **Go directive `go 1.27.1`**, matching the sibling servers.
 8. **A tool result is not masked; the artefacts meant to be pasted are**
    (decided 2026-09-06, after the live run raised it). `read_range`
@@ -1646,7 +1965,7 @@ they are not reopened.
 
 ## 17a. Deferred cleanups
 
-Seventeen open, eight closed. A closed entry keeps its text and the decision that
+Sixteen open, eleven closed. A closed entry keeps its text and the decision that
 closed it, so nobody reopens a question that was answered. Five of the
 open ones were raised by phase 2's own review passes and are recorded
 here rather than fixed in passing; two of those (entries 12 and 14) are
@@ -1717,6 +2036,11 @@ cannot be verified again yet.
    rather than just fill the result. It needs a live probe before it is
    adopted (rule 12), which is why phase 1 recorded it rather than
    guessing. The wire fields are not written until then.
+   **Closed 2026-09-07 by spike P:** the standard `fields` parameter does
+   apply to the reply, so `updatedSpreadsheet(<CardFields>)` comes back a
+   card with no `spreadsheetUrl` in it. The concern was real — the
+   unmasked reply carries the URL — and the mask the card already has is
+   the whole fix.
 8. **A refusal names the tool's argument from inside the guard.**
    `plan.Blocker.Allow` holds `"overwrite"`, `"overwrite_formulas"` and
    `"allow_external_formulas"` — the JSON names `internal/tools`
@@ -1806,7 +2130,11 @@ cannot be verified again yet.
    It needs a live probe first (rule 12): the fake returns
    `conditionalFormats` whatever the mask says, so no test here can tell
    whether the card mask accepts the field or what it adds to a payload
-   every `get_spreadsheet` pays for. **Still open.**
+   every `get_spreadsheet` pays for. **Closed 2026-09-07 by
+   spike P:** the mask is accepted, and a sub-mask of
+   `conditionalFormats(ranges)` answers the counting question for 294
+   bytes where a whole rule costs 651. The card carries the ranges, and
+   a rule update is two requests instead of three.
 16. **`leaks history` spawns one `git cat-file` per blob.** A single
    `git cat-file --batch` fed the ids on stdin would do it in one
    process. It is a manual gate, so the cost is nobody's per-push
@@ -1855,8 +2183,18 @@ cannot be verified again yet.
    a mask of its own rather than an extension of `gapi.GridFields`, which
    the whole read path shares, and `rowMetadata` emits an object per row
    in the window — so it needs a live probe before adoption (rule 12).
-   **Still open**, and the placement before the confirm gate is right and
-   stays: a refusal has to name what it is refusing.
+   **Closed 2026-09-07 by spike P**, with the cost measured rather than
+   assumed: the mask is accepted, and a four-row window returns four
+   `rowMetadata` objects for 713 bytes, one of them carrying the anchor.
+   That is about 180 bytes per row of the band — right for the bands a
+   person deletes by hand, wrong for a ten-thousand-row one, so the fold
+   happens under a row count and the search stays for the rest. The
+   probe's own first run reported the mask unsupported, on a mask this
+   repository had written with one parenthesis missing.
+
+   The placement before the confirm gate is right and stays: a refusal
+   has to name what it is refusing. Phase 4 adds charts and pivot tables
+   to what that refusal names.
 21. **A resource builds a grid the size of its window, not its data.**
    `SheetCSV` fetches up to `config.MaxMaxCells` and `grid.Build` pads to
    the whole requested rectangle, so a sparse sheet holding sixty cells
@@ -1945,7 +2283,42 @@ cannot be verified again yet.
    multiplies. Recorded with its measurement: four runs of that task took
    2, 4, 5 and 13 calls, so the variance is as much the finding as the
    worst case.
-26. Nothing further. The tool-version problem that was here — a
+27. **A write into a pivot table's output is refused as "not empty".**
+   The anchor is named — it carries the `pivotTable` field and the
+   refusal says what a write there would cost — but the cells the pivot
+   *draws* carry no such field: on the wire they are ordinary computed
+   values, and the definition sits on the top-left cell alone. So a
+   write to the middle of a pivot is refused correctly and unhelpfully,
+   and a caller who passes `overwrite` stops the pivot drawing until
+   they clear the cell again.
+
+   Fixing it means reading up and left of every guarded write on the
+   chance a pivot anchor is there — a wider rectangle on every write, to
+   improve a message. The cheaper shape is to look only when the write
+   is refused, which pays the read once per refusal rather than once per
+   write, and it needs the refusal path to be able to fetch. **Still
+   open**, found by reading the first live run of phase 4: the count was
+   green and the refusal said "I3 is not empty" under a step whose whole
+   subject was pivot tables.
+29. **The fake ignores the field mask, so no test can catch a mask that
+   asks for the wrong thing.** `sheetstest`'s `spreadsheets.get` refuses
+   an *empty* `fields` — which is the rule it exists to hold — and then
+   returns everything whatever the mask says. Phase 4's review pass
+   found what that allows: `manage_data_source list` reported each
+   source's kind, a test asserted "BigQuery", and the card's mask had
+   never asked for the spec. Live it would have been empty on every
+   call. The mask was widened and the test still does not prove it; the
+   live driver does, by reading a card on every run.
+
+   Honouring a mask properly means walking the response and pruning it,
+   which is a small field-mask parser and a real piece of work. The
+   cheaper half is a mask *shape* check — refuse a get whose mask names
+   a field the response type has no JSON tag for — which would have
+   caught nothing here, since `spec` exists and simply was not asked
+   for. **Still open**, and recorded with what it would and would not
+   have caught: a fake that answers more generously than the API is the
+   shape three findings in this project have now taken.
+30. Nothing further. The tool-version problem that was here — a
    distribution `golangci-lint` built with an older Go refusing this
    module, and a stale `go-licenses` failing on the standard library —
    was fixed rather than deferred: the Makefile fetches all three tools
@@ -2065,8 +2438,9 @@ which rather than letting them blur.** Three tiers:
    provenance that matters.
 
 Beyond those, §15's spikes are **unverified by design** until the phase
-that depends on each one runs it. A, B, C, E, F, H and I are done; D and
-G are not. Every row a spike produced is dated in place below.
+that depends on each one runs it. A, B, C, E, F, G, H, I, J, K, L, M, N
+and P are done; D is not. Every row a spike produced is dated in place
+below.
 
 | Convention | Verdict | Effect |
 |---|---|---|
@@ -2082,6 +2456,7 @@ G are not. Every row a spike produced is dated in place below.
 | Read-only mode is a scope swap and nothing else (inherited) | **Refuted** against the per-method scopes in the discovery document: only `spreadsheets.get`, `values.get` and `values.batchGet` accept a read-only scope. `getByDataFilter`, `values.batchGetByDataFilter` and both `developerMetadata` reads require a **write-capable** scope | Read-only mode registers no tool that needs a data filter, and §6.4 may not make developer metadata the only way to reach anything |
 | Developer metadata is a general-purpose anchor for any range (my assumption when looking for a Docs `named_range` equivalent) | **Refined**: it survives edits — "will remain associated at those locations as they move around" — but attaches only to the spreadsheet, a sheet, or a **dimension** range, and reading it needs a write scope | Offered in phase 3 as an optional label beside A1, never as the only address |
 | The Sheets error surface mirrors Drive's, with 403 reasons for throttling | **Unverified, and recorded as such**: the troubleshooting page documents only 400, 500 and 503, and says 429 for quota. Drive's four 403 quota reasons are a Drive fact and may not hold here | Spike E observes the real shapes before the class mapping is finalised. Until then the mapping treats 429 as rate limiting and does not invent 403 reasons |
+| Sheets' 429 is a shape this project would need a second account or a deliberate quota breach to see (spike E, and true for a year of phases) | **Observed 2026-09-07**, by running the live driver four times in a few minutes: `HTTP 429 RESOURCE_EXHAUSTED (RATE_LIMIT_EXCEEDED): Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user'`. It arrived on a `spreadsheets.get` in the middle of a run | The mapping built from Drive's vocabulary was right: `[rate_limited]`, with "this is Google's per-minute quota, which refills, so retry shortly". It refilled and the next run passed. Two of spike E's six shapes are still unobserved |
 | A batch of updates should be split so a failure is small | **Rejected**, and the discovery document says why in its own words: "If any request is not valid then the entire request will fail and nothing will be applied … the updates in the request will be applied together atomically." A batch also counts once against quota, so splitting costs quota *and* gives up atomicity | Ops compile into one batch; a partial application cannot happen |
 | A write, once applied, is what the spreadsheet holds (my assumption, and the premise of an earlier checkpoint design that claimed to detect conflicts) | **Refuted by the platform itself**: "Due to the collaborative nature of spreadsheets, it is not guaranteed that the spreadsheet will reflect exactly your changes after this completes … Your changes may be altered with respect to collaborator changes" | The checkpoint is documented as narrowing a window rather than closing it, and `manage_range`'s protected ranges are named as the only real guarantee (§4.7) |
 | A structural write needs a second call to report the state it produced | Refuted: `batchUpdate` takes `includeSpreadsheetInResponse` with `responseRanges`, so the after state arrives in the same response | One request per write, including its report (§7.3) |
@@ -2468,3 +2843,30 @@ by a review pass.
 | A conditional rule that could not be deleted | **The server's, found through spike J**: a `deleteTable` earlier in the run had taken it. See above |
 | Removing a note | **The driver's.** The step expected removal to go through unguarded, which was true when it was written and stopped being true when a review pass decided that removing a note takes the same unseen thing replacing one does | The step now expects the refusal and then passes `overwrite`. Worth recording as a driver failure rather than a server one: the expectation was the stale half |
 | Deleting a named range that was never created | **A cascade** of the second row, and the only one of the five that told us nothing new |
+
+**Spikes L, M, N and P, run live 2026-09-07.** Four of these rows refute
+something §7.6 or §8 assumed. Two of them are silent destroys, which
+makes five this project has found on an API whose reference mentions
+none of them.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| `updateChartSpec` updates the fields it is given, like every other update request in the union | **Refuted**: the request carries no field mask and the API refuses a partial spec outright — `400 One of basicChart, pieChart, bubbleChart, candelstickChart, histogramChart, or orgChart must be set on chartSpec`. The chart was unchanged afterwards, so the refusal is clean rather than half-applied | `manage_chart update` reads the existing spec, edits it and sends it back whole. A tool that took a title and sent a title would fail every call, which is the good case; one that filled in a default chart kind would silently rebuild somebody's chart as a column chart |
+| A chart notices when the data under it is deleted | **Refuted, and this is the third silent destroy**: deleting the charted column left the chart alive with one domain and **zero series**, the reply was `{}`, and the card still reports a chart. Nothing anywhere says the chart no longer draws anything | `delete_dimensions` counts the charts whose sources intersect the band and names them before the confirm gate, the way it already names anchors. Sheets has no undo, and a chart that has quietly stopped charting is worse than one that is gone |
+| An invalid chart spec is refused with a message a caller can act on | **Refuted for the commonest mistake**: a `basicChart` with neither domains nor series returns **HTTP 500, "Internal error encountered"**. A 500 is classed retryable by §6.5, so the honest behaviour of a client that trusts the status is to send it again and get another 500 | `manage_chart` validates domain-and-series before it builds the request. This is the first case in the project where the API's own error class is wrong for the request that caused it, and the mapping is not what needs changing — the request is |
+| `deleteEmbeddedObject` reports what it removed | **Refuted**: the reply is `{}` for a chart and for a slicer alike. Deleting the same id twice is a clean `400 No embedded object with id: …`, which is the only feedback there is | The result is composed from the card read before the delete, not from the reply. The second delete's message is good enough to pass through as `[not_found]` |
+| A chart on its own sheet is a sheet like any other | **Refined**: `addChart` with `newSheet: true` makes a sheet of `sheetType: OBJECT` titled `Chart1`, **with no `gridProperties` at all**. Deleting that sheet takes the chart with it | Anything reading `gridProperties` off a card must tolerate its absence, which is a hole that predates phase 4: a spreadsheet with a chart sheet made in the Sheets interface reaches every tool this server already ships |
+| A pivot table is written and deleted like the other structures | **Refuted**: there is no pivot request in the union. It is a `pivotTable` field on one `CellData`, written through `updateCells` at the anchor, and deleted by an `updateCells` naming that field with no pivot in the cell — which takes the whole output with it. The write's reply is `{}` | `manage_pivot_table` compiles to `updateCells`, and its result is read back rather than reported from the request |
+| A pivot's output is data, so a read sees it and the guard counts it | **Confirmed, and half of it matters**: the output cells carry an `effectiveValue` and **no `userEnteredValue`**, so the server's own grid mask sees ten non-empty cells over a four-group pivot and the guard refuses a write over them. It cannot say what they are: `GridFields` asks for no `pivotTable` field | The guard already fails closed here, which is the important half. `read_range` and the guard's refusal both gain the pivot's anchor, so "10 non-empty cells" becomes "the output of a pivot table anchored at E1" |
+| Writing into a pivot's output is refused, or destroys it | **Refuted both ways, and the truth is better**: `values.update` over one output cell returns 200 and collapses the whole pivot to `#REF!` at the anchor — "Array result was not expanded because it would overwrite data in F3" — and clearing that one cell brings the entire output back. The damage is total and completely reversible | The refusal says the pivot will stop drawing until the cell is cleared, which is true, rather than that the pivot will be destroyed, which is not. An `updateCells` over the **anchor** is a different act: it replaces the pivot outright and silently, and is the fourth silent destroy |
+| The API validates a pivot table it is given | **Refuted where it matters most**: a `sourceColumnOffset` of 9 against a three-column source is accepted with a 200. A missing `summarizeFunction`, a missing `sortOrder` and a missing source are each a clean 400 | `manage_pivot_table` checks every offset against the source's width before sending. An out-of-range offset is the one mistake a caller makes by counting from one |
+| A pivot may be anchored anywhere the caller likes | **Refuted**: anchored inside its own source it is accepted with a 200 and evaluates to `Circular dependency detected`. The API does not refuse it and the reply says nothing | Refused before the request is built, by the same rectangle arithmetic the guard already does |
+| A pivot follows its source the way an anchor follows its row | **Refined**: deleting four of five source rows left the pivot alive, its source range shrunk with the delete, and its output reduced to a header and `Grand Total`. Silent, like the chart | `delete_dimensions` names intersecting pivots beside the charts and the anchors |
+| The scopes in §17.6 are enough for everything in §8 | **Refuted by the one tool that was never probed**: `addDataSource` under `spreadsheets` + `drive.readonly` returns `403 The request scopes are not sufficient for performing this operation. Please include bigquery.readonly scope`, and the reference says refreshing a BigQuery source needs it too. `refreshDataSource` and `cancelDataSourceRefresh` returned 200 here only because there was nothing to refresh, which proves nothing about a real source | §17.6 is reopened and amended: `bigquery.readonly` is requested, behind `GSHEETS_ENABLE_DATA_SOURCES`, so a user who will never own a BigQuery project is not asked to consent to one. See §17.6a |
+| The card cannot report data sources without the BigQuery scope | **Refuted**: `fields=dataSources` is accepted under the existing two scopes and returns `{}` on a spreadsheet that has none. The mask costs nothing | `get_spreadsheet` can say that a spreadsheet is connected to a data source whatever the scopes, which is the half of the feature every caller wants and none of the cost |
+| §17a.7's blocker stands: a `batchUpdate` reply cannot be masked, so it carries the `spreadsheetUrl` the card drops | **Refuted**: the standard `fields` parameter applies to `updatedSpreadsheet` like any other reply. Under `updatedSpreadsheet(<CardFields>)` the URL is absent and the reply is a card. The unmasked reply does carry it, so the concern was real and is now removable | §17a.7 closed: the structural writes fold their card re-read into the write |
+| §17a.15's rules cannot ride on the card | **Refuted**: `sheets.conditionalFormats` is accepted, and a sub-mask of `(ranges)` alone gives the count for 294 bytes against the 651 a whole rule costs | §17a.15 closed: the card carries the ranges, and a rule update is two requests instead of three |
+| A tool that reaches a second world needs one gate, so one Kind covers it | **Refuted by the phase's own cleanup pass**: `manage_data_source` carried a `delete` that removes a whole sheet, under `Kind: Connected`, whose annotations say `destructiveHint: false` and whose gate reads only the data-sources setting. With `GSHEETS_ENABLE_DESTRUCTIVE=false` — the documented-safe configuration — the delete was still reachable, and a client trusting annotations to auto-approve would not have asked | Split into `delete_data_source`, `Kind: Destructive`, exactly as `edit_dimensions`' delete became `delete_dimensions` (§17a.10). The two gates are about different things — one is a scope, the other is what cannot be undone — and a tool needing both is two tools |
+| Deleting a data source needs the BigQuery scope, like adding and refreshing one | **Refuted by spike N's own transcript, read again a day later**: `deleteDataSource` came back `400 … The data source ID doesn't exist`, not the `403 … Please include bigquery.readonly scope` that `addDataSource` gave in the same run. The evidence was in the phase's first transcript and its consequence was only seen when the delete needed a home | `delete_data_source` asks for no third scope, so it reaches a data source somebody else connected — which is the case a Sheets server is most likely to meet |
+| §17a.20's `rowMetadata` is not reachable through a grid read | **Refuted, after the spike's own mask was refused for being unbalanced by one parenthesis**: `data(…,rowMetadata(developerMetadata))` is accepted and returns one object per row of the *window* — four objects for a four-row read, one carrying the anchor, for 713 bytes | §17a.20 closed with its cost stated: it saves a request and pays about 180 bytes per row of the band. Right for the bands anybody deletes by hand, wrong for a ten-thousand-row band, so the fold happens under a row count and the search stays for the rest |
+

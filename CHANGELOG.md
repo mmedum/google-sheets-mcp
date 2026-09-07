@@ -7,6 +7,146 @@ and this project follows [semantic versioning](https://semver.org).
 
 Nothing yet.
 
+## [0.4.0] - 2026-09-07
+
+### Added
+
+- **`manage_chart`: add, update, move, delete and list charts and
+  slicers.** A chart floats above the grid, so adding one overwrites
+  nothing, and its data is named in A1 — one range per series, no index
+  arithmetic. An update reads the whole chart and sends it back with the
+  change applied, because Google's `updateChartSpec` carries no field
+  mask and replaces the spec outright: a rename built from this server's
+  own struct would have dropped every field the struct does not model. A
+  chart kind this server cannot build is still readable, movable,
+  renamable and deletable, and says so rather than being rebuilt as
+  something else.
+- **`manage_pivot_table`: add, update, delete and list pivot tables.**
+  Columns are named in A1 or by their heading, never by counting into
+  the source. Every result reports the rectangle the table covers *right
+  now*, read back after the write: a pivot's size is computed from the
+  data and appears in no request and no reply, so a caller who writes
+  beside where they think it ends writes into it.
+- **`manage_data_source`: Connected Sheets, behind
+  `GSHEETS_ENABLE_DATA_SOURCES`.** Connect a BigQuery query or table,
+  refresh it, cancel a refresh, delete it, or list what is connected.
+  The setting is also what makes `login` ask for `bigquery.readonly`,
+  which Google requires for `addDataSource` and which this server does
+  not ask for by default — a spreadsheet server whose consent screen
+  asks for BigQuery is asking most people to grant access to a product
+  they do not have. `get_spreadsheet` reports whether a spreadsheet has
+  a data source whatever the setting, at no scope and no cost.
+
+### Fixed
+
+- **Deleting a charted column left the chart drawing nothing, silently.**
+  The chart keeps its place, its title and its id, loses the series, and
+  Google's reply says nothing at all — the third silent destroy this
+  project has found on an API whose reference mentions none of them.
+  `delete_dimensions` now names the charts a band would break before the
+  confirm gate, with the count: "would lose 1 of its 2 series" where
+  that is what happens, and "would be left with nothing to draw" only
+  where it is true. The first version said the second for both, and one
+  live run with a two-series chart is what showed it.
+- **A write into a pivot table's anchor is refused with what it costs.**
+  The guard already refused it — a pivot's output cells are non-empty —
+  but the refusal said only "not empty", which tells a caller to pass
+  `overwrite` and nothing about what `overwrite` would do. It now says
+  the cell anchors a pivot table and that a write there clears
+  everything it draws. A write into the middle of the output is still
+  refused as an ordinary non-empty cell; §17a.27 has why, and its cost.
+- **A stacked line chart is refused here rather than by Google.**
+  `stackedType` applies to area, bar, column, combo and stepped area,
+  and reaches Google as a 400 on anything else. The refusal now names
+  the types that take it.
+- **The schema dump was missing a tool, and every test was green.**
+  `--dump-schemas` built the full tool surface by listing the
+  registration gates by hand, so phase 4's new gate — and the tool
+  behind it — was absent from the dump and therefore from the schema
+  diff, which is the gate that exists to say a tool has appeared. The
+  surface now comes from `tools.FullSurface`, beside the gates it has to
+  saturate, and a test enumerates the gates and requires no combination
+  to register something the full surface does not.
+
+- **Deleting a data source is `delete_data_source`, gated and
+  confirmed.** It removes the `DATA_SOURCE` sheet Google made for the
+  source and everything on it — strictly more than `delete_sheet` does —
+  and what goes cannot be read back without re-running a billed query.
+  It was an action inside `manage_data_source`, whose annotations told
+  clients it was not destructive and whose gate is a scope rather than a
+  danger; with `GSHEETS_ENABLE_DESTRUCTIVE=false` it was still reachable.
+  Split the way `edit_dimensions`' delete became `delete_dimensions`. It
+  needs no BigQuery scope — spike N's transcript already said so, in a
+  400 about the id where `addDataSource` had given a 403 about the scope
+  — so it reaches a data source somebody else connected.
+- **A pie chart could not be updated.** `manage_chart update` refused
+  every chart that was not a `basicChart` with "this server can retitle,
+  move and delete but not rebuild" — true for a treemap, false for the
+  pie the same tool had just created. A pie now takes `legend`, `domain`
+  and `series`, and refuses `stacked`, `axis_title`, `headers` and
+  `chart_type` by name rather than blaming the chart kind.
+- **`headers` and `axis_title` were read on `add` and dropped on
+  `update`.** A call passing only one of them was told there was nothing
+  to change.
+- **An update's unqualified range resolved against the chart's own
+  sheet**, which for a chart on its own sheet is a `sheetType: OBJECT`
+  sheet with no cells at all. It resolves against the `sheet` argument
+  where one is given, and refuses with the reason where it cannot.
+- **`manage_chart list` compared its `sheet` argument with the title**,
+  so the numeric sheet id its own description offers matched nothing,
+  and a misspelled title came back "no charts" instead of a refusal
+  naming the sheets that exist. It goes through the same lookup every
+  other listing uses.
+- **`manage_pivot_table add` replaced an existing pivot table silently.**
+  On an occupied anchor an add is an `updateCells` like any other: it
+  discards the definition and its whole output. It refuses now, and
+  points at `update`.
+- **A pivot's reported footprint swallowed its neighbours.** The
+  rectangle was "the furthest computed cell anywhere below and right of
+  the anchor", so a second pivot table, an `ARRAYFORMULA` spill or an
+  imported range joined it — and the result hands that rectangle to the
+  caller as cells a write would break. It stops at the first empty row
+  and the first empty column.
+- **A pivot built over a whole-sheet range resolved its columns one too
+  far.** An absent `startColumnIndex` reads as column zero, which made
+  every offset one too high *and* disabled the bounds check that exists
+  because the API accepts an out-of-range offset with a 200.
+
+- **An API coverage gate, so §16's completeness claim is checked rather
+  than written down.** Every method the Sheets and Drive discovery
+  documents publish, and every one of the 69 `batchUpdate` request
+  kinds, is now either used — naming the code that implements it — or
+  written off with a reason, in `testdata/api-coverage.tsv`. `gates
+  api-coverage` runs offline in `make check` and holds that file, the
+  generated `testdata/api-surface.json` and the code to each other, so a
+  capability Google adds fails the build instead of aging quietly into a
+  paragraph that used to be true. `gates api-diff` refetches and reports
+  NEW, GONE and CHANGED with verb and path, and stays manual: a gate
+  that fails when Google is slow is one people learn to re-run until it
+  passes. Prompted by google-chat-mcp, which built one first and passed
+  on the two mistakes it had made.
+
+### Changed
+
+- **`get_spreadsheet` names the charts on each sheet**, and counts
+  slicers and conditional format rules beside the tables and merges it
+  already counted. A count says a sheet has three charts; the names say
+  which one you mean. About 70 bytes a chart, against the 2 KB a whole
+  chart spec would cost.
+- **A conditional format rule update costs two requests instead of
+  three.** The count now comes from the card, which carries the rules'
+  ranges — §17a.15, closed by measuring rather than guessing.
+- **A pivot table's update and delete cost one read where they cost
+  three**, and a listing costs two whatever it finds, where ten pivot
+  tables used to cost eleven round trips. The API allows sixty reads a
+  minute and one round trip is about a second, so this is the most
+  expensive kind of waste there is here. A test holds the count.
+- Three deferred cleanups are closed, each by a live probe rather than a
+  decision (§17a.7, §17a.15, §17a.20): a `batchUpdate` reply can be
+  masked, so a structural write can carry its own card back; the card
+  can carry the conditional format rules' ranges; and a grid read can
+  carry the anchors on the rows it reads, at about 180 bytes a row.
+
 ## [0.3.1] - 2026-09-07
 
 ### Fixed
@@ -598,7 +738,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/mmedum/google-sheets-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.1.0...v0.2.0

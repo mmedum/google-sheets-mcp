@@ -30,6 +30,24 @@ var Undrivable = map[string]string{
 		"the fake covers paging",
 }
 
+// UndrivableTools are the tools a live run cannot exercise at all, each
+// with the reason. Separate from Undrivable because the two failures are
+// different: an option nobody sends is a gap in the driver, and a tool
+// nobody can call is a limit of the account the driver runs against.
+//
+// A tool listed here is still built, still unit-tested and still in the
+// schema dump. What it is not is proven against Google, and saying so
+// here is better than a step that fakes a pass.
+var UndrivableTools = map[string]string{
+	"manage_data_source": "Connected Sheets needs a BigQuery-enabled Cloud project with billing attached, and " +
+		"addDataSource needs the bigquery.readonly scope this server asks for only under " +
+		"GSHEETS_ENABLE_DATA_SOURCES. Spike N sent every call in the tool and recorded what came back (§18); " +
+		"driving it for real would charge somebody's project on every run",
+	"delete_data_source": "there is nothing to delete: the driver cannot create a data source, for the reason " +
+		"manage_data_source cannot be driven. Spike N sent deleteDataSource live and recorded the reply — a 400 " +
+		"naming the id, which is also how §18 knows this call needs no BigQuery scope",
+}
+
 // Tool is one tool and the options it accepts.
 type Tool struct {
 	Name    string
@@ -57,6 +75,10 @@ func Check(sent map[string]map[string]bool, tools []Tool) Report {
 		sort.Strings(options)
 		args, called := sent[t.Name]
 		if !called {
+			if reason := UndrivableTools[t.Name]; reason != "" {
+				r.Excused = append(r.Excused, t.Name+": "+reason)
+				continue
+			}
 			r.NoCaller = append(r.NoCaller, t.Name)
 			r.Total += len(options)
 			continue

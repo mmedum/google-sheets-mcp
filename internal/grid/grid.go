@@ -56,7 +56,11 @@ type Cell struct {
 	// cannot show and a write can destroy without saying so.
 	Note       string
 	Validation string
-	Hyperlink  string
+	// Pivot says this cell anchors a pivot table. Only the anchor
+	// carries one: the cells it draws are ordinary computed values, so
+	// this marks where a pivot starts and not how far it reaches.
+	Pivot     bool
+	Hyperlink string
 
 	// Format is what the cell was explicitly given, and nil unless the
 	// read asked for it: a write's pre-read does not, and
@@ -187,6 +191,7 @@ func cell(cd *gsheets.CellData, formatted Formatted) Cell {
 	if cd.DataValidation != nil {
 		c.Validation = describeValidation(cd.DataValidation)
 	}
+	c.Pivot = len(cd.PivotTable) > 0
 	if v := cd.UserEnteredValue; v != nil && v.FormulaValue != nil {
 		c.Formula = *v.FormulaValue
 		c.Kind = KindFormula
@@ -277,6 +282,7 @@ type Counts struct {
 	Errors     int
 	Notes      int
 	Validation int
+	Pivots     int
 }
 
 // Count walks the grid.
@@ -295,6 +301,9 @@ func (g *Grid) Count() Counts {
 			}
 			if cell.Note != "" {
 				c.Notes++
+			}
+			if cell.Pivot {
+				c.Pivots++
 			}
 			if cell.Validation != "" {
 				c.Validation++

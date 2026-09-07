@@ -101,6 +101,14 @@ leaks-history: gates ## Every blob and message in the history; run before going 
 transcript: gates ## The live drivers print only through their redactor
 	@$(GATES) transcript
 
+.PHONY: api-coverage
+api-coverage: gates ## Every published API method and batchUpdate request is used or written off
+	@$(GATES) api-coverage
+
+.PHONY: api-diff
+api-diff: gates ## Refetch the discovery documents and rewrite the API snapshot (network; manual)
+	@$(GATES) api-diff
+
 .PHONY: live-cover
 live-cover: build gates ## The live driver must exercise every tool option
 	@$(GATES) live-cover $(BIN)
@@ -146,7 +154,7 @@ evals: build ## Drive a model through the tools and score it (needs credentials 
 	$(GO) run -tags=live ./scripts/evals -bin $(BIN)
 
 .PHONY: check
-check: fmt vet tidy lint cover vuln licenses secrets classes leaks transcript live-cover mcpb parity pins schema-diff smoke staleness ## Everything CI runs
+check: fmt vet tidy lint cover vuln licenses secrets api-coverage classes leaks transcript live-cover mcpb parity pins schema-diff smoke staleness ## Everything CI runs
 
 .PHONY: clean
 clean:

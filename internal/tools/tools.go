@@ -46,6 +46,16 @@ const (
 	// registered at all unless the destructive flag is set, and it still
 	// needs confirm on the call.
 	Destructive
+	// Connected reaches outside the spreadsheet — today that is
+	// BigQuery, through Connected Sheets. It is the second world this
+	// enum was written to grow an axis for, and it earns one because
+	// nothing else here needs a scope beyond Sheets and Drive: the tool
+	// is registered only with GSHEETS_ENABLE_DATA_SOURCES, which is also
+	// what puts that scope in front of the person at login (§17.6a).
+	//
+	// It is the one Kind whose OpenWorldHint is true, and that is the
+	// point of the distinction rather than a detail of it.
+	Connected
 )
 
 // Deps are what the tools need.
@@ -64,6 +74,10 @@ func Register(s *mcp.Server, d Deps) {
 	registerWrite(s, d)
 	registerFormat(s, d)
 	registerAnchor(s, d)
+	registerChart(s, d)
+	registerPivot(s, d)
+	registerDataSource(s, d)
+	registerDeleteDataSource(s, d)
 	registerResources(s, d)
 }
 
@@ -122,7 +136,26 @@ func add[In any, Out service.Rendered](s *mcp.Server, d Deps, def Def[In, Out]) 
 	})
 }
 
-// allowed applies the two registration gates. Both are server-side:
+// FullSurface is the configuration under which every tool registers.
+//
+// It lives beside allowed rather than in the command that dumps the
+// schemas, because it has to name every gate allowed reads and the
+// command has no way to know when a new one appears. The dump set
+// EnableDestructive by hand for three phases; phase 4 added a second
+// gate, and the tool behind it was missing from the schema dump — and
+// therefore from the schema diff — with every test still green.
+//
+// TestFullSurfaceRegistersEverything holds the claim rather than this
+// comment doing it: it enumerates the gate flags and requires no
+// combination to register a tool this one does not.
+func FullSurface(cfg config.Config) config.Config {
+	cfg.ReadOnly = false
+	cfg.EnableDestructive = true
+	cfg.EnableDataSources = true
+	return cfg
+}
+
+// allowed applies the registration gates. All of them are server-side:
 // annotations are hints the specification says a client may not trust,
 // and a host in an auto-approve mode runs an annotated tool without
 // asking anybody.
@@ -132,6 +165,8 @@ func allowed(k Kind, cfg config.Config) bool {
 		return true
 	case Destructive:
 		return cfg.EnableDestructive && !cfg.ReadOnly
+	case Connected:
+		return cfg.EnableDataSources && !cfg.ReadOnly
 	default:
 		return !cfg.ReadOnly
 	}
@@ -146,6 +181,8 @@ func annotationsFor(k Kind) *mcp.ToolAnnotations {
 		return &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: no, OpenWorldHint: no}
 	case Destructive:
 		return &mcp.ToolAnnotations{DestructiveHint: yes, OpenWorldHint: no}
+	case Connected:
+		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: yes}
 	default:
 		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: no}
 	}

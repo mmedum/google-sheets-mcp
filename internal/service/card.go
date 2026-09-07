@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/mmedum/google-sheets-mcp/internal/a1"
@@ -127,14 +128,41 @@ func cardSheet(sh *gsheets.Sheet) render.CardSheet {
 	}{
 		{len(sh.Tables), "table"},
 		{len(sh.Charts), "chart"},
+		{len(sh.Slicers), "slicer"},
 		{len(sh.Merges), "merge"},
 		{len(sh.BandedRanges), "banded range"},
+		{len(sh.ConditionalFormats), "conditional format rule"},
 	} {
 		if h.n > 0 {
 			cs.Holds = append(cs.Holds, render.Plural(h.n, h.what))
 		}
 	}
+	// The charts by name, which is what makes the count worth reading: a
+	// sheet that "holds 3 charts" says nothing a caller can act on, and
+	// the titles cost about 70 bytes each on a mask already being paid
+	// for. An untitled chart is named by its id, because that is what
+	// manage_chart takes.
+	cs.Charts = chartNames(sh)
 	return cs
+}
+
+// chartNames lists a sheet's charts the way a caller would name one.
+func chartNames(sh *gsheets.Sheet) []string {
+	out := make([]string, 0, len(sh.Charts))
+	for _, c := range sh.Charts {
+		var spec struct {
+			Title string `json:"title"`
+		}
+		if len(c.Spec) > 0 {
+			_ = json.Unmarshal(c.Spec, &spec)
+		}
+		if spec.Title == "" {
+			out = append(out, fmt.Sprintf("id %d", c.ChartID))
+			continue
+		}
+		out = append(out, spec.Title)
+	}
+	return out
 }
 
 func tableItems(byID map[int]string, sh *gsheets.Sheet) []render.NamedItem {
