@@ -130,9 +130,26 @@ type Report struct {
 	// than counting among the non-empty cells it is also in.
 	//
 	// Only the anchor. A pivot's output cells are ordinary computed
-	// values on the wire, and finding the anchor from one of them would
-	// mean reading up and left of every guarded write. §17a records that.
+	// values on the wire, so DrawnBy is the other half and is filled in
+	// from outside.
 	Pivots Cells
+	// Computed says something in the way is a cell nobody typed: an
+	// effective value with no entered one. A pivot draws exactly these,
+	// and so does an array formula's spill.
+	//
+	// A flag rather than the addresses, because no sentence names them.
+	// It exists to say whether a second look is worth paying for, and a
+	// Cells here would format up to ten addresses per guarded write for
+	// a reader that does not exist.
+	Computed bool
+	// DrawnBy are the pivot tables whose output this write lands in.
+	//
+	// Filled in after the fact through AddDrawnBy, by a caller that can
+	// fetch: nothing in the rectangle names them, because the definition
+	// sits on the anchor alone, up and to the left of what the guard
+	// read. Empty where nothing looked, which is every write that was
+	// not already being refused.
+	DrawnBy []PivotOutput
 	// NonEmpty and Formulas are what a value write destroys. Formulas
 	// are counted in NonEmpty too: a formula is a non-empty cell.
 	NonEmpty Cells
@@ -171,6 +188,28 @@ type Report struct {
 	// clear_format removes. Cells that only inherit the sheet's defaults
 	// are not counted: clearing takes nothing from them.
 	Formatted Cells
+}
+
+// PivotOutput is one pivot table a write would land in the output of.
+//
+// Three A1 addresses, because that is what the caller can go and look
+// at: no ids, no offsets. Anchor is the cell holding the definition,
+// Output what the pivot draws as it stands, and Hit the part of the
+// write inside it.
+type PivotOutput struct {
+	Anchor string
+	Output string
+	Hit    string
+}
+
+// AddDrawnBy records a pivot table whose output this write lands in.
+//
+// A method rather than an exported field somebody appends to, so that a
+// Report is still only written by this package. Every other finding
+// comes out of a Check function here; this one comes from a read the
+// guard cannot make, and it should not cost the invariant.
+func (r *Report) AddDrawnBy(anchor, output, hit string) {
+	r.DrawnBy = append(r.DrawnBy, PivotOutput{Anchor: anchor, Output: output, Hit: hit})
 }
 
 // Blocker is one reason a write is refused, and the argument that would
@@ -262,6 +301,25 @@ func (r Report) Blockers(ack Ack) []Blocker {
 			Allow: "overwrite",
 		})
 	}
+	// Before the plain non-empty finding, and as well as it: the cells
+	// are non-empty too, and "not empty" is true of a pivot's output and
+	// says nothing about the table it belongs to.
+	//
+	// Under the same acknowledgement as its neighbours. Whoever fills
+	// DrawnBy decides whether to look at all, and a report built by
+	// something that decided differently must still not offer a caller
+	// the flag they already passed.
+	for _, p := range r.DrawnBy {
+		if ack.Overwrite {
+			break
+		}
+		out = append(out, Blocker{
+			Why: fmt.Sprintf("%s is inside the output of the pivot table anchored at %s, which covers %s as it "+
+				"stands. A write there stops the whole pivot drawing and collapses it to #REF! at %s; clearing "+
+				"the cell again brings all of it back", p.Hit, p.Anchor, p.Output, p.Anchor),
+			Allow: "overwrite",
+		})
+	}
 	if r.NonEmpty.Any() && !ack.Overwrite {
 		out = append(out, Blocker{
 			Why:   fmt.Sprintf("%s %s not empty", r.NonEmpty, r.NonEmpty.verb("is", "are")),
@@ -334,6 +392,9 @@ func Check(g *grid.Grid, values [][]any, formulasEvaluated bool) Report {
 			}
 			if cell.Pivot {
 				r.Pivots.AddCell(g, i, j)
+			}
+			if cell.Computed {
+				r.Computed = true
 			}
 			if cell.Note != "" {
 				r.Notes.AddCell(g, i, j)
@@ -530,6 +591,8 @@ func CheckClearFormat(r *Report, g *grid.Grid) {
 func (r *Report) Merge(o Report) {
 	r.NonEmpty.Merge(o.NonEmpty)
 	r.Pivots.Merge(o.Pivots)
+	r.Computed = r.Computed || o.Computed
+	r.DrawnBy = append(r.DrawnBy, o.DrawnBy...)
 	r.Formulas.Merge(o.Formulas)
 	r.Notes.Merge(o.Notes)
 	r.Validation.Merge(o.Validation)

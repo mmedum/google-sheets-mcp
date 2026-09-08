@@ -280,12 +280,7 @@ func fit(r a1.Rect, maxCells int) (a1.Rect, bool) {
 	if cols <= 0 {
 		return r, false
 	}
-	maxRows := max(maxCells/cols, 1)
-	if r.Rows() <= maxRows {
-		return r, false
-	}
-	r.LastRow = r.FirstRow + maxRows - 1
-	return r, true
+	return r.LimitRows(max(maxCells/cols, 1))
 }
 
 // sheetData pulls one sheet's grid data, merges and protected ranges out

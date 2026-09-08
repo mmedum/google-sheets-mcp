@@ -551,12 +551,29 @@ func (r Rect) OffsetOf(startRowIndex, startColumnIndex int) (row, col int) {
 }
 
 // LimitRows trims a bounded rectangle to at most n rows and says whether
-// it had to.
+// it had to. The top survives: a read starts where the caller asked and
+// stops short.
 func (r Rect) LimitRows(n int) (Rect, bool) {
 	if n < 1 || r.FirstRow == 0 || r.LastRow == 0 || r.Rows() <= n {
 		return r, false
 	}
 	r.LastRow = r.FirstRow + n - 1
+	return r, true
+}
+
+// LimitRowsFromEnd is LimitRows with the other end surviving: the
+// rectangle keeps its last row and gives up its first ones.
+//
+// Both, rather than one with a flag, because which end survives is the
+// whole difference between the two callers and a boolean argument at a
+// call site says nothing about it. A read of what a caller named keeps
+// the top; a look back for what is above a write keeps the bottom,
+// since the write is the end it is looking back from.
+func (r Rect) LimitRowsFromEnd(n int) (Rect, bool) {
+	if n < 1 || r.FirstRow == 0 || r.LastRow == 0 || r.Rows() <= n {
+		return r, false
+	}
+	r.FirstRow = r.LastRow - n + 1
 	return r, true
 }
 
@@ -608,4 +625,35 @@ func contains1D(rFirst, rLast, oFirst, oLast int) bool {
 		return false
 	}
 	return true
+}
+
+// Intersect is the rectangle two rectangles share, and false when they
+// share none.
+//
+// An unbounded side reaches to the edge of the sheet, so the result is
+// unbounded on a side only where both inputs are. Callers that mean to
+// report the answer should check Bounded first: "the part of the write
+// inside the pivot" is an address a person goes and looks at, and a
+// side that resolves against a sheet size nobody has read is not one.
+func (r Rect) Intersect(o Rect) (Rect, bool) {
+	if !r.Overlaps(o) {
+		return Rect{}, false
+	}
+	return Rect{
+		FirstRow: max(r.FirstRow, o.FirstRow),
+		FirstCol: max(r.FirstCol, o.FirstCol),
+		LastRow:  nearer(r.LastRow, o.LastRow),
+		LastCol:  nearer(r.LastCol, o.LastCol),
+	}, true
+}
+
+// nearer is the closer of two far edges, where 0 is unbounded.
+func nearer(a, b int) int {
+	if a == 0 {
+		return b
+	}
+	if b == 0 {
+		return a
+	}
+	return min(a, b)
 }

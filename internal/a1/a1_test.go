@@ -437,3 +437,56 @@ func TestBandIndicesAgreesWithGridRange(t *testing.T) {
 		}
 	}
 }
+
+func TestIntersect(t *testing.T) {
+	for _, tc := range []struct {
+		a, b  Rect
+		want  Rect
+		share bool
+	}{
+		{Rect{1, 1, 4, 4}, Rect{2, 2, 6, 6}, Rect{2, 2, 4, 4}, true},
+		{Rect{1, 1, 4, 4}, Rect{5, 5, 6, 6}, Rect{}, false},
+		{Rect{1, 1, 4, 4}, Rect{4, 4, 4, 4}, Rect{4, 4, 4, 4}, true}, // a shared corner
+		// An unbounded side reaches the edge of the sheet, so it takes
+		// the other rectangle's edge and stays unbounded only where both
+		// are.
+		{Rect{2, 0, 2, 0}, Rect{2, 2, 3, 7}, Rect{2, 2, 2, 7}, true},
+		{WholeSheet, Rect{9, 9, 9, 9}, Rect{9, 9, 9, 9}, true},
+		{WholeSheet, WholeSheet, WholeSheet, true},
+	} {
+		got, share := tc.a.Intersect(tc.b)
+		if share != tc.share || got != tc.want {
+			t.Errorf("%+v.Intersect(%+v) = %+v, %v; want %+v, %v", tc.a, tc.b, got, share, tc.want, tc.share)
+		}
+	}
+}
+
+func TestLimitRows(t *testing.T) {
+	r := Rect{FirstCol: 1, FirstRow: 10, LastCol: 3, LastRow: 100}
+	// Which end survives is the whole difference between the two.
+	if got, cut := r.LimitRows(5); !cut || got != (Rect{FirstCol: 1, FirstRow: 10, LastCol: 3, LastRow: 14}) {
+		t.Errorf("LimitRows(5) = %+v, cut %v", got, cut)
+	}
+	if got, cut := r.LimitRowsFromEnd(5); !cut || got != (Rect{FirstCol: 1, FirstRow: 96, LastCol: 3, LastRow: 100}) {
+		t.Errorf("LimitRowsFromEnd(5) = %+v, cut %v", got, cut)
+	}
+	open := Rect{FirstCol: 1, LastCol: 3}
+	for name, f := range map[string]func(int) (Rect, bool){
+		"LimitRows": r.LimitRows, "LimitRowsFromEnd": r.LimitRowsFromEnd,
+	} {
+		if got, cut := f(1000); cut || got != r {
+			t.Errorf("%s(1000) = %+v, cut %v; a rectangle already inside the limit is untouched", name, got, cut)
+		}
+		if got, cut := f(0); cut || got != r {
+			t.Errorf("%s(0) = %+v, cut %v; no limit is no trim", name, got, cut)
+		}
+	}
+	// An unbounded side has no row count, so there is nothing to trim.
+	for name, f := range map[string]func(int) (Rect, bool){
+		"LimitRows": open.LimitRows, "LimitRowsFromEnd": open.LimitRowsFromEnd,
+	} {
+		if got, cut := f(5); cut || got != open {
+			t.Errorf("%s on an unbounded rectangle = %+v, cut %v", name, got, cut)
+		}
+	}
+}

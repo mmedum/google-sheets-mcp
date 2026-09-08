@@ -111,6 +111,10 @@ func (s *Service) Write(ctx context.Context, req WriteRequest) (*WriteResult, er
 	}
 
 	report := plan.Check(before, values, typed)
+	// Only where the guard has already refused, and it reads to answer,
+	// so it goes here rather than inside the guard: plan is a pure
+	// function over what was read.
+	s.pivotsBehind(ctx, tgt, &report, req.Ack())
 	res := &WriteResult{
 		Spreadsheet: tgt.ref.ID,
 		Sheet:       tgt.props.Title,

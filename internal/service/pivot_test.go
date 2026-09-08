@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mmedum/google-sheets-mcp/internal/gapi"
 	"github.com/mmedum/google-sheets-mcp/internal/gapi/sheetstest"
 	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
 	"github.com/mmedum/google-sheets-mcp/internal/service"
@@ -498,5 +499,253 @@ func TestPivotUpdateCostsFewRequests(t *testing.T) {
 	t.Logf("an update costs %d read(s) and %d write(s)", reads, writes)
 	if reads > 3 {
 		t.Errorf("an update costs %d reads; it used to cost four and the point of the change was fewer", reads)
+	}
+}
+
+// TestWriteIntoPivotOutputNamesThePivot is §17a.27. A pivot's output
+// cells are ordinary computed values on the wire, so the guard sees them
+// as "not empty" and nothing else; naming the table means looking up and
+// left of the write, after the refusal.
+func TestWriteIntoPivotOutputNamesThePivot(t *testing.T) {
+	_, svc := standard(t)
+	addPivot(t, svc, "F1")
+	_, err := svc.Write(context.Background(), service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "G3",
+		Values: [][]any{{"1"}},
+	})
+	if err == nil {
+		t.Fatal("a write into a pivot's output was allowed")
+	}
+	for _, want := range []string{"[blocked]", "pivot table anchored at F1", "G3", "covers F1:"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q:\n%s", want, err)
+		}
+	}
+}
+
+// TestWriteIntoPivotOutputPreviewSaysTheSame keeps the preview and the
+// refusal from disagreeing about what is in the way.
+func TestWriteIntoPivotOutputPreviewSaysTheSame(t *testing.T) {
+	_, svc := standard(t)
+	addPivot(t, svc, "F1")
+	res, err := svc.Write(context.Background(), service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "G3",
+		Values: [][]any{{"1"}}, DryRun: true,
+	})
+	if err != nil {
+		t.Fatalf("dry run: %v", err)
+	}
+	if !strings.Contains(res.Render(), "pivot table anchored at F1") {
+		t.Errorf("the preview does not name the pivot:\n%s", res.Render())
+	}
+}
+
+// TestWriteOverPivotAnchorNamesItOnce. The anchor is already named by
+// the finding that a write over it takes the whole table, so the second
+// look must not say it again.
+func TestWriteOverPivotAnchorNamesItOnce(t *testing.T) {
+	_, svc := standard(t)
+	addPivot(t, svc, "F1")
+	_, err := svc.Write(context.Background(), service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "F1",
+		Values: [][]any{{"1"}},
+	})
+	if err == nil {
+		t.Fatal("a write over a pivot's anchor was allowed")
+	}
+	if n := strings.Count(err.Error(), "pivot table"); n != 1 {
+		t.Errorf("the refusal mentions a pivot table %d times:\n%s", n, err)
+	}
+	if !strings.Contains(err.Error(), "anchors a pivot table") {
+		t.Errorf("the refusal does not say the write takes the whole table:\n%s", err)
+	}
+}
+
+// TestWriteBesidePivotOutputSaysNothing. An anchor up and to the left is
+// not yet a pivot that reaches the write: measuring the extent is what
+// keeps the refusal from steering a caller away from cells that were
+// never the pivot's.
+func TestWriteBesidePivotOutputSaysNothing(t *testing.T) {
+	_, svc := standard(t)
+	addPivot(t, svc, "F1")
+	// The pivot covers F1:G7. J3 holds a value nobody typed, so the
+	// cheap test passes and the extent is what refuses the claim.
+	if _, err := svc.Write(context.Background(), service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "J3",
+		Values: [][]any{{"=1+1"}}, Overwrite: true,
+	}); err != nil {
+		t.Fatalf("seeding J3: %v", err)
+	}
+	_, err := svc.Write(context.Background(), service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "J3",
+		Values: [][]any{{"1"}},
+	})
+	if err == nil {
+		t.Fatal("a write over a formula was allowed")
+	}
+	if strings.Contains(err.Error(), "pivot table") {
+		t.Errorf("a write outside every pivot's output was blamed on one:\n%s", err)
+	}
+}
+
+// TestPivotLookupIsPaidOnlyOnARefusal is the cost §17a.27 turned on:
+// once per refusal rather than once per write.
+func TestPivotLookupIsPaidOnlyOnARefusal(t *testing.T) {
+	srv, svc := standard(t)
+	addPivot(t, svc, "F1")
+	srv.Reset()
+	if _, err := svc.Write(context.Background(), service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "G3",
+		Values: [][]any{{"1"}}, Overwrite: true,
+	}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	// The lookup's own mask, not any mask naming a pivot: a guarded
+	// write's own read asks for the anchor field too.
+	for _, c := range srv.Calls() {
+		if c.Query.Get("fields") == gapi.PivotFields {
+			t.Errorf("an allowed write paid for the pivot lookup: %s %s", c.Op, c.Query.Get("ranges"))
+		}
+	}
+}
+
+// TestPivotLookbackIsBoundedByTheReadBudget is the cost of the shape
+// §17a.27 chose. The window that could hold the anchor is bounded from
+// the write's end, so a pivot anchored further above than the budget
+// reaches is not named and the refusal says only what the guard saw.
+func TestPivotLookbackIsBoundedByTheReadBudget(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	svc := newServiceBudget(t, srv, 2)
+	if _, err := svc.ManagePivotTable(context.Background(), service.PivotRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
+		Action: service.PivotAdd, Anchor: "F1",
+		Source: "A1:C6", Rows: []string{"A"}, Values: []string{"B sum"},
+	}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	_, err := svc.Write(context.Background(), service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "G3",
+		Values: [][]any{{"1"}},
+	})
+	if err == nil {
+		t.Fatal("a write into a pivot's output was allowed")
+	}
+	if !strings.Contains(err.Error(), "not empty") {
+		t.Errorf("the refusal lost the finding it always had:\n%s", err)
+	}
+	if strings.Contains(err.Error(), "pivot table") {
+		t.Errorf("the lookup reached past its budget:\n%s", err)
+	}
+}
+
+// TestPivotOutputNamesOnlyTheCellsItDraws. A write can straddle a
+// pivot's edge, and the refusal has to say which part of it is the
+// pivot's: a rectangle that took in the whole write would send a caller
+// looking for a pivot in cells no pivot draws.
+func TestPivotOutputNamesOnlyTheCellsItDraws(t *testing.T) {
+	_, svc := standard(t)
+	addPivot(t, svc, "F1")
+	// F1:G7 is the pivot. This write runs from inside it out to J3.
+	_, err := svc.Write(context.Background(), service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "G3:J3",
+		Values: [][]any{{"1", "2", "3", "4"}},
+	})
+	if err == nil {
+		t.Fatal("a write into a pivot's output was allowed")
+	}
+	if !strings.Contains(err.Error(), "G3 is inside the output") {
+		t.Errorf("the refusal does not name the part of the write the pivot draws:\n%s", err)
+	}
+	if strings.Contains(err.Error(), "G3:J3 is inside") {
+		t.Errorf("the refusal claims the whole write is the pivot's:\n%s", err)
+	}
+}
+
+// TestTwoPivotsAreBothNamed. Nothing says a write lands in one.
+func TestTwoPivotsAreBothNamed(t *testing.T) {
+	_, svc := standard(t)
+	addPivot(t, svc, "F1")
+	addPivot(t, svc, "J1")
+	_, err := svc.Write(context.Background(), service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "G3:K3",
+		Values: [][]any{{"1", "2", "3", "4", "5"}},
+	})
+	if err == nil {
+		t.Fatal("a write across two pivots' output was allowed")
+	}
+	for _, want := range []string{"anchored at F1", "anchored at J1"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name the pivot %q:\n%s", want, err)
+		}
+	}
+}
+
+// TestAdjacentPivotsAreMeasuredApart. Two pivot tables side by side have
+// no empty column between them, so the walk that stops at empty grew the
+// left one over the right one — which made a listing wrong and, once a
+// refusal quoted it, made the refusal name a table the write would not
+// have touched.
+func TestAdjacentPivotsAreMeasuredApart(t *testing.T) {
+	_, svc := standard(t)
+	addPivot(t, svc, "F1")
+	addPivot(t, svc, "H1")
+	res, err := svc.ManagePivotTable(context.Background(), service.PivotRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Action: service.PivotList,
+	})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	want := map[string]string{"F1": "F1:G7", "H1": "H1:I7"}
+	for _, p := range res.Pivots {
+		if p.Output != want[p.Anchor] {
+			t.Errorf("the pivot at %s covers %q, want %q", p.Anchor, p.Output, want[p.Anchor])
+		}
+	}
+	// And the refusal blames one table rather than both.
+	_, err = svc.Write(context.Background(), service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "H3",
+		Values: [][]any{{"1"}},
+	})
+	if err == nil {
+		t.Fatal("a write into a pivot's output was allowed")
+	}
+	if !strings.Contains(err.Error(), "anchored at H1") {
+		t.Errorf("the refusal does not name the pivot the cell belongs to:\n%s", err)
+	}
+	if strings.Contains(err.Error(), "anchored at F1") {
+		t.Errorf("the refusal blames the neighbour it would not have touched:\n%s", err)
+	}
+}
+
+// TestPivotIsNotNamedOnceOverwriteIsPassed. Every finding beside this one
+// is withheld when the flag that clears it has been passed, and a caller
+// told to pass overwrite twice has been told nothing the second time.
+func TestPivotIsNotNamedOnceOverwriteIsPassed(t *testing.T) {
+	srv, svc := standard(t)
+	addPivot(t, svc, "F1")
+	// A formula outside the pivot, so the write is still refused — for
+	// something overwrite alone does not allow.
+	if _, err := svc.Write(context.Background(), service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "H3",
+		Values: [][]any{{"=1+1"}}, Overwrite: true,
+	}); err != nil {
+		t.Fatalf("seeding H3: %v", err)
+	}
+	srv.Reset()
+	_, err := svc.Write(context.Background(), service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "G3:H3",
+		Values: [][]any{{"1", "2"}}, Overwrite: true,
+	})
+	if err == nil {
+		t.Fatal("a write over a formula was allowed")
+	}
+	if strings.Contains(err.Error(), "pivot table") {
+		t.Errorf("the refusal offers overwrite to a caller who passed it:\n%s", err)
+	}
+	// And the reads behind that sentence are not paid either.
+	for _, c := range srv.Calls() {
+		if c.Query.Get("fields") == gapi.PivotFields {
+			t.Errorf("the lookup ran for a finding that would have been withheld: %s", c.Query.Get("ranges"))
+		}
 	}
 }

@@ -14,10 +14,18 @@ import (
 
 func newService(t *testing.T, s *sheetstest.Server) *service.Service {
 	t.Helper()
+	return newServiceBudget(t, s, config.DefaultMaxCells)
+}
+
+// newServiceBudget is newService with the read budget named, for the
+// tests about what a bounded window can and cannot reach.
+func newServiceBudget(t *testing.T, s *sheetstest.Server, cells int) *service.Service {
+	t.Helper()
 	fs, err := settings()
 	if err != nil {
 		t.Fatal(err)
 	}
+	fs.MaxCells = cells
 	return service.New(service.Deps{API: s.Client(), Config: fs})
 }
 

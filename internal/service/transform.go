@@ -452,14 +452,11 @@ func (s *Service) transformGuard(ctx context.Context, req TransformRequest, ref 
 		if err := readable(t.destination, "the destination is read first to say what it would replace"); err != nil {
 			return plan.Report{}, err
 		}
-		landing, err := s.readTarget(ctx, target{ref: ref, props: t.destSheet, rect: t.destination})
-		if err != nil {
-			return plan.Report{}, err
-		}
-		return merged(report, plan.Check(landing, nil, false)), nil
+		return s.landingReport(ctx, target{ref: ref, props: t.destSheet, rect: t.destination},
+			report, req.Ack())
 
 	case TransformTextToColumns:
-		return s.splitGuard(ctx, ref, props, rect, t.delimiter, report)
+		return s.splitGuard(ctx, ref, props, rect, t.delimiter, report, req.Ack())
 
 	case TransformFindReplace:
 		if !req.InFormulas {
@@ -499,7 +496,7 @@ func (s *Service) transformGuard(ctx context.Context, req TransformRequest, ref 
 // to the right and treats all of it as at risk, and the refusal says
 // that is what it is doing.
 func (s *Service) splitGuard(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
-	rect a1.Rect, delimiter plan.Delimiter, report plan.Report,
+	rect a1.Rect, delimiter plan.Delimiter, report plan.Report, ack plan.Ack,
 ) (plan.Report, error) {
 	_, cols := extent(props)
 	if rect.LastCol >= cols {
@@ -534,11 +531,27 @@ func (s *Service) splitGuard(ctx context.Context, ref Reference, props *gsheets.
 		FirstRow: rect.FirstRow, FirstCol: rect.LastCol + 1,
 		LastRow: rect.LastRow, LastCol: min(rect.LastCol+width, cols),
 	}
-	landing, err := s.readTarget(ctx, target{ref: ref, props: props, rect: spill})
+	return s.landingReport(ctx, target{ref: ref, props: props, rect: spill}, report, ack)
+}
+
+// landingReport reads the cells an action would land on and folds what
+// it finds into the findings over the source.
+//
+// One place for the sequence, because two actions land somewhere the
+// caller never named — a paste and a split's spill — and they did the
+// same five steps each. A third would have had to remember all five,
+// and the one most easily forgotten is the last: naming the pivot table
+// a refusal is really about.
+func (s *Service) landingReport(ctx context.Context, dest target, report plan.Report,
+	ack plan.Ack) (plan.Report, error) {
+
+	landing, err := s.readTarget(ctx, dest)
 	if err != nil {
 		return plan.Report{}, err
 	}
-	return merged(report, plan.Check(landing, nil, false)), nil
+	out := merged(report, plan.Check(landing, nil, false))
+	s.pivotsBehind(ctx, dest, &out, ack)
+	return out, nil
 }
 
 // merged folds the findings over a destination into the findings over
