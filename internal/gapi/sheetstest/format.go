@@ -253,6 +253,9 @@ func mergeCells(d *Doc, req *gsheets.MergeCellsRequest) error {
 	if err != nil {
 		return err
 	}
+	if err := refusePivotMerge(sh, rect); err != nil {
+		return err
+	}
 	for _, block := range blocks {
 		for row := block.FirstRow; row <= block.LastRow; row++ {
 			for col := block.FirstCol; col <= block.LastCol; col++ {
@@ -263,6 +266,39 @@ func mergeCells(d *Doc, req *gsheets.MergeCellsRequest) error {
 			}
 		}
 		sh.Merges = append(sh.Merges, block.GridRange(sh.Props.SheetID))
+	}
+	return nil
+}
+
+// refusePivotMerge is the API refusing a merge that touches a pivot
+// table, in the API's own words (spike Q).
+//
+// Here because a fake that accepts what Google refuses lets a guard's
+// test pass on a request the guard exists to stop — the shape three
+// findings in this project have taken (§17a.29). The output counts as
+// much as the anchor: live, a merge wholly inside the computed cells got
+// the same 400.
+func refusePivotMerge(sh *Sheet, rect a1.Rect) error {
+	for row := rect.FirstRow; row <= rect.LastRow; row++ {
+		for col := rect.FirstCol; col <= rect.LastCol; col++ {
+			cell := sh.At(row, col)
+			if cell == nil {
+				continue
+			}
+			// The anchor carries the definition; the cells it draws
+			// carry an effective value with nothing entered.
+			//
+			// Live, Google goes by the pivot's whole footprint and
+			// refuses a merge over blank cells inside it too. This fake
+			// cannot tell which blanks those are without measuring every
+			// pivot, and neither can the server — the guard names what
+			// it can see and translates Google's own refusal for the
+			// rest, so this models the half a test can assert on.
+			if len(cell.PivotTable) > 0 || drawnCell(cell) {
+				//nolint:staticcheck // Google's own wording, kept verbatim
+				return errors.New("Invalid requests[0].mergeCells: You can't merge cells that are part of a pivot table.")
+			}
+		}
 	}
 	return nil
 }

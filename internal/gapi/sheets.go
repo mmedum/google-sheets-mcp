@@ -100,8 +100,15 @@ const FormatFields = sheetHead +
 // Values as well as formats, because the guard needs both: a merge
 // discards every value but the top-left one, and clearing a format takes
 // only what the cell was explicitly given.
+//
+// And the pivot, for the reason GridFields carries it. Sheets refuses a
+// merge over any cell of a pivot table outright (spike Q), so the guard
+// has to see the anchor to say which table it is refusing for — a mask
+// without it made format_cells the one write path that could not name
+// what it had run into.
 const FormatTargetFields = sheetHead +
-	"data(startRow,startColumn,rowData(values(userEnteredValue,effectiveValue,userEnteredFormat,note,dataValidation))))"
+	"data(startRow,startColumn,rowData(values(userEnteredValue,effectiveValue,userEnteredFormat,note," +
+	"dataValidation,pivotTable(source)))))"
 
 // RuleFields is the field mask for reading a sheet's conditional format
 // rules and nothing else.

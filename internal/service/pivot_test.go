@@ -749,3 +749,206 @@ func TestPivotIsNotNamedOnceOverwriteIsPassed(t *testing.T) {
 		}
 	}
 }
+
+// TestMergeOverPivotOutputIsRefusedWithTheReason is §17a.31. Sheets
+// refuses a merge over any cell of a pivot table itself, so nothing is
+// being prevented here — what is fixed is a refusal that described a
+// loss which cannot happen and offered a flag that could not help.
+func TestMergeOverPivotOutputIsRefusedWithTheReason(t *testing.T) {
+	_, svc := standard(t)
+	addPivot(t, svc, "F1")
+	_, err := svc.FormatCells(context.Background(), service.FormatRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "F2:G3",
+		Merge: "all",
+	})
+	if err == nil {
+		t.Fatal("a merge over a pivot's output was allowed")
+	}
+	for _, want := range []string{"[blocked]", "pivot table anchored at F1", "refuses a merge"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q:\n%s", want, err)
+		}
+	}
+	// And it offers nothing to get past it, because nothing does.
+	if strings.Contains(err.Error(), "overwrite") {
+		t.Errorf("the refusal offers a flag the API will not honour:\n%s", err)
+	}
+}
+
+// TestMergeOverPivotAnchorIsRefused. The anchor is in the rectangle the
+// guard already read, so this one costs no extra call.
+func TestMergeOverPivotAnchorIsRefused(t *testing.T) {
+	srv, svc := standard(t)
+	// Below the fixture's frozen row, so this reaches the pivot check
+	// rather than the frozen-boundary one that runs before it.
+	addPivot(t, svc, "F2")
+	srv.Reset()
+	_, err := svc.FormatCells(context.Background(), service.FormatRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "F2:G3",
+		Merge: "all",
+	})
+	if err == nil {
+		t.Fatal("a merge over a pivot's anchor was allowed")
+	}
+	if !strings.Contains(err.Error(), "F2 carries a pivot table") {
+		t.Errorf("the refusal does not name the anchor:\n%s", err)
+	}
+	for _, c := range srv.Calls() {
+		if c.Query.Get("fields") == gapi.PivotFields {
+			t.Errorf("an anchor already in the rectangle cost a second read: %s", c.Query.Get("ranges"))
+		}
+	}
+}
+
+// TestClearOverPivotAnchorSaysWhatItTakes is the sixth silent destroy.
+// values.clear over the anchor returns 200 naming one cell and takes the
+// definition and every cell of the output with it, so the confirm gate
+// is the only place a caller can find that out.
+func TestClearOverPivotAnchorSaysWhatItTakes(t *testing.T) {
+	_, svc := destructive(t)
+	addPivot(t, svc, "F1")
+	_, err := svc.Clear(context.Background(), service.ClearRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "F1:F2",
+	})
+	if err == nil {
+		t.Fatal("an unconfirmed clear was allowed")
+	}
+	for _, want := range []string{"F1 anchors a pivot table", "every cell it draws", "which the count does not include"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the confirm gate does not say %q:\n%s", want, err)
+		}
+	}
+
+	// The gate sends the caller to dry_run, so the dry run has to say it
+	// too — and so does the result, which used to announce that the
+	// pivot's cells had survived a call that had just destroyed them.
+	dry, err := svc.Clear(context.Background(), service.ClearRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "F1:F2", DryRun: true,
+	})
+	if err != nil {
+		t.Fatalf("dry run: %v", err)
+	}
+	if !strings.Contains(dry.Render(), "F1 anchors a pivot table") {
+		t.Errorf("the dry run does not name the pivot the gate warned about:\n%s", dry.Render())
+	}
+	done, err := svc.Clear(context.Background(), service.ClearRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "F1:F2", Confirm: true,
+	})
+	if err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if !strings.Contains(done.Render(), "took the whole table") {
+		t.Errorf("the result does not say the pivot went:\n%s", done.Render())
+	}
+	// And it really did go, in the fake as live.
+	after, err := svc.ManagePivotTable(context.Background(), service.PivotRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Action: service.PivotList,
+	})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(after.Pivots) != 0 {
+		t.Errorf("the pivot survived a clear of its anchor: %+v", after.Pivots)
+	}
+}
+
+// TestClearCountsOnlyWhatItCanRemove. Clearing a cell a pivot computed
+// returns 200, names the range and changes nothing, so counting it into
+// the loss named damage that does not happen.
+func TestClearCountsOnlyWhatItCanRemove(t *testing.T) {
+	_, svc := destructive(t)
+	addPivot(t, svc, "F1")
+	// G2:G3 is output and nothing else: nobody typed either cell.
+	_, err := svc.Clear(context.Background(), service.ClearRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "G2:G3",
+	})
+	if err == nil {
+		t.Fatal("an unconfirmed clear was allowed")
+	}
+	if !strings.Contains(err.Error(), "removes 0 cell(s)") {
+		t.Errorf("the gate counts cells a clear cannot remove:\n%s", err)
+	}
+	// And it says what that depends on rather than promising survival:
+	// clearing an array formula takes its whole spill, and a spill looks
+	// exactly like a pivot's output from here.
+	for _, want := range []string{"nobody typed", "does not take those out itself", "was in the range too"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the gate does not say %q:\n%s", want, err)
+		}
+	}
+}
+
+// TestMergeOverBlanksInsideAPivotIsTranslated is the hole the guard
+// cannot see. Google goes by the pivot's footprint, not its cells:
+// verified live, a merge over two cells that are blank in the response
+// and blank on the sheet is refused because the rectangle they sit in
+// belongs to a pivot table. The guard has no way to know that without
+// measuring every pivot before every merge, so what matters is that the
+// caller never sees Google's untranslated wording.
+func TestMergeOverBlanksInsideAPivotIsTranslated(t *testing.T) {
+	srv, svc := standard(t)
+	addPivot(t, svc, "F2")
+	// The fake stands in for Google here: whatever reaches the wire
+	// comes back with the API's own message.
+	srv.Fail("spreadsheets.batchUpdate", sheetstest.Failure{
+		Status: 400,
+		Body: `{"error":{"code":400,"message":"Invalid requests[0].mergeCells: ` +
+			`You can't merge cells that are part of a pivot table.","status":"INVALID_ARGUMENT"}}`,
+	})
+	_, err := svc.FormatCells(context.Background(), service.FormatRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "H20:I20",
+		Merge: "all",
+	})
+	if err == nil {
+		t.Fatal("the merge was reported as done")
+	}
+	if !strings.HasPrefix(err.Error(), "[blocked]") {
+		t.Errorf("the refusal is not classed as blocked:\n%s", err)
+	}
+	for _, want := range []string{"blank ones inside the rectangle", "manage_pivot_table list"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q:\n%s", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "requests[0]") {
+		t.Errorf("Google's own wording reached the caller:\n%s", err)
+	}
+}
+
+// TestMergeAcrossTwoPivotsNamesBoth. "Merge cells outside it" pointing
+// at cells inside a second pivot is advice that gets the caller refused
+// again.
+func TestMergeAcrossTwoPivotsNamesBoth(t *testing.T) {
+	_, svc := standard(t)
+	addPivot(t, svc, "F2")
+	addPivot(t, svc, "H2")
+	_, err := svc.FormatCells(context.Background(), service.FormatRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "G3:H3",
+		Merge: "all",
+	})
+	if err == nil {
+		t.Fatal("a merge across two pivots was allowed")
+	}
+	for _, want := range []string{"anchored at F2", "anchored at H2", "outside them"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q:\n%s", want, err)
+		}
+	}
+}
+
+// TestClearOfAnArrayFormulaDoesNotPromiseSurvival. A spill looks exactly
+// like a pivot's output from here, and clearing the formula takes it —
+// so the sentence about cells nobody typed says what it depends on
+// rather than promising they stay.
+func TestClearOfAnArrayFormulaDoesNotPromiseSurvival(t *testing.T) {
+	_, svc := destructive(t)
+	_, err := svc.Clear(context.Background(), service.ClearRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "A1:C3",
+	})
+	if err == nil {
+		t.Fatal("an unconfirmed clear was allowed")
+	}
+	if strings.Contains(err.Error(), "does not remove") {
+		t.Errorf("the gate promises survival it cannot know about:\n%s", err)
+	}
+}

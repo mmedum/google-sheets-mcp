@@ -1,10 +1,23 @@
 # Architecture — google-sheets-mcp
 
-**Status: v1.1.0 (2026-09-09).** Reading,
+**Status: v1.1.0 plus one closed cleanup (2026-09-09).** Reading,
 writing, formatting, the objects attached to a range, `gsheets://`
 resources, durable anchors and now charts, pivot tables and Connected
 Sheets all work, and `make check` is green. Spikes L, M, N and P ran
 against a real account and §18 carries what they found.
+
+**§17a.31 is closed, and closing it found a destructive hole in a
+shipped tool.** It was written as a cosmetic gap: `format_cells merge`
+and `clear_values` reach a pivot's cells and say nothing about it, the
+way the values write used to. Spike Q went to find out what each
+actually does, because §17a.27's wording is about `values.update` and
+nothing said the other two behave the same. A merge turns out to be
+refused by Sheets outright, so that guard was describing a loss that
+cannot happen. A clear over a pivot's *output* does nothing, so the
+count was naming one too. And a clear over the *anchor* takes the whole
+table and every cell it draws, for a reply that names one cell — the
+sixth silent destroy, and the first in a tool already released. §18 has
+the three rows.
 
 **§17a.27 is closed: a write into a pivot table's output names the
 pivot.** The refusal used to read "I3 is not empty", which is true of
@@ -921,6 +934,33 @@ beside it, so the columns went too far; one in its own first column is
 below it, so the rows did. Found by the review pass on the refusal, and
 wrong in the listing since phase 4.
 
+**Two other tools reach a pivot's cells, and they behave differently
+enough that one guard would have been wrong for both** (spike Q).
+`format_cells merge` is refused by Sheets itself — `400 … You can't
+merge cells that are part of a pivot table`, over the output as surely
+as over the anchor — so this server refuses it first with that reason
+and offers nothing to acknowledge, because nothing would help.
+`clear_values` splits the other way: over the output it does nothing at
+all, and over the anchor it takes the whole table and every cell it
+draws. So the clear's count is what it can remove rather than what is
+there; an anchor in the range is named, and named on all three of the
+gate, the dry run and the result, because the gate's own advice is to
+dry-run it. What it says about the rest is deliberately not a promise of
+survival: a clear does not take a cell nobody typed out by itself, and
+it takes it anyway if whatever draws it was in the range — clearing an
+array formula takes its whole spill, and a spill is indistinguishable
+from a pivot's output here.
+
+**The merge guard has a hole it cannot close, and closes it downstream.**
+Google goes by the pivot's *footprint* rather than by its cells: live, a
+merge over two cells blank in the response and blank on the sheet is
+refused because the rectangle they sit in belongs to a pivot table. The
+guard would have to measure every pivot before every merge to see that,
+which is the cost §17a.27 refused for a message. So the cheap check
+answers where it can, naming the table and what it covers, and the 400
+is translated where it cannot. A caller never reads Google's wording
+either way, and no merge pays for a read it did not need.
+
 **What a write into a pivot does is worth stating exactly**, because the
 refusal has to be true. A `values.update` over one output cell returns
 200 and collapses the entire pivot to `#REF!` at the anchor — and
@@ -1698,6 +1738,15 @@ forgotten. Results go into §18.
   closed in §17a. Its first run reported §17a.20 unsupported on a mask
   whose parentheses this spike had got wrong by one; the mask is printed
   and balance-checked before it is sent now.
+- **Q. What a merge and a clear do to a pivot table** (§15.Q, §17a.31,
+  **run 2026-09-09, and it found a sixth silent destroy**): §17a.27 gave the values write a refusal that names the
+  pivot it is protecting, and two other tools reach the same cells and
+  still say nothing about them — `format_cells merge` calls them
+  "discard ... not empty", and `clear_values` counts them into "removes
+  4 non-empty cell(s)" before its confirm gate. Neither refusal can be
+  written until this runs. The wording §17a.27 uses is spike M's finding
+  about `values.update`, and nothing says a merge or a clear behaves the
+  same way. Results in §18.
 
 ## 16. Delivery phases
 
@@ -2449,14 +2498,43 @@ cannot be verified again yet.
    already there — `FormatTargetFields` carries both value fields, so
    the grid knows nobody typed C20 — and the lookup would drop in.
 
-   **Not done, and the reason is rule 12 rather than effort.** What a
-   merge does to a pivot table has never been probed live. §17a.27's
-   sentence is about `values.update`, which spike M watched collapse the
-   whole pivot to `#REF!` and clear back again; a merge may do that, or
-   be refused by the API, or do something else, and a refusal that
-   guessed would be this project putting an unverified claim in front of
-   a caller. **Still open**, and it wants a spike before it wants code.
-   The same holds for `clear_values`, which guards on protections alone.
+   **Closed 2026-09-09 by spike Q, which answered neither way.** A merge
+   destroys nothing, because Sheets refuses it: `400 … You can't merge
+   cells that are part of a pivot table`, over the output as surely as
+   over the anchor. So the guard was not protecting anything — it was
+   describing a loss that cannot happen and offering `overwrite` to get
+   past itself, which reached Google's 400 instead. It refuses first now
+   with the API's own reason, and nothing acknowledges it.
+
+   **And the clear turned out to be worse than the merge.** Two findings
+   nobody was looking for. Clearing a cell a pivot *draws* does nothing
+   at all — 200, the range named, the cell unchanged — so counting those
+   cells into "removes 4 non-empty cell(s)" named a loss that does not
+   happen. Clearing the *anchor* takes the pivot's definition and every
+   cell of its output, for a reply that names one cell: the sixth silent
+   destroy, and the first found in a tool that had already shipped. Both
+   are in §18, and the confirm gate says both now.
+
+   **What this item is really evidence of.** It was written as a
+   cosmetic gap — one refusal reading worse than another — and the probe
+   that was supposed to justify a message found a destructive hole in a
+   released tool. Rule 12 earned its keep here: a guard written from the
+   assumption in this entry's first paragraph would have been wrong
+   about the merge and silent about the clear.
+
+   **And the review passes on the fix found four more things**, which is
+   worth recording because three of them were in the first attempt at
+   *this* entry rather than in old code. The pivot sentence was on the
+   confirm gate alone, while the gate's own closing words send the
+   caller to `dry_run` — so following the advice reported that the
+   destructive call would remove nothing, and the result afterwards
+   announced that the cells it had just destroyed were still there. The
+   sentence about cells nobody typed promised survival it cannot know
+   about, and was wrong for every array formula whose own cell is in the
+   range. The fake modelled neither behaviour, so no test could see any
+   of it. All four are fixed and tested; the fifth, that Google refuses
+   a merge over blank cells inside a footprint, is a hole the guard
+   closes by translating the 400 rather than by measuring every pivot.
 32. **The pivot lookup behind a refusal costs two reads where one might
    decide it.** The first finds anchors up and to the left under a mask
    asking only for `pivotTable`; the second measures what each draws,
@@ -3005,7 +3083,7 @@ by a review pass.
 
 **Spikes L, M, N and P, run live 2026-09-07.** Four of these rows refute
 something §7.6 or §8 assumed. Two of them are silent destroys, which
-makes five this project has found on an API whose reference mentions
+made five this project had found on an API whose reference mentions
 none of them.
 
 | Convention | Verdict | Effect |
@@ -3043,3 +3121,14 @@ makes, and what the review pass found underneath it.
 | The refusal's claim about `#REF!` is spike M's and has never been read back through the tools | **Confirmed end to end**: the acknowledged write at I3 returned 200, the whole pivot collapsed to `#REF!` at H1 with the output gone, and `clear_values` on that one cell brought all of it back — the same rectangle and the same checkpoint, `ck_61abfe11ad3e`, before and after | The refusal names the collapse and the recovery, so a caller who passes `overwrite` knows both what happens and how to undo it. The driver keeps the sentence true: four steps write, read, clear and read again |
 | A pivot's measured extent is close enough to its bounding box | **Confirmed as the thing that had to be measured**: the same run watched `H1:I6` become `H1:J7` and then `H1:T8` across two updates, with the source untouched. A refusal quoting a rectangle from the request would have been wrong twice in three calls | The extent is read back on every refusal that names a pivot, never derived. The unit tests hold the other end: a write beside the output is refused without a pivot in the sentence |
 | Stopping at the first empty row and column measures one pivot | **Refuted, and it was wrong in `list` since phase 4**: two pivots side by side have no empty column between them, so the left one grows over the right one. Reproduced against the fake — anchors at F1 and H1 reported `F1:I7` and `H1:I7`, and a write at H3 was then refused with a promise to break the table at F1, which it would not have touched | The rectangle is pulled back off any other anchor inside it, on the axis where that anchor sits. Found by the review pass on the refusal rather than by the run: a listing that overstates a footprint is misleading, and a refusal that does it is wrong out loud |
+
+**Spike Q, run live 2026-09-09**, to close §17a.31. Three rows, and the
+last is the sixth silent destroy this project has found — the first in a
+tool that was already shipped.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| A merge over a pivot table destroys cells, the way a merge over anything else does | **Refuted: Sheets refuses it outright.** `400 Invalid requests[0].mergeCells: You can't merge cells that are part of a pivot table`, over the output as surely as over the anchor, with the pivot untouched afterwards. So `format_cells` was refusing first with "merging would keep the top-left value and discard F3, which is not empty" — a loss that cannot happen — and offering `overwrite` to get past itself, which reached Google's 400 instead | The merge is refused before the request with the API's own reason, and nothing acknowledges it: an argument claiming otherwise would be a lie in the schema. The fake refuses it too, in Google's words, so no test can pass on a merge the API would reject |
+| A merge is refused only over the cells a pivot actually draws | **Refuted: Google goes by the footprint.** A merge over `F13:G13` — two cells blank in the response and blank on the sheet, inside a pivot grouped across as well as down — is refused with the same 400. The guard sees an ordinary pair of blank cells and cannot tell; knowing would mean measuring every pivot on the sheet before every merge | The cheap check answers where it can and names the table; Google's 400 is translated where it cannot, so no merge pays a read it did not need and no caller reads Google's wording. Found by a review pass asking what the guard's gate could miss, and probed rather than argued |
+| A clear removes the non-empty cells it counts | **Refuted for anything computed**: `values.clear` over a cell a pivot draws returns 200 with `clearedRange` naming it, and the cell is unchanged. Nobody typed it, so there was nothing to clear | `clear_values` counts what somebody entered, and says separately how many cells show a value nobody typed and will survive. The count used to name a loss that does not happen |
+| `values.clear` over a pivot's anchor clears a cell | **Refuted, and this is the sixth silent destroy**: it returns 200, `clearedRange` names that one cell, and the pivot's definition and every cell of its output are gone — eleven cells for a reply that mentions one. `values.clear` is not the documented way to delete a pivot table, which is an `updateCells` naming the field, and nothing in the reply says it did | The confirm gate names the anchor and says the whole table and everything it draws goes with it, none of which is in the count. A caller who read "removes 1 cell" and confirmed had agreed to something else |

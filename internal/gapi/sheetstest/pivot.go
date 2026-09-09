@@ -105,6 +105,18 @@ func validatePivot(raw json.RawMessage) error {
 	return nil
 }
 
+// drawnCell says the cell holds a value nobody typed, which is what a
+// pivot draws.
+//
+// One spelling, because three places in this fake now turn on it: the
+// delete that takes a pivot's output, the clear that must leave such a
+// cell alone, and the merge Google refuses over one. Two of them are
+// modelling opposite behaviours from the same fact, so a drift between
+// them would make the fake self-inconsistent rather than merely wrong.
+func drawnCell(cell *gsheets.CellData) bool {
+	return cell != nil && cell.EffectiveValue != nil && cell.UserEnteredValue == nil
+}
+
 // clearPivotOutput removes a pivot and everything it drew.
 //
 // Everything: the live delete takes the whole output with it, leaving
@@ -119,9 +131,7 @@ func clearPivotOutput(sh *Sheet, row, col int) {
 		if cell == nil || key[0] < row-1 || key[1] < col-1 {
 			continue
 		}
-		// A computed cell is one with an effective value and nothing
-		// entered, which is exactly what a pivot draws.
-		if cell.EffectiveValue != nil && cell.UserEnteredValue == nil {
+		if drawnCell(cell) {
 			delete(sh.Cells, key)
 		}
 	}

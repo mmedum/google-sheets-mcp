@@ -108,6 +108,7 @@ func run(ctx context.Context) error {
 		{"M", func() { spikeM(ctx) }},
 		{"N", func() { spikeN(ctx) }},
 		{"P", func() { spikeP(ctx) }},
+		{"Q", func() { spikeQ(ctx) }},
 	} {
 		if wanted(p.letter) {
 			p.probe()

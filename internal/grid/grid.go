@@ -295,15 +295,46 @@ func (g *Grid) Address(i, j int) string {
 	return name
 }
 
+// AnyComputed says whether anything here holds a value nobody typed.
+//
+// A question rather than a count, for the caller that only needs to know
+// whether a second look is worth paying for. It stops at the first one.
+func (g *Grid) AnyComputed() bool {
+	for _, row := range g.Cells {
+		for _, cell := range row {
+			if cell.Computed {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Counts summarises what a rectangle holds, which is what a guard
 // refusal and a dry run both report.
 type Counts struct {
-	NonEmpty   int
+	NonEmpty int
+	// Computed is the cells showing a value nobody typed. Verified live:
+	// clearing one returns 200, names the range and changes nothing,
+	// because what draws it is somewhere else (spike Q).
+	//
+	// The count of them rather than of the rest, so a Counts built by
+	// hand rather than by Count is safe: a zero here says "nothing is
+	// drawn", which is what every caller before this assumed. The other
+	// way round, a zero would claim every cell is.
+	Computed   int
 	Formulas   int
 	Errors     int
 	Notes      int
 	Validation int
 	Pivots     int
+}
+
+// Removable is what a values clear can take out of the rectangle: the
+// cells somebody typed into. It is never negative, whatever a Counts
+// built by hand holds.
+func (c Counts) Removable() int {
+	return max(c.NonEmpty-c.Computed, 0)
 }
 
 // Count walks the grid.
@@ -313,6 +344,9 @@ func (g *Grid) Count() Counts {
 		for _, cell := range row {
 			if !cell.Empty() {
 				c.NonEmpty++
+				if cell.Computed {
+					c.Computed++
+				}
 			}
 			if cell.HasFormula() {
 				c.Formulas++

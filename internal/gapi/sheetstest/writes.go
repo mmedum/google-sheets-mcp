@@ -166,14 +166,40 @@ func (s *Server) valuesClear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
+	// The pivot anchors first and separately, because clearing one takes
+	// cells this loop is walking (spike Q): values.clear over an anchor
+	// returns 200 naming that one cell and removes the definition and
+	// every cell of the output. It is not the documented way to delete a
+	// pivot table and the reply says nothing about it, which is what
+	// makes it the sixth silent destroy — and a fake that left the pivot
+	// standing would let the guard's tests pass over a hole.
+	var anchors [][2]int
 	for row := rect.FirstRow; row <= rect.LastRow; row++ {
 		for col := rect.FirstCol; col <= rect.LastCol; col++ {
-			// Values only. The API keeps everything else on the cell, so
-			// a note survives a clear and a fake that dropped it would
-			// let a wrong warning pass its tests.
-			if c := sh.At(row, col); c != nil {
-				c.UserEnteredValue, c.EffectiveValue, c.FormattedValue = nil, nil, ""
+			if c := sh.At(row, col); c != nil && len(c.PivotTable) > 0 {
+				anchors = append(anchors, [2]int{row, col})
 			}
+		}
+	}
+	for _, at := range anchors {
+		clearPivotOutput(sh, at[0], at[1])
+	}
+	for row := rect.FirstRow; row <= rect.LastRow; row++ {
+		for col := rect.FirstCol; col <= rect.LastCol; col++ {
+			c := sh.At(row, col)
+			if c == nil {
+				continue
+			}
+			// A cell nobody typed is not this call's to clear: live, the
+			// request returns 200, names the range and changes nothing,
+			// because what draws the cell is somewhere else.
+			if drawnCell(c) {
+				continue
+			}
+			// Values only otherwise. The API keeps everything else on the
+			// cell, so a note survives a clear and a fake that dropped it
+			// would let a wrong warning pass its tests.
+			c.UserEnteredValue, c.EffectiveValue, c.FormattedValue = nil, nil, ""
 		}
 	}
 	s.mu.Unlock()

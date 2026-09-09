@@ -20,7 +20,7 @@ func TestClearNeedsConfirmAndSaysWhatIsThere(t *testing.T) {
 	if err == nil || !strings.HasPrefix(err.Error(), "[blocked]") {
 		t.Fatalf("a clear without confirm gave %v", err)
 	}
-	if !strings.Contains(err.Error(), "non-empty cell") || !strings.Contains(err.Error(), "cannot undo") {
+	if !strings.Contains(err.Error(), "cell(s)") || !strings.Contains(err.Error(), "cannot undo") {
 		t.Errorf("the refusal does not say what it costs: %q", err)
 	}
 	if wrote(srv) {

@@ -868,28 +868,52 @@ func (s *Service) pivotsBehind(ctx context.Context, t target, r *plan.Report, ac
 	if !r.Computed || ack.Overwrite || !t.rect.Bounded() || len(r.Blockers(ack)) == 0 {
 		return
 	}
+	for _, p := range s.pivotsCovering(ctx, t) {
+		r.AddDrawnBy(p.Anchor, p.Output, p.Hit)
+	}
+}
+
+// pivotsCovering is the lookup itself: the pivot tables anchored outside
+// a rectangle whose output reaches into it.
+//
+// Separate from pivotsBehind's gating because two callers want the same
+// two reads for different reasons. A values write asks only where it is
+// already being refused, because the answer improves a message. A merge
+// asks whenever the rectangle holds a cell nobody typed, because Sheets
+// refuses that merge outright and the caller has to be told which table
+// is in the way.
+//
+// It answers with what it found and never with an error. The call it
+// serves is refused either way, so a look that fails costs a sentence
+// and nothing else; turning a [blocked] into a transport error would
+// take the refusal the caller has to read and replace it with one about
+// the server.
+func (s *Service) pivotsCovering(ctx context.Context, t target) []plan.PivotOutput {
+	if !t.rect.Bounded() {
+		return nil
+	}
 	anchors, err := s.pivotAnchors(ctx, t.ref, t.props, lookback(t.rect, s.cfg.MaxCells))
 	if err != nil {
 		s.log.DebugContext(ctx, "pivot lookup behind a refusal failed", "spreadsheet", gapi.ShortID(t.ref.ID))
-		return
+		return nil
 	}
 	var found []foundPivot
 	for _, p := range anchors {
-		// An anchor inside the write is already named, by the finding
-		// that a write over it takes the whole table with it. Naming it
-		// again here would put two sentences about one pivot table in
-		// one refusal.
+		// An anchor inside the rectangle is already visible to whoever
+		// read it, and is named from there. Naming it again here would
+		// put two sentences about one pivot table in one refusal.
 		if !t.rect.Contains(p.at) {
 			found = append(found, p)
 		}
 	}
 	if len(found) == 0 {
-		return
+		return nil
 	}
 	// The extents, because an anchor up and to the left is not yet a
-	// pivot that reaches this write: a table two columns wide says
+	// pivot that reaches this rectangle: a table two columns wide says
 	// nothing about a write ten columns along, and claiming it did would
 	// steer a caller away from cells that were never the pivot's.
+	var out []plan.PivotOutput
 	for i, rect := range s.pivotExtents(ctx, t.ref, t.props, found) {
 		if !rect.Bounded() {
 			continue
@@ -898,8 +922,13 @@ func (s *Service) pivotsBehind(ctx context.Context, t target, r *plan.Report, ac
 		if !ok {
 			continue
 		}
-		r.AddDrawnBy(a1.FormatRect(found[i].at), a1.FormatRect(rect), a1.FormatRect(hit))
+		out = append(out, plan.PivotOutput{
+			Anchor: a1.FormatRect(found[i].at),
+			Output: a1.FormatRect(rect),
+			Hit:    a1.FormatRect(hit),
+		})
 	}
+	return out
 }
 
 // lookback is where the anchor of a pivot drawing into a write can be:
