@@ -5,6 +5,10 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.2.0] - 2026-09-09
+
 ### Fixed
 
 - **`clear_values` took a whole pivot table and said it took one cell.**
@@ -852,7 +856,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.4.0...v1.0.0
 [0.4.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.3.1...v0.4.0
