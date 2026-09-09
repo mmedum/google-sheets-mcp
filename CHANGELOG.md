@@ -5,6 +5,10 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.1.0] - 2026-09-09
+
 ### Changed
 
 - **A write into a pivot table's output names the pivot table.** It used
@@ -804,7 +808,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.4.0...v1.0.0
 [0.4.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/mmedum/google-sheets-mcp/compare/v0.3.0...v0.3.1
