@@ -20,7 +20,7 @@ It works **inside** a spreadsheet. Finding, sharing, moving and trashing
 files, and their comment threads and revisions, belong to a server built
 on the Drive API. A cell **note** is a Sheets field and is here.
 
-> **Status: v1.1.0.** Reading, writing, formatting, the objects attached
+> **Status: v1.2.0.** Reading, writing, formatting, the objects attached
 > to a range, `gsheets://` resources, durable anchors, charts, pivot
 > tables and Connected Sheets data sources all work. The twenty-one
 > tools and their arguments are stable: a breaking change needs a major
