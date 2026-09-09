@@ -225,8 +225,10 @@ func registerWrite(s *mcp.Server, d Deps) {
 	add(s, d, Def[ClearInput, *service.ClearResult]{
 		Name: "clear_values",
 		Description: "Clear a range's values and keep its formatting, notes and validation rules. " +
-			"Reads the range first and says how many cells hold something and how many are formulas, so the " +
-			"confirmation is informed. Sheets cannot undo it, so confirm is required and dry_run shows what is there. " +
+			"Reads the range first and says how many cells it would remove and how many are formulas, so the " +
+			"confirmation is informed. A cell showing a value nobody typed is not one it removes, and a cell a " +
+			"pivot table is anchored at takes the whole table and everything it draws; both are named. " +
+			"Sheets cannot undo it, so confirm is required and dry_run shows what is there. " +
 			"To replace values rather than remove them, use write_values.",
 		Kind: Destructive,
 		Handle: func(ctx context.Context, in ClearInput) (*service.ClearResult, error) {

@@ -98,9 +98,13 @@ func (c *Cells) Merge(o Cells) {
 	c.Total += o.Total - len(o.Named)
 }
 
-// verb agrees with how many cells were recorded. "A1 are not empty" is
+// Verb agrees with how many cells were recorded. "A1 are not empty" is
 // the kind of sentence that makes a careful message read as a template.
-func (c Cells) verb(singular, plural string) string {
+//
+// Exported because the service composes refusals of its own over the
+// same sets — a merge over a pivot table is refused before a Report
+// exists, and it should not be the one sentence here that cannot count.
+func (c Cells) Verb(singular, plural string) string {
 	if c.Total == 1 {
 		return singular
 	}
@@ -243,7 +247,7 @@ func (r Report) Blockers(ack Ack) []Blocker {
 	if r.TooLong.Any() {
 		out = append(out, Blocker{Why: fmt.Sprintf(
 			"%s %s more than %d characters, which is the most one cell takes", r.TooLong,
-			r.TooLong.verb("holds", "hold"), MaxCellChars)})
+			r.TooLong.Verb("holds", "hold"), MaxCellChars)})
 	}
 
 	if r.Fetching.Any() && !ack.AllowExternalFormulas {
@@ -264,21 +268,21 @@ func (r Report) Blockers(ack Ack) []Blocker {
 	if r.Discarded.Any() && !ack.Overwrite {
 		out = append(out, Blocker{
 			Why: fmt.Sprintf("merging would keep the top-left value and discard %s, which %s not empty",
-				r.Discarded, r.Discarded.verb("is", "are")),
+				r.Discarded, r.Discarded.Verb("is", "are")),
 			Allow: "overwrite",
 		})
 	}
 	if r.NoteReplaced.Any() && !ack.Overwrite {
 		out = append(out, Blocker{
 			Why: fmt.Sprintf("%s already %s a note, which no values read shows, so this would replace or remove "+
-				"something you have not seen", r.NoteReplaced, r.NoteReplaced.verb("has", "have")),
+				"something you have not seen", r.NoteReplaced, r.NoteReplaced.Verb("has", "have")),
 			Allow: "overwrite",
 		})
 	}
 	if r.Formatted.Any() && !ack.Overwrite {
 		out = append(out, Blocker{
 			Why: fmt.Sprintf("%s %s formatting of its own, which clearing removes", r.Formatted,
-				r.Formatted.verb("has", "have")),
+				r.Formatted.Verb("has", "have")),
 			Allow: "overwrite",
 		})
 	}
@@ -290,14 +294,14 @@ func (r Report) Blockers(ack Ack) []Blocker {
 	if r.Formulas.Any() && !ack.OverwriteFormulas {
 		out = append(out, Blocker{
 			Why: fmt.Sprintf("%s %s a formula, which a value write replaces with a plain value", r.Formulas,
-				r.Formulas.verb("holds", "hold")),
+				r.Formulas.Verb("holds", "hold")),
 			Allow: "overwrite_formulas (and overwrite)",
 		})
 	}
 	if r.Pivots.Any() && !ack.Overwrite {
 		out = append(out, Blocker{
 			Why: fmt.Sprintf("%s %s a pivot table, and a write there replaces it and clears everything it draws",
-				r.Pivots, r.Pivots.verb("anchors", "anchor")),
+				r.Pivots, r.Pivots.Verb("anchors", "anchor")),
 			Allow: "overwrite",
 		})
 	}
@@ -322,7 +326,7 @@ func (r Report) Blockers(ack Ack) []Blocker {
 	}
 	if r.NonEmpty.Any() && !ack.Overwrite {
 		out = append(out, Blocker{
-			Why:   fmt.Sprintf("%s %s not empty", r.NonEmpty, r.NonEmpty.verb("is", "are")),
+			Why:   fmt.Sprintf("%s %s not empty", r.NonEmpty, r.NonEmpty.Verb("is", "are")),
 			Allow: "overwrite",
 		})
 	}
@@ -436,6 +440,26 @@ func CheckDestination(g *grid.Grid) Report {
 		}
 	}
 	return r
+}
+
+// PivotAnchors is the cells of a rectangle that anchor a pivot table.
+//
+// Here rather than at each caller, because the cap on how many a set
+// names is this package's rule and three refusals now walk for the same
+// thing: the write guard, the merge Sheets refuses outright, and the
+// clear that takes a whole pivot with one cell. A copy that forgot the
+// cap would count correctly and name nothing, and a message going quiet
+// is not a failure anything catches.
+func PivotAnchors(g *grid.Grid) Cells {
+	var out Cells
+	for i, row := range g.Cells {
+		for j, cell := range row {
+			if cell.Pivot {
+				out.AddCell(g, i, j)
+			}
+		}
+	}
+	return out
 }
 
 // CheckPartialMerges records the merged ranges a write covers only part

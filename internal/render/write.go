@@ -260,13 +260,18 @@ func DeleteDone(sheet string, cells, formulas, charts int, left []string) string
 // own words "all other properties of the cell (such as formatting, data
 // validation, etc..) are kept". A write is what removes those, and a
 // clear that claimed to would be warning about the wrong tool.
-func ClearPreview(rangeA1 string, c grid.Counts) string {
-	return fmt.Sprintf("Dry run: nothing was sent. Clearing %s would remove %d non-empty cell(s), %d of them formulas.\n",
-		rangeA1, c.NonEmpty, c.Formulas)
+// notes is what the service worked out about the cells the clear cannot
+// take out directly. It is composed in one place and passed to all three
+// of these, because a caller sent to dry_run by a refusal has to be told
+// what the refusal told them.
+func ClearPreview(rangeA1 string, c grid.Counts, notes string) string {
+	return fmt.Sprintf("Dry run: nothing was sent. Clearing %s would remove %d cell(s), %d of them formulas.%s\n",
+		rangeA1, c.Removable(), c.Formulas, notes)
 }
 
 // ClearDone renders what a clear removed.
-func ClearDone(rangeA1 string, c grid.Counts) string {
-	return fmt.Sprintf("Cleared %s: %d non-empty cell(s), %d of them formulas. "+
-		"Formatting, notes and validation rules were left alone.\n", rangeA1, c.NonEmpty, c.Formulas)
+func ClearDone(rangeA1 string, c grid.Counts, notes string) string {
+	return fmt.Sprintf("Cleared %s: %d cell(s), %d of them formulas.%s "+
+		"Formatting, notes and validation rules were left alone.\n",
+		rangeA1, c.Removable(), c.Formulas, notes)
 }

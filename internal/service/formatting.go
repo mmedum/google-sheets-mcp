@@ -321,7 +321,7 @@ func (s *Service) FormatCells(ctx context.Context, req FormatRequest) (*FormatRe
 		return nil, err
 	}
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{Requests: ops}); err != nil {
-		return nil, wrap(err)
+		return nil, mergedIntoPivot(err)
 	}
 	// A merge, an unmerge and a protection all change what the card
 	// says, and the card is what the next call resolves a range against.
@@ -371,6 +371,9 @@ func (s *Service) formatGuard(ctx context.Context, ref Reference, props *gsheets
 	report := plan.CheckDestination(read)
 	if compiled.merge != "" {
 		if err := frozenBoundary(props, rect, compiled.merge); err != nil {
+			return plan.Report{}, err
+		}
+		if err := s.pivotBoundary(ctx, target{ref: ref, props: props, rect: rect}, read); err != nil {
 			return plan.Report{}, err
 		}
 		plan.CheckMerge(&report, read, compiled.merge)
@@ -624,4 +627,77 @@ func frozenBoundary(props *gsheets.SheetProperties, rect a1.Rect, kind string) e
 // inside first..last.
 func crosses(frozen, first, last int) bool {
 	return frozen > 0 && first <= frozen && last > frozen
+}
+
+// pivotMergeRefusal is what Sheets says when a merge touches a pivot
+// table, quoted so the translation is anchored to the string rather than
+// to a status code every other bad merge shares.
+const pivotMergeRefusal = "part of a pivot table"
+
+// mergedIntoPivot turns that 400 into this server's own sentence.
+//
+// The backstop to pivotBoundary, and it exists because Google goes by
+// the pivot's *footprint* rather than by its cells. Verified live: a
+// merge over F13:G13, two cells that are blank in the response and
+// blank on the sheet, is refused because the rectangle they sit in
+// belongs to a pivot table (spike Q). The guard cannot see that — a
+// blank cell inside a footprint looks like any other blank cell — and
+// finding out would mean measuring every pivot on the sheet before
+// every merge, which is the cost §17a.27 refused for a message.
+//
+// So the cheap check answers first where it can, naming the table and
+// what it covers, and this catches the rest. A caller never sees
+// Google's untranslated wording either way, and no merge pays a read it
+// did not need.
+func mergedIntoPivot(err error) error {
+	if err == nil || !strings.Contains(err.Error(), pivotMergeRefusal) {
+		return wrap(err)
+	}
+	return Errorf("blocked",
+		"Sheets refuses a merge over any cell of a pivot table, including the blank ones inside the rectangle "+
+			"it covers. manage_pivot_table list says where each one reaches; merge cells outside them")
+}
+
+// pivotBoundary refuses a merge that touches a pivot table.
+//
+// Sheets refuses it itself: `400 Invalid requests[0].mergeCells: You
+// can't merge cells that are part of a pivot table`, over the output as
+// surely as over the anchor, with the pivot untouched (spike Q). So
+// nothing is being prevented here — what is being fixed is the sentence.
+// The guard used to answer first with "merging would keep the top-left
+// value and discard F3, which is not empty", which describes a loss that
+// cannot happen, and offered `overwrite` to get past itself; a caller
+// who passed it reached Google's 400 instead.
+//
+// Nothing acknowledges this one. The API will not do it whatever the
+// caller says, so an argument that claimed otherwise would be a lie in
+// the schema.
+func (s *Service) pivotBoundary(ctx context.Context, t target, read *grid.Grid) error {
+	// The anchors inside the rectangle, straight out of what was read.
+	if anchors := plan.PivotAnchors(read); anchors.Any() {
+		return Errorf("blocked",
+			"%s %s a pivot table, and Sheets refuses a merge over any cell of one. Delete the pivot table with "+
+				"manage_pivot_table, or merge cells outside it",
+			anchors, anchors.Verb("carries", "carry"))
+	}
+	// And the ones drawing into it from outside, which cost a read and
+	// are asked for only where the rectangle holds a cell nobody typed.
+	if !read.AnyComputed() {
+		return nil
+	}
+	// Every one of them, not the first. Two pivots side by side and a
+	// merge across the seam is refused by both, and a message naming one
+	// says "merge cells outside it" about cells inside the other.
+	hits := s.pivotsCovering(ctx, t)
+	if len(hits) == 0 {
+		return nil
+	}
+	where := make([]string, 0, len(hits))
+	for _, p := range hits {
+		where = append(where, fmt.Sprintf("%s is inside the output of the pivot table anchored at %s, which "+
+			"covers %s as it stands", p.Hit, p.Anchor, p.Output))
+	}
+	return Errorf("blocked",
+		"%s, and Sheets refuses a merge over any cell of a pivot table. Merge cells outside %s",
+		strings.Join(where, "; "), map[bool]string{true: "it", false: "them"}[len(hits) == 1])
 }

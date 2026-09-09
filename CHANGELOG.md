@@ -5,7 +5,51 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **`clear_values` took a whole pivot table and said it took one cell.**
+  Clearing the cell a pivot is anchored at returns 200 from Google with
+  `clearedRange` naming that one cell, and the pivot's definition and
+  every cell of its output are gone with it. `values.clear` is not the
+  documented way to delete a pivot table and nothing in the reply says
+  it did. The confirm gate names the anchor now and says the whole table
+  and everything it draws goes, none of which is in the count — a caller
+  who read "removes 1 cell" and confirmed had agreed to something else
+  entirely. The sixth silent destroy this project has found, and the
+  first in a tool that had already shipped (§17a.31, §18).
+
+- **A clear counted cells it cannot remove.** `values.clear` over a cell
+  that something else draws — a pivot's output, an array formula's spill
+  — returns 200, names the range and changes nothing. Those cells were
+  counted into "removes 4 non-empty cell(s)", which named a loss that
+  does not happen. The count is what a clear can actually take now, and
+  the rest is described without promising it survives: a clear does not
+  remove such a cell itself, and takes it anyway when whatever draws it
+  was in the range too, which is what happens to an array formula's
+  whole spill.
+
+  Everything a clear costs is said on all three of the confirm gate, the
+  dry run and the result. It used to be on the gate alone, whose own
+  closing words send the caller to `dry_run`.
+
+### Changed
+
+- **`format_cells merge` over a pivot table is refused with the reason
+  Sheets gives.** It used to be refused as "merging would keep the
+  top-left value and discard F3, which is not empty" — describing a loss
+  that cannot happen — and offered `overwrite` to get past itself, which
+  reached a `400 You can't merge cells that are part of a pivot table`
+  from Google instead. Sheets refuses such a merge outright, over the
+  output as surely as over the anchor, so the refusal now says that and
+  nothing acknowledges it. Every pivot the merge runs into is named, not
+  the first: "merge cells outside it" pointing at cells inside a second
+  table is advice that gets the caller refused again.
+
+  Google goes by the pivot's whole footprint, so a merge over cells that
+  are blank inside it is refused too. The guard cannot see that without
+  measuring every pivot before every merge, so Google's own 400 is
+  translated where the guard cannot answer — a caller never reads the
+  raw wording, and no merge pays for a read it did not need.
 
 ## [1.1.0] - 2026-09-09
 

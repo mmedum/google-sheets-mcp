@@ -797,8 +797,11 @@ func (d *driver) clearSteps() []step {
 			},
 			expectError: "blocked",
 			check: func(text string, _ map[string]any) error {
-				if !strings.Contains(text, "4 non-empty") {
-					return fmt.Errorf("the refusal does not count what is there: %s", text)
+				// What a clear can remove, which is what somebody
+				// typed. A cell drawn by something else is counted
+				// separately and named as surviving (spike Q).
+				if !strings.Contains(text, "removes 4 cell(s)") {
+					return fmt.Errorf("the refusal does not count what it would take: %s", text)
 				}
 				return nil
 			},

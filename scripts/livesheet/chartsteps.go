@@ -508,6 +508,45 @@ func (d *driver) pivotSteps() []step {
 			},
 		},
 		{
+			name: "a merge over the output is refused, with the reason Sheets gives",
+			why: "Sheets refuses a merge over any cell of a pivot table (400, spike Q), so this guard prevents " +
+				"nothing and fixes a sentence: it used to promise a discard that cannot happen and offer " +
+				"overwrite to get past itself",
+			tool: "format_cells",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "I3:J4", "merge": "all",
+			},
+			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "refuses a merge") {
+					return fmt.Errorf("the refusal does not give the API's reason: %q", text)
+				}
+				if strings.Contains(text, "overwrite") {
+					return fmt.Errorf("the refusal offers a flag the API will not honour: %q", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "an unconfirmed clear of the anchor says it takes the whole table",
+			why: "values.clear over the anchor returns 200 naming one cell and takes the definition and every " +
+				"cell of the output with it — the sixth silent destroy, and the confirm gate is the only " +
+				"place a caller learns it",
+			tool: "clear_values",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "H1:H2",
+			},
+			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				for _, want := range []string{"H1 anchors a pivot table", "every cell it draws"} {
+					if !strings.Contains(text, want) {
+						return fmt.Errorf("the confirm gate does not say %q: %q", want, text)
+					}
+				}
+				return nil
+			},
+		},
+		{
 			name: "the acknowledged write collapses the whole pivot, exactly as the refusal said",
 			why: "the refusal claims a write here stops the whole pivot drawing and that clearing brings it " +
 				"back. That is spike M's finding and this is the step that keeps the sentence true",
