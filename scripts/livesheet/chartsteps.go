@@ -422,15 +422,44 @@ func (d *driver) pivotSteps() []step {
 			},
 		},
 		{
-			name: "a write into the output is refused without overwrite",
+			name: "a write into the output is refused, and the refusal names the pivot",
 			why: "the output carries an effectiveValue and no userEnteredValue, and if the guard could not see " +
-				"that, a write would land on a pivot table and stop it drawing",
+				"that, a write would land on a pivot table and stop it drawing. Naming which pivot is §17a.27: " +
+				"the cells carry no pivotTable field, so this is the second read paying off",
 			tool: "write_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "I3",
 				"values": [][]any{{"over the pivot"}},
 			},
 			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				// The anchor, the rectangle and what a write there costs.
+				// "not empty" on its own is what this step read before,
+				// and it is true of every cell on the sheet.
+				for _, want := range []string{"anchored at H1", "covers H1:", "#REF!"} {
+					if !strings.Contains(text, want) {
+						return fmt.Errorf("the refusal does not say %q: %q", want, text)
+					}
+				}
+				return nil
+			},
+		},
+		{
+			name: "a write onto typed cells is refused without naming a pivot",
+			why: "the second read is paid only where nobody typed what is in the way. A3 holds data somebody " +
+				"entered, so this refusal must cost no extra call and must blame no pivot table",
+			tool: "write_values",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "A3",
+				"values": [][]any{{"beside the pivot"}},
+			},
+			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				if strings.Contains(text, "pivot table") {
+					return fmt.Errorf("a write outside every pivot's output was blamed on one: %q", text)
+				}
+				return nil
+			},
 		},
 		{
 			name: "list what is anchored where",
@@ -474,6 +503,58 @@ func (d *driver) pivotSteps() []step {
 			check: func(text string, _ map[string]any) error {
 				if !strings.Contains(text, "Total returns") {
 					return fmt.Errorf("the second value is not in the output: %q", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "the acknowledged write collapses the whole pivot, exactly as the refusal said",
+			why: "the refusal claims a write here stops the whole pivot drawing and that clearing brings it " +
+				"back. That is spike M's finding and this is the step that keeps the sentence true",
+			tool: "write_values",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "I3",
+				"values": [][]any{{"over the pivot"}}, "overwrite": true,
+			},
+		},
+		{
+			name: "the output is gone and #REF! is at the anchor",
+			why:  "the claim is about the sheet, not about the refusal's wording",
+			tool: "read_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "H1:J8",
+			},
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "#REF!") {
+					return fmt.Errorf("the pivot did not collapse: %q", text)
+				}
+				if strings.Contains(text, "Grand Total") {
+					return fmt.Errorf("the output is still drawn: %q", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "clearing the cell brings all of it back",
+			why:  "the damage is total and reversible, and a refusal that said otherwise would be scaremongering",
+			tool: "clear_values",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "I3", "confirm": true,
+			},
+		},
+		{
+			name: "the pivot draws again",
+			why:  "the second half of the refusal's promise, read off the sheet",
+			tool: "read_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "H1:J8",
+			},
+			check: func(text string, _ map[string]any) error {
+				if strings.Contains(text, "#REF!") {
+					return fmt.Errorf("the pivot did not come back: %q", text)
+				}
+				if !strings.Contains(text, "Grand Total") {
+					return fmt.Errorf("the output is not drawn again: %q", text)
 				}
 				return nil
 			},

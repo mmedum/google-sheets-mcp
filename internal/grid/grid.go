@@ -59,7 +59,15 @@ type Cell struct {
 	// Pivot says this cell anchors a pivot table. Only the anchor
 	// carries one: the cells it draws are ordinary computed values, so
 	// this marks where a pivot starts and not how far it reaches.
-	Pivot     bool
+	Pivot bool
+	// Computed says nobody typed this: an effective value with no
+	// entered one under it. A pivot table's output is exactly that, and
+	// so is an array formula's spill, so it says the value came from
+	// somewhere else on the sheet and never says from where.
+	//
+	// False unless the read asked for both value fields. Every mask
+	// behind a guarded write does.
+	Computed  bool
 	Hyperlink string
 
 	// Format is what the cell was explicitly given, and nil unless the
@@ -96,6 +104,18 @@ func (c Cell) Empty() bool { return c.Kind == KindEmpty }
 // by reading a live transcript where a sheet full of formulas reported
 // none.
 func (c Cell) HasFormula() bool { return c.Formula != "" }
+
+// Computed reports whether a cell holds a value nobody typed: an
+// effective value with no entered one under it.
+//
+// Here rather than at each caller, because two of them have to agree.
+// The write guard reads it to decide whether a refusal is worth a second
+// look, and the pivot measurement reads it to decide the rectangle that
+// refusal names — so a version of this that drifted would have the guard
+// asking about one set of cells and the answer describing another.
+func Computed(cd *gsheets.CellData) bool {
+	return cd != nil && cd.UserEnteredValue == nil && cd.EffectiveValue != nil
+}
 
 // Protection is a protected range as it applies to this rectangle.
 type Protection struct {
@@ -192,6 +212,7 @@ func cell(cd *gsheets.CellData, formatted Formatted) Cell {
 		c.Validation = describeValidation(cd.DataValidation)
 	}
 	c.Pivot = len(cd.PivotTable) > 0
+	c.Computed = Computed(cd)
 	if v := cd.UserEnteredValue; v != nil && v.FormulaValue != nil {
 		c.Formula = *v.FormulaValue
 		c.Kind = KindFormula

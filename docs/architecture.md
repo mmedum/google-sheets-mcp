@@ -1,10 +1,20 @@
 # Architecture — google-sheets-mcp
 
-**Status: v1.0.0 (2026-09-07).** Reading, writing, formatting, the objects attached to a
-range, `gsheets://` resources, durable anchors and now charts, pivot
-tables and Connected Sheets all work, and `make check` is green. Spikes
-L, M, N and P ran against a real account and §18 carries what they
-found.
+**Status: v1.0.0 plus one closed cleanup (2026-09-08).** Reading,
+writing, formatting, the objects attached to a range, `gsheets://`
+resources, durable anchors and now charts, pivot tables and Connected
+Sheets all work, and `make check` is green. Spikes L, M, N and P ran
+against a real account and §18 carries what they found.
+
+**§17a.27 is closed: a write into a pivot table's output names the
+pivot.** The refusal used to read "I3 is not empty", which is true of
+every occupied cell on the sheet. It now reads "I3 is inside the output
+of the pivot table anchored at H1, which covers H1:I6 as it stands", and
+says what a write there costs and how to undo it. The cost is a read up
+and to the left, paid only where the guard is already refusing and
+something in the way is a cell nobody typed. §7.6 has the shape, §18
+what the live run confirmed, and the next thing outstanding is still the
+second MCP client §16 names.
 
 **Phase 4 added three tools and found four things the reference does not
 mention.** `updateChartSpec` replaces a chart's spec whole and refuses a
@@ -872,16 +882,44 @@ Without it the guard sees a pivot's output as ten anonymous non-empty
 cells — it already refuses the write, which is the important half, but
 it cannot say what it is refusing.
 
-**It names the anchor, and only the anchor**, and the first live run is
-why that sentence is here. A pivot's *output* cells carry no
-`pivotTable` field: on the wire they are ordinary computed values, and
-the definition sits on the top-left cell alone. So a write over the
-anchor is refused with what it would cost — "F1 anchors a pivot table,
-and a write there replaces it and clears everything it draws" — and a
-write into the middle of the output is refused as a non-empty cell,
-which is true and less useful. Naming the pivot from one of its output
-cells would mean reading up and left of every guarded write on the
-chance that one is there. §17a.27 carries that with its cost.
+**It names the anchor from the anchor, and the pivot from its output.**
+A pivot's *output* cells carry no `pivotTable` field: on the wire they
+are ordinary computed values, and the definition sits on the top-left
+cell alone. So a write over the anchor is refused with what it would
+cost — "F1 anchors a pivot table, and a write there replaces it and
+clears everything it draws" — straight out of the rectangle the guard
+already read.
+
+A write into the middle of the output is the other half, and it read as
+"I3 is not empty" until §17a.27 closed it. Naming the pivot from one of
+its output cells means reading up and left of the write, and the cost is
+what decides the shape: **the look happens only where the guard has
+already refused**, so it is paid once per refusal rather than once per
+write. Two more conditions keep it off the ordinary path. The write must
+land on cells nobody typed — an `effectiveValue` with no
+`userEnteredValue`, which is what a pivot draws and what an array
+formula spills — so a refusal over typed data costs nothing extra. And
+the window that could hold the anchor is bounded by the read budget from
+the write's end, since a pivot anchored further above than the budget
+reaches draws an output at least that tall.
+
+Then the extent is measured rather than assumed, by the same read
+`list` uses: an anchor up and to the left is not yet a pivot that
+reaches this write, and a footprint that absorbed its neighbours would
+steer a caller away from cells that were never the pivot's. What comes
+back names the part of the write inside the pivot, the anchor, and the
+rectangle it covers right now.
+
+**That measurement had to be fixed to carry a refusal.** Stopping at the
+first empty row and column separates a pivot from a spill beside it and
+cannot separate two pivots with no gap between them: side by side, every
+row of the left one has something drawn to its right, so it grew over
+the right one and `list` reported the pair as one. The rectangle is
+pulled back off any other anchor inside it now, and where that anchor
+sits says which side to give up — one on this pivot's own first row is
+beside it, so the columns went too far; one in its own first column is
+below it, so the rows did. Found by the review pass on the refusal, and
+wrong in the listing since phase 4.
 
 **What a write into a pivot does is worth stating exactly**, because the
 refusal has to be true. A `values.update` over one output cell returns
@@ -2329,18 +2367,37 @@ cannot be verified again yet.
    chance a pivot anchor is there — a wider rectangle on every write, to
    improve a message. The cheaper shape is to look only when the write
    is refused, which pays the read once per refusal rather than once per
-   write, and it needs the refusal path to be able to fetch. **Still
-   open**, found by reading the first live run of phase 4: the count was
-   green and the refusal said "I3 is not empty" under a step whose whole
-   subject was pivot tables.
+   write, and it needs the refusal path to be able to fetch. Found by
+   reading the first live run of phase 4: the count was green and the
+   refusal said "I3 is not empty" under a step whose whole subject was
+   pivot tables.
 
-   **The eval run demonstrates the cost rather than describing it.** The
-   task "do not write over a pivot table" passes — the guard fires and
-   the model does not blindly acknowledge — and the refusal it reads is
+   **The eval run demonstrated the cost rather than describing it.** The
+   task "do not write over a pivot table" passed — the guard fires and
+   the model does not blindly acknowledge — and the refusal it read was
    `[blocked] G3 is not empty; pass overwrite to allow it`. A model that
    passed `overwrite` there would have been told nothing about what it
-   was breaking, and the task passes because the model went and looked
+   was breaking, and the task passed because the model went and looked
    rather than because the message told it to.
+
+   **Closed 2026-09-08**, in the cheaper shape and with two further
+   conditions on top of it. The look is skipped unless the guard is
+   already refusing *and* something in the way is a cell nobody typed,
+   so a refusal over ordinary data pays nothing; and the window that
+   could hold the anchor is bounded by the read budget from the write's
+   end rather than the sheet's start. The extent is then measured by the
+   read `list` already used, because an anchor up and to the left is not
+   yet a pivot that reaches this write. §7.6 has the shape and §18 what
+   the live run confirmed.
+
+   **What the bound gives up, stated rather than discovered later.** A
+   pivot anchored further above the write than the budget reaches is not
+   named, and the refusal falls back to what it said before. That pivot
+   would have to be taller than a whole read, since its output is
+   contiguous from the anchor down to the cell being written — and it is
+   also a pivot the tools that list one cannot measure. A test holds the
+   fallback so it stays a message getting shorter rather than a lookup
+   getting wrong.
 28a. **A read hands back `checkpoint` and a write takes
    `expect_checkpoint`.** The read's own description says to "pass this
    to a later write as expect_checkpoint", and the eval run watched a
@@ -2377,13 +2434,56 @@ cannot be verified again yet.
    for. **Still open**, and recorded with what it would and would not
    have caught: a fake that answers more generously than the API is the
    shape three findings in this project have now taken.
-30. Nothing further. The tool-version problem that was here — a
-   distribution `golangci-lint` built with an older Go refusing this
-   module, and a stale `go-licenses` failing on the standard library —
-   was fixed rather than deferred: the Makefile fetches all three tools
-   at the versions CI uses, through `go run <module>@<version>`. That it
-   needed fixing a second and a third time, by different routes, is why
-   `gates parity` now holds the claim rather than a comment doing it.
+30. **The tool-version problem that was here was fixed rather than
+   deferred** — a distribution `golangci-lint` built with an older Go
+   refusing this module, and a stale `go-licenses` failing on the
+   standard library. The Makefile fetches all three tools at the
+   versions CI uses, through `go run <module>@<version>`. That it needed
+   fixing a second and a third time, by different routes, is why `gates
+   parity` now holds the claim rather than a comment doing it.
+31. **`format_cells merge` refuses over a pivot's output as "not
+   empty".** The same sentence §17a.27 closed for a values write, on the
+   other path that destroys cells: a merge keeps the top-left value and
+   drops the rest, and its refusal reads "merging would keep the
+   top-left value and discard C20, which is not empty". The signal is
+   already there — `FormatTargetFields` carries both value fields, so
+   the grid knows nobody typed C20 — and the lookup would drop in.
+
+   **Not done, and the reason is rule 12 rather than effort.** What a
+   merge does to a pivot table has never been probed live. §17a.27's
+   sentence is about `values.update`, which spike M watched collapse the
+   whole pivot to `#REF!` and clear back again; a merge may do that, or
+   be refused by the API, or do something else, and a refusal that
+   guessed would be this project putting an unverified claim in front of
+   a caller. **Still open**, and it wants a spike before it wants code.
+   The same holds for `clear_values`, which guards on protections alone.
+32. **The pivot lookup behind a refusal costs two reads where one might
+   decide it.** The first finds anchors up and to the left under a mask
+   asking only for `pivotTable`; the second measures what each draws,
+   from the anchor down and right to the sheet's end under the cell
+   budget. The second is the expensive one — up to `max_cells` — and it
+   is paid even when no pivot turns out to reach the write.
+
+   Widening the first read's mask to carry the two value fields would
+   answer reach-or-not from one request, because the write lies wholly
+   inside that window and a pivot's output is solid: the intersection it
+   measures there is exact. **Not taken**, because the extent walk stops
+   at the first row drawing nothing at or right of the anchor, and
+   inside a truncated window a sparse pivot row can look like that row —
+   live, a pivot with a column grouping draws nothing in its own first
+   column on most rows. The failure is a pivot that reaches going
+   unnamed, which is the message this item exists to produce. **Still
+   open** as a measured trade rather than an oversight: the second read
+   is paid only on a refusal, over cells nobody typed, with an anchor
+   already found above the write.
+
+   **The two reads also divide the same budget by different widths**,
+   which is a second way the same message goes quiet. The lookback
+   divides `max_cells` by the write's own last column; the extent read
+   divides it by the sheet's width from the anchor on. So a write low on
+   a wide sheet can find an anchor the lookback reaches and then have
+   its extent cut off above the write, and the refusal falls back to
+   "not empty". §17a.27's stated give-up covers the first bound only.
 
 ### 17c. Where the profile and the guards follow the sibling servers
 
@@ -2929,3 +3029,17 @@ none of them.
 | Deleting a data source needs the BigQuery scope, like adding and refreshing one | **Refuted by spike N's own transcript, read again a day later**: `deleteDataSource` came back `400 … The data source ID doesn't exist`, not the `403 … Please include bigquery.readonly scope` that `addDataSource` gave in the same run. The evidence was in the phase's first transcript and its consequence was only seen when the delete needed a home | `delete_data_source` asks for no third scope, so it reaches a data source somebody else connected — which is the case a Sheets server is most likely to meet |
 | §17a.20's `rowMetadata` is not reachable through a grid read | **Refuted, after the spike's own mask was refused for being unbalanced by one parenthesis**: `data(…,rowMetadata(developerMetadata))` is accepted and returns one object per row of the *window* — four objects for a four-row read, one carrying the anchor, for 713 bytes | §17a.20 closed with its cost stated: it saves a request and pays about 180 bytes per row of the band. Right for the bands anybody deletes by hand, wrong for a ten-thousand-row band, so the fold happens under a row count and the search stays for the rest |
 
+
+**§17a.27's fix, run live three times on 2026-09-08** (211 steps, 0
+failed, 1 undetermined — Drive's content index again). The second run
+followed the cleanup pass and the third the review pass; every step came
+out the same, and the transcripts differ only in ids and a page token.
+Four rows: what the refusal now says, the two halves of the sentence it
+makes, and what the review pass found underneath it.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| A pivot's output can only be described as non-empty cells | **Refuted, and it costs a read**: the anchor is found by a second `spreadsheets.get` under `PivotFields` over the rows and columns up to the write, and its extent by the read `list` already uses. Live, a write at I3 came back `I3 is inside the output of the pivot table anchored at H1, which covers H1:I6 as it stands` | The look is paid only where the guard already refuses *and* something in the way carries an `effectiveValue` with no `userEnteredValue`. A write onto typed cells in the same run still read `A3 is not empty` and cost no extra call |
+| The refusal's claim about `#REF!` is spike M's and has never been read back through the tools | **Confirmed end to end**: the acknowledged write at I3 returned 200, the whole pivot collapsed to `#REF!` at H1 with the output gone, and `clear_values` on that one cell brought all of it back — the same rectangle and the same checkpoint, `ck_61abfe11ad3e`, before and after | The refusal names the collapse and the recovery, so a caller who passes `overwrite` knows both what happens and how to undo it. The driver keeps the sentence true: four steps write, read, clear and read again |
+| A pivot's measured extent is close enough to its bounding box | **Confirmed as the thing that had to be measured**: the same run watched `H1:I6` become `H1:J7` and then `H1:T8` across two updates, with the source untouched. A refusal quoting a rectangle from the request would have been wrong twice in three calls | The extent is read back on every refusal that names a pivot, never derived. The unit tests hold the other end: a write beside the output is refused without a pivot in the sentence |
+| Stopping at the first empty row and column measures one pivot | **Refuted, and it was wrong in `list` since phase 4**: two pivots side by side have no empty column between them, so the left one grows over the right one. Reproduced against the fake — anchors at F1 and H1 reported `F1:I7` and `H1:I7`, and a write at H3 was then refused with a promise to break the table at F1, which it would not have touched | The rectangle is pulled back off any other anchor inside it, on the axis where that anchor sits. Found by the review pass on the refusal rather than by the run: a listing that overstates a footprint is misleading, and a refusal that does it is wrong out loud |

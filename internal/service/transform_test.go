@@ -425,3 +425,26 @@ func TestAutoFillStopsAtTheEndOfTheSheet(t *testing.T) {
 		t.Fatal("a refused fill reached the wire")
 	}
 }
+
+// A paste lands on cells the caller never named, so it is the other
+// place a write can arrive in a pivot table's output (§17a.27).
+func TestCopyPasteIntoPivotOutputNamesThePivot(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	svc := newService(t, srv)
+	if _, err := svc.ManagePivotTable(context.Background(), service.PivotRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
+		Action: service.PivotAdd, Anchor: "F1",
+		Source: "A1:C6", Rows: []string{"A"}, Values: []string{"B sum"},
+	}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	req := transformReq(service.TransformCopyPaste, "A1:A1")
+	req.Destination = "'" + sheetstest.FirstSheet + "'!G3"
+	_, err := svc.Transform(context.Background(), req)
+	if err == nil {
+		t.Fatal("a paste into a pivot's output was allowed")
+	}
+	if !strings.Contains(err.Error(), "pivot table anchored at F1") {
+		t.Errorf("the refusal does not name the pivot:\n%s", err)
+	}
+}

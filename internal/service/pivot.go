@@ -9,6 +9,7 @@ import (
 
 	"github.com/mmedum/google-sheets-mcp/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/internal/grid"
 	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
 	"github.com/mmedum/google-sheets-mcp/internal/plan"
 	"github.com/mmedum/google-sheets-mcp/internal/render"
@@ -262,15 +263,10 @@ func (s *Service) listPivots(ctx context.Context, ref Reference, req PivotReques
 func (s *Service) pivotsIn(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
 	window a1.Rect) ([]PivotRecord, error) {
 
-	sp, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{
-		Fields:          gapi.PivotFields,
-		Ranges:          []string{a1.Format(props.Title, window)},
-		IncludeGridData: true,
-	})
+	found, err := s.pivotAnchors(ctx, ref, props, window)
 	if err != nil {
-		return nil, wrap(err)
+		return nil, err
 	}
-	found := pivotCells(sp, props.SheetID)
 	if len(found) == 0 {
 		return nil, nil
 	}
@@ -285,7 +281,7 @@ func (s *Service) pivotsIn(ctx context.Context, ref Reference, props *gsheets.Sh
 		out = append(out, PivotRecord{
 			Anchor: a1.FormatRect(p.at), Sheet: props.Title,
 			Source: pivotSourceName(pivot, props.Title),
-			Output: extents[i],
+			Output: extentName(extents[i]),
 		})
 	}
 	return out, nil
@@ -302,15 +298,10 @@ func (s *Service) pivotsIn(ctx context.Context, ref Reference, props *gsheets.Sh
 func (s *Service) pivotAt(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
 	anchor a1.Rect) (map[string]any, error) {
 
-	sp, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{
-		Fields:          gapi.PivotFields,
-		Ranges:          []string{a1.Format(props.Title, anchor)},
-		IncludeGridData: true,
-	})
+	found, err := s.pivotAnchors(ctx, ref, props, anchor)
 	if err != nil {
-		return nil, wrap(err)
+		return nil, err
 	}
-	found := pivotCells(sp, props.SheetID)
 	if len(found) == 0 {
 		return nil, Errorf("not_found",
 			"no pivot table is anchored at %s on %q. manage_pivot_table list reports the ones that are",
@@ -323,6 +314,27 @@ func (s *Service) pivotAt(ctx context.Context, ref Reference, props *gsheets.She
 			anchorName(anchor))
 	}
 	return pivot, nil
+}
+
+// pivotAnchors reads a rectangle for the cells carrying a pivot table.
+//
+// One place for the mask, the range and the walk, because three callers
+// want the same three: the listing, the update that has to read a pivot
+// before replacing it, and the look behind a refusal. The mask asks for
+// the pivot and nothing else — no values, no formats — since there is no
+// pivot index in this API and a listing is a grid read.
+func (s *Service) pivotAnchors(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
+	window a1.Rect) ([]foundPivot, error) {
+
+	sp, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{
+		Fields:          gapi.PivotFields,
+		Ranges:          []string{a1.Format(props.Title, window)},
+		IncludeGridData: true,
+	})
+	if err != nil {
+		return nil, wrap(err)
+	}
+	return pivotCells(sp, props.SheetID), nil
 }
 
 // foundPivot is one anchor a read turned up, with the raw definition on
@@ -365,13 +377,19 @@ func pivotCells(sp *gsheets.Spreadsheet, sheetID int) []foundPivot {
 	return out
 }
 
-// pivotOutput measures what one pivot draws right now.
+// pivotOutput measures what one pivot draws right now, as an address.
 func (s *Service) pivotOutput(ctx context.Context, ref Reference, props *gsheets.SheetProperties, anchor a1.Rect) string {
-	out := s.pivotExtents(ctx, ref, props, []foundPivot{{at: anchor}})
-	if len(out) == 0 {
+	return extentName(s.pivotExtents(ctx, ref, props, []foundPivot{{at: anchor}})[0])
+}
+
+// extentName is a measured extent as an address, and "" where the
+// measurement found nothing. A pivot that draws nothing has no
+// rectangle, and the zero one means the whole sheet.
+func extentName(rect a1.Rect) string {
+	if !rect.Bounded() {
 		return ""
 	}
-	return out[0]
+	return a1.FormatRect(rect)
 }
 
 // pivotExtents measures what each pivot draws, from one read.
@@ -395,9 +413,9 @@ func (s *Service) pivotOutput(ctx context.Context, ref Reference, props *gsheets
 // It returns no error: a measurement that fails is a rectangle nobody
 // can state, not a call that failed. The write already happened.
 func (s *Service) pivotExtents(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
-	pivots []foundPivot) []string {
+	pivots []foundPivot) []a1.Rect {
 
-	out := make([]string, len(pivots))
+	out := make([]a1.Rect, len(pivots))
 	if len(pivots) == 0 {
 		return out
 	}
@@ -430,7 +448,10 @@ func (s *Service) pivotExtents(ctx context.Context, ref Reference, props *gsheet
 					continue
 				}
 				for j, cell := range row.Values {
-					if cell == nil || cell.EffectiveValue == nil || cell.UserEnteredValue != nil {
+					// The same predicate the write guard triggers on, so
+					// the cells it asks about and the cells measured here
+					// cannot come apart.
+					if !grid.Computed(cell) {
 						continue
 					}
 					r, c := d.StartRow+i+1, d.StartColumn+j+1
@@ -442,15 +463,28 @@ func (s *Service) pivotExtents(ctx context.Context, ref Reference, props *gsheet
 			}
 		}
 	}
+	anchors := make([]a1.Rect, len(pivots))
 	for i, p := range pivots {
-		out[i] = extentFrom(drawn, p.at, window)
+		anchors[i] = p.at
+	}
+	for i, p := range pivots {
+		out[i] = extentFrom(drawn, anchors, p.at, window)
 	}
 	return out
 }
 
 // extentFrom grows a rectangle from one anchor until a row and then a
-// column has nothing drawn in it.
-func extentFrom(drawn map[int]map[int]bool, anchor, window a1.Rect) string {
+// column has nothing drawn in it, then pulls it back off any other
+// anchor it swallowed. The zero rectangle means the pivot draws nothing.
+//
+// The pull-back is the second half of the lesson the first half carries.
+// Stopping at empty separates a pivot from a spill beside it, and it
+// cannot separate two pivots with no gap between them: side by side,
+// every row of the left one has something drawn to its right, so the
+// left one grew over the right one and the listing said so. Harmless
+// while it only decorated a listing; a refusal naming the wrong table
+// and promising to break it is not.
+func extentFrom(drawn map[int]map[int]bool, anchors []a1.Rect, anchor, window a1.Rect) a1.Rect {
 	lastRow := anchor.FirstRow - 1
 	for r := anchor.FirstRow; r <= window.LastRow; r++ {
 		if !anyFrom(drawn[r], anchor.FirstCol) {
@@ -459,7 +493,7 @@ func extentFrom(drawn map[int]map[int]bool, anchor, window a1.Rect) string {
 		lastRow = r
 	}
 	if lastRow < anchor.FirstRow {
-		return ""
+		return a1.Rect{}
 	}
 	lastCol := anchor.FirstCol - 1
 	for c := anchor.FirstCol; c <= window.LastCol; c++ {
@@ -476,11 +510,45 @@ func extentFrom(drawn map[int]map[int]bool, anchor, window a1.Rect) string {
 		lastCol = c
 	}
 	if lastCol < anchor.FirstCol {
-		return ""
+		return a1.Rect{}
 	}
-	return a1.FormatRect(a1.Rect{
+	lastRow, lastCol = clipToNeighbours(anchors, anchor, lastRow, lastCol)
+	if lastRow < anchor.FirstRow || lastCol < anchor.FirstCol {
+		return a1.Rect{}
+	}
+	return a1.Rect{
 		FirstRow: anchor.FirstRow, FirstCol: anchor.FirstCol, LastRow: lastRow, LastCol: lastCol,
-	})
+	}
+}
+
+// clipToNeighbours pulls a measured rectangle back off any other pivot's
+// anchor inside it. Two pivots never overlap, so an anchor within this
+// rectangle is proof the walk went too far.
+//
+// Which side to give up is read off where the other anchor sits. One
+// starting on this pivot's own first row is beside it, so the columns
+// are what went too far; one in this pivot's own first column is below
+// it, so the rows are. An anchor strictly inside on both axes says only
+// that the rectangle is too big and not which way, and both are pulled
+// back — the rectangle then understates what the pivot draws, which
+// costs a sentence, where overstating it names a table the caller would
+// not have broken.
+func clipToNeighbours(anchors []a1.Rect, anchor a1.Rect, lastRow, lastCol int) (int, int) {
+	for _, o := range anchors {
+		if o == anchor || o.FirstRow < anchor.FirstRow || o.FirstCol < anchor.FirstCol {
+			continue
+		}
+		if o.FirstRow > lastRow || o.FirstCol > lastCol {
+			continue
+		}
+		if o.FirstRow > anchor.FirstRow {
+			lastRow = min(lastRow, o.FirstRow-1)
+		}
+		if o.FirstCol > anchor.FirstCol {
+			lastCol = min(lastCol, o.FirstCol-1)
+		}
+	}
+	return lastRow, lastCol
 }
 
 // anyFrom says whether a row has a drawn cell at or right of a column.
@@ -773,4 +841,78 @@ func pivotRows(found []PivotRecord) []render.PivotRow {
 		out = append(out, render.PivotRow{Anchor: p.Anchor, Source: p.Source, Output: p.Output})
 	}
 	return out
+}
+
+// pivotsBehind names the pivot tables a refused write would land in the
+// output of.
+//
+// A pivot's output cells say nothing about it: on the wire they are
+// ordinary computed values, and the definition sits on the anchor
+// alone, up and to the left of what the guard read. So naming one means
+// a second read, and this pays for it only where the write is already
+// being refused — once per refusal rather than once per write, which is
+// the shape §17a.27 settled on.
+//
+// It answers with what it found and never with an error. The write is
+// refused either way, so a look that fails costs a sentence and nothing
+// else; turning a [blocked] into a transport error would take the
+// refusal the caller has to read and replace it with one about the
+// server.
+func (s *Service) pivotsBehind(ctx context.Context, t target, r *plan.Report, ack plan.Ack) {
+	// Three tests, and none of them is enough alone. A refusal over
+	// cells somebody typed has no pivot behind it. A write nothing is
+	// refusing has nothing to explain. And a caller who has already
+	// passed overwrite would be told to pass it again, since that is the
+	// only flag this finding can ask for — so the reads are skipped
+	// rather than paid for a sentence Blockers then withholds.
+	if !r.Computed || ack.Overwrite || !t.rect.Bounded() || len(r.Blockers(ack)) == 0 {
+		return
+	}
+	anchors, err := s.pivotAnchors(ctx, t.ref, t.props, lookback(t.rect, s.cfg.MaxCells))
+	if err != nil {
+		s.log.DebugContext(ctx, "pivot lookup behind a refusal failed", "spreadsheet", gapi.ShortID(t.ref.ID))
+		return
+	}
+	var found []foundPivot
+	for _, p := range anchors {
+		// An anchor inside the write is already named, by the finding
+		// that a write over it takes the whole table with it. Naming it
+		// again here would put two sentences about one pivot table in
+		// one refusal.
+		if !t.rect.Contains(p.at) {
+			found = append(found, p)
+		}
+	}
+	if len(found) == 0 {
+		return
+	}
+	// The extents, because an anchor up and to the left is not yet a
+	// pivot that reaches this write: a table two columns wide says
+	// nothing about a write ten columns along, and claiming it did would
+	// steer a caller away from cells that were never the pivot's.
+	for i, rect := range s.pivotExtents(ctx, t.ref, t.props, found) {
+		if !rect.Bounded() {
+			continue
+		}
+		hit, ok := rect.Intersect(t.rect)
+		if !ok {
+			continue
+		}
+		r.AddDrawnBy(a1.FormatRect(found[i].at), a1.FormatRect(rect), a1.FormatRect(hit))
+	}
+}
+
+// lookback is where the anchor of a pivot drawing into a write can be:
+// the first row and the first column up to the write's far corner,
+// since a pivot grows down and to the right of its anchor.
+//
+// Bounded by the read budget from the write's end rather than the
+// sheet's start. A pivot anchored further above than the budget reaches
+// draws an output at least that tall, so what the bound gives up is a
+// pivot taller than a whole read — and the tools that list one measure
+// it under the same budget.
+func lookback(rect a1.Rect, maxCells int) a1.Rect {
+	window := a1.Rect{FirstRow: 1, FirstCol: 1, LastRow: rect.LastRow, LastCol: rect.LastCol}
+	window, _ = window.LimitRowsFromEnd(max(maxCells/window.Cols(), 1))
+	return window
 }

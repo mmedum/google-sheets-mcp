@@ -5,7 +5,40 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **A write into a pivot table's output names the pivot table.** It used
+  to be refused as "I3 is not empty", which is true of every occupied
+  cell on the sheet and says nothing about what the write would break.
+  It now reads "I3 is inside the output of the pivot table anchored at
+  H1, which covers H1:I6 as it stands", followed by what a write there
+  does — the whole pivot stops drawing and collapses to `#REF!` at the
+  anchor — and how to undo it, which is to clear the cell again.
+
+  A pivot's output cells carry nothing that names the pivot: on the wire
+  they are ordinary computed values, and the definition sits on the
+  anchor alone. So naming it costs a read up and to the left of the
+  write, and that read happens only where the guard is already refusing
+  *and* something in the way is a cell nobody typed. A refusal over
+  ordinary data costs exactly what it did before. The pivot's rectangle
+  is measured rather than assumed, so a table that does not reach the
+  write is not blamed for it (§17a.27, §7.6).
+
+  Verified live: 211 steps, none failed. The acknowledged write
+  collapsed the pivot, and clearing the cell brought it back to the same
+  rectangle and the same checkpoint.
+
+### Fixed
+
+- **`manage_pivot_table list` measured two adjacent pivot tables as
+  one.** The walk that measures what a pivot draws stops at the first
+  empty row and column, and two tables side by side have neither between
+  them — so the left one's rectangle swallowed the right one. It is
+  pulled back off any other anchor inside it now. Wrong in the listing
+  since 0.4.0, and found because the refusal above quotes the same
+  rectangle: a listing that overstates a footprint is misleading, and a
+  refusal that does it names a table the write would not have touched
+  and promises to break it.
 
 ## [1.0.0] - 2026-09-07
 
