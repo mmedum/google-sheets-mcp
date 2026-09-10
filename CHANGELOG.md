@@ -5,6 +5,10 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.3.0] - 2026-09-10
+
 ### Fixed
 
 - **`login` recorded no account, on every login.** The address is
@@ -890,7 +894,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v0.4.0...v1.0.0
