@@ -193,9 +193,41 @@ func recordAccount(ctx context.Context, cfg config.Config, out io.Writer, uc *us
 	if err != nil {
 		return
 	}
-	if addr, err := svc.Account(ctx); err == nil {
-		uc.AccountEmail = addr
+	addr, err := svc.Account(ctx)
+	if err != nil {
+		return
 	}
+	setAccount(uc, addr)
+}
+
+// setAccount keeps what is already recorded rather than replacing it
+// with nothing. Drive omits emailAddress when the account has not made
+// it visible to the requester, and that arrives as "" with a nil error.
+func setAccount(uc *userconfig.Config, addr string) {
+	if addr == "" {
+		return
+	}
+	uc.AccountEmail = addr
+}
+
+// applyGrantedScopes records what Google granted rather than what was
+// asked for, and names the asked-for scopes it withheld.
+//
+// The account address is deliberately not taken from tokeninfo, which
+// returns one only for a token carrying an email scope — §17.6 asks for
+// neither `openid` nor `userinfo.email`, so what it returns is nothing.
+// Assigning it here wrote "" over the address recordAccount had just
+// fetched, and `status` then reported a working profile as having no
+// account at all.
+func applyGrantedScopes(uc *userconfig.Config, info *auth.TokenInfo, wanted []string, out io.Writer) {
+	uc.Scopes = info.Scopes
+	missing := auth.MissingScopes(info.Scopes, wanted)
+	if len(missing) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(out, "\nWarning: these scopes were not granted: %s\n"+
+		"Add them to the consent screen and run login again, or some tools will fail with [forbidden].\n",
+		strings.Join(missing, ", "))
 }
 
 func tokenStore(cfg config.Config, log *slog.Logger) (*credentials.Store, error) {
@@ -319,13 +351,7 @@ func login(ctx context.Context, cfg config.Config, secretFlag string, out io.Wri
 	uc.Scopes = scopes
 	recordAccount(ctx, cfg, out, &uc)
 	if info, err := auth.Inspect(ctx, boundedClient(cfg), tok.AccessToken); err == nil {
-		uc.AccountEmail = info.Email
-		uc.Scopes = info.Scopes
-		if missing := auth.MissingScopes(info.Scopes, scopes); len(missing) > 0 {
-			_, _ = fmt.Fprintf(out, "\nWarning: these scopes were not granted: %s\n"+
-				"Add them to the consent screen and run login again, or some tools will fail with [forbidden].\n",
-				strings.Join(missing, ", "))
-		}
+		applyGrantedScopes(&uc, info, scopes, out)
 	}
 	if err := userconfig.Save(cfg.Profile, uc); err != nil {
 		return err
@@ -422,7 +448,7 @@ func status(_ context.Context, cfg config.Config, out io.Writer) error {
 		// never-list. The client id arrives through the path: the Cloud
 		// console names the file after it.
 		_, _ = fmt.Fprintf(out, "account: %s\nclient secret: %s\ntoken store: %s\nscopes: %s\n",
-			orNone(redact.Email(uc.AccountEmail)), orNone(redact.Path(uc.ClientSecretPath)),
+			orElse(redact.Email(uc.AccountEmail), "(not recorded)"), orNone(redact.Path(uc.ClientSecretPath)),
 			orNone(uc.TokenStore), orNone(strings.Join(uc.Scopes, " ")))
 	}
 	_, _ = fmt.Fprintf(out, "read-only: %v\ndestructive tools: %v\n", cfg.ReadOnly, cfg.EnableDestructive)
@@ -581,9 +607,14 @@ func boundedClient(cfg config.Config) *http.Client {
 	return &http.Client{Timeout: cfg.HTTPTimeout}
 }
 
-func orNone(s string) string {
+func orNone(s string) string { return orElse(s, "(none)") }
+
+// orElse is orNone with the words chosen. "(none)" against an account
+// reads as "not signed in", which is wrong for a profile holding a
+// working token and no address recorded against it.
+func orElse(s, alt string) string {
 	if s == "" {
-		return "(none)"
+		return alt
 	}
 	return s
 }

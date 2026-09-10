@@ -264,3 +264,91 @@ func TestMatchesRendering(t *testing.T) {
 		t.Errorf("the note does not say what was actually observed: %q", ended)
 	}
 }
+
+// An empty cell is still padded to its column's width, so a run of empty
+// rows spends the character budget on nothing and pulls the continuation
+// in on exactly the sparse sheets a wide window is reasonable to ask
+// for. One line says the same, and the addresses either side of it are
+// where they were.
+func TestGridFoldsARunOfEmptyRows(t *testing.T) {
+	wide := "Vejle Amts Folkeblad"
+	data := &gsheets.GridData{RowData: []*gsheets.RowData{
+		{Values: []*gsheets.CellData{sheetstest.Str(wide)}},
+		nil, nil, nil, nil,
+		{Values: []*gsheets.CellData{sheetstest.Str("Skanderborg")}},
+	}}
+	g := grid.Build("Vandel", 0, a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 1, LastRow: 6}, data, grid.AsRaw)
+	res := render.Grid(g, render.GridOptions{})
+	if !strings.Contains(res.Text, "… rows 2-5 empty") {
+		t.Errorf("the run of empty rows was not folded:\n%s", res.Text)
+	}
+	for _, want := range []string{"1 | " + wide, "6 | Skanderborg"} {
+		if !strings.Contains(res.Text, want) {
+			t.Errorf("missing %q:\n%s", want, res.Text)
+		}
+	}
+	// The fold covers rows, so the last row shown is still the last row.
+	if res.LastRow != 6 {
+		t.Errorf("LastRow = %d, want 6", res.LastRow)
+	}
+}
+
+// Two rows cost less than the sentence describing them.
+func TestGridDrawsAShortRunOfEmptyRows(t *testing.T) {
+	data := &gsheets.GridData{RowData: []*gsheets.RowData{
+		{Values: []*gsheets.CellData{sheetstest.Str("Give")}},
+		nil, nil,
+		{Values: []*gsheets.CellData{sheetstest.Str("Jelling")}},
+	}}
+	g := grid.Build("Vandel", 0, a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 1, LastRow: 4}, data, grid.AsRaw)
+	res := render.Grid(g, render.GridOptions{})
+	if strings.Contains(res.Text, "empty") {
+		t.Errorf("a run of two was folded:\n%s", res.Text)
+	}
+	for _, want := range []string{"\n2 |", "\n3 |"} {
+		if !strings.Contains(res.Text, want) {
+			t.Errorf("row %q was dropped rather than drawn:\n%s", want, res.Text)
+		}
+	}
+}
+
+// A window past the end of the data is padding and nothing else, which
+// is the case this costs the most on.
+func TestGridFoldsAWindowWithNothingInIt(t *testing.T) {
+	g := grid.Build("Vandel", 0, a1.Rect{FirstCol: 1, FirstRow: 100, LastCol: 8, LastRow: 110}, nil, grid.AsRaw)
+	res := render.Grid(g, render.GridOptions{})
+	if !strings.Contains(res.Text, "… rows 100-110 empty") {
+		t.Errorf("an empty window was not folded:\n%s", res.Text)
+	}
+	// The header and the one line, and nothing else.
+	if n := strings.Count(res.Text, "\n"); n != 2 {
+		t.Errorf("an empty window drew %d lines:\n%s", n, res.Text)
+	}
+}
+
+// A count of shortened values leaves the caller guessing which cell to
+// read again. The addresses are what makes it actionable.
+func TestFooterNamesTheCellsItShortened(t *testing.T) {
+	long := strings.Repeat("Quorbin", 40)
+	row := make([]*gsheets.CellData, 8)
+	for i := range row {
+		row[i] = sheetstest.Str(long)
+	}
+	data := &gsheets.GridData{RowData: []*gsheets.RowData{{Values: row}}}
+	g := grid.Build("Vandel", 0, a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 8, LastRow: 1}, data, grid.AsRaw)
+	opts := render.GridOptions{}
+	res := render.Grid(g, opts)
+	foot := render.Footer(g, res, opts)
+	if res.Shortened != 8 {
+		t.Errorf("Shortened = %d, want 8", res.Shortened)
+	}
+	for _, want := range []string{"A1", "B1"} {
+		if !strings.Contains(foot, want) {
+			t.Errorf("the footer does not name %s:\n%s", want, foot)
+		}
+	}
+	// The count is the total; the addresses are a sample and say so.
+	if !strings.Contains(foot, "…)") {
+		t.Errorf("a capped sample does not say it was capped:\n%s", foot)
+	}
+}

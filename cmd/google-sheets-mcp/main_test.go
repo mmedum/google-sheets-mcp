@@ -14,6 +14,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 
+	"github.com/mmedum/google-sheets-mcp/internal/auth"
 	"github.com/mmedum/google-sheets-mcp/internal/config"
 	"github.com/mmedum/google-sheets-mcp/internal/userconfig"
 	"github.com/mmedum/google-sheets-mcp/internal/version"
@@ -366,5 +367,84 @@ func TestDoctorPrintsBeforeItFails(t *testing.T) {
 	_ = doctor(context.Background(), cfg, "", &out)
 	if !strings.Contains(out.String(), "profile: "+cfg.Profile) {
 		t.Errorf("doctor failed without printing its header:\n%s", out.String())
+	}
+}
+
+// The address comes from the Drive call and tokeninfo must not touch it.
+// tokeninfo carries an address only for a token with an email scope,
+// which §17.6 does not ask for, so what it carries is nothing — and
+// assigning that cleared the address on every login. `status` then
+// reported a profile holding a working token as having no account,
+// which is the one thing that output exists to answer.
+func TestGrantedScopesDoNotClearTheRecordedAccount(t *testing.T) {
+	uc := userconfig.Config{AccountEmail: "someone@example.test"}
+	granted := []string{
+		"https://www.googleapis.com/auth/spreadsheets",
+		"https://www.googleapis.com/auth/drive.readonly",
+	}
+	var out bytes.Buffer
+	applyGrantedScopes(&uc, &auth.TokenInfo{Scopes: granted}, granted, &out)
+	if uc.AccountEmail != "someone@example.test" {
+		t.Errorf("the recorded account became %q", uc.AccountEmail)
+	}
+	if len(uc.Scopes) != len(granted) {
+		t.Errorf("granted scopes = %v", uc.Scopes)
+	}
+	if out.Len() != 0 {
+		t.Errorf("a complete grant warned anyway: %s", out.String())
+	}
+}
+
+// A scope asked for and not granted is worth saying out loud: the tools
+// that need it fail with [forbidden] much later.
+func TestGrantedScopesNameWhatIsMissing(t *testing.T) {
+	var uc userconfig.Config
+	var out bytes.Buffer
+	applyGrantedScopes(&uc,
+		&auth.TokenInfo{Scopes: []string{"https://www.googleapis.com/auth/spreadsheets"}},
+		[]string{
+			"https://www.googleapis.com/auth/spreadsheets",
+			"https://www.googleapis.com/auth/drive.readonly",
+		}, &out)
+	if !strings.Contains(out.String(), "drive.readonly") {
+		t.Errorf("the withheld scope is not named:\n%s", out.String())
+	}
+}
+
+// Drive omits emailAddress when the account has not made it visible to
+// the requester, and that arrives as "" with a nil error.
+func TestAnAbsentAddressDoesNotEraseTheRecordedOne(t *testing.T) {
+	uc := userconfig.Config{AccountEmail: "someone@example.test"}
+	setAccount(&uc, "")
+	if uc.AccountEmail != "someone@example.test" {
+		t.Errorf("an absent address erased the recorded one: %q", uc.AccountEmail)
+	}
+	setAccount(&uc, "other@example.test")
+	if uc.AccountEmail != "other@example.test" {
+		t.Errorf("a fresh address was not recorded: %q", uc.AccountEmail)
+	}
+}
+
+// "(none)" against an account reads as "not signed in". A profile with a
+// token and no address recorded is a different thing, and only one of
+// the two is worth acting on.
+func TestStatusSeparatesNoAccountFromNoLogin(t *testing.T) {
+	dir := isolate(t)
+	cfg, err := settingsFor(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := userconfig.Save(cfg.Profile, userconfig.Config{
+		ClientSecretPath: filepath.Join(dir, "client_secret_"+exampleClientID+".json"),
+		TokenStore:       "keyring",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := status(context.Background(), cfg, &out); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !strings.Contains(out.String(), "account: (not recorded)") {
+		t.Errorf("status does not separate an unrecorded account from no login:\n%s", out.String())
 	}
 }

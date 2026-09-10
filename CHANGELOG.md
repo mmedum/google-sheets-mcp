@@ -5,7 +5,41 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **`login` recorded no account, on every login.** The address is
+  fetched from the Drive call this server already makes, and then
+  `tokeninfo` was read back over it. `tokeninfo` returns an address only
+  for a token carrying an email scope, which §17.6 asks for and this
+  server does not, so what it returned was nothing — and nothing was
+  what the profile kept. `status` printed `account: (none)` while
+  `doctor`, asking Drive directly, resolved the address on the same
+  credentials. The two disagreed about an authenticated profile, which
+  is the one question that output exists to answer (§18).
+
+- **An address Drive withholds erased the one already recorded.**
+  `User.emailAddress` is absent when the account has not made it visible
+  to the requester, and that arrives as an empty string with no error.
+  It is no longer stored over a good address from an earlier login.
+
+### Changed
+
+- **Runs of empty rows are folded into one line.** A read of a sparse
+  window drew every empty cell padded to its column's width: on one
+  36-column read, a single empty row cost 562 characters, 523 of them
+  spaces. Three or more consecutive empty rows now render as
+  `… rows 21-24 empty`. The rows are named, so an address inside the
+  fold is still one a caller can write to, and the footer still says
+  where the data ends. `read_formatting` has always summarised a repeat
+  this way; the grid did not.
+
+- **The footer names the cells it shortened.** `13 value(s) shortened to
+  50 characters` left the caller guessing which cell to read again. The
+  first few addresses are named, with the count still the total.
+
+- **`status` separates a missing account from a missing login.**
+  `(none)` said both. A profile with a token and no address recorded
+  says `(not recorded)`.
 
 ## [1.2.0] - 2026-09-09
 
