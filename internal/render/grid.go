@@ -62,7 +62,19 @@ type GridResult struct {
 	LastRow int
 	// Shortened counts cells whose text was capped at MaxCellWidth.
 	Shortened int
+	// ShortenedAt names the first few of them, so a caller who wants a
+	// value whole knows which cell to read again rather than guessing a
+	// narrower range. Capped: the count is the total, this is a sample.
+	ShortenedAt []string
 }
+
+// minEmptyRun is how many consecutive empty rows are folded into one
+// line. Two rows cost less than the sentence describing them.
+const minEmptyRun = 3
+
+// maxShortenedAt caps what ShortenedAt collects. A read at the cell
+// budget could otherwise clip fifty thousand cells and name them all.
+const maxShortenedAt = 5
 
 // Grid renders an addressed grid.
 func Grid(g *grid.Grid, o GridOptions) GridResult {
@@ -75,80 +87,10 @@ func Grid(g *grid.Grid, o GridOptions) GridResult {
 		return GridResult{Text: fmt.Sprintf("%s is empty.\n", a1.Format(g.Sheet, g.Rect))}
 	}
 
-	// Two passes: measure, then draw. A column is as wide as its widest
-	// cell, its letter, and nothing else.
-	letters := make([]string, cols)
-	widths := make([]int, cols)
-	for j := range cols {
-		letters[j], _ = a1.ColumnName(g.Rect.FirstCol + j)
-		widths[j] = utf8.RuneCountInString(letters[j])
-	}
-	body := make([][]string, rows)
-	// The formula line exists only for `both`. Building it for every
-	// read would allocate a second matrix the size of the budget and
-	// clip fifty thousand empty strings to produce nothing.
-	var formulas [][]string
-	if o.Show == ShowBoth {
-		formulas = make([][]string, rows)
-	}
-	for i := range rows {
-		body[i] = make([]string, cols)
-		if formulas != nil {
-			formulas[i] = make([]string, cols)
-		}
-		for j := range cols {
-			c := g.Cells[i][j]
-			value, cut := clip(c.Display)
-			if o.Show == ShowFormulas && c.Formula != "" {
-				value, cut = clip(c.Formula)
-			}
-			if cut {
-				res.Shortened++
-			}
-			body[i][j] = value
-			widths[j] = max(widths[j], utf8.RuneCountInString(value))
-			if formulas == nil || c.Formula == "" {
-				continue
-			}
-			formula, cutF := clip(c.Formula)
-			if cutF {
-				res.Shortened++
-			}
-			formulas[i][j] = formula
-			widths[j] = max(widths[j], utf8.RuneCountInString(formula))
-		}
-	}
-
-	gutter := len(fmt.Sprint(g.Rect.FirstRow + rows - 1))
+	m := measure(g, o, &res)
 	var b strings.Builder
-	// The header line sits over the columns, offset by the gutter and
-	// its separator.
-	var header strings.Builder
-	header.WriteString(strings.Repeat(" ", gutter+3))
-	for j := range cols {
-		if j > 0 {
-			header.WriteString("   ")
-		}
-		header.WriteString(pad(letters[j], widths[j]))
-	}
-	b.WriteString(strings.TrimRight(header.String(), " ") + "\n")
-
-	res.LastRow = g.Rect.FirstRow - 1
-	blankGutter := strings.Repeat(" ", gutter)
-	for i := range rows {
-		line := renderRow(fmt.Sprintf("%*d", gutter, g.Rect.FirstRow+i), body[i], widths)
-		extra := ""
-		if formulas != nil && anyNonEmpty(formulas[i]) {
-			extra = renderRow(blankGutter, formulas[i], widths)
-		}
-		if o.MaxChars > 0 && b.Len()+len(line)+len(extra) > o.MaxChars && i > 0 {
-			res.ContinueFrom = g.Rect.FirstRow + i
-			break
-		}
-		b.WriteString(line)
-		b.WriteString(extra)
-		res.LastRow = g.Rect.FirstRow + i
-	}
+	b.WriteString(m.header())
+	m.draw(&b, g, o, &res)
 
 	// Only the rows that were drawn. Listing a note at A417 under a grid
 	// that stops at row 3 points at something the reader cannot see, and
@@ -168,6 +110,161 @@ func renderRow(gutter string, cells []string, widths []int) string {
 	// Trailing padding on the last column is noise in a diff and in a
 	// terminal both.
 	return strings.TrimRight(b.String(), " ") + "\n"
+}
+
+// sheet is the measured grid: what each cell prints as, and how wide its
+// column has to be. Two passes, measure then draw, because a column is
+// as wide as its widest cell and that is not known until every row has
+// been looked at.
+type sheet struct {
+	letters  []string
+	widths   []int
+	body     [][]string
+	formulas [][]string
+	gutter   int
+}
+
+// measure fills the matrices and the column widths, and counts what it
+// had to clip on the way.
+func measure(g *grid.Grid, o GridOptions, res *GridResult) sheet {
+	rows, cols := len(g.Cells), g.Rect.Cols()
+	m := sheet{
+		letters: make([]string, cols),
+		widths:  make([]int, cols),
+		body:    make([][]string, rows),
+		gutter:  len(fmt.Sprint(g.Rect.FirstRow + rows - 1)),
+	}
+	for j := range cols {
+		m.letters[j], _ = a1.ColumnName(g.Rect.FirstCol + j)
+		m.widths[j] = utf8.RuneCountInString(m.letters[j])
+	}
+	// The formula line exists only for `both`. Building it for every
+	// read would allocate a second matrix the size of the budget and
+	// clip fifty thousand empty strings to produce nothing.
+	if o.Show == ShowBoth {
+		m.formulas = make([][]string, rows)
+	}
+	for i := range rows {
+		m.body[i] = make([]string, cols)
+		if m.formulas != nil {
+			m.formulas[i] = make([]string, cols)
+		}
+		for j := range cols {
+			m.measureCell(g, o, res, i, j)
+		}
+	}
+	return m
+}
+
+func (m sheet) measureCell(g *grid.Grid, o GridOptions, res *GridResult, i, j int) {
+	c := g.Cells[i][j]
+	value, cut := clip(c.Display)
+	if o.Show == ShowFormulas && c.Formula != "" {
+		value, cut = clip(c.Formula)
+	}
+	if cut {
+		res.Shortened++
+		noteShortened(res, g, i, j)
+	}
+	m.body[i][j] = value
+	m.widths[j] = max(m.widths[j], utf8.RuneCountInString(value))
+	if m.formulas == nil || c.Formula == "" {
+		return
+	}
+	formula, cutF := clip(c.Formula)
+	if cutF {
+		res.Shortened++
+		noteShortened(res, g, i, j)
+	}
+	m.formulas[i][j] = formula
+	m.widths[j] = max(m.widths[j], utf8.RuneCountInString(formula))
+}
+
+// header sits over the columns, offset by the gutter and its separator.
+func (m sheet) header() string {
+	var b strings.Builder
+	b.WriteString(strings.Repeat(" ", m.gutter+3))
+	for j := range m.letters {
+		if j > 0 {
+			b.WriteString("   ")
+		}
+		b.WriteString(pad(m.letters[j], m.widths[j]))
+	}
+	return strings.TrimRight(b.String(), " ") + "\n"
+}
+
+// draw writes the rows, folding runs of empty ones, and stops at a row
+// boundary when the character budget runs out.
+func (m sheet) draw(b *strings.Builder, g *grid.Grid, o GridOptions, res *GridResult) {
+	res.LastRow = g.Rect.FirstRow - 1
+	blankGutter := strings.Repeat(" ", m.gutter)
+	for i := 0; i < len(m.body); {
+		// An empty cell is still padded to its column's width, so a run
+		// of empty rows spends the character budget on nothing and
+		// pulls ContinueFrom in on exactly the sparse sheets a wide
+		// window is reasonable to ask for. One line says the same.
+		if run := emptyRun(m.body, m.formulas, i); run >= minEmptyRun {
+			line := fmt.Sprintf("… rows %d-%d empty\n", g.Rect.FirstRow+i, g.Rect.FirstRow+i+run-1)
+			if m.cut(b, o, res, line, "", i) {
+				return
+			}
+			b.WriteString(line)
+			res.LastRow = g.Rect.FirstRow + i + run - 1
+			i += run
+			continue
+		}
+		line := renderRow(fmt.Sprintf("%*d", m.gutter, g.Rect.FirstRow+i), m.body[i], m.widths)
+		extra := ""
+		if m.formulas != nil && anyNonEmpty(m.formulas[i]) {
+			extra = renderRow(blankGutter, m.formulas[i], m.widths)
+		}
+		if m.cut(b, o, res, line, extra, i) {
+			return
+		}
+		b.WriteString(line)
+		b.WriteString(extra)
+		res.LastRow = g.Rect.FirstRow + i
+		i++
+	}
+}
+
+// cut says whether what comes next would break the character budget.
+// The first row is always drawn: a read that returns nothing at all
+// tells the caller less than one that overshoots by a row.
+func (m sheet) cut(b *strings.Builder, o GridOptions, res *GridResult, line, extra string, i int) bool {
+	if o.MaxChars <= 0 || i == 0 || b.Len()+len(line)+len(extra) <= o.MaxChars {
+		return false
+	}
+	res.ContinueFrom = res.LastRow + 1
+	return true
+}
+
+// emptyRun counts the rows from i that hold nothing at all, in the
+// values and in the formulas both.
+func emptyRun(body, formulas [][]string, i int) int {
+	n := 0
+	for ; i+n < len(body); n++ {
+		if anyNonEmpty(body[i+n]) {
+			break
+		}
+		if formulas != nil && anyNonEmpty(formulas[i+n]) {
+			break
+		}
+	}
+	return n
+}
+
+func noteShortened(res *GridResult, g *grid.Grid, i, j int) {
+	if len(res.ShortenedAt) >= maxShortenedAt {
+		return
+	}
+	addr := g.Address(i, j)
+	// A `both` read clips the value and the formula of one cell
+	// separately, and the caller reads the cell once either way.
+	if len(res.ShortenedAt) > 0 && res.ShortenedAt[len(res.ShortenedAt)-1] == addr {
+		return
+	}
+	res.ShortenedAt = append(res.ShortenedAt, addr)
 }
 
 func anyNonEmpty(xs []string) bool {
@@ -275,7 +372,18 @@ func Footer(g *grid.Grid, res GridResult, o GridOptions) string {
 		parts = append(parts, fmt.Sprintf("data ends at row %d", g.Rect.FirstRow+g.DataRows-1))
 	}
 	if res.Shortened > 0 {
-		parts = append(parts, fmt.Sprintf("%d value(s) shortened to %d characters", res.Shortened, MaxCellWidth))
+		at := ""
+		if len(res.ShortenedAt) > 0 {
+			// The count is the total and the addresses are a sample, so
+			// the ellipsis goes on what was left out rather than on the
+			// cap: naming five of five is not a sample.
+			more := ""
+			if res.Shortened > len(res.ShortenedAt) {
+				more = ", …"
+			}
+			at = fmt.Sprintf(" (%s%s)", strings.Join(res.ShortenedAt, ", "), more)
+		}
+		parts = append(parts, fmt.Sprintf("%d value(s) shortened to %d characters%s", res.Shortened, MaxCellWidth, at))
 	}
 	if res.ContinueFrom > 0 {
 		parts = append(parts, fmt.Sprintf("cut at the character budget; continue at row %d", res.ContinueFrom))

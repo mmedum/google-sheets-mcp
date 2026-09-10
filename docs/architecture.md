@@ -629,6 +629,15 @@ addressed grid (§4.2).
   column in memory. Clamping the rendering while fetching everything is
   the bug this design is avoiding, not repeating (#986). The footer names
   the range shown, the range that exists, and `continue_from`.
+- Runs of three or more empty rows are folded into one `… rows 2-5
+  empty` line. An empty cell is still padded to its column's width, so a
+  run of them spends the character budget on nothing and pulls
+  `continue_from` in on exactly the sparse sheets a wide window is
+  reasonable to ask for. The fold names the rows it covers, so an address
+  inside it is still an address the caller can write to. `read_formatting`
+  has always summarised this way; the grid did not.
+- The footer names the first few cells it shortened, not just how many.
+  A count alone leaves the caller guessing which cell to read again.
 - `include_notes`, `include_validation` and `include_merges` annotate
   what a values read cannot show.
 - Every read returns the `checkpoint` (§6.3).
@@ -3132,3 +3141,16 @@ tool that was already shipped.
 | A merge is refused only over the cells a pivot actually draws | **Refuted: Google goes by the footprint.** A merge over `F13:G13` — two cells blank in the response and blank on the sheet, inside a pivot grouped across as well as down — is refused with the same 400. The guard sees an ordinary pair of blank cells and cannot tell; knowing would mean measuring every pivot on the sheet before every merge | The cheap check answers where it can and names the table; Google's 400 is translated where it cannot, so no merge pays a read it did not need and no caller reads Google's wording. Found by a review pass asking what the guard's gate could miss, and probed rather than argued |
 | A clear removes the non-empty cells it counts | **Refuted for anything computed**: `values.clear` over a cell a pivot draws returns 200 with `clearedRange` naming it, and the cell is unchanged. Nobody typed it, so there was nothing to clear | `clear_values` counts what somebody entered, and says separately how many cells show a value nobody typed and will survive. The count used to name a loss that does not happen |
 | `values.clear` over a pivot's anchor clears a cell | **Refuted, and this is the sixth silent destroy**: it returns 200, `clearedRange` names that one cell, and the pivot's definition and every cell of its output are gone — eleven cells for a reply that mentions one. `values.clear` is not the documented way to delete a pivot table, which is an `updateCells` naming the field, and nothing in the reply says it did | The confirm gate names the anchor and says the whole table and everything it draws goes with it, none of which is in the count. A caller who read "removes 1 cell" and confirmed had agreed to something else |
+
+**Read 2026-09-09 from Google's published references**, after `status`
+reported a profile holding a working token as having no account. Tier 1
+for what the references say and tier 3 for the conclusion drawn from
+them: both rows are pinned by tests that fail against the previous code,
+which is the evidence rule 12 asks for where a live probe cannot
+separate the two paths — an absent field and a field never written look
+identical on disk.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| `tokeninfo` carries the account address | **Absent under this server's scopes.** Google's OAuth2 reference says of `email` and `verified_email` both: "Present only if the email scope is present in the request". §17.6 asks for neither `openid` nor `userinfo.email`, so `auth.Inspect` returns an empty address on every login this server can perform — there is no configuration under which it returns one | `login` assigned it over the address `recordAccount` had just fetched from Drive, so the profile recorded no account at all: `status` printed `(none)` while `doctor` resolved the address from the same Drive call. The assignment is gone, and the block it lived in is now a seam a test can reach |
+| Drive's `about.get` always carries an address | **Refuted by the reference.** `User.emailAddress` "may not be present in certain contexts if the user has not made their email address visible to the requester", and `Service.Account` passes that through as `""` with a nil error | An absent address no longer erases a recorded one. The two states print differently now: `(none)` is not signed in, `(not recorded)` is signed in with nothing to show |
