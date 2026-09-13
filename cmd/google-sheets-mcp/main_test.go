@@ -142,7 +142,7 @@ func TestBadFlagIsRefused(t *testing.T) {
 
 // status is what the issue form asks people to paste, so what it prints
 // matters more than that it printed.
-func TestStatusMasksWhatIsMeantToBePasted(t *testing.T) {
+func TestStatusKeepsTheDomainAndDropsTheRest(t *testing.T) {
 	dir := isolate(t)
 	cfg, err := settingsFor(t)
 	if err != nil {
@@ -164,16 +164,25 @@ func TestStatusMasksWhatIsMeantToBePasted(t *testing.T) {
 		t.Fatalf("status: %v", err)
 	}
 	got := out.String()
-	// The address and the client id both reach this output, and both are
-	// on the never-list. The client id arrives through the file name.
-	for _, forbidden := range []string{"someone@example.test", exampleClientID} {
-		if strings.Contains(got, forbidden) {
-			t.Errorf("status printed %q unmasked:\n%s", forbidden, got)
-		}
+	// The client id is a credential and stays masked; it arrives through
+	// the file name, because the Cloud console names the file after it.
+	if strings.Contains(got, exampleClientID) {
+		t.Errorf("status printed the client id unmasked:\n%s", got)
+	}
+	// The local part goes and the domain stays. The domain is the half a
+	// diagnosis uses — a personal account cannot create a shared drive,
+	// so it decides which behaviour to explain — while the local part is
+	// never an input to any command here and this output is what the
+	// issue form asks people to paste.
+	if strings.Contains(got, "someone@example.test") {
+		t.Errorf("status printed the local part of the address:\n%s", got)
+	}
+	if !strings.Contains(got, "…@example.test") {
+		t.Errorf("status should still name the account's domain:\n%s", got)
 	}
 	// The profile is the test's own, not "default": isolate keeps these
 	// tests out of the developer's keyring by changing it.
-	for _, want := range []string{"profile: " + cfg.Profile, "token store: keyring", "read-only:", "destructive tools:"} {
+	for _, want := range []string{"profile:        " + cfg.Profile, "token store:    keyring", "read-only:", "destructive:"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("status is missing %q:\n%s", want, got)
 		}
@@ -444,7 +453,34 @@ func TestStatusSeparatesNoAccountFromNoLogin(t *testing.T) {
 	if err := status(context.Background(), cfg, &out); err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	if !strings.Contains(out.String(), "account: (not recorded)") {
+	if !strings.Contains(out.String(), "account:        (not recorded)") {
 		t.Errorf("status does not separate an unrecorded account from no login:\n%s", out.String())
+	}
+}
+
+// TestHelpIsAnAnswerNotAnError: asking for help succeeded in the three
+// sibling servers and failed here — the flag package answered it, so the
+// usage went to stderr and the process exited 1. That breaks
+// `google-sheets-mcp --help | less` and any script that reads the code.
+func TestHelpIsAnAnswerNotAnError(t *testing.T) {
+	for _, arg := range []string{"--help", "-h", "help"} {
+		var stdout, stderr bytes.Buffer
+		if err := run([]string{arg}, &stdout, &stderr); err != nil {
+			t.Errorf("%s returned %v, want nil", arg, err)
+		}
+		if !strings.Contains(stdout.String(), "google-sheets-mcp") {
+			t.Errorf("%s: usage should go to stdout, got %q", arg, stdout.String())
+		}
+		if stderr.Len() != 0 {
+			t.Errorf("%s: nothing belongs on stderr, got %q", arg, stderr.String())
+		}
+	}
+	// An unknown flag is still an error, and still says so on stderr.
+	var stdout, stderr bytes.Buffer
+	if err := run([]string{"--nosuchflag"}, &stdout, &stderr); err == nil {
+		t.Error("an unknown flag should be an error")
+	}
+	if stderr.Len() == 0 {
+		t.Error("a flag error belongs on stderr")
 	}
 }
