@@ -1,17 +1,17 @@
 {
-  "fetched": "2026-09-07",
+  "fetched": "2026-09-13",
   "note": "Written by `gates api-diff`; nobody edits this. One verdict per item lives in testdata/api-coverage.tsv. A `method` is an API method; a `request` is a member of the Sheets batchUpdate union, which is where this API keeps most of its capability.",
   "apis": [
     {
       "api": "sheets",
       "version": "v4",
-      "revision": "20260831",
+      "revision": "20260904",
       "url": "https://sheets.googleapis.com/$discovery/rest?version=v4"
     },
     {
       "api": "drive",
       "version": "v3",
-      "revision": "20260901",
+      "revision": "20260904",
       "url": "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
     }
   ],

@@ -5,7 +5,67 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- The API-fields gate judges every struct, not only the ones whose name a
+  schema happens to share. It compared the name matches and skipped the
+  rest in silence, with a floor of 20 under the number matched standing in
+  for a check — which against a real 128 left a hundred renames of headroom. A repo-wide
+  rename of a modelled struct took its properties out of the comparison
+  and the gate still printed ok. It now runs a third direction over the
+  wire package: every struct carrying a JSON tag must match a published
+  schema, be named by an `alias` row, or carry a new `local` row saying it
+  models none. The floor is gone rather than raised, because the rename
+  now fails on the renamed type itself. Twenty-five structs were invisible; they are accounted for now, and 21 more schemas are compared (128 to 149).
+  A rejected row no longer counts as a decision either: an invalid `out`
+  row used to excuse the very field it named.
+
+- **An API-fields gate.** `make api-fields` is the coverage gate one
+  level down: `testdata/api-fields.json` is every schema and property the
+  Sheets and Drive discovery documents publish, `testdata/api-fields.tsv`
+  is one hand-written row per exception, and the modelled side is read
+  out of `internal/gsheets` with `go/ast`. Both directions fail, and the
+  number of schemas matched is part of the rule, because a gate that
+  matches a struct to a schema by name goes blind the moment somebody
+  renames a struct.
+
+  The Sheets API is far larger than this server's surface and §1 says so;
+  what the gate adds is that the difference is now a decision per field
+  rather than a sentence. 152 properties are written off under eleven
+  headings — Connected Sheets, filter views, developer metadata,
+  dimension groups, the chart kinds `chartKind` already names in its
+  refusals, chart painting, the flat `Color` Sheets deprecated in favour
+  of `ColorStyle` — each with a reason, and every one checked against
+  `internal/plan`, `internal/service` and `internal/grid` first, under
+  the rule that a field a tool writes must be a field the types carry.
+  None of the 152 is written. A field Google adds to a type this server
+  models now fails the build until somebody says which heading it joins.
+
+### Fixed
+
+- **`Reply` was being read as Drive's, not Sheets'.** Sheets calls a
+  batchUpdate reply a `Response`; this server's struct is called `Reply`,
+  which is the name Drive gives a comment reply. Nothing was broken at
+  runtime — the struct decodes the bytes Sheets sends either way — but no
+  check could tell the two apart, and the first run of the fields gate
+  reported all eighteen of `Reply`'s members as fields Drive does not
+  publish. An `alias` row now says the struct models `sheets Response`
+  and an `unrelated` row says this server has no comment tools, so the
+  gate compares each against the right thing.
+
+### Changed
+
+- **Compact JSON on every request.** Google indents its JSON unless told
+  otherwise, and `prettyPrint` is a system parameter of every Google API
+  rather than a Sheets feature, so this client now asks for it once in
+  the one place that builds an HTTP request instead of at each place that
+  builds a query — a call added later and given no thought gets it too.
+  A `read_range` over a large grid is the call that pays for the
+  indentation, and it is the call this server exists to make: on a
+  sibling server the same change took a large response from 7.44 MB to
+  2.96 MB. Set after the host allowlist check, which is what makes
+  rewriting the URL safe: every request reaching that point is one this
+  client has already decided it may send a credential to. A query that
+  names `prettyPrint` itself is left alone.
 
 ## [1.3.0] - 2026-09-10
 
