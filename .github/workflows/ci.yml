@@ -59,6 +59,8 @@ jobs:
         run: go run ./scripts/gates coverage cov.out 80
       - name: API coverage
         run: go run ./scripts/gates api-coverage
+      - name: API fields
+        run: go run ./scripts/gates api-fields
       - name: error classes
         run: go run ./scripts/gates classes
       - name: leak scan

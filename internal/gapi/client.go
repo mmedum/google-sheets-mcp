@@ -56,6 +56,35 @@ var allowedHosts = map[string]bool{
 	"accounts.google.com":   true,
 }
 
+// askCompactJSON turns off the indentation Google adds by default.
+//
+// prettyPrint is a system parameter of every Google API, documented at
+// cloud.google.com/apis/docs/system-parameters, and it defaults to true:
+// without it, 40 to 60% of every response is whitespace nothing reads.
+// A read_range over a large grid is the call that pays for that, and it
+// is the call this server exists to make.
+//
+// Set here rather than at each place that builds a query, so a call
+// added later and given no thought gets it too. Called after the
+// allowlist check, which is what makes rewriting the URL safe: every
+// request reaching that point is one this client has already decided it
+// may send a credential to. A query that names prettyPrint itself is
+// left alone.
+func askCompactJSON(req *http.Request) {
+	// Appended rather than re-encoded. url.Values.Encode() sorts the
+	// keys and re-escapes every value, which would rewrite a query
+	// this client did not build — an opaque or signed URL a response
+	// handed out. Parsing to look is safe; only writing back is not.
+	if req.URL.Query().Has("prettyPrint") {
+		return
+	}
+	if req.URL.RawQuery == "" {
+		req.URL.RawQuery = "prettyPrint=false"
+		return
+	}
+	req.URL.RawQuery += "&prettyPrint=false"
+}
+
 // GoogleOnly is the production URL allowlist: HTTPS, one of Google's own
 // hosts, and the default port.
 func GoogleOnly(u *url.URL) bool {
@@ -331,6 +360,7 @@ func (c *Client) once(ctx context.Context, r request, timeout time.Duration) (*a
 	if !c.allowURL(req.URL) {
 		return nil, fmt.Errorf("%w: refusing to send credentials to %s", ErrForbidden, req.URL.Hostname())
 	}
+	askCompactJSON(req)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", c.ua)
 	if r.body != nil {

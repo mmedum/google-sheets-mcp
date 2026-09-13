@@ -1,0 +1,258 @@
+# One verdict per exception. Hand-written; the field list beside it,
+# testdata/api-fields.json, is not — `gates api-diff` writes that.
+#
+# out		the property is published and this server deliberately does not model it
+# extra		the field is modelled and public discovery does not publish it
+# alias		the schema is modelled by the struct the reason names (property *)
+# owner		which API a struct of a shared name models (property *)
+# unrelated	a struct sharing this schema's name is about something else (property *)
+# local		a struct in internal/gsheets that models no published schema at all (property *)
+#
+# local is the one verdict whose SECOND column names a Go struct rather
+# than a schema, and whose API column is therefore `-`. It is what makes
+# the set of compared types part of the rule: the gate walks the wire
+# package as well as the snapshot, so a type renamed out of the way fails
+# here instead of quietly dropping out of the comparison.
+#
+# The Sheets API is far larger than this server's surface, and that is a
+# decision rather than an omission. What this record adds is that the
+# decision is per field: a field Google adds to a type this server models
+# fails the build until somebody says which heading below it joins.
+#
+# An out row says what is out, which is not the same as what the server
+# cannot do. The first draft of this file got that wrong three times over
+# — it wrote off Connected Sheets, developer metadata and dimension
+# groups as features "no tool reaches", when manage_data_source,
+# manage_anchor and edit_dimensions are built on all three. The check
+# behind those claims was grep for the JSON property name in quotes, and
+# this repo builds requests from typed Go structs, so the name never
+# appears as a literal and the grep could only ever find map-based
+# builders. Read the Go identifier, not the wire name.
+#
+# api	schema	property	verdict	reason
+#
+# Sheets calls a batchUpdate reply a Response and this server's struct is
+# called Reply, which is also the name Drive gives a comment reply. Both
+# halves have to be said, or the gate compares this server's batchUpdate
+# replies against Drive's comment threads and reports every field of each
+# as missing from the other.
+sheets	Response	*	alias	Reply
+drive	Reply	*	unrelated	this server has no comment tools; its Reply is the Sheets batchUpdate response above
+#
+# Data-source-backed cells and Looker.
+sheets	AutoResizeDimensionsRequest	dataSourceSheetDimensions	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	CancelDataSourceRefreshRequest	references	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	CellData	dataSourceTable	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	ChartSpec	dataSourceChartProperties	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	DataSource	calculatedColumns	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	DataSourceSpec	looker	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	DataSourceSpec	parameters	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	DimensionProperties	dataSourceColumnReference	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	PivotGroup	dataSourceColumnReference	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	PivotTable	dataExecutionStatus	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	PivotTable	dataSourceId	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	PivotValue	dataSourceColumnReference	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	RefreshDataSourceObjectExecutionStatus	reference	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	RefreshDataSourceRequest	references	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	Request	updateDataSource	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	Response	cancelDataSourceRefresh	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	Response	updateDataSource	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	SheetProperties	dataSourceSheetProperties	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	SortSpec	dataSourceColumnReference	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	Spreadsheet	dataSourceSchedules	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	UpdateDimensionPropertiesRequest	dataSourceSheetRange	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+#
+# Developer metadata belonging to another application.
+sheets	DataFilter	a1Range	out	manage_anchor is built on developer metadata and searches it; what is out is metadata another application attached to a row, column or sheet, which no tool lists or reports
+sheets	DataFilter	gridRange	out	manage_anchor is built on developer metadata and searches it; what is out is metadata another application attached to a row, column or sheet, which no tool lists or reports
+sheets	DimensionProperties	developerMetadata	out	manage_anchor is built on developer metadata and searches it; what is out is metadata another application attached to a row, column or sheet, which no tool lists or reports
+sheets	MatchedDeveloperMetadata	dataFilters	out	manage_anchor is built on developer metadata and searches it; what is out is metadata another application attached to a row, column or sheet, which no tool lists or reports
+sheets	Sheet	developerMetadata	out	manage_anchor is built on developer metadata and searches it; what is out is metadata another application attached to a row, column or sheet, which no tool lists or reports
+sheets	Spreadsheet	developerMetadata	out	manage_anchor is built on developer metadata and searches it; what is out is metadata another application attached to a row, column or sheet, which no tool lists or reports
+#
+# Reading a dimension group back.
+sheets	GridProperties	columnGroupControlAfter	out	edit_dimensions groups and ungroups rows and columns; what is out is reporting the groups a sheet already has, and where Sheets draws their collapse control
+sheets	GridProperties	rowGroupControlAfter	out	edit_dimensions groups and ungroups rows and columns; what is out is reporting the groups a sheet already has, and where Sheets draws their collapse control
+sheets	Request	updateDimensionGroup	out	edit_dimensions groups and ungroups rows and columns; what is out is reporting the groups a sheet already has, and where Sheets draws their collapse control
+sheets	Response	addDimensionGroup	out	edit_dimensions groups and ungroups rows and columns; what is out is reporting the groups a sheet already has, and where Sheets draws their collapse control
+sheets	Response	deleteDimensionGroup	out	edit_dimensions groups and ungroups rows and columns; what is out is reporting the groups a sheet already has, and where Sheets draws their collapse control
+sheets	Sheet	columnGroups	out	edit_dimensions groups and ungroups rows and columns; what is out is reporting the groups a sheet already has, and where Sheets draws their collapse control
+sheets	Sheet	rowGroups	out	edit_dimensions groups and ungroups rows and columns; what is out is reporting the groups a sheet already has, and where Sheets draws their collapse control
+#
+# Filter views and the basic filter.
+sheets	FilterView	criteria	out	a filter view is a saved per-person view of a range, and the basic filter the one a sheet carries; find_in_spreadsheet and read_range read the cells themselves, and no tool creates, applies or reports either
+sheets	FilterView	filterSpecs	out	a filter view is a saved per-person view of a range, and the basic filter the one a sheet carries; find_in_spreadsheet and read_range read the cells themselves, and no tool creates, applies or reports either
+sheets	FilterView	namedRangeId	out	a filter view is a saved per-person view of a range, and the basic filter the one a sheet carries; find_in_spreadsheet and read_range read the cells themselves, and no tool creates, applies or reports either
+sheets	FilterView	sortSpecs	out	a filter view is a saved per-person view of a range, and the basic filter the one a sheet carries; find_in_spreadsheet and read_range read the cells themselves, and no tool creates, applies or reports either
+sheets	FilterView	tableId	out	a filter view is a saved per-person view of a range, and the basic filter the one a sheet carries; find_in_spreadsheet and read_range read the cells themselves, and no tool creates, applies or reports either
+sheets	Request	addFilterView	out	a filter view is a saved per-person view of a range, and the basic filter the one a sheet carries; find_in_spreadsheet and read_range read the cells themselves, and no tool creates, applies or reports either
+sheets	Request	clearBasicFilter	out	a filter view is a saved per-person view of a range, and the basic filter the one a sheet carries; find_in_spreadsheet and read_range read the cells themselves, and no tool creates, applies or reports either
+sheets	Request	deleteFilterView	out	a filter view is a saved per-person view of a range, and the basic filter the one a sheet carries; find_in_spreadsheet and read_range read the cells themselves, and no tool creates, applies or reports either
+sheets	Request	duplicateFilterView	out	a filter view is a saved per-person view of a range, and the basic filter the one a sheet carries; find_in_spreadsheet and read_range read the cells themselves, and no tool creates, applies or reports either
+sheets	Request	setBasicFilter	out	a filter view is a saved per-person view of a range, and the basic filter the one a sheet carries; find_in_spreadsheet and read_range read the cells themselves, and no tool creates, applies or reports either
+sheets	Request	updateFilterView	out	a filter view is a saved per-person view of a range, and the basic filter the one a sheet carries; find_in_spreadsheet and read_range read the cells themselves, and no tool creates, applies or reports either
+sheets	Response	addFilterView	out	a filter view is a saved per-person view of a range, and the basic filter the one a sheet carries; find_in_spreadsheet and read_range read the cells themselves, and no tool creates, applies or reports either
+sheets	Response	duplicateFilterView	out	a filter view is a saved per-person view of a range, and the basic filter the one a sheet carries; find_in_spreadsheet and read_range read the cells themselves, and no tool creates, applies or reports either
+sheets	Sheet	basicFilter	out	a filter view is a saved per-person view of a range, and the basic filter the one a sheet carries; find_in_spreadsheet and read_range read the cells themselves, and no tool creates, applies or reports either
+#
+# A criteria set no tool builds.
+sheets	ChartSpec	filterSpecs	out	format_cells, transform_range and manage_pivot_table take ranges and rules rather than a per-column criteria set, so nothing here builds one or reads one back
+sheets	PivotTable	criteria	out	format_cells, transform_range and manage_pivot_table take ranges and rules rather than a per-column criteria set, so nothing here builds one or reads one back
+sheets	PivotTable	filterSpecs	out	format_cells, transform_range and manage_pivot_table take ranges and rules rather than a per-column criteria set, so nothing here builds one or reads one back
+sheets	SetDataValidationRequest	filteredRowsIncluded	out	format_cells, transform_range and manage_pivot_table take ranges and rules rather than a per-column criteria set, so nothing here builds one or reads one back
+sheets	SlicerSpec	filterCriteria	out	format_cells, transform_range and manage_pivot_table take ranges and rules rather than a per-column criteria set, so nothing here builds one or reads one back
+#
+# Chart kinds this server cannot rebuild.
+sheets	ChartSpec	bubbleChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modelling it
+sheets	ChartSpec	candlestickChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modelling it
+sheets	ChartSpec	histogramChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modelling it
+sheets	ChartSpec	orgChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modelling it
+sheets	ChartSpec	scorecardChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modelling it
+sheets	ChartSpec	treemapChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modelling it
+sheets	ChartSpec	waterfallChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modelling it
+#
+# Chart and slicer painting.
+sheets	BasicChartAxis	format	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	BasicChartAxis	titleTextPosition	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	BasicChartAxis	viewWindowOptions	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	BasicChartDomain	reversed	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	BasicChartSeries	color	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	BasicChartSeries	colorStyle	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	BasicChartSeries	dataLabel	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	BasicChartSeries	lineStyle	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	BasicChartSeries	pointStyle	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	BasicChartSeries	styleOverrides	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	BasicChartSeries	type	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	BasicChartSpec	compareMode	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	BasicChartSpec	interpolateNulls	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	BasicChartSpec	lineSmoothing	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	BasicChartSpec	threeDimensional	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	BasicChartSpec	totalDataLabel	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	ChartData	aggregateType	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	ChartSpec	backgroundColor	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	ChartSpec	backgroundColorStyle	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	ChartSpec	fontName	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	ChartSpec	hiddenDimensionStrategy	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	ChartSpec	maximized	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	ChartSpec	sortSpecs	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	ChartSpec	subtitleTextFormat	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	ChartSpec	subtitleTextPosition	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	ChartSpec	titleTextFormat	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	ChartSpec	titleTextPosition	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	EmbeddedChart	border	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	PieChartSpec	threeDimensional	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	Request	updateEmbeddedObjectBorder	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	SlicerSpec	applyToPivotTables	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	SlicerSpec	backgroundColor	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	SlicerSpec	backgroundColorStyle	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	SlicerSpec	horizontalAlignment	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+sheets	SlicerSpec	textFormat	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
+#
+# The flat colour Sheets deprecated.
+sheets	BandingProperties	firstBandColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
+sheets	BandingProperties	footerColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
+sheets	BandingProperties	headerColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
+sheets	BandingProperties	secondBandColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
+sheets	Border	color	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
+sheets	CellFormat	backgroundColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
+sheets	SheetProperties	tabColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
+sheets	SortSpec	backgroundColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
+sheets	SortSpec	foregroundColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
+sheets	TextFormat	foregroundColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
+#
+# A border width Sheets deprecated.
+sheets	Border	width	out	Border here is a cell border, which format_cells writes and read_formatting reports; width was deprecated in favour of style, which is the one modelled
+#
+# Sorting and grouping detail no tool sets.
+sheets	BandingProperties	footerColorStyle	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
+sheets	ChartData	columnReference	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
+sheets	ChartData	groupRule	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
+sheets	PivotGroup	groupLimit	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
+sheets	PivotGroup	groupRule	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
+sheets	PivotGroup	repeatHeadings	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
+sheets	PivotGroup	valueBucket	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
+sheets	PivotGroup	valueMetadata	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
+sheets	PivotValue	calculatedDisplayType	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
+sheets	SortSpec	backgroundColorStyle	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
+sheets	SortSpec	foregroundColorStyle	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
+#
+# Request and response members no tool builds.
+sheets	AutoFillRequest	range	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
+sheets	AutoFillRequest	useAlternateSeries	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
+sheets	BatchUpdateSpreadsheetRequest	includeSpreadsheetInResponse	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
+sheets	BatchUpdateSpreadsheetRequest	responseIncludeGridData	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
+sheets	BatchUpdateSpreadsheetRequest	responseRanges	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
+sheets	BatchUpdateSpreadsheetResponse	updatedSpreadsheet	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
+sheets	DuplicateSheetRequest	newSheetId	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
+sheets	Request	appendCells	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
+sheets	Request	appendDimension	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
+sheets	Request	deleteRange	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
+sheets	Request	insertRange	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
+sheets	Request	pasteData	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
+sheets	Request	updateSpreadsheetProperties	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
+sheets	Response	updateConditionalFormatRule	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
+sheets	UpdateConditionalFormatRuleRequest	newIndex	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
+#
+# Cell and sheet detail no tool sets or reports.
+sheets	BandedRange	bandedRangeReference	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	CellFormat	hyperlinkDisplayType	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	CellFormat	padding	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	CellFormat	textDirection	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	CellFormat	textRotation	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	DimensionProperties	hiddenByFilter	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	DimensionProperties	hiddenByUser	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	GradientRule	maxpoint	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	GradientRule	midpoint	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	GradientRule	minpoint	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	GridData	columnMetadata	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	GridData	rowMetadata	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	PivotValue	formula	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	ProtectedRange	tableId	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	SpreadsheetProperties	defaultFormat	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	SpreadsheetProperties	importFunctionsExternalUrlAccessAllowed	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	SpreadsheetProperties	iterativeCalculationSettings	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	SpreadsheetProperties	spreadsheetTheme	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	Table	rowsProperties	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+sheets	TextFormat	link	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
+#
+# The batchUpdate replies. Google names each one <Verb>Response; this
+# package names it <Verb>Reply, because Response is what the whole
+# batchUpdate returns. Every one models its schema's properties exactly,
+# so the alias costs nothing and keeps them compared.
+sheets	AddBandingResponse	*	alias	AddBandingReply
+sheets	AddChartResponse	*	alias	AddChartReply
+sheets	AddDataSourceResponse	*	alias	AddDataSourceReply
+sheets	AddNamedRangeResponse	*	alias	AddNamedRangeReply
+sheets	AddProtectedRangeResponse	*	alias	AddProtectedRangeReply
+sheets	AddSheetResponse	*	alias	AddSheetReply
+sheets	AddSlicerResponse	*	alias	AddSlicerReply
+sheets	AddTableResponse	*	alias	AddTableReply
+sheets	CreateDeveloperMetadataResponse	*	alias	CreateDeveloperMetadataReply
+sheets	DeleteConditionalFormatRuleResponse	*	alias	DeleteConditionalFormatRuleReply
+sheets	DeleteDeveloperMetadataResponse	*	alias	DeleteDeveloperMetadataReply
+sheets	DeleteDuplicatesResponse	*	alias	DeleteDuplicatesReply
+sheets	DuplicateSheetResponse	*	alias	DuplicateSheetReply
+sheets	FindReplaceResponse	*	alias	FindReplaceReply
+sheets	RefreshDataSourceResponse	*	alias	RefreshDataSourceReply
+sheets	TrimWhitespaceResponse	*	alias	TrimWhitespaceReply
+sheets	UpdateDeveloperMetadataResponse	*	alias	UpdateDeveloperMetadataReply
+sheets	UpdateEmbeddedObjectPositionResponse	*	alias	UpdateEmbeddedObjectPositionReply
+#
+# One struct for both dimension-group requests: they publish the same
+# single field, and plan/ops.go tells them apart by which op it is.
+sheets	AddDimensionGroupRequest	*	alias	DimensionGroupRequest
+sheets	DeleteDimensionGroupRequest	*	alias	DimensionGroupRequest
+#
+sheets	TableColumnProperties	*	alias	TableColumn
+sheets	TableColumnProperties	dataValidationRule	out	no tool sets a validation rule on a table column; manage_range does validation by range
+#
+# The request-side types that exist to leave an id out. Aliasing one to
+# the schema it resembles would claim it models that schema and then ask
+# for a row per absent field, when the absence is the whole point:
+# SheetProperties carries a sheetId whose zero value Google reads as a
+# request for id 0, which the first sheet always has.
+-	NewSpreadsheet	*	local	the spreadsheets.create body; Spreadsheet with nothing that has an id yet
+-	NewSheet	*	local	a sheet inside spreadsheets.create; carries NewSheetProperties, not SheetProperties
+-	NewSheetProperties	*	local	SheetProperties without sheetId, so a create cannot ask Google for id 0 by accident
+-	NewChart	*	local	EmbeddedChart without chartId, for addChart
+-	NewSlicer	*	local	Slicer without slicerId, for addSlicer

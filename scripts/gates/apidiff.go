@@ -34,6 +34,13 @@ var discoveryDocs = []apiDoc{
 
 // apiDiff fetches, compares and rewrites.
 func apiDiff(out io.Writer) error {
+	// The field snapshot the api-fields gate reads is refreshed here too:
+	// it is the same fetch of the same two documents.
+	defer func() {
+		if err := writeFieldsSnapshot(out); err != nil {
+			_, _ = fmt.Fprintf(out, "api fields snapshot: %v\n", err)
+		}
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 

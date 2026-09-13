@@ -17,6 +17,7 @@
 //	go run ./scripts/gates staleness ./google-sheets-mcp
 //	go run ./scripts/gates schema-diff ./google-sheets-mcp
 //	go run ./scripts/gates api-coverage
+//	go run ./scripts/gates api-fields
 //	go run ./scripts/gates api-diff
 //	go run ./scripts/gates parity
 //	go run ./scripts/gates precommit
@@ -32,7 +33,7 @@ func main() {
 	if len(os.Args) < 2 {
 		fail("usage: gates coverage PROFILE MIN | classes | leaks [history] | transcript | " +
 			"live-cover BIN | pins | smoke BIN | staleness BIN | schema-diff BIN | mcpb | " +
-			"mcpb-pack VERSION [DIST] | api-coverage | api-diff | parity | precommit")
+			"mcpb-pack VERSION [DIST] | api-coverage | api-fields | api-diff | parity | precommit")
 	}
 	root, err := repoRoot()
 	if err != nil {
@@ -82,6 +83,8 @@ func main() {
 		check(mcpbPack(os.Stdout, os.Args[2], dist), "bundle packed")
 	case "api-coverage":
 		check(apiCoverageGate(), "API coverage")
+	case "api-fields":
+		check(apiFieldsGate(os.Stdout), "API fields")
 	case "api-diff":
 		// Manual: it reaches the network. What CI holds is the snapshot
 		// this writes, not the fetch itself.

@@ -1,0 +1,3172 @@
+{
+  "fetched": "2026-09-13",
+  "apis": [
+    {
+      "api": "sheets",
+      "discovery": "https://sheets.googleapis.com/$discovery/rest?version=v4",
+      "schemas": [
+        {
+          "name": "AddBandingRequest",
+          "properties": [
+            "bandedRange"
+          ]
+        },
+        {
+          "name": "AddBandingResponse",
+          "properties": [
+            "bandedRange"
+          ]
+        },
+        {
+          "name": "AddChartRequest",
+          "properties": [
+            "chart"
+          ]
+        },
+        {
+          "name": "AddChartResponse",
+          "properties": [
+            "chart"
+          ]
+        },
+        {
+          "name": "AddConditionalFormatRuleRequest",
+          "properties": [
+            "index",
+            "rule"
+          ]
+        },
+        {
+          "name": "AddDataSourceRequest",
+          "properties": [
+            "dataSource"
+          ]
+        },
+        {
+          "name": "AddDataSourceResponse",
+          "properties": [
+            "dataExecutionStatus",
+            "dataSource"
+          ]
+        },
+        {
+          "name": "AddDimensionGroupRequest",
+          "properties": [
+            "range"
+          ]
+        },
+        {
+          "name": "AddDimensionGroupResponse",
+          "properties": [
+            "dimensionGroups"
+          ]
+        },
+        {
+          "name": "AddFilterViewRequest",
+          "properties": [
+            "filter"
+          ]
+        },
+        {
+          "name": "AddFilterViewResponse",
+          "properties": [
+            "filter"
+          ]
+        },
+        {
+          "name": "AddNamedRangeRequest",
+          "properties": [
+            "namedRange"
+          ]
+        },
+        {
+          "name": "AddNamedRangeResponse",
+          "properties": [
+            "namedRange"
+          ]
+        },
+        {
+          "name": "AddProtectedRangeRequest",
+          "properties": [
+            "protectedRange"
+          ]
+        },
+        {
+          "name": "AddProtectedRangeResponse",
+          "properties": [
+            "protectedRange"
+          ]
+        },
+        {
+          "name": "AddSheetRequest",
+          "properties": [
+            "properties"
+          ]
+        },
+        {
+          "name": "AddSheetResponse",
+          "properties": [
+            "properties"
+          ]
+        },
+        {
+          "name": "AddSlicerRequest",
+          "properties": [
+            "slicer"
+          ]
+        },
+        {
+          "name": "AddSlicerResponse",
+          "properties": [
+            "slicer"
+          ]
+        },
+        {
+          "name": "AddTableRequest",
+          "properties": [
+            "table"
+          ]
+        },
+        {
+          "name": "AddTableResponse",
+          "properties": [
+            "table"
+          ]
+        },
+        {
+          "name": "AppendCellsRequest",
+          "properties": [
+            "fields",
+            "rows",
+            "sheetId",
+            "tableId"
+          ]
+        },
+        {
+          "name": "AppendDimensionRequest",
+          "properties": [
+            "dimension",
+            "length",
+            "sheetId"
+          ]
+        },
+        {
+          "name": "AppendValuesResponse",
+          "properties": [
+            "spreadsheetId",
+            "tableRange",
+            "updates"
+          ]
+        },
+        {
+          "name": "AutoFillRequest",
+          "properties": [
+            "range",
+            "sourceAndDestination",
+            "useAlternateSeries"
+          ]
+        },
+        {
+          "name": "AutoResizeDimensionsRequest",
+          "properties": [
+            "dataSourceSheetDimensions",
+            "dimensions"
+          ]
+        },
+        {
+          "name": "BandedRange",
+          "properties": [
+            "bandedRangeId",
+            "bandedRangeReference",
+            "columnProperties",
+            "range",
+            "rowProperties"
+          ]
+        },
+        {
+          "name": "BandingProperties",
+          "properties": [
+            "firstBandColor",
+            "firstBandColorStyle",
+            "footerColor",
+            "footerColorStyle",
+            "headerColor",
+            "headerColorStyle",
+            "secondBandColor",
+            "secondBandColorStyle"
+          ]
+        },
+        {
+          "name": "BaselineValueFormat",
+          "properties": [
+            "comparisonType",
+            "description",
+            "negativeColor",
+            "negativeColorStyle",
+            "position",
+            "positiveColor",
+            "positiveColorStyle",
+            "textFormat"
+          ]
+        },
+        {
+          "name": "BasicChartAxis",
+          "properties": [
+            "format",
+            "position",
+            "title",
+            "titleTextPosition",
+            "viewWindowOptions"
+          ]
+        },
+        {
+          "name": "BasicChartDomain",
+          "properties": [
+            "domain",
+            "reversed"
+          ]
+        },
+        {
+          "name": "BasicChartSeries",
+          "properties": [
+            "color",
+            "colorStyle",
+            "dataLabel",
+            "lineStyle",
+            "pointStyle",
+            "series",
+            "styleOverrides",
+            "targetAxis",
+            "type"
+          ]
+        },
+        {
+          "name": "BasicChartSpec",
+          "properties": [
+            "axis",
+            "chartType",
+            "compareMode",
+            "domains",
+            "headerCount",
+            "interpolateNulls",
+            "legendPosition",
+            "lineSmoothing",
+            "series",
+            "stackedType",
+            "threeDimensional",
+            "totalDataLabel"
+          ]
+        },
+        {
+          "name": "BasicFilter",
+          "properties": [
+            "criteria",
+            "filterSpecs",
+            "range",
+            "sortSpecs",
+            "tableId"
+          ]
+        },
+        {
+          "name": "BasicSeriesDataPointStyleOverride",
+          "properties": [
+            "color",
+            "colorStyle",
+            "index",
+            "pointStyle"
+          ]
+        },
+        {
+          "name": "BatchClearValuesByDataFilterRequest",
+          "properties": [
+            "dataFilters"
+          ]
+        },
+        {
+          "name": "BatchClearValuesByDataFilterResponse",
+          "properties": [
+            "clearedRanges",
+            "spreadsheetId"
+          ]
+        },
+        {
+          "name": "BatchClearValuesRequest",
+          "properties": [
+            "ranges"
+          ]
+        },
+        {
+          "name": "BatchClearValuesResponse",
+          "properties": [
+            "clearedRanges",
+            "spreadsheetId"
+          ]
+        },
+        {
+          "name": "BatchGetValuesByDataFilterRequest",
+          "properties": [
+            "dataFilters",
+            "dateTimeRenderOption",
+            "majorDimension",
+            "valueRenderOption"
+          ]
+        },
+        {
+          "name": "BatchGetValuesByDataFilterResponse",
+          "properties": [
+            "spreadsheetId",
+            "valueRanges"
+          ]
+        },
+        {
+          "name": "BatchGetValuesResponse",
+          "properties": [
+            "spreadsheetId",
+            "valueRanges"
+          ]
+        },
+        {
+          "name": "BatchUpdateSpreadsheetRequest",
+          "properties": [
+            "includeSpreadsheetInResponse",
+            "requests",
+            "responseIncludeGridData",
+            "responseRanges"
+          ]
+        },
+        {
+          "name": "BatchUpdateSpreadsheetResponse",
+          "properties": [
+            "replies",
+            "spreadsheetId",
+            "updatedSpreadsheet"
+          ]
+        },
+        {
+          "name": "BatchUpdateValuesByDataFilterRequest",
+          "properties": [
+            "data",
+            "includeValuesInResponse",
+            "responseDateTimeRenderOption",
+            "responseValueRenderOption",
+            "valueInputOption"
+          ]
+        },
+        {
+          "name": "BatchUpdateValuesByDataFilterResponse",
+          "properties": [
+            "responses",
+            "spreadsheetId",
+            "totalUpdatedCells",
+            "totalUpdatedColumns",
+            "totalUpdatedRows",
+            "totalUpdatedSheets"
+          ]
+        },
+        {
+          "name": "BatchUpdateValuesRequest",
+          "properties": [
+            "data",
+            "includeValuesInResponse",
+            "responseDateTimeRenderOption",
+            "responseValueRenderOption",
+            "valueInputOption"
+          ]
+        },
+        {
+          "name": "BatchUpdateValuesResponse",
+          "properties": [
+            "responses",
+            "spreadsheetId",
+            "totalUpdatedCells",
+            "totalUpdatedColumns",
+            "totalUpdatedRows",
+            "totalUpdatedSheets"
+          ]
+        },
+        {
+          "name": "BigQueryDataSourceSpec",
+          "properties": [
+            "projectId",
+            "querySpec",
+            "tableSpec"
+          ]
+        },
+        {
+          "name": "BigQueryQuerySpec",
+          "properties": [
+            "rawQuery"
+          ]
+        },
+        {
+          "name": "BigQueryTableSpec",
+          "properties": [
+            "datasetId",
+            "tableId",
+            "tableProjectId"
+          ]
+        },
+        {
+          "name": "BooleanCondition",
+          "properties": [
+            "type",
+            "values"
+          ]
+        },
+        {
+          "name": "BooleanRule",
+          "properties": [
+            "condition",
+            "format"
+          ]
+        },
+        {
+          "name": "Border",
+          "properties": [
+            "color",
+            "colorStyle",
+            "style",
+            "width"
+          ]
+        },
+        {
+          "name": "Borders",
+          "properties": [
+            "bottom",
+            "left",
+            "right",
+            "top"
+          ]
+        },
+        {
+          "name": "BubbleChartSpec",
+          "properties": [
+            "bubbleBorderColor",
+            "bubbleBorderColorStyle",
+            "bubbleLabels",
+            "bubbleMaxRadiusSize",
+            "bubbleMinRadiusSize",
+            "bubbleOpacity",
+            "bubbleSizes",
+            "bubbleTextStyle",
+            "domain",
+            "groupIds",
+            "legendPosition",
+            "series"
+          ]
+        },
+        {
+          "name": "CancelDataSourceRefreshRequest",
+          "properties": [
+            "dataSourceId",
+            "isAll",
+            "references"
+          ]
+        },
+        {
+          "name": "CancelDataSourceRefreshResponse",
+          "properties": [
+            "statuses"
+          ]
+        },
+        {
+          "name": "CancelDataSourceRefreshStatus",
+          "properties": [
+            "reference",
+            "refreshCancellationStatus"
+          ]
+        },
+        {
+          "name": "CandlestickChartSpec",
+          "properties": [
+            "data",
+            "domain"
+          ]
+        },
+        {
+          "name": "CandlestickData",
+          "properties": [
+            "closeSeries",
+            "highSeries",
+            "lowSeries",
+            "openSeries"
+          ]
+        },
+        {
+          "name": "CandlestickDomain",
+          "properties": [
+            "data",
+            "reversed"
+          ]
+        },
+        {
+          "name": "CandlestickSeries",
+          "properties": [
+            "data"
+          ]
+        },
+        {
+          "name": "CellData",
+          "properties": [
+            "chipRuns",
+            "dataSourceFormula",
+            "dataSourceTable",
+            "dataValidation",
+            "effectiveFormat",
+            "effectiveValue",
+            "formattedValue",
+            "hyperlink",
+            "note",
+            "pivotTable",
+            "textFormatRuns",
+            "userEnteredFormat",
+            "userEnteredValue"
+          ]
+        },
+        {
+          "name": "CellFormat",
+          "properties": [
+            "backgroundColor",
+            "backgroundColorStyle",
+            "borders",
+            "horizontalAlignment",
+            "hyperlinkDisplayType",
+            "numberFormat",
+            "padding",
+            "textDirection",
+            "textFormat",
+            "textRotation",
+            "verticalAlignment",
+            "wrapStrategy"
+          ]
+        },
+        {
+          "name": "ChartAxisViewWindowOptions",
+          "properties": [
+            "viewWindowMax",
+            "viewWindowMin",
+            "viewWindowMode"
+          ]
+        },
+        {
+          "name": "ChartCustomNumberFormatOptions",
+          "properties": [
+            "prefix",
+            "suffix"
+          ]
+        },
+        {
+          "name": "ChartData",
+          "properties": [
+            "aggregateType",
+            "columnReference",
+            "groupRule",
+            "sourceRange"
+          ]
+        },
+        {
+          "name": "ChartDateTimeRule",
+          "properties": [
+            "type"
+          ]
+        },
+        {
+          "name": "ChartGroupRule",
+          "properties": [
+            "dateTimeRule",
+            "histogramRule"
+          ]
+        },
+        {
+          "name": "ChartHistogramRule",
+          "properties": [
+            "intervalSize",
+            "maxValue",
+            "minValue"
+          ]
+        },
+        {
+          "name": "ChartSourceRange",
+          "properties": [
+            "sources"
+          ]
+        },
+        {
+          "name": "ChartSpec",
+          "properties": [
+            "altText",
+            "backgroundColor",
+            "backgroundColorStyle",
+            "basicChart",
+            "bubbleChart",
+            "candlestickChart",
+            "dataSourceChartProperties",
+            "filterSpecs",
+            "fontName",
+            "hiddenDimensionStrategy",
+            "histogramChart",
+            "maximized",
+            "orgChart",
+            "pieChart",
+            "scorecardChart",
+            "sortSpecs",
+            "subtitle",
+            "subtitleTextFormat",
+            "subtitleTextPosition",
+            "title",
+            "titleTextFormat",
+            "titleTextPosition",
+            "treemapChart",
+            "waterfallChart"
+          ]
+        },
+        {
+          "name": "Chip",
+          "properties": [
+            "personProperties",
+            "richLinkProperties"
+          ]
+        },
+        {
+          "name": "ChipRun",
+          "properties": [
+            "chip",
+            "startIndex"
+          ]
+        },
+        {
+          "name": "ClearBasicFilterRequest",
+          "properties": [
+            "sheetId"
+          ]
+        },
+        {
+          "name": "ClearValuesRequest",
+          "properties": null
+        },
+        {
+          "name": "ClearValuesResponse",
+          "properties": [
+            "clearedRange",
+            "spreadsheetId"
+          ]
+        },
+        {
+          "name": "Color",
+          "properties": [
+            "alpha",
+            "blue",
+            "green",
+            "red"
+          ]
+        },
+        {
+          "name": "ColorStyle",
+          "properties": [
+            "rgbColor",
+            "themeColor"
+          ]
+        },
+        {
+          "name": "ConditionValue",
+          "properties": [
+            "relativeDate",
+            "userEnteredValue"
+          ]
+        },
+        {
+          "name": "ConditionalFormatRule",
+          "properties": [
+            "booleanRule",
+            "gradientRule",
+            "ranges"
+          ]
+        },
+        {
+          "name": "CopyPasteRequest",
+          "properties": [
+            "destination",
+            "pasteOrientation",
+            "pasteType",
+            "source"
+          ]
+        },
+        {
+          "name": "CopySheetToAnotherSpreadsheetRequest",
+          "properties": [
+            "destinationSpreadsheetId"
+          ]
+        },
+        {
+          "name": "CreateDeveloperMetadataRequest",
+          "properties": [
+            "developerMetadata"
+          ]
+        },
+        {
+          "name": "CreateDeveloperMetadataResponse",
+          "properties": [
+            "developerMetadata"
+          ]
+        },
+        {
+          "name": "CutPasteRequest",
+          "properties": [
+            "destination",
+            "pasteType",
+            "source"
+          ]
+        },
+        {
+          "name": "DataExecutionStatus",
+          "properties": [
+            "errorCode",
+            "errorMessage",
+            "lastRefreshTime",
+            "state"
+          ]
+        },
+        {
+          "name": "DataFilter",
+          "properties": [
+            "a1Range",
+            "developerMetadataLookup",
+            "gridRange"
+          ]
+        },
+        {
+          "name": "DataFilterValueRange",
+          "properties": [
+            "dataFilter",
+            "majorDimension",
+            "values"
+          ]
+        },
+        {
+          "name": "DataLabel",
+          "properties": [
+            "customLabelData",
+            "placement",
+            "textFormat",
+            "type"
+          ]
+        },
+        {
+          "name": "DataSource",
+          "properties": [
+            "calculatedColumns",
+            "dataSourceId",
+            "sheetId",
+            "spec"
+          ]
+        },
+        {
+          "name": "DataSourceChartProperties",
+          "properties": [
+            "dataExecutionStatus",
+            "dataSourceId"
+          ]
+        },
+        {
+          "name": "DataSourceColumn",
+          "properties": [
+            "formula",
+            "reference"
+          ]
+        },
+        {
+          "name": "DataSourceColumnReference",
+          "properties": [
+            "name"
+          ]
+        },
+        {
+          "name": "DataSourceFormula",
+          "properties": [
+            "dataExecutionStatus",
+            "dataSourceId"
+          ]
+        },
+        {
+          "name": "DataSourceObjectReference",
+          "properties": [
+            "chartId",
+            "dataSourceFormulaCell",
+            "dataSourcePivotTableAnchorCell",
+            "dataSourceTableAnchorCell",
+            "sheetId"
+          ]
+        },
+        {
+          "name": "DataSourceObjectReferences",
+          "properties": [
+            "references"
+          ]
+        },
+        {
+          "name": "DataSourceParameter",
+          "properties": [
+            "name",
+            "namedRangeId",
+            "range"
+          ]
+        },
+        {
+          "name": "DataSourceRefreshDailySchedule",
+          "properties": [
+            "startTime"
+          ]
+        },
+        {
+          "name": "DataSourceRefreshMonthlySchedule",
+          "properties": [
+            "daysOfMonth",
+            "startTime"
+          ]
+        },
+        {
+          "name": "DataSourceRefreshSchedule",
+          "properties": [
+            "dailySchedule",
+            "enabled",
+            "monthlySchedule",
+            "nextRun",
+            "refreshScope",
+            "weeklySchedule"
+          ]
+        },
+        {
+          "name": "DataSourceRefreshWeeklySchedule",
+          "properties": [
+            "daysOfWeek",
+            "startTime"
+          ]
+        },
+        {
+          "name": "DataSourceSheetDimensionRange",
+          "properties": [
+            "columnReferences",
+            "sheetId"
+          ]
+        },
+        {
+          "name": "DataSourceSheetProperties",
+          "properties": [
+            "columns",
+            "dataExecutionStatus",
+            "dataSourceId"
+          ]
+        },
+        {
+          "name": "DataSourceSpec",
+          "properties": [
+            "bigQuery",
+            "looker",
+            "parameters"
+          ]
+        },
+        {
+          "name": "DataSourceTable",
+          "properties": [
+            "columnSelectionType",
+            "columns",
+            "dataExecutionStatus",
+            "dataSourceId",
+            "filterSpecs",
+            "rowLimit",
+            "sortSpecs"
+          ]
+        },
+        {
+          "name": "DataValidationRule",
+          "properties": [
+            "condition",
+            "inputMessage",
+            "showCustomUi",
+            "strict"
+          ]
+        },
+        {
+          "name": "DateTimeRule",
+          "properties": [
+            "type"
+          ]
+        },
+        {
+          "name": "DeleteBandingRequest",
+          "properties": [
+            "bandedRangeId"
+          ]
+        },
+        {
+          "name": "DeleteConditionalFormatRuleRequest",
+          "properties": [
+            "index",
+            "sheetId"
+          ]
+        },
+        {
+          "name": "DeleteConditionalFormatRuleResponse",
+          "properties": [
+            "rule"
+          ]
+        },
+        {
+          "name": "DeleteDataSourceRequest",
+          "properties": [
+            "dataSourceId"
+          ]
+        },
+        {
+          "name": "DeleteDeveloperMetadataRequest",
+          "properties": [
+            "dataFilter"
+          ]
+        },
+        {
+          "name": "DeleteDeveloperMetadataResponse",
+          "properties": [
+            "deletedDeveloperMetadata"
+          ]
+        },
+        {
+          "name": "DeleteDimensionGroupRequest",
+          "properties": [
+            "range"
+          ]
+        },
+        {
+          "name": "DeleteDimensionGroupResponse",
+          "properties": [
+            "dimensionGroups"
+          ]
+        },
+        {
+          "name": "DeleteDimensionRequest",
+          "properties": [
+            "range"
+          ]
+        },
+        {
+          "name": "DeleteDuplicatesRequest",
+          "properties": [
+            "comparisonColumns",
+            "range"
+          ]
+        },
+        {
+          "name": "DeleteDuplicatesResponse",
+          "properties": [
+            "duplicatesRemovedCount"
+          ]
+        },
+        {
+          "name": "DeleteEmbeddedObjectRequest",
+          "properties": [
+            "objectId"
+          ]
+        },
+        {
+          "name": "DeleteFilterViewRequest",
+          "properties": [
+            "filterId"
+          ]
+        },
+        {
+          "name": "DeleteNamedRangeRequest",
+          "properties": [
+            "namedRangeId"
+          ]
+        },
+        {
+          "name": "DeleteProtectedRangeRequest",
+          "properties": [
+            "protectedRangeId"
+          ]
+        },
+        {
+          "name": "DeleteRangeRequest",
+          "properties": [
+            "range",
+            "shiftDimension"
+          ]
+        },
+        {
+          "name": "DeleteSheetRequest",
+          "properties": [
+            "sheetId"
+          ]
+        },
+        {
+          "name": "DeleteTableRequest",
+          "properties": [
+            "tableId"
+          ]
+        },
+        {
+          "name": "DeveloperMetadata",
+          "properties": [
+            "location",
+            "metadataId",
+            "metadataKey",
+            "metadataValue",
+            "visibility"
+          ]
+        },
+        {
+          "name": "DeveloperMetadataLocation",
+          "properties": [
+            "dimensionRange",
+            "locationType",
+            "sheetId",
+            "spreadsheet"
+          ]
+        },
+        {
+          "name": "DeveloperMetadataLookup",
+          "properties": [
+            "locationMatchingStrategy",
+            "locationType",
+            "metadataId",
+            "metadataKey",
+            "metadataLocation",
+            "metadataValue",
+            "visibility"
+          ]
+        },
+        {
+          "name": "DimensionGroup",
+          "properties": [
+            "collapsed",
+            "depth",
+            "range"
+          ]
+        },
+        {
+          "name": "DimensionProperties",
+          "properties": [
+            "dataSourceColumnReference",
+            "developerMetadata",
+            "hiddenByFilter",
+            "hiddenByUser",
+            "pixelSize"
+          ]
+        },
+        {
+          "name": "DimensionRange",
+          "properties": [
+            "dimension",
+            "endIndex",
+            "sheetId",
+            "startIndex"
+          ]
+        },
+        {
+          "name": "DuplicateFilterViewRequest",
+          "properties": [
+            "filterId"
+          ]
+        },
+        {
+          "name": "DuplicateFilterViewResponse",
+          "properties": [
+            "filter"
+          ]
+        },
+        {
+          "name": "DuplicateSheetRequest",
+          "properties": [
+            "insertSheetIndex",
+            "newSheetId",
+            "newSheetName",
+            "sourceSheetId"
+          ]
+        },
+        {
+          "name": "DuplicateSheetResponse",
+          "properties": [
+            "properties"
+          ]
+        },
+        {
+          "name": "Editors",
+          "properties": [
+            "domainUsersCanEdit",
+            "groups",
+            "users"
+          ]
+        },
+        {
+          "name": "EmbeddedChart",
+          "properties": [
+            "border",
+            "chartId",
+            "position",
+            "spec"
+          ]
+        },
+        {
+          "name": "EmbeddedObjectBorder",
+          "properties": [
+            "color",
+            "colorStyle"
+          ]
+        },
+        {
+          "name": "EmbeddedObjectPosition",
+          "properties": [
+            "newSheet",
+            "overlayPosition",
+            "sheetId"
+          ]
+        },
+        {
+          "name": "ErrorValue",
+          "properties": [
+            "message",
+            "type"
+          ]
+        },
+        {
+          "name": "ExtendedValue",
+          "properties": [
+            "boolValue",
+            "errorValue",
+            "formulaValue",
+            "numberValue",
+            "stringValue"
+          ]
+        },
+        {
+          "name": "FilterCriteria",
+          "properties": [
+            "condition",
+            "hiddenValues",
+            "visibleBackgroundColor",
+            "visibleBackgroundColorStyle",
+            "visibleForegroundColor",
+            "visibleForegroundColorStyle"
+          ]
+        },
+        {
+          "name": "FilterSpec",
+          "properties": [
+            "columnIndex",
+            "dataSourceColumnReference",
+            "filterCriteria"
+          ]
+        },
+        {
+          "name": "FilterView",
+          "properties": [
+            "criteria",
+            "filterSpecs",
+            "filterViewId",
+            "namedRangeId",
+            "range",
+            "sortSpecs",
+            "tableId",
+            "title"
+          ]
+        },
+        {
+          "name": "FindReplaceRequest",
+          "properties": [
+            "allSheets",
+            "find",
+            "includeFormulas",
+            "matchCase",
+            "matchEntireCell",
+            "range",
+            "replacement",
+            "searchByRegex",
+            "sheetId"
+          ]
+        },
+        {
+          "name": "FindReplaceResponse",
+          "properties": [
+            "formulasChanged",
+            "occurrencesChanged",
+            "rowsChanged",
+            "sheetsChanged",
+            "valuesChanged"
+          ]
+        },
+        {
+          "name": "GetSpreadsheetByDataFilterRequest",
+          "properties": [
+            "dataFilters",
+            "excludeTablesInBandedRanges",
+            "includeGridData"
+          ]
+        },
+        {
+          "name": "GradientRule",
+          "properties": [
+            "maxpoint",
+            "midpoint",
+            "minpoint"
+          ]
+        },
+        {
+          "name": "GridCoordinate",
+          "properties": [
+            "columnIndex",
+            "rowIndex",
+            "sheetId"
+          ]
+        },
+        {
+          "name": "GridData",
+          "properties": [
+            "columnMetadata",
+            "rowData",
+            "rowMetadata",
+            "startColumn",
+            "startRow"
+          ]
+        },
+        {
+          "name": "GridProperties",
+          "properties": [
+            "columnCount",
+            "columnGroupControlAfter",
+            "frozenColumnCount",
+            "frozenRowCount",
+            "hideGridlines",
+            "rowCount",
+            "rowGroupControlAfter"
+          ]
+        },
+        {
+          "name": "GridRange",
+          "properties": [
+            "endColumnIndex",
+            "endRowIndex",
+            "sheetId",
+            "startColumnIndex",
+            "startRowIndex"
+          ]
+        },
+        {
+          "name": "HistogramChartSpec",
+          "properties": [
+            "bucketSize",
+            "legendPosition",
+            "outlierPercentile",
+            "series",
+            "showItemDividers"
+          ]
+        },
+        {
+          "name": "HistogramRule",
+          "properties": [
+            "end",
+            "interval",
+            "start"
+          ]
+        },
+        {
+          "name": "HistogramSeries",
+          "properties": [
+            "barColor",
+            "barColorStyle",
+            "data"
+          ]
+        },
+        {
+          "name": "InsertDimensionRequest",
+          "properties": [
+            "inheritFromBefore",
+            "range"
+          ]
+        },
+        {
+          "name": "InsertRangeRequest",
+          "properties": [
+            "range",
+            "shiftDimension"
+          ]
+        },
+        {
+          "name": "InterpolationPoint",
+          "properties": [
+            "color",
+            "colorStyle",
+            "type",
+            "value"
+          ]
+        },
+        {
+          "name": "Interval",
+          "properties": [
+            "endTime",
+            "startTime"
+          ]
+        },
+        {
+          "name": "IterativeCalculationSettings",
+          "properties": [
+            "convergenceThreshold",
+            "maxIterations"
+          ]
+        },
+        {
+          "name": "KeyValueFormat",
+          "properties": [
+            "position",
+            "textFormat"
+          ]
+        },
+        {
+          "name": "LineStyle",
+          "properties": [
+            "type",
+            "width"
+          ]
+        },
+        {
+          "name": "Link",
+          "properties": [
+            "uri"
+          ]
+        },
+        {
+          "name": "LookerDataSourceSpec",
+          "properties": [
+            "explore",
+            "instanceUri",
+            "model"
+          ]
+        },
+        {
+          "name": "ManualRule",
+          "properties": [
+            "groups"
+          ]
+        },
+        {
+          "name": "ManualRuleGroup",
+          "properties": [
+            "groupName",
+            "items"
+          ]
+        },
+        {
+          "name": "MatchedDeveloperMetadata",
+          "properties": [
+            "dataFilters",
+            "developerMetadata"
+          ]
+        },
+        {
+          "name": "MatchedValueRange",
+          "properties": [
+            "dataFilters",
+            "valueRange"
+          ]
+        },
+        {
+          "name": "MergeCellsRequest",
+          "properties": [
+            "mergeType",
+            "range"
+          ]
+        },
+        {
+          "name": "MoveDimensionRequest",
+          "properties": [
+            "destinationIndex",
+            "source"
+          ]
+        },
+        {
+          "name": "NamedRange",
+          "properties": [
+            "name",
+            "namedRangeId",
+            "range"
+          ]
+        },
+        {
+          "name": "NumberFormat",
+          "properties": [
+            "pattern",
+            "type"
+          ]
+        },
+        {
+          "name": "OrgChartSpec",
+          "properties": [
+            "labels",
+            "nodeColor",
+            "nodeColorStyle",
+            "nodeSize",
+            "parentLabels",
+            "selectedNodeColor",
+            "selectedNodeColorStyle",
+            "tooltips"
+          ]
+        },
+        {
+          "name": "OverlayPosition",
+          "properties": [
+            "anchorCell",
+            "heightPixels",
+            "offsetXPixels",
+            "offsetYPixels",
+            "widthPixels"
+          ]
+        },
+        {
+          "name": "Padding",
+          "properties": [
+            "bottom",
+            "left",
+            "right",
+            "top"
+          ]
+        },
+        {
+          "name": "PasteDataRequest",
+          "properties": [
+            "coordinate",
+            "data",
+            "delimiter",
+            "html",
+            "type"
+          ]
+        },
+        {
+          "name": "PersonProperties",
+          "properties": [
+            "displayFormat",
+            "email"
+          ]
+        },
+        {
+          "name": "PieChartSpec",
+          "properties": [
+            "domain",
+            "legendPosition",
+            "pieHole",
+            "series",
+            "threeDimensional"
+          ]
+        },
+        {
+          "name": "PivotFilterCriteria",
+          "properties": [
+            "condition",
+            "visibleByDefault",
+            "visibleValues"
+          ]
+        },
+        {
+          "name": "PivotFilterSpec",
+          "properties": [
+            "columnOffsetIndex",
+            "dataSourceColumnReference",
+            "filterCriteria"
+          ]
+        },
+        {
+          "name": "PivotGroup",
+          "properties": [
+            "dataSourceColumnReference",
+            "groupLimit",
+            "groupRule",
+            "label",
+            "repeatHeadings",
+            "showTotals",
+            "sortOrder",
+            "sourceColumnOffset",
+            "valueBucket",
+            "valueMetadata"
+          ]
+        },
+        {
+          "name": "PivotGroupLimit",
+          "properties": [
+            "applyOrder",
+            "countLimit"
+          ]
+        },
+        {
+          "name": "PivotGroupRule",
+          "properties": [
+            "dateTimeRule",
+            "histogramRule",
+            "manualRule"
+          ]
+        },
+        {
+          "name": "PivotGroupSortValueBucket",
+          "properties": [
+            "buckets",
+            "valuesIndex"
+          ]
+        },
+        {
+          "name": "PivotGroupValueMetadata",
+          "properties": [
+            "collapsed",
+            "value"
+          ]
+        },
+        {
+          "name": "PivotTable",
+          "properties": [
+            "columns",
+            "criteria",
+            "dataExecutionStatus",
+            "dataSourceId",
+            "filterSpecs",
+            "rows",
+            "source",
+            "valueLayout",
+            "values"
+          ]
+        },
+        {
+          "name": "PivotValue",
+          "properties": [
+            "calculatedDisplayType",
+            "dataSourceColumnReference",
+            "formula",
+            "name",
+            "sourceColumnOffset",
+            "summarizeFunction"
+          ]
+        },
+        {
+          "name": "PointStyle",
+          "properties": [
+            "shape",
+            "size"
+          ]
+        },
+        {
+          "name": "ProtectedRange",
+          "properties": [
+            "description",
+            "editors",
+            "namedRangeId",
+            "protectedRangeId",
+            "range",
+            "requestingUserCanEdit",
+            "tableId",
+            "unprotectedRanges",
+            "warningOnly"
+          ]
+        },
+        {
+          "name": "RandomizeRangeRequest",
+          "properties": [
+            "range"
+          ]
+        },
+        {
+          "name": "RefreshCancellationStatus",
+          "properties": [
+            "errorCode",
+            "state"
+          ]
+        },
+        {
+          "name": "RefreshDataSourceObjectExecutionStatus",
+          "properties": [
+            "dataExecutionStatus",
+            "reference"
+          ]
+        },
+        {
+          "name": "RefreshDataSourceRequest",
+          "properties": [
+            "dataSourceId",
+            "force",
+            "isAll",
+            "references"
+          ]
+        },
+        {
+          "name": "RefreshDataSourceResponse",
+          "properties": [
+            "statuses"
+          ]
+        },
+        {
+          "name": "RepeatCellRequest",
+          "properties": [
+            "cell",
+            "fields",
+            "range"
+          ]
+        },
+        {
+          "name": "Request",
+          "properties": [
+            "addBanding",
+            "addChart",
+            "addConditionalFormatRule",
+            "addDataSource",
+            "addDimensionGroup",
+            "addFilterView",
+            "addNamedRange",
+            "addProtectedRange",
+            "addSheet",
+            "addSlicer",
+            "addTable",
+            "appendCells",
+            "appendDimension",
+            "autoFill",
+            "autoResizeDimensions",
+            "cancelDataSourceRefresh",
+            "clearBasicFilter",
+            "copyPaste",
+            "createDeveloperMetadata",
+            "cutPaste",
+            "deleteBanding",
+            "deleteConditionalFormatRule",
+            "deleteDataSource",
+            "deleteDeveloperMetadata",
+            "deleteDimension",
+            "deleteDimensionGroup",
+            "deleteDuplicates",
+            "deleteEmbeddedObject",
+            "deleteFilterView",
+            "deleteNamedRange",
+            "deleteProtectedRange",
+            "deleteRange",
+            "deleteSheet",
+            "deleteTable",
+            "duplicateFilterView",
+            "duplicateSheet",
+            "findReplace",
+            "insertDimension",
+            "insertRange",
+            "mergeCells",
+            "moveDimension",
+            "pasteData",
+            "randomizeRange",
+            "refreshDataSource",
+            "repeatCell",
+            "setBasicFilter",
+            "setDataValidation",
+            "sortRange",
+            "textToColumns",
+            "trimWhitespace",
+            "unmergeCells",
+            "updateBanding",
+            "updateBorders",
+            "updateCells",
+            "updateChartSpec",
+            "updateConditionalFormatRule",
+            "updateDataSource",
+            "updateDeveloperMetadata",
+            "updateDimensionGroup",
+            "updateDimensionProperties",
+            "updateEmbeddedObjectBorder",
+            "updateEmbeddedObjectPosition",
+            "updateFilterView",
+            "updateNamedRange",
+            "updateProtectedRange",
+            "updateSheetProperties",
+            "updateSlicerSpec",
+            "updateSpreadsheetProperties",
+            "updateTable"
+          ]
+        },
+        {
+          "name": "Response",
+          "properties": [
+            "addBanding",
+            "addChart",
+            "addDataSource",
+            "addDimensionGroup",
+            "addFilterView",
+            "addNamedRange",
+            "addProtectedRange",
+            "addSheet",
+            "addSlicer",
+            "addTable",
+            "cancelDataSourceRefresh",
+            "createDeveloperMetadata",
+            "deleteConditionalFormatRule",
+            "deleteDeveloperMetadata",
+            "deleteDimensionGroup",
+            "deleteDuplicates",
+            "duplicateFilterView",
+            "duplicateSheet",
+            "findReplace",
+            "refreshDataSource",
+            "trimWhitespace",
+            "updateConditionalFormatRule",
+            "updateDataSource",
+            "updateDeveloperMetadata",
+            "updateEmbeddedObjectPosition"
+          ]
+        },
+        {
+          "name": "RichLinkProperties",
+          "properties": [
+            "mimeType",
+            "uri"
+          ]
+        },
+        {
+          "name": "RowData",
+          "properties": [
+            "values"
+          ]
+        },
+        {
+          "name": "ScorecardChartSpec",
+          "properties": [
+            "aggregateType",
+            "baselineValueData",
+            "baselineValueFormat",
+            "customFormatOptions",
+            "keyValueData",
+            "keyValueFormat",
+            "numberFormatSource",
+            "scaleFactor"
+          ]
+        },
+        {
+          "name": "SearchDeveloperMetadataRequest",
+          "properties": [
+            "dataFilters"
+          ]
+        },
+        {
+          "name": "SearchDeveloperMetadataResponse",
+          "properties": [
+            "matchedDeveloperMetadata"
+          ]
+        },
+        {
+          "name": "SetBasicFilterRequest",
+          "properties": [
+            "filter"
+          ]
+        },
+        {
+          "name": "SetDataValidationRequest",
+          "properties": [
+            "filteredRowsIncluded",
+            "range",
+            "rule"
+          ]
+        },
+        {
+          "name": "Sheet",
+          "properties": [
+            "bandedRanges",
+            "basicFilter",
+            "charts",
+            "columnGroups",
+            "conditionalFormats",
+            "data",
+            "developerMetadata",
+            "filterViews",
+            "merges",
+            "properties",
+            "protectedRanges",
+            "rowGroups",
+            "slicers",
+            "tables"
+          ]
+        },
+        {
+          "name": "SheetProperties",
+          "properties": [
+            "dataSourceSheetProperties",
+            "gridProperties",
+            "hidden",
+            "index",
+            "rightToLeft",
+            "sheetId",
+            "sheetType",
+            "tabColor",
+            "tabColorStyle",
+            "title"
+          ]
+        },
+        {
+          "name": "Slicer",
+          "properties": [
+            "position",
+            "slicerId",
+            "spec"
+          ]
+        },
+        {
+          "name": "SlicerSpec",
+          "properties": [
+            "applyToPivotTables",
+            "backgroundColor",
+            "backgroundColorStyle",
+            "columnIndex",
+            "dataRange",
+            "filterCriteria",
+            "horizontalAlignment",
+            "textFormat",
+            "title"
+          ]
+        },
+        {
+          "name": "SortRangeRequest",
+          "properties": [
+            "range",
+            "sortSpecs"
+          ]
+        },
+        {
+          "name": "SortSpec",
+          "properties": [
+            "backgroundColor",
+            "backgroundColorStyle",
+            "dataSourceColumnReference",
+            "dimensionIndex",
+            "foregroundColor",
+            "foregroundColorStyle",
+            "sortOrder"
+          ]
+        },
+        {
+          "name": "SourceAndDestination",
+          "properties": [
+            "dimension",
+            "fillLength",
+            "source"
+          ]
+        },
+        {
+          "name": "Spreadsheet",
+          "properties": [
+            "dataSourceSchedules",
+            "dataSources",
+            "developerMetadata",
+            "namedRanges",
+            "properties",
+            "sheets",
+            "spreadsheetId",
+            "spreadsheetUrl"
+          ]
+        },
+        {
+          "name": "SpreadsheetProperties",
+          "properties": [
+            "autoRecalc",
+            "defaultFormat",
+            "importFunctionsExternalUrlAccessAllowed",
+            "iterativeCalculationSettings",
+            "locale",
+            "spreadsheetTheme",
+            "timeZone",
+            "title"
+          ]
+        },
+        {
+          "name": "SpreadsheetTheme",
+          "properties": [
+            "primaryFontFamily",
+            "themeColors"
+          ]
+        },
+        {
+          "name": "Table",
+          "properties": [
+            "columnProperties",
+            "name",
+            "range",
+            "rowsProperties",
+            "tableId"
+          ]
+        },
+        {
+          "name": "TableColumnDataValidationRule",
+          "properties": [
+            "condition"
+          ]
+        },
+        {
+          "name": "TableColumnProperties",
+          "properties": [
+            "columnIndex",
+            "columnName",
+            "columnType",
+            "dataValidationRule"
+          ]
+        },
+        {
+          "name": "TableRowsProperties",
+          "properties": [
+            "firstBandColorStyle",
+            "footerColorStyle",
+            "headerColorStyle",
+            "secondBandColorStyle"
+          ]
+        },
+        {
+          "name": "TextFormat",
+          "properties": [
+            "bold",
+            "fontFamily",
+            "fontSize",
+            "foregroundColor",
+            "foregroundColorStyle",
+            "italic",
+            "link",
+            "strikethrough",
+            "underline"
+          ]
+        },
+        {
+          "name": "TextFormatRun",
+          "properties": [
+            "format",
+            "startIndex"
+          ]
+        },
+        {
+          "name": "TextPosition",
+          "properties": [
+            "horizontalAlignment"
+          ]
+        },
+        {
+          "name": "TextRotation",
+          "properties": [
+            "angle",
+            "vertical"
+          ]
+        },
+        {
+          "name": "TextToColumnsRequest",
+          "properties": [
+            "delimiter",
+            "delimiterType",
+            "source"
+          ]
+        },
+        {
+          "name": "ThemeColorPair",
+          "properties": [
+            "color",
+            "colorType"
+          ]
+        },
+        {
+          "name": "TimeOfDay",
+          "properties": [
+            "hours",
+            "minutes",
+            "nanos",
+            "seconds"
+          ]
+        },
+        {
+          "name": "TreemapChartColorScale",
+          "properties": [
+            "maxValueColor",
+            "maxValueColorStyle",
+            "midValueColor",
+            "midValueColorStyle",
+            "minValueColor",
+            "minValueColorStyle",
+            "noDataColor",
+            "noDataColorStyle"
+          ]
+        },
+        {
+          "name": "TreemapChartSpec",
+          "properties": [
+            "colorData",
+            "colorScale",
+            "headerColor",
+            "headerColorStyle",
+            "hideTooltips",
+            "hintedLevels",
+            "labels",
+            "levels",
+            "maxValue",
+            "minValue",
+            "parentLabels",
+            "sizeData",
+            "textFormat"
+          ]
+        },
+        {
+          "name": "TrimWhitespaceRequest",
+          "properties": [
+            "range"
+          ]
+        },
+        {
+          "name": "TrimWhitespaceResponse",
+          "properties": [
+            "cellsChangedCount"
+          ]
+        },
+        {
+          "name": "UnmergeCellsRequest",
+          "properties": [
+            "range"
+          ]
+        },
+        {
+          "name": "UpdateBandingRequest",
+          "properties": [
+            "bandedRange",
+            "fields"
+          ]
+        },
+        {
+          "name": "UpdateBordersRequest",
+          "properties": [
+            "bottom",
+            "innerHorizontal",
+            "innerVertical",
+            "left",
+            "range",
+            "right",
+            "top"
+          ]
+        },
+        {
+          "name": "UpdateCellsRequest",
+          "properties": [
+            "fields",
+            "range",
+            "rows",
+            "start"
+          ]
+        },
+        {
+          "name": "UpdateChartSpecRequest",
+          "properties": [
+            "chartId",
+            "spec"
+          ]
+        },
+        {
+          "name": "UpdateConditionalFormatRuleRequest",
+          "properties": [
+            "index",
+            "newIndex",
+            "rule",
+            "sheetId"
+          ]
+        },
+        {
+          "name": "UpdateConditionalFormatRuleResponse",
+          "properties": [
+            "newIndex",
+            "newRule",
+            "oldIndex",
+            "oldRule"
+          ]
+        },
+        {
+          "name": "UpdateDataSourceRequest",
+          "properties": [
+            "dataSource",
+            "fields"
+          ]
+        },
+        {
+          "name": "UpdateDataSourceResponse",
+          "properties": [
+            "dataExecutionStatus",
+            "dataSource"
+          ]
+        },
+        {
+          "name": "UpdateDeveloperMetadataRequest",
+          "properties": [
+            "dataFilters",
+            "developerMetadata",
+            "fields"
+          ]
+        },
+        {
+          "name": "UpdateDeveloperMetadataResponse",
+          "properties": [
+            "developerMetadata"
+          ]
+        },
+        {
+          "name": "UpdateDimensionGroupRequest",
+          "properties": [
+            "dimensionGroup",
+            "fields"
+          ]
+        },
+        {
+          "name": "UpdateDimensionPropertiesRequest",
+          "properties": [
+            "dataSourceSheetRange",
+            "fields",
+            "properties",
+            "range"
+          ]
+        },
+        {
+          "name": "UpdateEmbeddedObjectBorderRequest",
+          "properties": [
+            "border",
+            "fields",
+            "objectId"
+          ]
+        },
+        {
+          "name": "UpdateEmbeddedObjectPositionRequest",
+          "properties": [
+            "fields",
+            "newPosition",
+            "objectId"
+          ]
+        },
+        {
+          "name": "UpdateEmbeddedObjectPositionResponse",
+          "properties": [
+            "position"
+          ]
+        },
+        {
+          "name": "UpdateFilterViewRequest",
+          "properties": [
+            "fields",
+            "filter"
+          ]
+        },
+        {
+          "name": "UpdateNamedRangeRequest",
+          "properties": [
+            "fields",
+            "namedRange"
+          ]
+        },
+        {
+          "name": "UpdateProtectedRangeRequest",
+          "properties": [
+            "fields",
+            "protectedRange"
+          ]
+        },
+        {
+          "name": "UpdateSheetPropertiesRequest",
+          "properties": [
+            "fields",
+            "properties"
+          ]
+        },
+        {
+          "name": "UpdateSlicerSpecRequest",
+          "properties": [
+            "fields",
+            "slicerId",
+            "spec"
+          ]
+        },
+        {
+          "name": "UpdateSpreadsheetPropertiesRequest",
+          "properties": [
+            "fields",
+            "properties"
+          ]
+        },
+        {
+          "name": "UpdateTableRequest",
+          "properties": [
+            "fields",
+            "table"
+          ]
+        },
+        {
+          "name": "UpdateValuesByDataFilterResponse",
+          "properties": [
+            "dataFilter",
+            "updatedCells",
+            "updatedColumns",
+            "updatedData",
+            "updatedRange",
+            "updatedRows"
+          ]
+        },
+        {
+          "name": "UpdateValuesResponse",
+          "properties": [
+            "spreadsheetId",
+            "updatedCells",
+            "updatedColumns",
+            "updatedData",
+            "updatedRange",
+            "updatedRows"
+          ]
+        },
+        {
+          "name": "ValueRange",
+          "properties": [
+            "majorDimension",
+            "range",
+            "values"
+          ]
+        },
+        {
+          "name": "WaterfallChartColumnStyle",
+          "properties": [
+            "color",
+            "colorStyle",
+            "label"
+          ]
+        },
+        {
+          "name": "WaterfallChartCustomSubtotal",
+          "properties": [
+            "dataIsSubtotal",
+            "label",
+            "subtotalIndex"
+          ]
+        },
+        {
+          "name": "WaterfallChartDomain",
+          "properties": [
+            "data",
+            "reversed"
+          ]
+        },
+        {
+          "name": "WaterfallChartSeries",
+          "properties": [
+            "customSubtotals",
+            "data",
+            "dataLabel",
+            "hideTrailingSubtotal",
+            "negativeColumnsStyle",
+            "positiveColumnsStyle",
+            "subtotalColumnsStyle"
+          ]
+        },
+        {
+          "name": "WaterfallChartSpec",
+          "properties": [
+            "connectorLineStyle",
+            "domain",
+            "firstValueIsTotal",
+            "hideConnectorLines",
+            "series",
+            "stackedType",
+            "totalDataLabel"
+          ]
+        }
+      ]
+    },
+    {
+      "api": "drive",
+      "discovery": "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest",
+      "schemas": [
+        {
+          "name": "About",
+          "properties": [
+            "appInstalled",
+            "canCreateDrives",
+            "canCreateTeamDrives",
+            "driveThemes",
+            "exportFormats",
+            "folderColorPalette",
+            "importFormats",
+            "kind",
+            "maxImportSizes",
+            "maxUploadSize",
+            "storageQuota",
+            "teamDriveThemes",
+            "user"
+          ]
+        },
+        {
+          "name": "About.driveThemes",
+          "properties": [
+            "backgroundImageLink",
+            "colorRgb",
+            "id"
+          ]
+        },
+        {
+          "name": "About.storageQuota",
+          "properties": [
+            "limit",
+            "usage",
+            "usageInDrive",
+            "usageInDriveTrash"
+          ]
+        },
+        {
+          "name": "About.teamDriveThemes",
+          "properties": [
+            "backgroundImageLink",
+            "colorRgb",
+            "id"
+          ]
+        },
+        {
+          "name": "AccessProposal",
+          "properties": [
+            "createTime",
+            "fileId",
+            "proposalId",
+            "recipientEmailAddress",
+            "requestMessage",
+            "requesterEmailAddress",
+            "rolesAndViews"
+          ]
+        },
+        {
+          "name": "AccessProposalRoleAndView",
+          "properties": [
+            "role",
+            "view"
+          ]
+        },
+        {
+          "name": "AddReviewer",
+          "properties": [
+            "addedReviewerEmail"
+          ]
+        },
+        {
+          "name": "App",
+          "properties": [
+            "authorized",
+            "createInFolderTemplate",
+            "createUrl",
+            "hasDriveWideScope",
+            "icons",
+            "id",
+            "installed",
+            "kind",
+            "longDescription",
+            "name",
+            "objectType",
+            "openUrlTemplate",
+            "primaryFileExtensions",
+            "primaryMimeTypes",
+            "productId",
+            "productUrl",
+            "secondaryFileExtensions",
+            "secondaryMimeTypes",
+            "shortDescription",
+            "supportsCreate",
+            "supportsImport",
+            "supportsMultiOpen",
+            "supportsOfflineCreate",
+            "useByDefault"
+          ]
+        },
+        {
+          "name": "AppIcons",
+          "properties": [
+            "category",
+            "iconUrl",
+            "size"
+          ]
+        },
+        {
+          "name": "AppList",
+          "properties": [
+            "defaultAppIds",
+            "items",
+            "kind",
+            "selfLink"
+          ]
+        },
+        {
+          "name": "Approval",
+          "properties": [
+            "approvalId",
+            "completeTime",
+            "createTime",
+            "dueTime",
+            "fileContentChangeBehavior",
+            "initiator",
+            "kind",
+            "modifyTime",
+            "reviewerResponses",
+            "status",
+            "targetFileId"
+          ]
+        },
+        {
+          "name": "ApprovalList",
+          "properties": [
+            "items",
+            "kind",
+            "nextPageToken"
+          ]
+        },
+        {
+          "name": "ApproveApprovalRequest",
+          "properties": [
+            "message"
+          ]
+        },
+        {
+          "name": "CancelApprovalRequest",
+          "properties": [
+            "message"
+          ]
+        },
+        {
+          "name": "Change",
+          "properties": [
+            "changeType",
+            "drive",
+            "driveId",
+            "file",
+            "fileId",
+            "kind",
+            "removed",
+            "teamDrive",
+            "teamDriveId",
+            "time",
+            "type"
+          ]
+        },
+        {
+          "name": "ChangeList",
+          "properties": [
+            "changes",
+            "kind",
+            "newStartPageToken",
+            "nextPageToken"
+          ]
+        },
+        {
+          "name": "Channel",
+          "properties": [
+            "address",
+            "expiration",
+            "id",
+            "kind",
+            "params",
+            "payload",
+            "resourceId",
+            "resourceUri",
+            "token",
+            "type"
+          ]
+        },
+        {
+          "name": "ClientEncryptionDetails",
+          "properties": [
+            "decryptionMetadata",
+            "encryptionState"
+          ]
+        },
+        {
+          "name": "Comment",
+          "properties": [
+            "anchor",
+            "assigneeEmailAddress",
+            "author",
+            "content",
+            "createdTime",
+            "deleted",
+            "htmlContent",
+            "id",
+            "kind",
+            "mentionedEmailAddresses",
+            "modifiedTime",
+            "quotedFileContent",
+            "replies",
+            "resolved"
+          ]
+        },
+        {
+          "name": "Comment.quotedFileContent",
+          "properties": [
+            "mimeType",
+            "value"
+          ]
+        },
+        {
+          "name": "CommentApprovalRequest",
+          "properties": [
+            "message"
+          ]
+        },
+        {
+          "name": "CommentList",
+          "properties": [
+            "comments",
+            "kind",
+            "nextPageToken"
+          ]
+        },
+        {
+          "name": "ContentRestriction",
+          "properties": [
+            "ownerRestricted",
+            "readOnly",
+            "reason",
+            "restrictingUser",
+            "restrictionTime",
+            "systemRestricted",
+            "type"
+          ]
+        },
+        {
+          "name": "DeclineApprovalRequest",
+          "properties": [
+            "message"
+          ]
+        },
+        {
+          "name": "DecryptionMetadata",
+          "properties": [
+            "aes256GcmChunkSize",
+            "encryptionResourceKeyHash",
+            "jwt",
+            "kaclsId",
+            "kaclsName",
+            "keyFormat",
+            "wrappedKey"
+          ]
+        },
+        {
+          "name": "DownloadRestriction",
+          "properties": [
+            "restrictedForReaders",
+            "restrictedForWriters"
+          ]
+        },
+        {
+          "name": "DownloadRestrictionsMetadata",
+          "properties": [
+            "effectiveDownloadRestrictionWithContext",
+            "itemDownloadRestriction"
+          ]
+        },
+        {
+          "name": "Drive",
+          "properties": [
+            "backgroundImageFile",
+            "backgroundImageLink",
+            "capabilities",
+            "colorRgb",
+            "createdTime",
+            "hidden",
+            "id",
+            "kind",
+            "name",
+            "orgUnitId",
+            "restrictions",
+            "themeId"
+          ]
+        },
+        {
+          "name": "Drive.backgroundImageFile",
+          "properties": [
+            "id",
+            "width",
+            "xCoordinate",
+            "yCoordinate"
+          ]
+        },
+        {
+          "name": "Drive.capabilities",
+          "properties": [
+            "canAddChildren",
+            "canChangeCopyRequiresWriterPermissionRestriction",
+            "canChangeDomainUsersOnlyRestriction",
+            "canChangeDownloadRestriction",
+            "canChangeDriveBackground",
+            "canChangeDriveMembersOnlyRestriction",
+            "canChangeSharingFoldersRequiresOrganizerPermissionRestriction",
+            "canComment",
+            "canCopy",
+            "canDeleteChildren",
+            "canDeleteDrive",
+            "canDownload",
+            "canEdit",
+            "canListChildren",
+            "canManageMembers",
+            "canReadRevisions",
+            "canRename",
+            "canRenameDrive",
+            "canResetDriveRestrictions",
+            "canShare",
+            "canTrashChildren"
+          ]
+        },
+        {
+          "name": "Drive.restrictions",
+          "properties": [
+            "adminManagedRestrictions",
+            "copyRequiresWriterPermission",
+            "domainUsersOnly",
+            "downloadRestriction",
+            "driveMembersOnly",
+            "sharingFoldersRequiresOrganizerPermission"
+          ]
+        },
+        {
+          "name": "DriveList",
+          "properties": [
+            "drives",
+            "kind",
+            "nextPageToken"
+          ]
+        },
+        {
+          "name": "File",
+          "properties": [
+            "appProperties",
+            "capabilities",
+            "clientEncryptionDetails",
+            "contentHints",
+            "contentRestrictions",
+            "copyRequiresWriterPermission",
+            "createdTime",
+            "description",
+            "downloadRestrictions",
+            "driveId",
+            "explicitlyTrashed",
+            "exportLinks",
+            "fileExtension",
+            "folderColorRgb",
+            "fullFileExtension",
+            "hasAugmentedPermissions",
+            "hasThumbnail",
+            "headRevisionId",
+            "iconLink",
+            "id",
+            "imageMediaMetadata",
+            "inheritedPermissionsDisabled",
+            "isAppAuthorized",
+            "kind",
+            "labelInfo",
+            "lastModifyingUser",
+            "linkShareMetadata",
+            "md5Checksum",
+            "mimeType",
+            "modifiedByMe",
+            "modifiedByMeTime",
+            "modifiedTime",
+            "name",
+            "originalFilename",
+            "ownedByMe",
+            "owners",
+            "parents",
+            "permissionIds",
+            "permissions",
+            "properties",
+            "quotaBytesUsed",
+            "resourceKey",
+            "sha1Checksum",
+            "sha256Checksum",
+            "shared",
+            "sharedWithMeTime",
+            "sharingUser",
+            "shortcutDetails",
+            "size",
+            "spaces",
+            "starred",
+            "teamDriveId",
+            "thumbnailLink",
+            "thumbnailVersion",
+            "trashed",
+            "trashedTime",
+            "trashingUser",
+            "version",
+            "videoMediaMetadata",
+            "viewedByMe",
+            "viewedByMeTime",
+            "viewersCanCopyContent",
+            "webContentLink",
+            "webViewLink",
+            "writersCanShare"
+          ]
+        },
+        {
+          "name": "File.capabilities",
+          "properties": [
+            "canAcceptOwnership",
+            "canAccessViaGenAi",
+            "canAddChildren",
+            "canAddFolderFromAnotherDrive",
+            "canAddMyDriveParent",
+            "canChangeCopyRequiresWriterPermission",
+            "canChangeItemDownloadRestriction",
+            "canChangeSecurityUpdateEnabled",
+            "canChangeViewersCanCopyContent",
+            "canComment",
+            "canCopy",
+            "canDelete",
+            "canDeleteChildren",
+            "canDisableInheritedPermissions",
+            "canDownload",
+            "canEdit",
+            "canEnableInheritedPermissions",
+            "canListChildren",
+            "canModifyContent",
+            "canModifyContentRestriction",
+            "canModifyEditorContentRestriction",
+            "canModifyLabels",
+            "canModifyOwnerContentRestriction",
+            "canMoveChildrenOutOfDrive",
+            "canMoveChildrenOutOfTeamDrive",
+            "canMoveChildrenWithinDrive",
+            "canMoveChildrenWithinTeamDrive",
+            "canMoveItemIntoTeamDrive",
+            "canMoveItemOutOfDrive",
+            "canMoveItemOutOfTeamDrive",
+            "canMoveItemWithinDrive",
+            "canMoveItemWithinTeamDrive",
+            "canMoveTeamDriveItem",
+            "canReadDrive",
+            "canReadLabels",
+            "canReadRevisions",
+            "canReadTeamDrive",
+            "canRemoveChildren",
+            "canRemoveContentRestriction",
+            "canRemoveMyDriveParent",
+            "canRename",
+            "canShare",
+            "canStartApproval",
+            "canTrash",
+            "canTrashChildren",
+            "canUntrash"
+          ]
+        },
+        {
+          "name": "File.contentHints",
+          "properties": [
+            "indexableText",
+            "thumbnail"
+          ]
+        },
+        {
+          "name": "File.contentHints.thumbnail",
+          "properties": [
+            "image",
+            "mimeType"
+          ]
+        },
+        {
+          "name": "File.imageMediaMetadata",
+          "properties": [
+            "aperture",
+            "cameraMake",
+            "cameraModel",
+            "colorSpace",
+            "exposureBias",
+            "exposureMode",
+            "exposureTime",
+            "flashUsed",
+            "focalLength",
+            "height",
+            "isoSpeed",
+            "lens",
+            "location",
+            "maxApertureValue",
+            "meteringMode",
+            "rotation",
+            "sensor",
+            "subjectDistance",
+            "time",
+            "whiteBalance",
+            "width"
+          ]
+        },
+        {
+          "name": "File.imageMediaMetadata.location",
+          "properties": [
+            "altitude",
+            "latitude",
+            "longitude"
+          ]
+        },
+        {
+          "name": "File.labelInfo",
+          "properties": [
+            "labels"
+          ]
+        },
+        {
+          "name": "File.linkShareMetadata",
+          "properties": [
+            "securityUpdateEligible",
+            "securityUpdateEnabled"
+          ]
+        },
+        {
+          "name": "File.shortcutDetails",
+          "properties": [
+            "targetId",
+            "targetMimeType",
+            "targetResourceKey"
+          ]
+        },
+        {
+          "name": "File.videoMediaMetadata",
+          "properties": [
+            "durationMillis",
+            "height",
+            "width"
+          ]
+        },
+        {
+          "name": "FileList",
+          "properties": [
+            "files",
+            "incompleteSearch",
+            "kind",
+            "nextPageToken"
+          ]
+        },
+        {
+          "name": "GenerateCseTokenResponse",
+          "properties": [
+            "currentKaclsId",
+            "currentKaclsName",
+            "fileId",
+            "jwt",
+            "kind"
+          ]
+        },
+        {
+          "name": "GeneratedIds",
+          "properties": [
+            "ids",
+            "kind",
+            "space"
+          ]
+        },
+        {
+          "name": "Label",
+          "properties": [
+            "fields",
+            "id",
+            "kind",
+            "revisionId"
+          ]
+        },
+        {
+          "name": "LabelField",
+          "properties": [
+            "dateString",
+            "id",
+            "integer",
+            "kind",
+            "selection",
+            "text",
+            "user",
+            "valueType"
+          ]
+        },
+        {
+          "name": "LabelFieldModification",
+          "properties": [
+            "fieldId",
+            "kind",
+            "setDateValues",
+            "setIntegerValues",
+            "setSelectionValues",
+            "setTextValues",
+            "setUserValues",
+            "unsetValues"
+          ]
+        },
+        {
+          "name": "LabelList",
+          "properties": [
+            "kind",
+            "labels",
+            "nextPageToken"
+          ]
+        },
+        {
+          "name": "LabelModification",
+          "properties": [
+            "fieldModifications",
+            "kind",
+            "labelId",
+            "removeLabel"
+          ]
+        },
+        {
+          "name": "ListAccessProposalsResponse",
+          "properties": [
+            "accessProposals",
+            "nextPageToken"
+          ]
+        },
+        {
+          "name": "ModifyLabelsRequest",
+          "properties": [
+            "kind",
+            "labelModifications"
+          ]
+        },
+        {
+          "name": "ModifyLabelsResponse",
+          "properties": [
+            "kind",
+            "modifiedLabels"
+          ]
+        },
+        {
+          "name": "Operation",
+          "properties": [
+            "done",
+            "error",
+            "metadata",
+            "name",
+            "response"
+          ]
+        },
+        {
+          "name": "Permission",
+          "properties": [
+            "allowFileDiscovery",
+            "deleted",
+            "displayName",
+            "domain",
+            "emailAddress",
+            "expirationTime",
+            "id",
+            "inheritedPermissionsDisabled",
+            "kind",
+            "pendingOwner",
+            "permissionDetails",
+            "photoLink",
+            "role",
+            "teamDrivePermissionDetails",
+            "type",
+            "view"
+          ]
+        },
+        {
+          "name": "Permission.permissionDetails",
+          "properties": [
+            "inherited",
+            "inheritedFrom",
+            "permissionType",
+            "role"
+          ]
+        },
+        {
+          "name": "Permission.teamDrivePermissionDetails",
+          "properties": [
+            "inherited",
+            "inheritedFrom",
+            "role",
+            "teamDrivePermissionType"
+          ]
+        },
+        {
+          "name": "PermissionList",
+          "properties": [
+            "kind",
+            "nextPageToken",
+            "permissions"
+          ]
+        },
+        {
+          "name": "ReassignApprovalRequest",
+          "properties": [
+            "addReviewers",
+            "message",
+            "replaceReviewers"
+          ]
+        },
+        {
+          "name": "ReplaceReviewer",
+          "properties": [
+            "addedReviewerEmail",
+            "removedReviewerEmail"
+          ]
+        },
+        {
+          "name": "Reply",
+          "properties": [
+            "action",
+            "assigneeEmailAddress",
+            "author",
+            "content",
+            "createdTime",
+            "deleted",
+            "htmlContent",
+            "id",
+            "kind",
+            "mentionedEmailAddresses",
+            "modifiedTime"
+          ]
+        },
+        {
+          "name": "ReplyList",
+          "properties": [
+            "kind",
+            "nextPageToken",
+            "replies"
+          ]
+        },
+        {
+          "name": "ResolveAccessProposalRequest",
+          "properties": [
+            "action",
+            "role",
+            "sendNotification",
+            "view"
+          ]
+        },
+        {
+          "name": "ReviewerResponse",
+          "properties": [
+            "kind",
+            "response",
+            "reviewer"
+          ]
+        },
+        {
+          "name": "Revision",
+          "properties": [
+            "exportLinks",
+            "id",
+            "keepForever",
+            "kind",
+            "lastModifyingUser",
+            "md5Checksum",
+            "mimeType",
+            "modifiedTime",
+            "originalFilename",
+            "publishAuto",
+            "published",
+            "publishedLink",
+            "publishedOutsideDomain",
+            "size"
+          ]
+        },
+        {
+          "name": "RevisionList",
+          "properties": [
+            "kind",
+            "nextPageToken",
+            "revisions"
+          ]
+        },
+        {
+          "name": "StartApprovalRequest",
+          "properties": [
+            "dueTime",
+            "fileContentChangeBehavior",
+            "lockFile",
+            "message",
+            "reviewerEmails"
+          ]
+        },
+        {
+          "name": "StartPageToken",
+          "properties": [
+            "kind",
+            "startPageToken"
+          ]
+        },
+        {
+          "name": "Status",
+          "properties": [
+            "code",
+            "details",
+            "message"
+          ]
+        },
+        {
+          "name": "TeamDrive",
+          "properties": [
+            "backgroundImageFile",
+            "backgroundImageLink",
+            "capabilities",
+            "colorRgb",
+            "createdTime",
+            "id",
+            "kind",
+            "name",
+            "orgUnitId",
+            "restrictions",
+            "themeId"
+          ]
+        },
+        {
+          "name": "TeamDrive.backgroundImageFile",
+          "properties": [
+            "id",
+            "width",
+            "xCoordinate",
+            "yCoordinate"
+          ]
+        },
+        {
+          "name": "TeamDrive.capabilities",
+          "properties": [
+            "canAddChildren",
+            "canChangeCopyRequiresWriterPermissionRestriction",
+            "canChangeDomainUsersOnlyRestriction",
+            "canChangeDownloadRestriction",
+            "canChangeSharingFoldersRequiresOrganizerPermissionRestriction",
+            "canChangeTeamDriveBackground",
+            "canChangeTeamMembersOnlyRestriction",
+            "canComment",
+            "canCopy",
+            "canDeleteChildren",
+            "canDeleteTeamDrive",
+            "canDownload",
+            "canEdit",
+            "canListChildren",
+            "canManageMembers",
+            "canReadRevisions",
+            "canRemoveChildren",
+            "canRename",
+            "canRenameTeamDrive",
+            "canResetTeamDriveRestrictions",
+            "canShare",
+            "canTrashChildren"
+          ]
+        },
+        {
+          "name": "TeamDrive.restrictions",
+          "properties": [
+            "adminManagedRestrictions",
+            "copyRequiresWriterPermission",
+            "domainUsersOnly",
+            "downloadRestriction",
+            "sharingFoldersRequiresOrganizerPermission",
+            "teamMembersOnly"
+          ]
+        },
+        {
+          "name": "TeamDriveList",
+          "properties": [
+            "kind",
+            "nextPageToken",
+            "teamDrives"
+          ]
+        },
+        {
+          "name": "User",
+          "properties": [
+            "displayName",
+            "emailAddress",
+            "kind",
+            "me",
+            "permissionId",
+            "photoLink"
+          ]
+        }
+      ]
+    }
+  ]
+}

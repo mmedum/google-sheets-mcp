@@ -584,3 +584,49 @@ func TestACancelledWriteIsStillAmbiguous(t *testing.T) {
 		t.Errorf("a cancelled read was reported as an ambiguous write")
 	}
 }
+
+// Google indents its JSON unless told not to, and prettyPrint is a
+// system parameter of every Google API rather than a Sheets feature, so
+// this client asks once for every request instead of at each place that
+// builds a query. A read_range over a large grid is what pays for the
+// indentation, and it is the call this server exists to make.
+func TestCompactJSONIsAskedForOnEveryRequest(t *testing.T) {
+	var queries []string
+	c, _ := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		queries = append(queries, r.URL.RawQuery)
+		_, _ = w.Write([]byte(`{"spreadsheetId":"abc","properties":{"title":"T"}}`))
+	})
+	if _, err := c.GetSpreadsheet(context.Background(), "abc", GetOptions{Fields: "spreadsheetId,properties.title"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(queries) != 1 {
+		t.Fatalf("want one request, got %d", len(queries))
+	}
+	if !strings.Contains(queries[0], "prettyPrint=false") {
+		t.Errorf("query %q does not ask for compact JSON", queries[0])
+	}
+}
+
+// A caller that has said so itself is not overruled, and the parameters
+// the call site set survive being joined.
+func TestCompactJSONLeavesAnExplicitChoiceAlone(t *testing.T) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"https://sheets.googleapis.com/v4/spreadsheets/x?fields=a&prettyPrint=true", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	askCompactJSON(req)
+	if !strings.Contains(req.URL.RawQuery, "prettyPrint=true") {
+		t.Errorf("an explicit prettyPrint was overruled: %q", req.URL.RawQuery)
+	}
+	req, err = http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"https://sheets.googleapis.com/v4/spreadsheets/x?fields=a", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	askCompactJSON(req)
+	q := req.URL.Query()
+	if q.Get("fields") != "a" || q.Get("prettyPrint") != "false" {
+		t.Errorf("want both fields and prettyPrint, got %q", req.URL.RawQuery)
+	}
+}
