@@ -73,6 +73,9 @@ var precommitOnly = map[string]string{
 	"api-diff": "reaches Google's discovery documents, and a gate that fails when Google is slow is one " +
 		"people learn to re-run until it passes; `api-coverage` is the half that runs on every commit, " +
 		"against the snapshot this writes",
+	"release-notes": "runs at release time, printing the CHANGELOG section the workflow hands goreleaser " +
+		"as --release-notes; it asserts nothing about the code, and running it in `make check` would " +
+		"only check that today's HEAD has a section for a tag that does not exist yet",
 }
 
 func parityGate() error {

@@ -33,7 +33,8 @@ func main() {
 	if len(os.Args) < 2 {
 		fail("usage: gates coverage PROFILE MIN | classes | leaks [history] | transcript | " +
 			"live-cover BIN | pins | smoke BIN | staleness BIN | schema-diff BIN | mcpb | " +
-			"mcpb-pack VERSION [DIST] | api-coverage | api-fields | api-diff | parity | precommit")
+			"mcpb-pack VERSION [DIST] | api-coverage | api-fields | api-diff | parity | " +
+			"release-notes VERSION [CHANGELOG] | precommit")
 	}
 	root, err := repoRoot()
 	if err != nil {
@@ -45,14 +46,7 @@ func main() {
 
 	switch os.Args[1] {
 	case "coverage":
-		if len(os.Args) != 4 {
-			fail("usage: gates coverage PROFILE MIN")
-		}
-		minimum, err := strconv.ParseFloat(os.Args[3], 64)
-		if err != nil {
-			fail("coverage: %v", err)
-		}
-		check(coverageFloor(os.Args[2], minimum), "coverage floor")
+		coverageCmd(os.Args[2:])
 	case "classes":
 		check(classGate(), "error classes")
 	case "leaks":
@@ -73,14 +67,7 @@ func main() {
 	case "mcpb":
 		check(mcpbGate(os.Stdout), "bundle manifest")
 	case "mcpb-pack":
-		if len(os.Args) < 3 {
-			fail("usage: gates mcpb-pack VERSION [DIST]")
-		}
-		dist := ""
-		if len(os.Args) > 3 {
-			dist = os.Args[3]
-		}
-		check(mcpbPack(os.Stdout, os.Args[2], dist), "bundle packed")
+		mcpbPackCmd(os.Args[2:])
 	case "api-coverage":
 		check(apiCoverageGate(), "API coverage")
 	case "api-fields":
@@ -89,6 +76,12 @@ func main() {
 		// Manual: it reaches the network. What CI holds is the snapshot
 		// this writes, not the fetch itself.
 		check(apiDiff(os.Stdout), "API diff")
+	case "release-notes":
+		// Not a gate: it runs at release time, printing the CHANGELOG
+		// section the workflow hands goreleaser as --release-notes. One
+		// statement, because this switch is already at the cyclomatic
+		// limit the linter enforces.
+		releaseNotesToStdout(os.Args[2:])
 	case "parity":
 		check(parityGate(), "make check and CI agree")
 	case "precommit":
@@ -115,4 +108,26 @@ func check(err error, what string) {
 func fail(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "gates: "+format+"\n", args...)
 	os.Exit(1)
+}
+
+func coverageCmd(args []string) {
+	if len(args) != 2 {
+		fail("usage: gates coverage PROFILE MIN")
+	}
+	minimum, err := strconv.ParseFloat(args[1], 64)
+	if err != nil {
+		fail("coverage: %v", err)
+	}
+	check(coverageFloor(args[0], minimum), "coverage floor")
+}
+
+func mcpbPackCmd(args []string) {
+	if len(args) < 1 {
+		fail("usage: gates mcpb-pack VERSION [DIST]")
+	}
+	dist := ""
+	if len(args) > 1 {
+		dist = args[1]
+	}
+	check(mcpbPack(os.Stdout, args[0], dist), "bundle packed")
 }
