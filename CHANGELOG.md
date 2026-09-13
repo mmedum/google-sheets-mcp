@@ -3,6 +3,50 @@
 The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [semantic versioning](https://semver.org).
 
+## [Unreleased]
+
+### Added
+- The release page carries the release notes. `gates release-notes`
+  prints the `CHANGELOG.md` section for the tag and `release.yml` passes
+  it to goreleaser with `--release-notes`, replacing a generated list of
+  full commit SHAs that included the release commit itself. A tag whose
+  section is missing or empty fails the release rather than publishing
+  one that says nothing. The command comes from a sibling server rather
+  than being written again.
+
+  **Never write `changelog: disable: true` to suppress the generated
+  list.** It is evaluated in the changelog pipe's `Skip`, which runs
+  before `Run`, so `ctx.ReleaseNotes` is never assigned and the notes
+  file is never opened: the body collapses to the footer alone. A sibling
+  shipped exactly that. `release.footer` is untouched and still applies —
+  `internal/pipe/release/body.go` renders `Header`, `ReleaseNotes`,
+  `Footer` on every path. Read out of goreleaser v2.18.1.
+
+### Changed
+- The README follows the skeleton now shared by the four servers, checked
+  against GitHub's own README guidance, the community profile checklist
+  and the standard-readme spec: an opening line under 120 characters, a
+  `Why google-sheets-mcp` section saying why the guarded writes and the
+  A1 arithmetic are the point, `Getting help`, a `Documentation` section
+  listing the five files under `docs/`, and a `Contributing` section,
+  which the spec requires and which had been a sentence at the end of
+  `Development`. `Connect your client` is `Connect a client`, `What keeps
+  you safe` is `Safety`, and `Resources` becomes a subsection of `Tools`,
+  where the sibling servers keep it.
+- The README no longer opens with `> **Status: v1.3.2.**`. The version
+  was a copy of a fact the release badge already carries and cannot get
+  wrong; what the line said beyond the version — what works, that the
+  twenty-one tools are stable, that one MCP client has driven it — moved
+  into `Why`. The staleness gate needed no change: it skips a document
+  with no status line, and its own comment already said the way out is to
+  name the phase rather than a version. `docs/architecture.md` still
+  carries one and is still checked.
+- `gates coverage` and `gates mcpb-pack` parse their arguments in
+  functions of their own. The dispatch switch was exactly at the
+  cyclomatic limit the linter enforces, so adding `release-notes` broke
+  the build in `main` rather than in the case that added it — every case
+  is one statement now, and the next command will not have to pay for it.
+
 ## [1.3.2] - 2026-09-13
 
 ### Fixed

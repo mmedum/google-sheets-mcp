@@ -82,10 +82,17 @@ signs:
     artifacts: checksum
     output: true
 
-changelog:
-  use: github
-  filters:
-    exclude: ["^docs:", "^test:", "^chore:"]
+# No changelog block. The release notes are the CHANGELOG.md section for
+# the tag, written by `gates release-notes` in release.yml and passed
+# with --release-notes; a generated commit list would only be a second,
+# worse account of the same release.
+#
+# Never write `changelog: disable: true` to get that effect. Disable is
+# evaluated in the changelog pipe's Skip, which runs before Run, so
+# ctx.ReleaseNotes is never assigned and the notes file is never opened:
+# the body collapses to the footer alone. A sibling server shipped
+# exactly that and every release page it published was a footer with
+# nothing above it.
 
 release:
   # A tag is the decision. A draft nobody remembers to publish is how
@@ -97,9 +104,24 @@ release:
   # something nobody can download.
   extra_files:
     - glob: ./dist/*.mcpb
+  # Appended under the notes on every path, --release-notes included:
+  # internal/pipe/release/body.go renders Header, ReleaseNotes, Footer.
+  # Shared wording with the sibling servers.
   footer: |
-    Built by GoReleaser from the tag. Verify a download against
-    `checksums.txt`; every archive carries the binary, LICENSE and README.
+    ---
+
+    Built by GoReleaser from the tag. Every archive carries the binary,
+    LICENSE and README, and ships an SBOM beside it.
+
+    Verify a download before you run it:
+
+    ```bash
+    sha256sum -c checksums.txt --ignore-missing
+    cosign verify-blob checksums.txt --bundle checksums.txt.bundle \
+      --certificate-identity-regexp 'https://github\.com/mmedum/google-sheets-mcp/' \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com
+    gh attestation verify google-sheets-mcp_*.tar.gz --repo mmedum/google-sheets-mcp
+    ```
 
     `.mcpb` is the Claude Desktop bundle: open it and Claude Desktop
     installs the server and asks for your OAuth client JSON, with no

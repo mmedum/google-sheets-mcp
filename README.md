@@ -5,10 +5,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/google-sheets-mcp.svg)](https://pkg.go.dev/github.com/mmedum/google-sheets-mcp)
 [![License: Apache 2.0](https://img.shields.io/github/license/mmedum/google-sheets-mcp)](./LICENSE)
 
-Google Sheets as MCP tools. Read a range and see where every value sits,
-write without destroying the formula underneath, reshape sheets and
-dimensions, format, sort and validate — from Claude Code, Claude Desktop,
-or any other MCP client.
+Google Sheets as MCP tools. Read and write ranges without destroying the formulas underneath.
 
 A single Go binary that speaks MCP over stdio. It runs as a subprocess of
 your client, on your own machine, against your own Google account. There
@@ -20,26 +17,32 @@ It works **inside** a spreadsheet. Finding, sharing, moving and trashing
 files, and their comment threads and revisions, belong to a server built
 on the Drive API. A cell **note** is a Sheets field and is here.
 
-> **Status: v1.3.2.** Reading, writing, formatting, the objects attached
-> to a range, `gsheets://` resources, durable anchors, charts, pivot
-> tables and Connected Sheets data sources all work. The twenty-one
-> tools and their arguments are stable: a breaking change needs a major
-> version, and a gate compares every commit against the last tag.
-> It has been driven by one MCP client, which is what to know before
-> trusting it in a second. The history is §16 of
-> [`docs/architecture.md`](docs/architecture.md).
+## Why google-sheets-mcp
 
-## Resources
+A spreadsheet has no undo behind an API call, and the value you can see
+is rarely the whole cell: underneath it there may be a formula, a
+different stored type, or a note. So the writes here are guarded rather
+than trusting. `write_values` reads the target first and refuses to
+overwrite anything non-empty without `overwrite`, or a formula without
+`overwrite_formulas` as well, naming the cells each time; every value
+Google's parser changes on the way in is reported back to you.
 
-Two, for a client that attaches a spreadsheet rather than calling a tool.
-There is no static list — enumerating a person's spreadsheets is a Drive
-listing, which belongs to a server built on the Drive API — and no
-subscriptions, because the Sheets API has no push and no changes feed.
+It also does the index arithmetic. Ranges are A1 throughout, sheet titles
+are quoted for you — Google names the first sheet in the account's
+language, so it is often not an English word — and the one place A1 turns
+into a `GridRange` is a single package.
 
-| URI | What it is |
-|---|---|
-| `gsheets://{spreadsheet}` | The card: every sheet with its exact title, id and size, plus named ranges, tables and protected ranges. Reads no cells |
-| `gsheets://{spreadsheet}/{sheet}` | That sheet's **used range** as CSV — the rows and columns holding something, not the sheet's allocated size. The sheet title is percent-encoded |
+It works **inside** a spreadsheet. Finding, sharing, moving and trashing
+files, and their comment threads and revisions, belong to a server built
+on the Drive API. A cell **note** is a Sheets field and is here.
+
+Reading, writing, formatting, the objects attached to a range,
+`gsheets://` resources, durable anchors, charts, pivot tables and
+Connected Sheets data sources all work. The twenty-one tools and their
+arguments are stable: a breaking change needs a major version, and a gate
+compares every commit against the last tag. It has been driven by one MCP
+client, which is what to know before trusting it in a second. The history
+is §16 of [`docs/architecture.md`](docs/architecture.md).
 
 ## Install
 
@@ -161,7 +164,7 @@ ssh -N -L <port>:127.0.0.1:<port> user@remote-host
 
 Then open the URL locally.
 
-## Connect your client
+## Connect a client
 
 Claude Code:
 
@@ -234,7 +237,20 @@ before it does anything, and a spreadsheet server whose consent screen
 asks for BigQuery is asking most people to grant access to a product they
 do not have.
 
-## What keeps you safe
+### Resources
+
+
+Two, for a client that attaches a spreadsheet rather than calling a tool.
+There is no static list — enumerating a person's spreadsheets is a Drive
+listing, which belongs to a server built on the Drive API — and no
+subscriptions, because the Sheets API has no push and no changes feed.
+
+| URI | What it is |
+|---|---|
+| `gsheets://{spreadsheet}` | The card: every sheet with its exact title, id and size, plus named ranges, tables and protected ranges. Reads no cells |
+| `gsheets://{spreadsheet}/{sheet}` | That sheet's **used range** as CSV — the rows and columns holding something, not the sheet's allocated size. The sheet title is percent-encoded |
+
+## Safety
 
 **A write never destroys what it cannot see.** Sheets has no undo through
 the API, so a refusal before the request is built is the only guard there
@@ -309,12 +325,27 @@ MCP client ──stdio──► google-sheets-mcp
                        └── auth      refresh token → access token
 ```
 
-[`docs/architecture.md`](docs/architecture.md) has the request flow, the
-package layout, the phase plan, the decisions a contributor should not
-undo, and an evidence log recording what was checked against the API and
-what the API turned out to do instead. The threat model is in
-[`docs/security.md`](docs/security.md), and the procedures for rotating
-or recovering credentials are in [`docs/runbook.md`](docs/runbook.md).
+
+## Getting help
+
+If something does not work, run `google-sheets-mcp doctor`. It checks the
+credentials, the granted scopes and what Google actually answers, and
+names what is missing — most first-run trouble is an API that was never
+enabled or a consent screen without you on it.
+
+If that does not explain it,
+[open an issue](https://github.com/mmedum/google-sheets-mcp/issues).
+Never paste a spreadsheet id or URL, cell contents, a
+`client_secret.json` or a token into one; describe the shape instead.
+Security problems go through [`SECURITY.md`](SECURITY.md), privately.
+
+## Versioning
+
+Tool names and their output fields are stable within a major version. A
+change needing you to act — a new scope, another login, a different
+command in your client config — is marked **Breaking:** in
+[`CHANGELOG.md`](CHANGELOG.md), which is also what the release notes are
+made from.
 
 ## Development
 
@@ -336,16 +367,27 @@ or the changelog drift from the code.
 Green gates are not the whole of it. Anything touching the write path or
 an API response shape also gets a run against a real account, and the
 transcript is read rather than counted — `docs/development.md` has the
-commands. Contributing conventions are in
-[`CONTRIBUTING.md`](CONTRIBUTING.md).
+commands.
 
-## Versioning
+## Documentation
 
-Tool names and their output fields are stable within a major version. A
-change needing you to act — a new scope, another login, a different
-command in your client config — is marked **Breaking:** in
-[`CHANGELOG.md`](CHANGELOG.md), which is also what the release notes are
-made from.
+- [`docs/architecture.md`](docs/architecture.md) — the request flow, the
+  package layout, the phase plan, the decisions a contributor should not
+  undo, and the evidence log recording what was checked against the API
+  and what the API turned out to do instead.
+- [`docs/configuration.md`](docs/configuration.md) — every setting.
+- [`docs/development.md`](docs/development.md) — building, testing and
+  the runs against a real account.
+- [`docs/security.md`](docs/security.md) — the threat model.
+- [`docs/runbook.md`](docs/runbook.md) — rotating or recovering
+  credentials.
+
+## Contributing
+
+Questions and bugs go in
+[issues](https://github.com/mmedum/google-sheets-mcp/issues); pull
+requests are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers the
+branch and review flow, and `make check` is what has to pass.
 
 ## Security
 
