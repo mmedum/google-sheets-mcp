@@ -7,9 +7,11 @@
 //	google-sheets-mcp status     what this profile has stored
 //	google-sheets-mcp doctor     check the setup end to end
 //
-// Stdout carries JSON-RPC frames and nothing else. Every message a
-// person reads goes to stderr, which is why the subcommands print there
-// too: one rule is easier to keep than two.
+// While serving, stdout carries JSON-RPC frames and nothing else. A
+// subcommand is not serving, so the answer a person asked for goes to
+// stdout — help, status, doctor — and errors and progress go to stderr,
+// which is what makes `status | less` and `--help | grep` work and what
+// the three sibling servers already did.
 package main
 
 import (
@@ -62,6 +64,15 @@ func run(args []string, stdout, stderr io.Writer) error {
 	dumpSchemas := fs.Bool("dump-schemas", false, "print the tool schemas as JSON and exit")
 	clientSecret := fs.String("secret", "", "path to the OAuth client JSON, for login")
 	spreadsheet := fs.String("spreadsheet", "", "a spreadsheet id, URL or title for doctor to read one cell of")
+	// Asking for help is a successful request, so it is answered on
+	// stdout and exits 0, the way the three sibling servers do it. It is
+	// a declared flag rather than a scan of argv: a scan matched a flag's
+	// VALUE too, so `--secret help` printed the usage, and it could not
+	// know the spellings the flag package accepts anyway — `-help` and
+	// `--h` would have reached fs.Parse and been answered on stderr, so
+	// one question had two answers on two streams.
+	help := fs.Bool("help", false, "print this help and exit")
+	fs.BoolVar(help, "h", false, "print this help and exit")
 	yes := fs.Bool("yes", false, "do not ask for confirmation (logout)")
 	localOnly := fs.Bool("local", false, "logout: delete this profile's stored token without revoking it at Google, so other profiles keep working")
 	fs.Usage = func() {
@@ -70,6 +81,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *help || cmd == "help" {
+		_, _ = fmt.Fprint(stdout, usage)
+		fs.SetOutput(stdout)
+		fs.PrintDefaults()
+		return nil
 	}
 	if *showVersion {
 		_, _ = fmt.Fprintln(stdout, version.Info())
@@ -95,9 +112,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	case "logout":
 		return logout(ctx, cfg, *yes, *localOnly, stderr)
 	case "status":
-		return status(ctx, cfg, stderr)
+		return status(ctx, cfg, stdout)
 	case "doctor":
-		return doctor(ctx, cfg, *spreadsheet, stderr)
+		return doctor(ctx, cfg, *spreadsheet, stdout)
 	}
 	_, _ = fmt.Fprint(stderr, usage)
 	return fmt.Errorf("unknown command %q", cmd)
@@ -431,10 +448,10 @@ func plural(n int, one, many string) string {
 }
 
 func status(_ context.Context, cfg config.Config, out io.Writer) error {
-	_, _ = fmt.Fprintf(out, "%s\nprofile: %s\n", version.Info(), cfg.Profile)
+	_, _ = fmt.Fprintf(out, "%s\nprofile:        %s\n", version.Info(), cfg.Profile)
 	dir, err := userconfig.ProfileDir(cfg.Profile)
 	if err == nil {
-		_, _ = fmt.Fprintf(out, "config dir: %s\n", dir)
+		_, _ = fmt.Fprintf(out, "config dir:     %s\n", dir)
 	}
 	uc, err := userconfig.Load(cfg.Profile)
 	switch {
@@ -443,15 +460,18 @@ func status(_ context.Context, cfg config.Config, out io.Writer) error {
 	case err != nil:
 		return err
 	default:
-		// Masked, because the issue form asks for this output and an
-		// account address and an OAuth client id are both on the
-		// never-list. The client id arrives through the path: the Cloud
-		// console names the file after it.
-		_, _ = fmt.Fprintf(out, "account: %s\nclient secret: %s\ntoken store: %s\nscopes: %s\n",
-			orElse(redact.Email(uc.AccountEmail), "(not recorded)"), orNone(redact.Path(uc.ClientSecretPath)),
+		// The domain is kept and the local part is not. The domain is
+		// what a diagnosis uses — a personal account cannot create a
+		// shared drive, so it decides which behaviour to explain —
+		// while the local part is never an input to any command here
+		// and this output is what the issue form asks people to paste.
+		// The OAuth client id stays masked too: it arrives through the
+		// path, because the Cloud console names the file after it.
+		_, _ = fmt.Fprintf(out, "account:        %s\nclient secret:  %s\ntoken store:    %s\nscopes:         %s\n",
+			orElse(redact.Account(uc.AccountEmail), "(not recorded)"), orNone(redact.Path(uc.ClientSecretPath)),
 			orNone(uc.TokenStore), orNone(strings.Join(uc.Scopes, " ")))
 	}
-	_, _ = fmt.Fprintf(out, "read-only: %v\ndestructive tools: %v\n", cfg.ReadOnly, cfg.EnableDestructive)
+	_, _ = fmt.Fprintf(out, "read-only:      %v\ndestructive:    %v\n", cfg.ReadOnly, cfg.EnableDestructive)
 	return nil
 }
 

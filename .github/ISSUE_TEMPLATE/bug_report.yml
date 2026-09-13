@@ -20,9 +20,11 @@ body:
         `doctor`, `status` and a debug log **are** safe to paste, and that
         is enforced rather than hoped: the log carries the method, the
         tool, the outcome, the duration and a truncated spreadsheet id;
-        `doctor` and `status` mask the account address and the OAuth
-        client id; and a test fails the build if anything else reaches a
-        log line.
+        `doctor` and `status` drop the local part of the account address
+        and keep its domain, and mask the OAuth client id; and a test
+        fails the build if anything else reaches a log line. The domain
+        is kept on purpose — it is what says whether a Workspace or a
+        personal account is in play, which changes what the API allows.
   - type: textarea
     id: what
     attributes:
