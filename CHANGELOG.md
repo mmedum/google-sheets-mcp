@@ -41,6 +41,13 @@ and this project follows [semantic versioning](https://semver.org).
   with no status line, and its own comment already said the way out is to
   name the phase rather than a version. `docs/architecture.md` still
   carries one and is still checked.
+- `golang.org/x/oauth2` is at v0.37.0 and `golang.org/x/time` at v0.16.0,
+  what dependabot proposed. oauth2 is not an ordinary dependency here —
+  it is the token refresh — so `doctor` was run against a real account
+  and the refresh token exchange succeeded, which is the path no unit
+  test reaches. It had landed with no changelog entry at all, which
+  mattered less when the release page was a list of commits and matters
+  now that the page is this file.
 - `gates coverage` and `gates mcpb-pack` parse their arguments in
   functions of their own. The dispatch switch was exactly at the
   cyclomatic limit the linter enforces, so adding `release-notes` broke
