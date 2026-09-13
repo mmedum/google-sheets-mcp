@@ -3,7 +3,7 @@
 The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [semantic versioning](https://semver.org).
 
-## [Unreleased]
+## [1.3.2] - 2026-09-13
 
 ### Fixed
 - `--version` reports one spelling whichever way the binary was built.
