@@ -3,7 +3,7 @@
 The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [semantic versioning](https://semver.org).
 
-## [Unreleased]
+## [1.3.1] - 2026-09-13
 
 ### Added
 - The API-fields gate judges every struct, not only the ones whose name a
@@ -40,20 +40,7 @@ and this project follows [semantic versioning](https://semver.org).
   None of the 152 is written. A field Google adds to a type this server
   models now fails the build until somebody says which heading it joins.
 
-### Fixed
-
-- **`Reply` was being read as Drive's, not Sheets'.** Sheets calls a
-  batchUpdate reply a `Response`; this server's struct is called `Reply`,
-  which is the name Drive gives a comment reply. Nothing was broken at
-  runtime — the struct decodes the bytes Sheets sends either way — but no
-  check could tell the two apart, and the first run of the fields gate
-  reported all eighteen of `Reply`'s members as fields Drive does not
-  publish. An `alias` row now says the struct models `sheets Response`
-  and an `unrelated` row says this server has no comment tools, so the
-  gate compares each against the right thing.
-
 ### Changed
-
 - **Compact JSON on every request.** Google indents its JSON unless told
   otherwise, and `prettyPrint` is a system parameter of every Google API
   rather than a Sheets feature, so this client now asks for it once in
@@ -66,6 +53,17 @@ and this project follows [semantic versioning](https://semver.org).
   rewriting the URL safe: every request reaching that point is one this
   client has already decided it may send a credential to. A query that
   names `prettyPrint` itself is left alone.
+
+### Fixed
+- **`Reply` was being read as Drive's, not Sheets'.** Sheets calls a
+  batchUpdate reply a `Response`; this server's struct is called `Reply`,
+  which is the name Drive gives a comment reply. Nothing was broken at
+  runtime — the struct decodes the bytes Sheets sends either way — but no
+  check could tell the two apart, and the first run of the fields gate
+  reported all eighteen of `Reply`'s members as fields Drive does not
+  publish. An `alias` row now says the struct models `sheets Response`
+  and an `unrelated` row says this server has no comment tools, so the
+  gate compares each against the right thing.
 
 ## [1.3.0] - 2026-09-10
 
