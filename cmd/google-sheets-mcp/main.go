@@ -44,6 +44,9 @@ import (
 	"github.com/mmedum/google-sheets-mcp/internal/version"
 )
 
+// below takes them as io.Writer, so nothing else can reach stdout.
+//
+//nolint:forbidigo // the one place the process's streams are named; everything
 func main() {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintf(os.Stderr, "google-sheets-mcp: %v\n", err)
