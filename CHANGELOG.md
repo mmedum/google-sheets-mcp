@@ -5,6 +5,8 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-09-14
+
 ### Added
 - `forbidigo` holds the rule that stdout carries only MCP JSON-RPC
   frames. That rule is in this repository's CLAUDE.md and in the MCP
@@ -1100,7 +1102,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.3...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.4...HEAD
+[1.3.4]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.3...v1.3.4
 [1.3.3]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.2...v1.3.3
 [1.3.2]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.0...v1.3.1
