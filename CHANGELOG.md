@@ -5,6 +5,27 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+- `status --json` prints the same state as one JSON object on stdout, so
+  a script can read whether this server is configured instead of parsing
+  output written for a person. `credentials.configured` is the field to
+  branch on; `schema_version` changes only when a field is removed or its
+  meaning changes.
+
+  The design is an outside contributor's, from the Drive server where it
+  landed first, and the reason is drift this family caused: four servers
+  printing four shapes for the same state, and a label that moves under a
+  release taking a caller's check with it, silently.
+
+  `not configured` is a state the object reports rather than a truncation
+  — every key is present either way, because a caller cannot tell a short
+  object from a failed parse. The account and the client-secret path stay
+  masked, and the masking happens at the collector: the JSON encoder
+  writes straight to the stream and passes through nothing that redacts.
+
+  One collector, two renderers. The text output is byte-identical to what
+  the released binary prints, asserted by diffing them.
+
 ## [1.3.4] - 2026-09-14
 
 ### Added

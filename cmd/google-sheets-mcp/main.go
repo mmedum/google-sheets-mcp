@@ -67,6 +67,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	dumpSchemas := fs.Bool("dump-schemas", false, "print the tool schemas as JSON and exit")
 	clientSecret := fs.String("secret", "", "path to the OAuth client JSON, for login")
 	spreadsheet := fs.String("spreadsheet", "", "a spreadsheet id, URL or title for doctor to read one cell of")
+	statusJSON := fs.Bool("json", false, "with status: print the same state as one JSON object")
 	// Asking for help is a successful request, so it is answered on
 	// stdout and exits 0, the way the three sibling servers do it. It is
 	// a declared flag rather than a scan of argv: a scan matched a flag's
@@ -115,7 +116,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	case "logout":
 		return logout(ctx, cfg, *yes, *localOnly, stderr)
 	case "status":
-		return status(ctx, cfg, stdout)
+		return status(ctx, cfg, stdout, *statusJSON)
 	case "doctor":
 		return doctor(ctx, cfg, *spreadsheet, stdout)
 	}
@@ -450,31 +451,15 @@ func plural(n int, one, many string) string {
 	return many
 }
 
-func status(_ context.Context, cfg config.Config, out io.Writer) error {
-	_, _ = fmt.Fprintf(out, "%s\nprofile:        %s\n", version.Info(), cfg.Profile)
-	dir, err := userconfig.ProfileDir(cfg.Profile)
-	if err == nil {
-		_, _ = fmt.Fprintf(out, "config dir:     %s\n", dir)
-	}
-	uc, err := userconfig.Load(cfg.Profile)
-	switch {
-	case errors.Is(err, userconfig.ErrNotFound):
-		_, _ = fmt.Fprintln(out, "not configured: run `google-sheets-mcp login`")
-	case err != nil:
+func status(_ context.Context, cfg config.Config, out io.Writer, asJSON bool) error {
+	r, err := newStatusReport(cfg)
+	if err != nil {
 		return err
-	default:
-		// The domain is kept and the local part is not. The domain is
-		// what a diagnosis uses — a personal account cannot create a
-		// shared drive, so it decides which behaviour to explain —
-		// while the local part is never an input to any command here
-		// and this output is what the issue form asks people to paste.
-		// The OAuth client id stays masked too: it arrives through the
-		// path, because the Cloud console names the file after it.
-		_, _ = fmt.Fprintf(out, "account:        %s\nclient secret:  %s\ntoken store:    %s\nscopes:         %s\n",
-			orElse(redact.Account(uc.AccountEmail), "(not recorded)"), orNone(redact.Path(uc.ClientSecretPath)),
-			orNone(uc.TokenStore), orNone(strings.Join(uc.Scopes, " ")))
 	}
-	_, _ = fmt.Fprintf(out, "read-only:      %v\ndestructive:    %v\n", cfg.ReadOnly, cfg.EnableDestructive)
+	if asJSON {
+		return r.writeJSON(out)
+	}
+	r.writeText(out)
 	return nil
 }
 

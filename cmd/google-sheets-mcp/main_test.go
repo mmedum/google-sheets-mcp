@@ -160,7 +160,7 @@ func TestStatusKeepsTheDomainAndDropsTheRest(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := status(context.Background(), cfg, &out); err != nil {
+	if err := status(context.Background(), cfg, &out, false); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	got := out.String()
@@ -197,7 +197,7 @@ func TestStatusOnAFreshProfileSaysWhatToRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := status(context.Background(), cfg, &out); err != nil {
+	if err := status(context.Background(), cfg, &out, false); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "login") {
@@ -450,7 +450,7 @@ func TestStatusSeparatesNoAccountFromNoLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := status(context.Background(), cfg, &out); err != nil {
+	if err := status(context.Background(), cfg, &out, false); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "account:        (not recorded)") {
