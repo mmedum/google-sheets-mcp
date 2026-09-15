@@ -150,6 +150,14 @@ credentials, the granted scopes and what Google actually answers, and
 names what is missing — it masks the client id and the account, so its
 output is safe to paste into an issue.
 
+`google-sheets-mcp status --json` prints the same state as one JSON
+object on stdout, for a script that needs to know whether this server is
+configured before starting it. `credentials.configured` is the field to
+branch on, `schema_version` changes only when a field is removed or its
+meaning changes, and the account is masked to its domain exactly as the
+text output masks it. A label in the human output is free to be reworded
+in any release; the object is not.
+
 ### Logging in over SSH
 
 The callback goes to the *remote* host's loopback address and your
