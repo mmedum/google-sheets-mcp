@@ -60,7 +60,7 @@ func pinGate() error {
 	}
 
 	var problems []string
-	files, actions, versions := 0, 0, 0
+	files, actions, versions, installers := 0, 0, 0, 0
 	matched := map[string]int{}
 	for _, e := range entries {
 		ext := filepath.Ext(e.Name())
@@ -94,6 +94,9 @@ func pinGate() error {
 					"or `latest` lets the tool change under a pinned action", e.Name(), key, value))
 			}
 		}
+		i, toolProblems := unpinnedTools(e.Name(), content)
+		installers += i
+		problems = append(problems, toolProblems...)
 		if !pinsShell(content) {
 			problems = append(problems, fmt.Sprintf("%s: no workflow-level `defaults: run: shell: bash`. "+
 				"Every run step goes to a shell, so a job-level block only fixes the jobs that exist today", e.Name()))
@@ -111,6 +114,9 @@ func pinGate() error {
 		return fmt.Errorf("found %d action references; the check is not reading the workflows", actions)
 	case versions < 3:
 		return fmt.Errorf("found %d tool versions; the input names have probably changed", versions)
+	case installers < 3:
+		return fmt.Errorf("found %d tool installers; the classification table has probably drifted "+
+			"from the actions the workflows use", installers)
 	}
 	// A key that matches nothing is a hole in the check wearing the
 	// shape of coverage, so it is a finding rather than a silent zero.
@@ -123,8 +129,8 @@ func pinGate() error {
 	if len(problems) > 0 {
 		return fmt.Errorf("%d problem(s):\n  %s", len(problems), strings.Join(problems, "\n  "))
 	}
-	fmt.Printf("%d workflows: %d actions pinned by SHA, %d tool versions exact, every shell pinned at the workflow level\n",
-		files, actions, versions)
+	fmt.Printf("%d workflows: %d actions pinned by SHA, %d tool versions exact, %d installers name their tool's version, every shell pinned at the workflow level\n",
+		files, actions, versions, installers)
 	return nil
 }
 
@@ -176,4 +182,102 @@ func indent(line string) int {
 		}
 	}
 	return -1 // a blank line has no indentation of its own
+}
+
+// The rule the version keys above could not reach. Each of them judges a
+// version that is *written*; an action that installs a tool and names no
+// version at all is an absence, and the "every key must match something"
+// check cannot see it either — that catches a key naming nothing, not a
+// tool named by no key.
+//
+// The Pipedrive server's release published nothing on exactly this
+// shape: `sigstore/cosign-installer` pinned by SHA with no
+// `cosign-release`, so the job installed whatever cosign was newest, and
+// that cosign had changed its default signing format.
+// `anchore/sbom-action/download-syft` had the same hole one step below
+// it. A SHA pins the wrapper, not the tool.
+var (
+	// installerPins maps an action to the input keys that pin the tool
+	// it installs. Any one of them satisfies the rule.
+	installerPins = map[string][]string{
+		"sigstore/cosign-installer":         {"cosign-release"},
+		"anchore/sbom-action/download-syft": {"syft-version"},
+		"goreleaser/goreleaser-action":      {"version"},
+		"golangci/golangci-lint-action":     {"version"},
+		// A file is a pin by reference, and a better one: go.mod cannot
+		// disagree with itself the way two literals can.
+		"actions/setup-go": {"go-version-file", "go-version"},
+		// This wrapper has never had a version input; it reads the
+		// scanner's version from the environment.
+		"gitleaks/gitleaks-action": {"GITLEAKS_VERSION"},
+	}
+
+	// notInstallers are the actions that install no tool, each with the
+	// reason, so that adding one is a decision rather than an omission.
+	notInstallers = map[string]string{
+		"actions/checkout":                "checks out the repository",
+		"actions/upload-artifact":         "uploads, installs nothing",
+		"actions/download-artifact":       "downloads, installs nothing",
+		"actions/attest-build-provenance": "calls the attestation API",
+		"github/codeql-action/init":       "CodeQL's bundle is GitHub's to manage",
+		"github/codeql-action/analyze":    "CodeQL's bundle is GitHub's to manage",
+	}
+)
+
+// unpinnedTools reports every action whose tool is left to float, and
+// every action nobody has classified.
+func unpinnedTools(name, content string) (installers int, problems []string) {
+	for _, loc := range usesLine.FindAllStringSubmatchIndex(content, -1) {
+		ref := content[loc[2]:loc[3]]
+		if strings.HasPrefix(ref, "./") || strings.HasPrefix(ref, "docker://") {
+			continue
+		}
+		action, _, _ := strings.Cut(ref, "@")
+		keys, isInstaller := installerPins[action]
+		if !isInstaller {
+			if _, known := notInstallers[action]; !known {
+				problems = append(problems, fmt.Sprintf(
+					"%s: %s is not classified in scripts/gates/pins.go — add it to installerPins "+
+						"with the input that pins its tool, or to notInstallers with the reason. "+
+						"A SHA pins the wrapper, not the tool", name, action))
+			}
+			continue
+		}
+		installers++
+		if !namesAnyKey(stepBlock(content, loc[0]), keys) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: %s is pinned by SHA but the tool it installs is not — set %s. "+
+					"A SHA pins the wrapper, not the tool", name, action, strings.Join(keys, " or ")))
+		}
+	}
+	return installers, problems
+}
+
+// stepBlock returns the lines belonging to the step whose `uses:` line
+// starts at start, so that a `with:` or `env:` key is read from the step
+// that owns it rather than from the next one down the file.
+func stepBlock(content string, start int) string {
+	lines := strings.Split(content[start:], "\n")
+	base := indent(lines[0])
+	var out []string
+	for i, ln := range lines {
+		if i > 0 && strings.TrimSpace(ln) != "" {
+			in := indent(ln)
+			if in < base || (in == base && strings.HasPrefix(strings.TrimSpace(ln), "- ")) {
+				break
+			}
+		}
+		out = append(out, ln)
+	}
+	return strings.Join(out, "\n")
+}
+
+// namesAnyKey reports whether the step sets one of the given keys.
+func namesAnyKey(block string, keys []string) bool {
+	for _, k := range keys {
+		if regexp.MustCompile(`(?mi)^\s*` + regexp.QuoteMeta(k) + `:\s*\S`).MatchString(block) {
+			return true
+		}
+	}
+	return false
 }
