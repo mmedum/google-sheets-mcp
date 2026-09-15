@@ -5,6 +5,8 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-09-15
+
 ### Added
 - `status --json` prints the same state as one JSON object on stdout, so
   a script can read whether this server is configured instead of parsing
@@ -1123,7 +1125,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.4...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.4...v1.4.0
 [1.3.4]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.3...v1.3.4
 [1.3.3]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.2...v1.3.3
 [1.3.2]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.1...v1.3.2
