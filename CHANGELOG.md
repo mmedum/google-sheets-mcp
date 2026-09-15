@@ -5,6 +5,28 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+- The `pins` gate classifies every action, and an unknown one fails it.
+  The version keys it already had each judge a version that is *written*,
+  and the "every key must match something" check catches a key naming
+  nothing — neither can see a tool named by no key at all. An action that
+  installs a tool and sets no version input is an absence.
+
+  The Pipedrive server's release published nothing on exactly that shape:
+  `sigstore/cosign-installer` pinned by SHA with no `cosign-release`, so
+  the job installed whatever cosign was newest, and that cosign had
+  changed its default signing format. `anchore/sbom-action/download-syft`
+  had the same hole one step below it. **A SHA pins the wrapper, not the
+  tool.**
+
+  This repository pins both and was never affected, but nothing held
+  that. Every action is now in one of two tables — the installers with
+  the input that pins each one's tool, and the actions that install
+  nothing with the reason — and an action in neither fails the gate,
+  because being unclassified is the state that let the other two through.
+
+  Watched failing on all three shapes before being trusted.
+
 ## [1.4.0] - 2026-09-15
 
 ### Added
