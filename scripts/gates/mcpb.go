@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -222,7 +223,11 @@ func readManifest() (map[string]any, error) {
 // nothing — and the same is true of a platform override, which is the
 // one a sibling's packer checked for two platforms and not the third.
 func checkManifest(manifest map[string]any, contents map[string]string) []string {
-	var problems []string
+	str := func(key string) string {
+		v, _ := manifest[key].(string)
+		return v
+	}
+	problems := manifestShapeProblems(str("$schema"), str("manifest_version"), str("support"))
 	for _, key := range []string{
 		"$schema", "manifest_version", "name", "version", "description", "author", "server",
 	} {
@@ -426,4 +431,41 @@ func addFile(zw *zip.Writer, name, src string, mode os.FileMode) error {
 	}
 	_, err = io.Copy(w, in)
 	return err
+}
+
+// pinnedSchema matches the versioned manifest schema URL and captures the
+// version it declares.
+var pinnedSchema = regexp.MustCompile(`/mcpb-manifest-v(\d+\.\d+)\.schema\.json$`)
+
+// manifestShapeProblems is the check itself, over the three values it
+// reads. Taking strings rather than a struct so the sibling servers can
+// call it from whatever they decode a manifest into — several read it as
+// a map, because the packer rewrites one field and must not drop the
+// rest.
+func manifestShapeProblems(schema, manifestVersion, support string) []string {
+	var problems []string
+
+	switch {
+	case schema == "":
+		problems = append(problems, "the manifest has no $schema, so nothing says which version of the "+
+			"format it is, and manifest_version is a claim with nothing to check it against")
+	case !pinnedSchema.MatchString(schema):
+		problems = append(problems, fmt.Sprintf(
+			"$schema is %q, which is not the pinned mcpb-manifest-v<version>.schema.json form. An "+
+				"unpinned schema validates against whatever upstream serves today, which is the same "+
+				"defect `pins` refuses for an action", schema))
+	default:
+		declared := pinnedSchema.FindStringSubmatch(schema)[1]
+		if declared != manifestVersion {
+			problems = append(problems, fmt.Sprintf(
+				"manifest_version is %q and $schema pins v%s; a document cannot claim one version and "+
+					"validate against another", manifestVersion, declared))
+		}
+	}
+
+	if support == "" {
+		problems = append(problems, "the manifest has no support URL, so a bundle that fails on "+
+			"somebody's desktop does not say where to report it")
+	}
+	return problems
 }

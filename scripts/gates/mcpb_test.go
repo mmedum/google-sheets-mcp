@@ -235,3 +235,38 @@ func TestOnlyMatchRefusesTwo(t *testing.T) {
 		t.Error("a glob matching nothing was accepted")
 	}
 }
+
+// The three ways a manifest can misdeclare its own version, and the
+// missing support URL. This check did not exist while three of the seven
+// servers drifted apart on manifest_version — one carried no $schema,
+// and two declared 0.2 while pointing at the UNPINNED schema path, which
+// serves whatever upstream publishes today.
+func TestTheWaysAManifestMisdeclaresItsVersion(t *testing.T) {
+	const pinned = "https://raw.githubusercontent.com/anthropics/mcpb/main/schemas/mcpb-manifest-v0.3.schema.json"
+
+	if problems := manifestShapeProblems(pinned, "0.3", "https://example.invalid/issues"); len(problems) > 0 {
+		t.Fatalf("a well-formed manifest was refused:\n%s", strings.Join(problems, "\n"))
+	}
+
+	cases := []struct{ name, schema, version, support, want string }{
+		{"no $schema at all", "", "0.3", "x", "no $schema"},
+		{
+			"the unpinned schema path",
+			"https://raw.githubusercontent.com/anthropics/mcpb/main/dist/mcpb-manifest.schema.json",
+			"0.2", "x", "not the pinned",
+		},
+		{"a pinned schema that disagrees", pinned, "0.2", "x", "cannot claim one version"},
+		{"no support URL", pinned, "0.3", "", "no support URL"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			problems := manifestShapeProblems(tc.schema, tc.version, tc.support)
+			if len(problems) == 0 {
+				t.Fatalf("%s was accepted", tc.name)
+			}
+			if !strings.Contains(strings.Join(problems, "\n"), tc.want) {
+				t.Fatalf("wanted %q, got:\n%s", tc.want, strings.Join(problems, "\n"))
+			}
+		})
+	}
+}
