@@ -64,3 +64,21 @@ jobs:
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: "dist/*.tar.gz,dist/*.zip,dist/checksums.txt"
+
+  # The registry entry, last because the registry sends a HEAD to the
+  # bundle's download URL before it accepts one: the release has to exist
+  # first. Its own workflow so it can be re-run without cutting another
+  # release, and so it runs with nothing but the token it needs.
+  #
+  # A prerelease rehearses the pipeline and must NOT rehearse the
+  # registry: an entry cannot be taken back, so v1.0.0-rc1 would leave a
+  # permanent row pointing at a bundle nobody should install.
+  registry:
+    needs: goreleaser
+    if: ${{ !contains(github.ref_name, '-') }}
+    uses: ./.github/workflows/publish-mcp.yml
+    with:
+      tag: ${{ github.ref_name }}
+    permissions:
+      id-token: write
+      contents: read

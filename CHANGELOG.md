@@ -6,6 +6,30 @@ and this project follows [semantic versioning](https://semver.org).
 ## [Unreleased]
 
 ### Added
+
+- This server publishes its entry to the MCP registry. `gates
+  registry-publish` builds it from the release's **own `checksums.txt`**,
+  so the hash describes the bytes that were published rather than a
+  rebuild of them — and that hash is why this is not goreleaser's `mcp`
+  block, whose package entry has nowhere to put one while clients verify
+  the bundle before installing it.
+
+  It is its own workflow, with `id-token: write` and `contents: read` and
+  nothing else, because `mcp-publisher` is a third-party binary handed a
+  token that can publish under this namespace. The binary is verified
+  with cosign against the registry project's own release workflow before
+  it is unpacked — a version pins which artifact to fetch, not that the
+  bytes are the ones upstream built. A prerelease tag skips the step: an
+  entry cannot be taken back.
+
+### Changed
+
+- The bundle manifest's `description` is the short one it is meant to
+  be. It was 148 characters, which is both wrong for MCPB — where the
+  detail belongs in `long_description`, and already did — and over the
+  registry schema's 100-character limit for a required field.
+
+### Added
 - The `pins` gate classifies every action, and an unknown one fails it.
   The version keys it already had each judge a version that is *written*,
   and the "every key must match something" check catches a key naming
