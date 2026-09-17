@@ -242,10 +242,14 @@ func TestOnlyMatchRefusesTwo(t *testing.T) {
 // and two declared 0.2 while pointing at the UNPINNED schema path, which
 // serves whatever upstream publishes today.
 func TestTheWaysAManifestMisdeclaresItsVersion(t *testing.T) {
-	const pinned = "https://raw.githubusercontent.com/anthropics/mcpb/main/schemas/mcpb-manifest-v0.3.schema.json"
+	const pinned = "https://raw.githubusercontent.com/anthropics/mcpb/v2.1.2/schemas/mcpb-manifest-v0.3.schema.json"
+	const bySHA = "https://raw.githubusercontent.com/anthropics/mcpb/" +
+		"0123456789abcdef0123456789abcdef01234567/schemas/mcpb-manifest-v0.3.schema.json"
 
-	if problems := manifestShapeProblems(pinned, "0.3", "https://example.invalid/issues"); len(problems) > 0 {
-		t.Fatalf("a well-formed manifest was refused:\n%s", strings.Join(problems, "\n"))
+	for _, ok := range []string{pinned, bySHA} {
+		if problems := manifestShapeProblems(ok, "0.3", "https://example.invalid/issues"); len(problems) > 0 {
+			t.Fatalf("a well-formed manifest was refused:\n%s", strings.Join(problems, "\n"))
+		}
 	}
 
 	cases := []struct{ name, schema, version, support, want string }{
@@ -257,6 +261,35 @@ func TestTheWaysAManifestMisdeclaresItsVersion(t *testing.T) {
 		},
 		{"a pinned schema that disagrees", pinned, "0.2", "x", "cannot claim one version"},
 		{"no support URL", pinned, "0.3", "", "no support URL"},
+		{
+			// The ref pins the BYTES. A branch can be amended under a
+			// document that claims to conform to it.
+			"a schema served from a branch",
+			"https://raw.githubusercontent.com/anthropics/mcpb/main/schemas/mcpb-manifest-v0.3.schema.json",
+			"0.3", "x", "can be re-pointed",
+		},
+		{
+			// What refusing branch NAMES passes: a tag upstream moves
+			// as it releases. It reads as pinned.
+			"a partial tag",
+			"https://raw.githubusercontent.com/anthropics/mcpb/v2.1/schemas/mcpb-manifest-v0.3.schema.json",
+			"0.3", "x", "can be re-pointed",
+		},
+		{
+			// And what both of those pass: the right filename, served
+			// by somebody else.
+			"the right file from another host",
+			"https://example.invalid/schemas/mcpb-manifest-v0.3.schema.json",
+			"0.3", "x", "not upstream's published path",
+		},
+		{
+			// The case the other claims structurally cannot see: 0.2
+			// beside a 0.2 schema is stale and self-consistent, which
+			// is how the shape spread between repositories.
+			"a self-consistent manifest a version behind",
+			"https://raw.githubusercontent.com/anthropics/mcpb/v2.1.2/schemas/mcpb-manifest-v0.2.schema.json",
+			"0.2", "x", "still a manifest a version behind",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -268,5 +301,41 @@ func TestTheWaysAManifestMisdeclaresItsVersion(t *testing.T) {
 				t.Fatalf("wanted %q, got:\n%s", tc.want, strings.Join(problems, "\n"))
 			}
 		})
+	}
+}
+
+// The floor compares numbers, not text. "0.10" sorts before "0.3" as a
+// string, which is a bug that waits for the tenth minor version.
+func TestTheFloorComparesVersionsNumerically(t *testing.T) {
+	for _, c := range []struct {
+		version, floor string
+		want           bool
+	}{
+		{"0.3", "0.3", false},
+		{"0.2", "0.3", true},
+		{"0.4", "0.3", false},
+		{"0.10", "0.3", false},
+		{"0.9", "1.0", true},
+		{"nonsense", "0.3", true},
+	} {
+		if got := olderThan(c.version, c.floor); got != c.want {
+			t.Errorf("olderThan(%q, %q) = %v, want %v", c.version, c.floor, got, c.want)
+		}
+	}
+}
+
+// The floor is a claim about what somebody checked, so the committed
+// manifest has to meet it. Stated against the constant, not read from
+// the manifest: a test that takes its expected value from the file it
+// checks passes on any file.
+func TestTheCommittedManifestMeetsTheFloor(t *testing.T) {
+	atRepoRoot(t)
+	manifest, err := readManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared, _ := manifest["manifest_version"].(string)
+	if declared != "0.3" {
+		t.Fatalf("the committed manifest declares %q; this repository has checked 0.3", declared)
 	}
 }

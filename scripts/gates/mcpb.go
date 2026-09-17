@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -437,6 +438,67 @@ func addFile(zw *zip.Writer, name, src string, mode os.FileMode) error {
 // version it declares.
 var pinnedSchema = regexp.MustCompile(`/mcpb-manifest-v(\d+\.\d+)\.schema\.json$`)
 
+// upstreamSchema matches the host and path the schema is published at,
+// and captures the ref it is served from.
+//
+// An allow-list over the whole URL rather than a list of refs to refuse,
+// for §9.1's reason one level down: refusing `main`, `master` and `HEAD`
+// passes a branch called anything else, a partial tag like `v2.1` that
+// upstream re-points as it releases, and the right filename served by
+// somebody who is not upstream.
+var upstreamSchema = regexp.MustCompile(
+	`^https://raw\.githubusercontent\.com/anthropics/mcpb/([^/]+)/schemas/mcpb-manifest-v\d+\.\d+\.schema\.json$`)
+
+// immutableRef is a ref that cannot be moved under the document: a full
+// release tag or a commit SHA. A partial tag is a branch with a version
+// number in it.
+var immutableRef = regexp.MustCompile(`^(v[0-9]+\.[0-9]+\.[0-9]+|[0-9a-f]{40})$`)
+
+// minManifestVersion is the format version this repository has checked,
+// and the floor a manifest may not fall below.
+//
+// Every other claim below holds the manifest against ITSELF, and a stale
+// manifest is perfectly self-consistent: 0.2 beside a 0.2 schema passes
+// all of them, which is the shape this check was written to stop
+// spreading. Checked 2026-09-17 against the published schemas: 0.2, 0.3
+// and 0.4 are served and 0.5 is not, and 0.4's only change is a `uv`
+// value in the `server.type` enum, which a `binary` server gains nothing
+// from. Raise this only after checking what a newer format changes AND
+// that a desktop installs a bundle declaring it.
+const minManifestVersion = "0.3"
+
+// olderThan reports whether a major.minor version is below the floor,
+// numerically. As text "0.10" sorts before "0.3", which is a bug that
+// waits for the tenth minor version and then looks like the manifest's
+// fault.
+func olderThan(version, floor string) bool {
+	major, minor, ok := majorMinor(version)
+	floorMajor, floorMinor, floorOK := majorMinor(floor)
+	if !ok || !floorOK {
+		return !ok
+	}
+	if major != floorMajor {
+		return major < floorMajor
+	}
+	return minor < floorMinor
+}
+
+func majorMinor(v string) (int, int, bool) {
+	before, after, found := strings.Cut(v, ".")
+	if !found {
+		return 0, 0, false
+	}
+	major, err := strconv.Atoi(before)
+	if err != nil {
+		return 0, 0, false
+	}
+	minor, err := strconv.Atoi(after)
+	if err != nil {
+		return 0, 0, false
+	}
+	return major, minor, true
+}
+
 // manifestShapeProblems is the check itself, over the three values it
 // reads. Taking strings rather than a struct so the sibling servers can
 // call it from whatever they decode a manifest into — several read it as
@@ -454,6 +516,16 @@ func manifestShapeProblems(schema, manifestVersion, support string) []string {
 			"$schema is %q, which is not the pinned mcpb-manifest-v<version>.schema.json form. An "+
 				"unpinned schema validates against whatever upstream serves today, which is the same "+
 				"defect `pins` refuses for an action", schema))
+	case !upstreamSchema.MatchString(schema):
+		problems = append(problems, fmt.Sprintf(
+			"$schema is %q, which is not upstream's published path. A schema fetched from anywhere else "+
+				"is not the document this format is defined by", schema))
+	case !immutableRef.MatchString(upstreamSchema.FindStringSubmatch(schema)[1]):
+		problems = append(problems, fmt.Sprintf(
+			"$schema is served from %q, which can be re-pointed — a branch, or a partial tag. The path "+
+				"pins the format and the ref pins the bytes, so an amendment upstream changes what this "+
+				"document validates against. Name a full tag or a commit SHA",
+			upstreamSchema.FindStringSubmatch(schema)[1]))
 	default:
 		declared := pinnedSchema.FindStringSubmatch(schema)[1]
 		if declared != manifestVersion {
@@ -461,6 +533,12 @@ func manifestShapeProblems(schema, manifestVersion, support string) []string {
 				"manifest_version is %q and $schema pins v%s; a document cannot claim one version and "+
 					"validate against another", manifestVersion, declared))
 		}
+	}
+
+	if olderThan(manifestVersion, minManifestVersion) {
+		problems = append(problems, fmt.Sprintf(
+			"manifest_version is %q and this repository has checked %s; a manifest agreeing with its own "+
+				"$schema is still a manifest a version behind", manifestVersion, minManifestVersion))
 	}
 
 	if support == "" {
