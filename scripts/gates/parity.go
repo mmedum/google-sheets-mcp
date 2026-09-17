@@ -76,6 +76,9 @@ var precommitOnly = map[string]string{
 	"release-notes": "runs at release time, printing the CHANGELOG section the workflow hands goreleaser " +
 		"as --release-notes; it asserts nothing about the code, and running it in `make check` would " +
 		"only check that today's HEAD has a section for a tag that does not exist yet",
+	"registry-publish": "runs after a release, printing the entry the publish workflow hands " +
+		"mcp-publisher; the hash it carries comes from the PUBLISHED checksums.txt, so there is nothing " +
+		"for it to read on a commit and nothing for it to assert about the code",
 }
 
 func parityGate() error {

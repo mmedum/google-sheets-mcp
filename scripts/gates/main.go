@@ -82,6 +82,16 @@ func main() {
 		// statement, because this switch is already at the cyclomatic
 		// limit the linter enforces.
 		releaseNotesToStdout(os.Args[2:])
+	case "registry-publish":
+		// Not a gate: it runs after a release, printing the entry the
+		// publish workflow hands mcp-publisher.
+		if len(os.Args) < 4 {
+			fail("usage: gates registry-publish VERSION CHECKSUMS")
+		}
+		if err := registryPublish(os.Stdout, os.Args[2], os.Args[3]); err != nil {
+			fmt.Fprintf(os.Stderr, "registry-publish: %v\n", err)
+			os.Exit(1)
+		}
 	case "parity":
 		check(parityGate(), "make check and CI agree")
 	case "precommit":
