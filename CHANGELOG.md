@@ -24,6 +24,23 @@ and this project follows [semantic versioning](https://semver.org).
 
 ### Changed
 
+- The bundle manifest's `$schema` names a release tag rather than `main`,
+  and `make mcpb` holds the whole URL rather than refusing three branch
+  names. The version in the path pins the FORMAT; the ref pins the BYTES,
+  so upstream amending that file in place changes what this document
+  validates against with nothing looking different. The check is an
+  allow-list — upstream's published path at a full release tag or a
+  commit SHA — because refusing `main` passes a branch called anything
+  else, a partial tag like `v2.1` that upstream re-points as it releases,
+  and the right filename served by somebody who is not upstream.
+- `make mcpb` also puts a floor under `manifest_version`. Every other
+  claim it makes holds the manifest against ITSELF, and a stale manifest
+  is perfectly self-consistent: 0.2 beside a 0.2 schema passed all of
+  them, which is how that shape spread between repositories in the first
+  place. Checked against the published schemas rather than against what
+  other repositories do — 0.2, 0.3 and 0.4 are served and 0.5 is not, and
+  0.4's only change is a `uv` value in the `server.type` enum, which a
+  `binary` server gains nothing from.
 - The bundle manifest's `description` is the short one it is meant to
   be. It was 148 characters, which is both wrong for MCPB — where the
   detail belongs in `long_description`, and already did — and over the
