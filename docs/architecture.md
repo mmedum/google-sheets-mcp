@@ -1,9 +1,12 @@
 # Architecture — google-sheets-mcp
 
-**Status: v1.4.0 (2026-09-15).** Reading,
+**Status: v1.5.0 (2026-09-18).** Reading,
 writing, formatting, the objects attached to a range, `gsheets://`
 resources, durable anchors and now charts, pivot tables and Connected
-Sheets all work, and `make check` is green. Spikes L, M, N and P ran
+Sheets all work, and `make check` is green. v1.5.0 adds no tool: it is
+the MCP registry entry, and a bundle manifest whose own declaration the
+gate holds — `$schema` at a release tag rather than a branch, with a
+floor under `manifest_version`. Spikes L, M, N and P ran
 against a real account and §18 carries what they found.
 
 **§17a.31 is closed, and closing it found a destructive hole in a
