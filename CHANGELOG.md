@@ -7,6 +7,25 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [1.5.0] - 2026-09-18
 
+### Fixed
+
+- The registry entry is not built from an unverified checksum file.
+  `publish-mcp.yml` downloaded the published `checksums.txt` and fed it
+  straight to the gate that writes the entry — and the entry's
+  `fileSha256` comes out of that file, which is the number a
+  registry-driven client checks its download against. The only
+  `cosign verify-blob` in the job ran against the `mcp-publisher`
+  tarball.
+
+  Somebody able to replace a release asset could edit `checksums.txt`
+  beside it. The signature and the attestation would both break, which is
+  the detection this pipeline exists for, and neither was consulted on
+  that path — while the dispatch route exists to re-publish for a tag
+  that shipped weeks ago, and a registry entry cannot be withdrawn. The
+  signature is verified before anything reads the file, with the
+  certificate identity pinned to this repository's `release.yml` at the
+  exact tag.
+
 ### Added
 
 - This server publishes its entry to the MCP registry. `gates
