@@ -1,6 +1,6 @@
 # Architecture — google-sheets-mcp
 
-**Status: v1.5.0 (2026-09-18).** Reading,
+**Status: v1.5.1 (2026-09-18).** Reading,
 writing, formatting, the objects attached to a range, `gsheets://`
 resources, durable anchors and now charts, pivot tables and Connected
 Sheets all work, and `make check` is green. v1.5.0 adds no tool: it is

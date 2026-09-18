@@ -5,6 +5,17 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-09-18
+
+### Fixed
+
+- The provenance attestation covers the `.mcpb` bundle. It named the
+  archives and `checksums.txt` and not the bundle, so
+  `gh attestation verify` on the bundle answered 404 while every archive
+  passed — the artifact most people install was the one without an
+  attestation of its own. It was covered only through its row in
+  `checksums.txt`, which is a claim about the checksum file.
+
 ## [1.5.0] - 2026-09-18
 
 ### Fixed
@@ -1210,6 +1221,7 @@ The first release: the skeleton, the gates, and reading.
   maintainer's to push.
 
 [Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v1.5.0...HEAD
+[1.5.1]: https://github.com/mmedum/google-sheets-mcp/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.4...v1.4.0
 [1.3.4]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.3...v1.3.4
