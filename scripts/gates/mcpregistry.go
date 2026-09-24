@@ -198,6 +198,15 @@ func registryPublish(out io.Writer, version, checksums string) error {
 	if err != nil {
 		return err
 	}
+	// Against the schema the entry cites, before anybody publishes it.
+	// The rules above hold the fields this repository fills in; this
+	// holds the document the registry reads. A rejected publish costs a
+	// dispatch against a tag that already shipped, and an entry that is
+	// accepted and wrong cannot be withdrawn — so the refusal belongs on
+	// the path that builds it.
+	if err := validateDocument(registrySchemaFile, "the registry entry", encoded); err != nil {
+		return err
+	}
 	_, err = fmt.Fprintln(out, string(encoded))
 	return err
 }
