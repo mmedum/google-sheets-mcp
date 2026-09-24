@@ -5,6 +5,32 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- `make mcpb` and the registry gate validate their documents against the
+  schemas those documents cite, rather than only checking that the
+  `$schema` line is present, pinned and agreeing with the version beside
+  it. Those are claims about the REFERENCE; a document can cite exactly
+  the right file and not satisfy it. The registry entry is the expensive
+  direction — a rejected publish costs a dispatch against a tag that
+  already shipped, and an entry that is accepted and wrong cannot be
+  withdrawn — so the refusal sits on the path that builds it, and the
+  manifest check sits where the packer runs it too.
+
+  The schemas are vendored under `scripts/gates/schemas`, embedded so the
+  gate needs neither the network nor a particular working directory, and
+  each is pinned by a recorded SHA-256: without that, "make the document
+  pass" and "edit the schema" are the same amount of work.
+
+  This schema constrains less than it appears to — `version` has no
+  pattern and a package's `registryType` no enum — so it is a floor, and
+  the registry gate's own rules hold what it leaves open.
+- `make schema-refetch`, which is what a vendored copy cannot do for
+  itself: a digest proves the bytes are the ones somebody reviewed, not
+  that upstream still serves them. It fetches each source, reports a
+  difference and refuses, and never rewrites anything, because a refresh
+  is a decision somebody makes after reading what changed.
+
 ## [1.5.1] - 2026-09-18
 
 ### Fixed

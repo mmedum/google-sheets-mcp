@@ -33,7 +33,7 @@ func main() {
 	if len(os.Args) < 2 {
 		fail("usage: gates coverage PROFILE MIN | classes | leaks [history] | transcript | " +
 			"live-cover BIN | pins | smoke BIN | staleness BIN | schema-diff BIN | mcpb | " +
-			"mcpb-pack VERSION [DIST] | api-coverage | api-fields | api-diff | parity | " +
+			"mcpb-pack VERSION [DIST] | api-coverage | api-fields | api-diff | schema-refetch | parity | " +
 			"release-notes VERSION [CHANGELOG] | precommit")
 	}
 	root, err := repoRoot()
@@ -42,6 +42,15 @@ func main() {
 	}
 	if err := os.Chdir(root); err != nil {
 		fail("%v", err)
+	}
+
+	// The commands about somebody else's contract are dispatched first
+	// and together: what the API publishes, and what the schemas this
+	// repository's documents cite say. Two of them reach the network and
+	// are manual by nature, because what CI holds is the snapshot or the
+	// vendored copy rather than the fetch.
+	if contractCommand(os.Args[1]) {
+		return
 	}
 
 	switch os.Args[1] {
@@ -68,14 +77,6 @@ func main() {
 		check(mcpbGate(os.Stdout), "bundle manifest")
 	case "mcpb-pack":
 		mcpbPackCmd(os.Args[2:])
-	case "api-coverage":
-		check(apiCoverageGate(), "API coverage")
-	case "api-fields":
-		check(apiFieldsGate(os.Stdout), "API fields")
-	case "api-diff":
-		// Manual: it reaches the network. What CI holds is the snapshot
-		// this writes, not the fetch itself.
-		check(apiDiff(os.Stdout), "API diff")
 	case "release-notes":
 		// Not a gate: it runs at release time, printing the CHANGELOG
 		// section the workflow hands goreleaser as --release-notes. One
@@ -99,6 +100,30 @@ func main() {
 	default:
 		fail("unknown gate %q", os.Args[1])
 	}
+}
+
+// contractCommand runs the gates that hold this repository against
+// somebody else's published contract, and reports whether it handled the
+// name.
+func contractCommand(name string) bool {
+	switch name {
+	case "api-coverage":
+		check(apiCoverageGate(), "API coverage")
+	case "api-fields":
+		check(apiFieldsGate(os.Stdout), "API fields")
+	case "api-diff":
+		// Manual: it reaches the network. What CI holds is the snapshot
+		// this writes, not the fetch itself.
+		check(apiDiff(os.Stdout), "API diff")
+	case "schema-refetch":
+		// Manual for the same reason: a vendored schema's digest says
+		// the bytes are the ones somebody reviewed, never that upstream
+		// still serves them, and only a fetch can tell the difference.
+		check(schemaRefetch(os.Stdout), "vendored schemas")
+	default:
+		return false
+	}
+	return true
 }
 
 func binArg() string {

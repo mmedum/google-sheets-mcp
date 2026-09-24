@@ -229,6 +229,18 @@ func checkManifest(manifest map[string]any, contents map[string]string) []string
 		return v
 	}
 	problems := manifestShapeProblems(str("$schema"), str("manifest_version"), str("support"))
+
+	// And against the schema the manifest cites, which the rules above
+	// only name. They hold the DECLARATION — present, pinned, agreeing
+	// with manifest_version, not below the floor — and a document can
+	// satisfy every one of those without satisfying the schema itself.
+	// Here rather than in the gate alone, because the packer runs this
+	// too: a bundle cannot be packed past a rule the gate enforces.
+	if raw, err := json.Marshal(manifest); err != nil {
+		problems = append(problems, "the manifest could not be re-encoded to check against its schema: "+err.Error())
+	} else if err := validateDocument(mcpbSchemaFile, "the manifest", raw); err != nil {
+		problems = append(problems, err.Error())
+	}
 	for _, key := range []string{
 		"$schema", "manifest_version", "name", "version", "description", "author", "server",
 	} {

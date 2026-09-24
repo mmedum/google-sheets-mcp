@@ -113,6 +113,13 @@ api-fields: gates ## Every published field is modelled on purpose or written off
 api-diff: gates ## Refetch the discovery documents and rewrite the API snapshot (network; manual)
 	@$(GATES) api-diff
 
+# The half a vendored schema cannot do for itself: a digest says these
+# bytes are the ones somebody reviewed, not that upstream still serves
+# them. Manual, and read at release time.
+.PHONY: schema-refetch
+schema-refetch: gates ## Check the vendored schemas against what their sources serve (network; manual)
+	@$(GATES) schema-refetch
+
 .PHONY: live-cover
 live-cover: build gates ## The live driver must exercise every tool option
 	@$(GATES) live-cover $(BIN)
