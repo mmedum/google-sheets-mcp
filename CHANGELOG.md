@@ -5,6 +5,8 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-26
+
 ### Added
 
 - `make mcpb` and the registry gate validate their documents against the
@@ -1270,7 +1272,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v1.5.1...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.5.1...v2.0.0
 [1.5.1]: https://github.com/mmedum/google-sheets-mcp/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.4...v1.4.0

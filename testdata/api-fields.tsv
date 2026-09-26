@@ -256,3 +256,17 @@ sheets	TableColumnProperties	dataValidationRule	out	no tool sets a validation ru
 -	NewSheetProperties	*	local	SheetProperties without sheetId, so a create cannot ask Google for id 0 by accident
 -	NewChart	*	local	EmbeddedChart without chartId, for addChart
 -	NewSlicer	*	local	Slicer without slicerId, for addSlicer
+#
+# Comments, published by Sheets in 2026-09.
+sheets	BatchUpdateSpreadsheetRequest	commentsViewMode	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	BatchUpdateSpreadsheetResponse	commentUpdateState	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	Request	addCommentReply	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	Request	deleteComment	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	Request	deleteCommentReply	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	Request	insertComment	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	Request	updateCommentPost	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	Response	addCommentReply	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	Response	insertComment	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	Sheet	commentAnchors	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	Spreadsheet	comments	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	Spreadsheet	commentsViewMode	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
