@@ -59,7 +59,7 @@ type Borders struct {
 // Horizontal and vertical alignment, and the wrap strategies.
 const (
 	AlignLeft   = "LEFT"
-	AlignCentre = "CENTER"
+	AlignCenter = "CENTER"
 	AlignRight  = "RIGHT"
 
 	AlignTop    = "TOP"
@@ -98,16 +98,16 @@ type BooleanRule struct {
 	Format    *CellFormat       `json:"format,omitempty"`
 }
 
-// GradientRule colours by value between interpolation points.
+// GradientRule colors by value between interpolation points.
 //
 // Empty on purpose. Nothing here builds a gradient and nothing reads its
-// points; a formatting read only needs to know that the colour on a cell
+// points; a formatting read only needs to know that the color on a cell
 // came from a rule rather than from the cell, which is this field being
 // present. The points arrive with the code that reads them, as every
 // other field in this package does.
 type GradientRule struct{}
 
-// BandingProperties are the colours of an alternating band.
+// BandingProperties are the colors of an alternating band.
 type BandingProperties struct {
 	HeaderColorStyle     *ColorStyle `json:"headerColorStyle,omitempty"`
 	FirstBandColorStyle  *ColorStyle `json:"firstBandColorStyle,omitempty"`
@@ -228,7 +228,7 @@ type DeleteTableRequest struct {
 	TableID string `json:"tableId,omitempty"`
 }
 
-// AddBandingRequest adds alternating colours.
+// AddBandingRequest adds alternating colors.
 type AddBandingRequest struct {
 	BandedRange *BandedRange `json:"bandedRange,omitempty"`
 }

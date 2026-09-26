@@ -40,15 +40,15 @@ func (d *driver) formatSteps() []step {
 	return []step{
 		{
 			name: "everything in one call is one batch",
-			why:  "a header row that is bold, centred and shaded is one call rather than eight",
+			why:  "a header row that is bold, centered and shaded is one call rather than eight",
 			tool: "format_cells",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:C1",
 				"number_format": "text", "bold": true, "italic": true, "underline": true,
 				"strikethrough": false, "font_size": 11, "font_family": "Roboto",
-				"text_colour": "#b7472a", "background": "#d9e2f3",
+				"text_color": "#b7472a", "background": "#d9e2f3",
 				"borders": "1pt solid #cccccc", "border_sides": "outer",
-				"horizontal": "centre", "vertical": "middle", "wrap": "clip",
+				"horizontal": "center", "vertical": "middle", "wrap": "clip",
 			},
 			check: func(text string, s map[string]any) error {
 				applied, _ := s["applied"].([]any)
@@ -355,21 +355,21 @@ func (d *driver) rangeSteps() []step {
 			},
 		},
 		{
-			name: "banding, coloured from one colour",
-			why:  "nobody has four colours in their hand, and the interface asks for one too",
+			name: "banding, colored from one color",
+			why:  "nobody has four colors in their hand, and the interface asks for one too",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
-				"kind": "banding", "action": "add", "colour": "#d9e2f3", "header": true,
+				"kind": "banding", "action": "add", "color": "#d9e2f3", "header": true,
 			},
 		},
 		{
-			name: "the banding is recoloured, then removed",
-			why:  "an update that could not change the colour would leave delete-and-add as the only way",
+			name: "the banding is recolored, then removed",
+			why:  "an update that could not change the color would leave delete-and-add as the only way",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
-				"kind": "banding", "action": "update", "colour": "#f3e2d9",
+				"kind": "banding", "action": "update", "color": "#f3e2d9",
 			},
 		},
 		{
@@ -389,7 +389,7 @@ func (d *driver) rangeSteps() []step {
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
 				"kind": "conditional_format", "action": "add", "index": 0,
 				"condition": "text_contains", "values": []any{"Quorbin"},
-				"colour": "#d9ead3", "text_colour": "#b7472a", "bold": true,
+				"color": "#d9ead3", "text_color": "#b7472a", "bold": true,
 			},
 			check: func(text string, _ map[string]any) error {
 				if !strings.Contains(text, "text contains Quorbin") {
@@ -405,7 +405,7 @@ func (d *driver) rangeSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
 				"kind": "conditional_format", "action": "update", "index": 0,
-				"condition": "not_blank", "colour": "#d9ead3",
+				"condition": "not_blank", "color": "#d9ead3",
 			},
 		},
 		{
@@ -458,7 +458,7 @@ func (d *driver) rangeSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
 				"kind": "conditional_format", "action": "add", "index": 0,
-				"condition": "not_blank", "colour": "#d9ead3",
+				"condition": "not_blank", "color": "#d9ead3",
 			},
 		},
 		{

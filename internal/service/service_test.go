@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmedum/google-sheets-mcp/internal/config"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 func newService(t *testing.T, s *sheetstest.Server) *service.Service {
@@ -92,7 +92,7 @@ func TestParseReference(t *testing.T) {
 	} {
 		got, ok := service.ParseReference(tc.in)
 		if ok != tc.ok {
-			t.Errorf("ParseReference(%q) recognised = %v, want %v", tc.in, ok, tc.ok)
+			t.Errorf("ParseReference(%q) recognized = %v, want %v", tc.in, ok, tc.ok)
 			continue
 		}
 		if ok && (got.ID != tc.id || got.Gid != tc.gid || got.HasGid != tc.hasGid) {

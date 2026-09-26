@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 func TestSearchByName(t *testing.T) {
@@ -159,10 +159,10 @@ func TestAccountIsStoredWholeAndPrintedMasked(t *testing.T) {
 	if shown == stored {
 		t.Errorf("Describe() = %q, the same as what is stored; doctor's output is meant to be pasteable", shown)
 	}
-	// Masked rather than replaced: somebody has to recognise their own
+	// Masked rather than replaced: somebody has to recognize their own
 	// account in it.
 	if !strings.Contains(shown, "@") {
-		t.Errorf("Describe() = %q, which nobody could recognise", shown)
+		t.Errorf("Describe() = %q, which nobody could recognize", shown)
 	}
 	local, domain, _ := strings.Cut(stored, "@")
 	if strings.Contains(shown, local) || strings.Contains(shown, domain) {

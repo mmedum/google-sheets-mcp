@@ -4,10 +4,10 @@ import (
 	"context"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
 )
 
 // Insert options as the caller spells them.
@@ -30,14 +30,14 @@ type AppendRequest struct {
 	TSV    string
 	Input  string
 	Insert string
-	// The acknowledgements, named as the tool names them.
+	// The acknowledgments, named as the tool names them.
 	Overwrite             bool
 	AllowExternalFormulas bool
 	DryRun                bool
 }
 
 // Ack is what the guard is told. An append has no formula
-// acknowledgement: it never writes over a cell it can read first.
+// acknowledgment: it never writes over a cell it can read first.
 func (r AppendRequest) Ack() plan.Ack {
 	return plan.Ack{Overwrite: r.Overwrite, AllowExternalFormulas: r.AllowExternalFormulas}
 }

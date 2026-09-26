@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
 )
 
 // The kinds of thing that attach to a range.
@@ -50,11 +50,11 @@ type RangeRequest struct {
 	Values    []string
 	Strict    *bool
 	Message   string
-	// Colour is a banding's base colour or a rule's background;
-	// TextColour and Bold are the rest of a rule's format.
-	Colour     string
-	TextColour string
-	Bold       *bool
+	// Color is a banding's base color or a rule's background;
+	// TextColor and Bold are the rest of a rule's format.
+	Color     string
+	TextColor string
+	Bold      *bool
 	// Header gives a banding a heading row in a darker shade.
 	Header bool
 	// Index names a conditional format rule, which is the only one of
@@ -328,23 +328,23 @@ func bandingOp(req RangeRequest, action string, card *gsheets.Spreadsheet,
 	props *gsheets.SheetProperties, rect a1.Rect,
 ) (*gsheets.Request, []render.Applied, error) {
 	sheet := sheetOf(card, props.SheetID)
-	colours := func() (*gsheets.BandingProperties, error) {
-		colour, err := plan.ParseColour(req.Colour)
+	colors := func() (*gsheets.BandingProperties, error) {
+		color, err := plan.ParseColor(req.Color)
 		if err != nil {
 			return nil, Errorf("invalid", "%s", err)
 		}
-		if colour == nil {
-			return nil, Errorf("invalid", "banding needs colour, a hex colour such as #d9e2f3")
+		if color == nil {
+			return nil, Errorf("invalid", "banding needs color, a hex color such as #d9e2f3")
 		}
-		return plan.Banding(colour, req.Header), nil
+		return plan.Banding(color, req.Header), nil
 	}
 	if action == RangeAdd {
-		shades, err := colours()
+		shades, err := colors()
 		if err != nil {
 			return nil, nil, err
 		}
 		return plan.BandingAdd(props.SheetID, rect, shades),
-			[]render.Applied{{Kind: "banding added to", Value: a1.FormatRect(rect) + " in " + req.Colour}}, nil
+			[]render.Applied{{Kind: "banding added to", Value: a1.FormatRect(rect) + " in " + req.Color}}, nil
 	}
 	found, err := matchOne("banding", rect, rectsOf(sheet.BandedRanges, func(b *gsheets.BandedRange) *gsheets.GridRange { return b.Range }, props))
 	if err != nil {
@@ -355,7 +355,7 @@ func bandingOp(req RangeRequest, action string, card *gsheets.Spreadsheet,
 		return plan.BandingDelete(existing.BandedRangeID),
 			[]render.Applied{{Kind: "banding removed from", Value: a1.FormatRect(rect)}}, nil
 	}
-	shades, err := colours()
+	shades, err := colors()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -363,7 +363,7 @@ func bandingOp(req RangeRequest, action string, card *gsheets.Spreadsheet,
 	// onto a column banding leaves it carrying both sets, which the API
 	// rejects.
 	return plan.BandingUpdate(existing.BandedRangeID, columnBanding(existing), shades),
-		[]render.Applied{{Kind: "banding recoloured on", Value: a1.FormatRect(rect)}}, nil
+		[]render.Applied{{Kind: "banding recolored on", Value: a1.FormatRect(rect)}}, nil
 }
 
 // ruleOp acts on a conditional format rule, which the API identifies by
@@ -415,27 +415,27 @@ func (s *Service) ruleOp(ctx context.Context, req RangeRequest, action string, r
 // ruleFormat is what a rule applies when its condition holds.
 func ruleFormat(req RangeRequest) (*gsheets.CellFormat, error) {
 	format := &gsheets.CellFormat{}
-	if req.Colour != "" {
-		colour, err := plan.ParseColour(req.Colour)
+	if req.Color != "" {
+		color, err := plan.ParseColor(req.Color)
 		if err != nil {
 			return nil, Errorf("invalid", "%s", err)
 		}
-		format.BackgroundColorStyle = colour
+		format.BackgroundColorStyle = color
 	}
-	if req.TextColour != "" || (req.Bold != nil && *req.Bold) {
+	if req.TextColor != "" || (req.Bold != nil && *req.Bold) {
 		text := &gsheets.TextFormat{Bold: req.Bold != nil && *req.Bold}
-		if req.TextColour != "" {
-			colour, err := plan.ParseColour(req.TextColour)
+		if req.TextColor != "" {
+			color, err := plan.ParseColor(req.TextColor)
 			if err != nil {
 				return nil, Errorf("invalid", "%s", err)
 			}
-			text.ForegroundColorStyle = colour
+			text.ForegroundColorStyle = color
 		}
 		format.TextFormat = text
 	}
 	if format.BackgroundColorStyle == nil && format.TextFormat == nil {
 		return nil, Errorf("invalid",
-			"a conditional format rule needs a format to apply: colour, text_colour, bold, or several")
+			"a conditional format rule needs a format to apply: color, text_color, bold, or several")
 	}
 	return format, nil
 }

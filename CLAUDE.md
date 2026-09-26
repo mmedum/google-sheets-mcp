@@ -15,7 +15,7 @@ belong to a server built on the Drive API.
 
 ## Hard rules
 
-1. **Nothing internal, ever.** No organisation names, spreadsheet ids or
+1. **Nothing internal, ever.** No organization names, spreadsheet ids or
    URLs, account emails, Cloud project ids, OAuth client ids or secrets;
    no cell values, formulas, notes, sheet or spreadsheet titles, named
    ranges or metadata from a real spreadsheet; and no reference to any
@@ -103,11 +103,13 @@ belong to a server built on the Drive API.
 
 `make check`, which is what CI runs: gofmt, `go vet` including the tagged
 tests, golangci-lint, race tests with an 80% floor per package,
-govulncheck, the licence allow-list, the leak scan, the workflow pin
+govulncheck, the license allow-list, the leak scan, the workflow pin
 check, a stdio smoke test, the schema diff, and the staleness gate over
-README, `docs/` and CHANGELOG. Plus tests for new behaviour, `/simplify`
+README, `docs/` and CHANGELOG. Plus tests for new behavior, `/simplify`
 and `/code-review high` with findings resolved or written down, and a
-look at the schema diff for anything breaking.
+look at the schema diff for anything breaking. The diff passes a break
+only when go.mod's major version (`/vN`) is above the last tag's.
+The release workflow refuses a tag whose major is not go.mod's.
 
 Green gates are not done. Anything touching the write path or an API
 response shape gets a live run before it counts, and **the transcript is

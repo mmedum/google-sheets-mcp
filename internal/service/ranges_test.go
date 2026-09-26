@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 func rangeReq(kind, action, rangeA1 string) service.RangeRequest {
@@ -181,7 +181,7 @@ func TestTableAndBandingRoundTrip(t *testing.T) {
 	}
 
 	band := rangeReq(service.RangeBanding, service.RangeAdd, "A1:B3")
-	band.Colour = "#d9e2f3"
+	band.Color = "#d9e2f3"
 	band.Header = true
 	if _, err := svc.ManageRange(ctx, band); err != nil {
 		t.Fatalf("adding a banding: %v", err)
@@ -192,10 +192,10 @@ func TestTableAndBandingRoundTrip(t *testing.T) {
 		t.Error("a banding asked for a header and got none")
 	}
 
-	recolour := rangeReq(service.RangeBanding, service.RangeUpdate, "A1:B3")
-	recolour.Colour = "#f3d9e2"
-	if _, err := svc.ManageRange(ctx, recolour); err != nil {
-		t.Fatalf("recolouring a banding: %v", err)
+	recolor := rangeReq(service.RangeBanding, service.RangeUpdate, "A1:B3")
+	recolor.Color = "#f3d9e2"
+	if _, err := svc.ManageRange(ctx, recolor); err != nil {
+		t.Fatalf("recoloring a banding: %v", err)
 	}
 	if _, err := svc.ManageRange(ctx, rangeReq(service.RangeBanding, service.RangeDelete, "A1:B3")); err != nil {
 		t.Fatalf("deleting a banding: %v", err)
@@ -228,7 +228,7 @@ func TestARangeThatMatchesNothingIsRefusedWithWhatIsNearby(t *testing.T) {
 		t.Errorf("the refusal does not say what is nearby: %q", err)
 	}
 	// And one that matches nothing at all says so without inventing a
-	// neighbour.
+	// neighbor.
 	_, err = svc.ManageRange(ctx, rangeReq(service.RangeProtected, service.RangeDelete, "E5:F6"))
 	if err == nil || strings.Contains(err.Error(), "nearby") {
 		t.Errorf("a range far from any protection gave %v", err)
@@ -263,7 +263,7 @@ func TestConditionalFormatRules(t *testing.T) {
 	add := rangeReq(service.RangeRule, service.RangeAdd, "A1:B3")
 	add.Condition = "text_contains"
 	add.Values = []string{"Quorbin"}
-	add.Colour = "#d9ead3"
+	add.Color = "#d9ead3"
 	add.Bold = boolPtr(true)
 	res, err := svc.ManageRange(ctx, add)
 	if err != nil {
@@ -275,7 +275,7 @@ func TestConditionalFormatRules(t *testing.T) {
 
 	update := rangeReq(service.RangeRule, service.RangeUpdate, "A1:B3")
 	update.Condition = "not_blank"
-	update.TextColour = "#b7472a"
+	update.TextColor = "#b7472a"
 	if _, err := svc.ManageRange(ctx, update); err != nil {
 		t.Fatalf("updating rule 0: %v", err)
 	}
@@ -307,10 +307,10 @@ func TestManageRangeRefusesWhatItCannotBuild(t *testing.T) {
 		"an unknown action":          func(r *service.RangeRequest) { r.Action = "rename" },
 		"a named range with no name": func(r *service.RangeRequest) { r.Kind = service.RangeNamed; r.Name = "" },
 		"a table with no name":       func(r *service.RangeRequest) { r.Kind = service.RangeTable; r.Name = "" },
-		"a banding with no colour":   func(r *service.RangeRequest) { r.Kind = service.RangeBanding },
-		"a banding with a bad colour": func(r *service.RangeRequest) {
+		"a banding with no color":    func(r *service.RangeRequest) { r.Kind = service.RangeBanding },
+		"a banding with a bad color": func(r *service.RangeRequest) {
 			r.Kind = service.RangeBanding
-			r.Colour = "puce"
+			r.Color = "puce"
 		},
 		"validation with no condition": func(r *service.RangeRequest) { r.Kind = service.RangeValidation },
 		"a rule with no format": func(r *service.RangeRequest) {
@@ -433,7 +433,7 @@ func TestDeletingATableThatTakesRulesIsRefused(t *testing.T) {
 	}
 	rule := rangeReq(service.RangeRule, service.RangeAdd, "A1:B3")
 	rule.Condition = "not_blank"
-	rule.Colour = "#d9ead3"
+	rule.Color = "#d9ead3"
 	if _, err := svc.ManageRange(ctx, rule); err != nil {
 		t.Fatal(err)
 	}

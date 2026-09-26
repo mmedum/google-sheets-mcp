@@ -8,14 +8,14 @@ import (
 	"strings"
 	"sync"
 
-	redactpkg "github.com/mmedum/google-sheets-mcp/internal/redact"
+	redactpkg "github.com/mmedum/google-sheets-mcp/v2/internal/redact"
 )
 
 // Redaction lives here and only here.
 //
 // The driver reads only a spreadsheet it created and filled itself, so
 // the values in a transcript are its own and this is a second line of
-// defence rather than the control. It matters where it sits: a sibling
+// defense rather than the control. It matters where it sits: a sibling
 // project scrubbed on the read path, and a step then parsed a
 // placeholder out of one result and fed it back into the next call,
 // which the API rejected. Every step here reads the untouched value and

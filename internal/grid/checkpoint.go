@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
 )
 
 // CheckpointPrefix marks a checkpoint so a caller can tell one from any

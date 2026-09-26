@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
 )
 
 // spikeG answers §15.G: what the platform does at its own edges.
@@ -20,7 +20,7 @@ import (
 // message — so what is left is the boundary itself: exactly 50 000,
 // which the reference says is the most a cell takes, and one more.
 func spikeG(ctx context.Context) {
-	sec("Spike G: size behaviour")
+	sec("Spike G: size behavior")
 	const sheet = "SpikeSizes"
 	sheetID, err := addSheet(ctx, sheet)
 	if err != nil {

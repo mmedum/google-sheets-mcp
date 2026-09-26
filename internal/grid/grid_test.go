@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // data builds a GridData the way the API sends one: trailing empty rows
@@ -56,14 +56,14 @@ func TestBuildPadsToTheRequestedRectangle(t *testing.T) {
 	}
 }
 
-func TestBuildHonoursAResponseOffset(t *testing.T) {
+func TestBuildHonorsAResponseOffset(t *testing.T) {
 	// A response may start further in than the request did.
 	rect := a1.Rect{FirstCol: 2, FirstRow: 2, LastCol: 4, LastRow: 4}
 	g := Build("Vandel", 0, rect, data(2, 2,
 		[]*gsheets.CellData{sheetstest.Str("Quorbin")},
 	), AsRaw)
 	if g.Cells[1][1].Display != "Quorbin" {
-		t.Errorf("C3 = %q; the response's own origin was not honoured", g.Cells[1][1].Display)
+		t.Errorf("C3 = %q; the response's own origin was not honored", g.Cells[1][1].Display)
 	}
 	if !g.Cells[0][0].Empty() {
 		t.Error("B2 should be empty")
@@ -137,7 +137,7 @@ func TestTheFormattedAndRawReadsAgreeOnAnError(t *testing.T) {
 // This test asserted the opposite, on the reasoning that a write would
 // take the note with it. A live probe says values.update leaves the note
 // and the validation rule alone, exactly as values.clear documents — so
-// the old behaviour refused a write into a blank cell for a loss that
+// the old behavior refused a write into a blank cell for a loss that
 // never happened, and said so in the refusal.
 func TestACellWithOnlyAnAnnotationIsEmpty(t *testing.T) {
 	c := cell(sheetstest.WithNote(&gsheets.CellData{}, "Quorbin reconciliation"), AsRaw)
@@ -208,7 +208,7 @@ func TestCount(t *testing.T) {
 // A formula that evaluated to an error is KindError, so a check on the
 // kind misses it — and a write over `=IMPORTRANGE(...)` showing #REF!
 // would need only `overwrite`, which is the exact loss the second
-// acknowledgement exists to prevent.
+// acknowledgment exists to prevent.
 func TestAnErroredFormulaIsStillAFormula(t *testing.T) {
 	rect := a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 1, LastRow: 1}
 	g := Build("Vandel", 0, rect, data(0, 0,

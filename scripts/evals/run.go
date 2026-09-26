@@ -205,7 +205,7 @@ func (r *Run) mentionedSheet1() bool {
 }
 
 // didNotAcknowledgeUnasked fails a model that passes the guard's
-// acknowledgements on a call that never needed one.
+// acknowledgments on a call that never needed one.
 //
 // A model that always sends `overwrite: true` has turned the guard off,
 // and the end state cannot tell: the write succeeds either way. This is

@@ -31,6 +31,30 @@ and this project follows [semantic versioning](https://semver.org).
   difference and refuses, and never rewrites anything, because a refresh
   is a decision somebody makes after reading what changed.
 
+### Changed
+
+- **Breaking:** tool inputs are spelled in American English. Three
+  fields and one value are renamed, with no alias for the old spelling:
+  - `format_cells`: `text_colour` is now `text_color`.
+  - `manage_range`: `colour` is now `color`, and `text_colour` is now
+    `text_color`.
+  - `manage_sheet`: `colour` is now `color`.
+  - `format_cells`: `horizontal` takes `center` and no longer takes
+    `centre`. `left`, `right` and `middle` are unchanged.
+
+  A call that still passes an old field name is refused as an unknown
+  field, and `centre` is refused as an unknown alignment. Rename the
+  field or the value in the call.
+- **Breaking:** the module path is now
+  `github.com/mmedum/google-sheets-mcp/v2`, as Go requires from v2. Install
+  with:
+  `go install github.com/mmedum/google-sheets-mcp/v2/cmd/google-sheets-mcp@latest`.
+  The old path stays on 1.x. If you import this module, add `/v2`.
+- The schema diff accepts a breaking change when go.mod's major version
+  is above the last tag's. It still lists every break, and fails on one
+  without a major bump. The release workflow also refuses a tag whose
+  major version is not go.mod's, before anything is built or published.
+
 ## [1.5.1] - 2026-09-18
 
 ### Fixed
@@ -263,7 +287,7 @@ and this project follows [semantic versioning](https://semver.org).
   five servers side by side.
   The release stamp now carries the tag itself rather than goreleaser's
   v-stripped form, so the two sources agree at the source; the
-  normalisation stays for a version passed by hand to `make`.
+  normalization stays for a version passed by hand to `make`.
 - `status` prints the same lines, in the same order, with the same
   labels as the three sibling servers, once a profile is configured (the
   not-yet-signed-in message still differs between them). They had drifted into four shapes
@@ -274,7 +298,7 @@ and this project follows [semantic versioning](https://semver.org).
   removed, the domain kept. The domain is the half a diagnosis uses —
   shared drives are a Workspace feature and a personal account cannot
   create one, so `@gmail.com` and a Workspace domain are two different
-  sets of behaviour to explain — while the local part answers nothing.
+  sets of behavior to explain — while the local part answers nothing.
   It is never an input to any command here, and this output is what the
   issue form asks people to paste. One server showed it in full, one
   masked the domain as well (which hid the useful half), and two sat in
@@ -304,7 +328,7 @@ and this project follows [semantic versioning](https://semver.org).
   schema happens to share. It compared the name matches and skipped the
   rest in silence, with a floor of 20 under the number matched standing in
   for a check — which against a real 128 left a hundred renames of headroom. A repo-wide
-  rename of a modelled struct took its properties out of the comparison
+  rename of a modeled struct took its properties out of the comparison
   and the gate still printed ok. It now runs a third direction over the
   wire package: every struct carrying a JSON tag must match a published
   schema, be named by an `alias` row, or carry a new `local` row saying it
@@ -316,7 +340,7 @@ and this project follows [semantic versioning](https://semver.org).
 - **An API-fields gate.** `make api-fields` is the coverage gate one
   level down: `testdata/api-fields.json` is every schema and property the
   Sheets and Drive discovery documents publish, `testdata/api-fields.tsv`
-  is one hand-written row per exception, and the modelled side is read
+  is one hand-written row per exception, and the modeled side is read
   out of `internal/gsheets` with `go/ast`. Both directions fail, and the
   number of schemas matched is part of the rule, because a gate that
   matches a struct to a schema by name goes blind the moment somebody
@@ -327,7 +351,7 @@ and this project follows [semantic versioning](https://semver.org).
   rather than a sentence. 152 properties are written off under eleven
   headings — Connected Sheets, filter views, developer metadata,
   dimension groups, the chart kinds `chartKind` already names in its
-  refusals, chart painting, the flat `Color` Sheets deprecated in favour
+  refusals, chart painting, the flat `Color` Sheets deprecated in favor
   of `ColorStyle` — each with a reason, and every one checked against
   `internal/plan`, `internal/service` and `internal/grid` first, under
   the rule that a field a tool writes must be a field the types carry.
@@ -386,7 +410,7 @@ and this project follows [semantic versioning](https://semver.org).
   spaces. Three or more consecutive empty rows now render as
   `… rows 21-24 empty`. The rows are named, so an address inside the
   fold is still one a caller can write to, and the footer still says
-  where the data ends. `read_formatting` has always summarised a repeat
+  where the data ends. `read_formatting` has always summarized a repeat
   this way; the grid did not.
 
 - **The footer names the cells it shortened.** `13 value(s) shortened to
@@ -499,7 +523,7 @@ and every eval number in this repository comes from the CLI harness.
 ### Added
 
 - **The evals cover charts and pivot tables: 18 tasks, 18 passing.**
-  Three new ones — charting a column, summarising with a pivot table,
+  Three new ones — charting a column, summarizing with a pivot table,
   and a write aimed into a pivot table's output. The last is the phase 4
   half of what the formula task does for phase 1: the cell is inside
   something a values read makes look ordinary, and what is scored is
@@ -609,7 +633,7 @@ and every eval number in this repository comes from the CLI harness.
   On an occupied anchor an add is an `updateCells` like any other: it
   discards the definition and its whole output. It refuses now, and
   points at `update`.
-- **A pivot's reported footprint swallowed its neighbours.** The
+- **A pivot's reported footprint swallowed its neighbors.** The
   rectangle was "the furthest computed cell anywhere below and right of
   the anchor", so a second pivot table, an `ARRAYFORMULA` spill or an
   imported range joined it — and the result hands that rectangle to the
@@ -721,7 +745,7 @@ and every eval number in this repository comes from the CLI harness.
   developer metadata is durable. It is, and the reference says none of
   it. An anchored row survives an insert above, a delete above, a
   `moveDimension` and a `sortRange` — and after a sort it lands where its
-  row's *values* landed, which is the one behaviour a reading of the
+  row's *values* landed, which is the one behavior a reading of the
   reference would have got backwards. Deleting the row deletes the
   anchor, and the reply says nothing at all: the same shape as phase 2's
   `deleteTable` finding, and the second one this project has found. So
@@ -889,15 +913,15 @@ and every eval number in this repository comes from the CLI harness.
 - Four tools for formatting and structure: `read_formatting`,
   `format_cells`, `manage_range` and `transform_range`.
 - **`read_formatting`** is the other half of a read: what the cells look
-  like, summarised per block of identically formatted cells rather than
+  like, summarized per block of identically formatted cells rather than
   per cell. A cell with no format of its own is counted, not listed, so
   what comes back is what somebody set. It also reports what is attached
   to the range and decides how a cell looks without being on the cell —
   merges, conditional format rules with the index `manage_range` needs,
   banding, validation rules, notes and protected ranges.
 - **`format_cells`** applies everything in one call as one atomic batch:
-  number format, font, colours, borders, alignment, wrapping, merges and
-  notes. A header row that is bold, centred and shaded is one request.
+  number format, font, colors, borders, alignment, wrapping, merges and
+  notes. A header row that is bold, centered and shaded is one request.
   Clearing is applied before setting, so "clear this and then make it
   bold" is one call rather than a clear that undoes the bold.
 - **The guard extended over what formatting can destroy.** Three ops
@@ -932,7 +956,7 @@ and every eval number in this repository comes from the CLI harness.
 - `internal/plan` grows the union builders for formatting, validation,
   protection, tables, banding, conditional formats and the transforms —
   typed, like the rest, so no request is sent that no code here has read.
-- The colour, border, number-format, alignment, condition and sort-key
+- The color, border, number-format, alignment, condition and sort-key
   parsers, each taking the spelling a person has in their hand: `1pt
   solid #cccccc`, `date:yyyy-mm-dd`, `B asc, C desc`.
 - `make parity` (`gates parity`): `make check` and `ci.yml` have to run
@@ -957,7 +981,7 @@ and every eval number in this repository comes from the CLI harness.
 
 - **The structural tools' English moved into the renderer** (§17a.9).
   `manage_sheet` and `edit_dimensions` used to compose a sentence
-  fragment that the renderer then capitalised and wrapped, which is
+  fragment that the renderer then capitalized and wrapped, which is
   phrasing the goldens could not cover and had to agree with itself
   across a refusal, a preview and a result. They now return the parts and
   the renderer owns the template. `plan.Band` lost its words with it.
@@ -1080,7 +1104,7 @@ and every eval number in this repository comes from the CLI harness.
   a broken search). Three of the fixes above came from it. Five driver steps failed on the first run of the new
   surface: three were the server and two were the driver's own
   expectations, left stale by a review pass that had changed the
-  behaviour deliberately. §18 of `docs/architecture.md` carries the
+  behavior deliberately. §18 of `docs/architecture.md` carries the
   split. It took three runs in all — the second because an edit to the
   driver never reached disk, and the third because a band assumed to
   hold values held none, so the merge that was supposed to be refused
@@ -1125,7 +1149,7 @@ Writing, with a guard in front of it.
   write, which re-reads and refuses on a mismatch; the refusal says it
   may also be a checkpoint from a different range. `dry_run` is found by
   reflection rather than declared per tool, so a write that offers a
-  preview cannot fail to honour it.
+  preview cannot fail to honor it.
 - Formulas that reach outside the spreadsheet need
   `allow_external_formulas`, and the two risks are named separately: six
   functions take an arbitrary URL Google fetches from its own servers,
@@ -1246,7 +1270,7 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v1.5.1...HEAD
 [1.5.1]: https://github.com/mmedum/google-sheets-mcp/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.3.4...v1.4.0

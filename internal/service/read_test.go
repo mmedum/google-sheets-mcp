@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 func TestReadShowsAddresses(t *testing.T) {

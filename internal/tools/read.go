@@ -5,7 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 // SpreadsheetInput names a spreadsheet and nothing else.
@@ -32,7 +32,7 @@ type ReadInput struct {
 // SearchInput scopes a Drive search.
 type SearchInput struct {
 	Name          string `json:"name,omitempty" jsonschema:"part of the title, matched case-insensitively"`
-	Text          string `json:"text,omitempty" jsonschema:"a word inside the spreadsheet, matched by Drive's full-text index. It reaches cell values, but it tokenises and lags: a hyphenated compound such as Quorbin-01 does not match while Quorbin does, and a spreadsheet changed moments ago may not be found yet. To search inside a spreadsheet you already have, use find_in_spreadsheet, which reads the cells"`
+	Text          string `json:"text,omitempty" jsonschema:"a word inside the spreadsheet, matched by Drive's full-text index. It reaches cell values, but it tokenizes and lags: a hyphenated compound such as Quorbin-01 does not match while Quorbin does, and a spreadsheet changed moments ago may not be found yet. To search inside a spreadsheet you already have, use find_in_spreadsheet, which reads the cells"`
 	Owner         string `json:"owner,omitempty" jsonschema:"the owner's email address"`
 	ModifiedAfter string `json:"modified_after,omitempty" jsonschema:"an RFC 3339 timestamp such as 2026-01-31T00:00:00Z"`
 	Limit         int    `json:"limit,omitempty" jsonschema:"how many to return, default 20, maximum 100"`
@@ -57,7 +57,7 @@ func registerRead(s *mcp.Server, d Deps) {
 		Name: "get_spreadsheet",
 		Description: "Describe a Google Sheets spreadsheet without reading any cells: title, id, link, locale, time zone, " +
 			"recalculation setting, and for every sheet its exact title, numeric sheet id, index, grid size, frozen rows " +
-			"and columns, hidden state, tab colour and what it holds. Plus named ranges, tables, protected ranges and " +
+			"and columns, hidden state, tab color and what it holds. Plus named ranges, tables, protected ranges and " +
 			"filter views with their A1 ranges. " +
 			"Call this first when handed a spreadsheet: every other tool needs a sheet title, and sheet titles cannot be " +
 			"guessed — Google names the first sheet in the account's language, so it is not necessarily an English name. " +

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
 )
 
 // Coercion is one cell Google stored differently from how it was sent.

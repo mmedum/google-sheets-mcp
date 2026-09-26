@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
 )
 
 // spikeK answers §15.K: whether developer metadata is the durable anchor
@@ -120,7 +120,7 @@ func spikeK(ctx context.Context) {
 
 	line("")
 	line("  Q5: does an ordinary values write disturb it?")
-	// Over the anchored row, not a neighbouring one. Writing to some
+	// Over the anchored row, not a neighboring one. Writing to some
 	// other row proves nothing about whether a write removes an anchor,
 	// and the first run of this spike did exactly that.
 	if row := anchorRow(ctx, key); row > 0 {
@@ -194,7 +194,7 @@ func spikeK(ctx context.Context) {
 			line("    %-34s -> HTTP %d  %s", l.what, status, first120(body))
 			continue
 		}
-		line("    %-34s -> %d match(es): %s", l.what, len(found), summarise(found))
+		line("    %-34s -> %d match(es): %s", l.what, len(found), summarize(found))
 	}
 
 	line("")
@@ -242,7 +242,7 @@ func spikeK(ctx context.Context) {
 	line("    create with visibility PROJECT     -> HTTP %d  %s", status, first120(body))
 	if status == 200 {
 		_, found := searchMeta(ctx, map[string]any{"metadataKey": key + "-project"})
-		line("    reading it back                    -> %d match(es): %s", len(found), summarise(found))
+		line("    reading it back                    -> %d match(es): %s", len(found), summarize(found))
 	}
 
 	line("")
@@ -450,7 +450,7 @@ func ids(found []metaEntry) string {
 	return strings.Join(parts, "; ")
 }
 
-func summarise(found []metaEntry) string {
+func summarize(found []metaEntry) string {
 	if len(found) == 0 {
 		return "none"
 	}

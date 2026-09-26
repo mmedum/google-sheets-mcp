@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 func TestCreateReturnsTheCardAndTheSheetTitles(t *testing.T) {
@@ -183,8 +183,8 @@ func TestManageSheetActions(t *testing.T) {
 			},
 		},
 		{
-			name: "tab colour",
-			req:  service.SheetRequest{Action: service.SheetTabColor, Sheet: sheetstest.SecondSheet, Colour: "#4a90d9"},
+			name: "tab color",
+			req:  service.SheetRequest{Action: service.SheetTabColor, Sheet: sheetstest.SecondSheet, Color: "#4a90d9"},
 			want: func(t *testing.T, r *service.SheetResult) {
 				if !strings.Contains(r.Render(), "#4a90d9") {
 					t.Errorf("tab_color gave %q", r.Render())
@@ -233,9 +233,9 @@ func TestManageSheetRefusals(t *testing.T) {
 			"outside 0..2",
 		},
 		{
-			"a colour that is not one",
-			service.SheetRequest{Action: service.SheetTabColor, Sheet: sheetstest.SecondSheet, Colour: "greenish"},
-			"hex colour",
+			"a color that is not one",
+			service.SheetRequest{Action: service.SheetTabColor, Sheet: sheetstest.SecondSheet, Color: "greenish"},
+			"hex color",
 		},
 		{
 			"copy_to itself",

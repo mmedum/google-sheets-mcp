@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // SearchDeveloperMetadata finds developer metadata entries by filter.

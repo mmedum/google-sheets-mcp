@@ -7,11 +7,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
 )
 
 // Chart actions.
@@ -285,7 +285,7 @@ func (s *Service) addSlicer(ctx context.Context, ref Reference, props *gsheets.S
 // Whole, because `updateChartSpec` carries no field mask and refuses a
 // spec naming no chart kind. Editing the JSON that was read, rather than
 // a struct built from it, is what keeps a field this server does not
-// model — an axis title, a series colour, a treemap's settings — from
+// model — an axis title, a series color, a treemap's settings — from
 // disappearing on a call that only meant to change the title.
 func (s *Service) updateChart(ctx context.Context, ref Reference, req ChartRequest, res *ChartResult) (*ChartResult, error) {
 	if req.ID == 0 {
@@ -1182,7 +1182,7 @@ func firstReply(r *gsheets.BatchUpdateSpreadsheetResponse) *gsheets.Reply {
 // chartsOnBand names the charts that read a band of rows or columns, and
 // how much of each one the band takes.
 //
-// It exists for delete_dimensions, and for the one behaviour the API has
+// It exists for delete_dimensions, and for the one behavior the API has
 // no reply for: a chart whose source column is deleted keeps its place,
 // its title and its id, and loses that series. Nothing else would ever
 // tell the caller, so the refusal does — before the confirm gate, which

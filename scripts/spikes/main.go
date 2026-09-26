@@ -23,17 +23,17 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/auth"
-	"github.com/mmedum/google-sheets-mcp/internal/credentials"
-	"github.com/mmedum/google-sheets-mcp/internal/redact"
-	"github.com/mmedum/google-sheets-mcp/internal/userconfig"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/credentials"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/redact"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/userconfig"
 )
 
 // line is the only way this program reaches the terminal, and it
 // redacts. The first two runs of it were redacted by hand with sed
 // afterwards, which is the same thing done worse: the spreadsheet id
-// came back inside a values.update response and would have travelled
+// came back inside a values.update response and would have traveled
 // into any paste of the raw output.
 func line(format string, args ...any) {
 	fmt.Println(redact.Line(fmt.Sprintf(format, args...)))

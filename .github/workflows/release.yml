@@ -34,6 +34,13 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      # `go install ...@latest` resolves within one module path, so a v2
+      # tag on a module without /v2 is never served. First, because
+      # nothing below it can be taken back.
+      - name: The tag's major version is go.mod's
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: go run ./scripts/gates release-tag "${REF_NAME}"
       - run: go test ./...
       # A SHA pins the action and never the tool the action installs.
       # Both of these fetch a binary, so both need the tool pinned beside

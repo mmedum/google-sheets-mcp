@@ -3,8 +3,8 @@ package plan
 import (
 	"encoding/json"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // PivotFieldMask is the CellData field a pivot write names, and the only

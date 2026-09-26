@@ -45,10 +45,41 @@ func schemaDiff(bin string) error {
 
 	breaking, added := compare(previous, current)
 	fmt.Printf("against %s: added %s; breaking %s\n", tag, list(added), list(breaking))
+	// go.mod is read only when there is a break for it to excuse.
+	module := ""
 	if len(breaking) > 0 {
-		return fmt.Errorf("%d breaking schema change(s) since %s", len(breaking), tag)
+		if module, err = modulePath(); err != nil {
+			return err
+		}
 	}
+	verdict, err := judgeBreaks(len(breaking), tag, module)
+	if err != nil {
+		return err
+	}
+	fmt.Println(verdict)
 	return nil
+}
+
+// judgeBreaks decides whether breaking changes may ship.
+//
+// A break ships only with a major bump: the module path's major version,
+// which Go carries as a /vN suffix from v2, must be above the last tag's.
+// Anything else fails, as it always did.
+func judgeBreaks(breaks int, tag, module string) (string, error) {
+	if breaks == 0 {
+		return "no breaking changes", nil
+	}
+	from, err := tagMajor(tag)
+	if err != nil {
+		return "", err
+	}
+	to := moduleMajor(module)
+	if to > from {
+		return fmt.Sprintf("%d breaking change(s) accepted: the module is at major %d and %s was major %d",
+			breaks, to, tag, from), nil
+	}
+	return "", fmt.Errorf("%d breaking schema change(s) since %s, and the module is still at major %d; "+
+		"a break needs the next major version (/v%d in go.mod)", breaks, tag, to, from+1)
 }
 
 // schemasAtTag builds the server as the tag left it, in a throwaway

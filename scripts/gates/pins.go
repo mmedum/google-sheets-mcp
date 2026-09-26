@@ -30,7 +30,7 @@ import (
 // next job added is bare again. On Windows the default is PowerShell,
 // which read `-coverprofile=cov.out` as a file called `cov` and let the
 // suite carry on. Pinning it explicitly also turns on pipefail and drops
-// profile and rc files, which is the behaviour to want and worth knowing
+// profile and rc files, which is the behavior to want and worth knowing
 // about.
 var (
 	usesLine    = regexp.MustCompile(`(?m)^\s*-?\s*uses:\s*([^\s#]+)`)

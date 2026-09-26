@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	redactpkg "github.com/mmedum/google-sheets-mcp/internal/redact"
+	redactpkg "github.com/mmedum/google-sheets-mcp/v2/internal/redact"
 )
 
 // Redaction, in one place, for the same reason the live driver has it in

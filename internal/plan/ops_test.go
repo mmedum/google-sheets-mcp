@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
 )
 
 // The one arithmetic trap in this package: a band is one-based and
@@ -58,7 +58,7 @@ func TestUpdateMasksNameExactlyWhatIsSet(t *testing.T) {
 		{"rename", plan.RenameSheet(1, "Grivet"), "title"},
 		{"reorder", plan.ReorderSheet(1, 0, 2), "index"},
 		{"hide", plan.HideSheet(1, true), "hidden"},
-		{"colour", plan.TabColour(1, nil), "tabColorStyle"},
+		{"color", plan.TabColor(1, nil), "tabColorStyle"},
 		{"resize rows only", plan.ResizeGrid(1, 500, 0), "gridProperties.rowCount"},
 		{"resize both", plan.ResizeGrid(1, 500, 10), "gridProperties.rowCount,gridProperties.columnCount"},
 		// Both frozen counts, always: a mask naming only the non-zero
@@ -72,7 +72,7 @@ func TestUpdateMasksNameExactlyWhatIsSet(t *testing.T) {
 }
 
 // A sheet index of zero means "first", not "unset". A request that
-// serialised it either way would put a new sheet where nobody asked.
+// serialized it either way would put a new sheet where nobody asked.
 func TestAddSheetOmitsAnIndexNobodyGave(t *testing.T) {
 	without, _ := json.Marshal(plan.AddSheet("Grivet", nil, 0, 0))
 	if strings.Contains(string(without), "index") {
@@ -85,7 +85,7 @@ func TestAddSheetOmitsAnIndexNobodyGave(t *testing.T) {
 }
 
 // A request that creates a sheet must carry no sheetId. The zero value
-// serialises as `"sheetId": 0`, which Google reads as a request for id
+// serializes as `"sheetId": 0`, which Google reads as a request for id
 // 0 — the id the first sheet always has — and answers with "Sheet with
 // id 0 already exists". Found live, and fixed by giving the request its
 // own type rather than by remembering not to set the field.
@@ -140,7 +140,7 @@ func TestReorderIndexMeansWhereItEndsUp(t *testing.T) {
 	}
 }
 
-func TestParseColour(t *testing.T) {
+func TestParseColor(t *testing.T) {
 	for _, tc := range []struct {
 		in               string
 		nilStyle, hasErr bool
@@ -155,25 +155,25 @@ func TestParseColour(t *testing.T) {
 		{in: "#12345", hasErr: true},
 		{in: "#zzzzzz", hasErr: true},
 	} {
-		got, err := plan.ParseColour(tc.in)
+		got, err := plan.ParseColor(tc.in)
 		switch {
 		case tc.hasErr:
 			if err == nil {
-				t.Errorf("ParseColour(%q) was accepted", tc.in)
+				t.Errorf("ParseColor(%q) was accepted", tc.in)
 			}
 			continue
 		case err != nil:
-			t.Errorf("ParseColour(%q): %v", tc.in, err)
+			t.Errorf("ParseColor(%q): %v", tc.in, err)
 			continue
 		case tc.nilStyle:
 			if got != nil {
-				t.Errorf("ParseColour(%q) = %+v, want nil so the colour is cleared", tc.in, got)
+				t.Errorf("ParseColor(%q) = %+v, want nil so the color is cleared", tc.in, got)
 			}
 			continue
 		}
 		c := got.RGBColor
 		if !close(c.Red, tc.r) || !close(c.Green, tc.g) || !close(c.Blue, tc.b) || c.Alpha != 1 {
-			t.Errorf("ParseColour(%q) = %+v, want %g %g %g", tc.in, c, tc.r, tc.g, tc.b)
+			t.Errorf("ParseColor(%q) = %+v, want %g %g %g", tc.in, c, tc.r, tc.g, tc.b)
 		}
 	}
 }

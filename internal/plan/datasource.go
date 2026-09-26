@@ -1,6 +1,6 @@
 package plan
 
-import "github.com/mmedum/google-sheets-mcp/internal/gsheets"
+import "github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 
 // The Connected Sheets builders. Each needs the bigquery.readonly scope
 // against a real BigQuery source, which is why manage_data_source is

@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // spikeL answers §15.L: what a chart is once it exists, and what it
@@ -291,7 +291,7 @@ func chartFields(ctx context.Context, what string, chartID int) {
 
 // rawChart is the half of an EmbeddedChart these questions read. The
 // spec stays raw: the question is which fields came back, not what is
-// in them, and unmarshalling into a typed spec would answer it wrongly
+// in them, and unmarshaling into a typed spec would answer it wrongly
 // by dropping whatever this file did not think to declare.
 type rawChart struct {
 	ChartID  int             `json:"chartId"`

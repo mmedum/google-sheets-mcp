@@ -7,10 +7,10 @@ import (
 	"io"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/config"
-	"github.com/mmedum/google-sheets-mcp/internal/redact"
-	"github.com/mmedum/google-sheets-mcp/internal/userconfig"
-	"github.com/mmedum/google-sheets-mcp/internal/version"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/redact"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/userconfig"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/version"
 )
 
 // statusSchemaVersion is the version of the JSON object `status --json`
@@ -134,7 +134,7 @@ func (r statusReport) writeJSON(w io.Writer) error {
 
 // orNil turns an unset string into the JSON null that says so: an empty
 // string is a value, and a caller cannot tell a value it does not
-// recognise from one that is not there.
+// recognize from one that is not there.
 func orNil(s string) *string {
 	if s == "" {
 		return nil

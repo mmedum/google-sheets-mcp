@@ -1,4 +1,4 @@
-module github.com/mmedum/google-sheets-mcp
+module github.com/mmedum/google-sheets-mcp/v2
 
 go 1.27.1
 

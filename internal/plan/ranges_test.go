@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
 )
 
 // The operand count is the check worth having: a "between" with one
@@ -82,16 +82,16 @@ func TestAListRuleShowsItsDropdown(t *testing.T) {
 	}
 }
 
-// One colour in, four out: the header a shade of it, the bands it and
-// white. Nobody has four colours in their hand.
-func TestBandingBuildsTheShadesFromOneColour(t *testing.T) {
-	base, err := plan.ParseColour("#3366cc")
+// One color in, four out: the header a shade of it, the bands it and
+// white. Nobody has four colors in their hand.
+func TestBandingBuildsTheShadesFromOneColor(t *testing.T) {
+	base, err := plan.ParseColor("#3366cc")
 	if err != nil {
 		t.Fatal(err)
 	}
 	props := plan.Banding(base, true)
 	if props.SecondBandColorStyle != base {
-		t.Error("the band is not the colour that was given")
+		t.Error("the band is not the color that was given")
 	}
 	if props.FirstBandColorStyle == nil || props.FirstBandColorStyle.RGBColor.Red != 1 {
 		t.Error("the other band is not white")

@@ -30,7 +30,7 @@ import (
 // Adding a check means adding a row to the table below; leaving it out
 // of either list fails here.
 
-// parityCheck is one thing `make check` does, and how to recognise it in
+// parityCheck is one thing `make check` does, and how to recognize it in
 // the CI workflow.
 type parityCheck struct {
 	// target is the Makefile target named in `check:`.
@@ -53,7 +53,7 @@ var parityChecks = []parityCheck{
 	{target: "tidy", runs: "go mod tidy -diff", why: "go.mod is what tidy would write"},
 	{target: "lint", runs: "golangci-lint", why: "the linter"},
 	{target: "vuln", runs: "govulncheck", why: "known vulnerabilities"},
-	{target: "licenses", runs: "go-licenses", why: "the licence allow-list"},
+	{target: "licenses", runs: "go-licenses", why: "the license allow-list"},
 	{target: "secrets", runs: "gitleaks", why: "the secret scanner"},
 }
 
@@ -76,6 +76,8 @@ var precommitOnly = map[string]string{
 	"release-notes": "runs at release time, printing the CHANGELOG section the workflow hands goreleaser " +
 		"as --release-notes; it asserts nothing about the code, and running it in `make check` would " +
 		"only check that today's HEAD has a section for a tag that does not exist yet",
+	"release-tag": "runs at release time, holding the tag the workflow was started for against go.mod's " +
+		"major version; on a commit there is no tag to hold",
 	"registry-publish": "runs after a release, printing the entry the publish workflow hands " +
 		"mcp-publisher; the hash it carries comes from the PUBLISHED checksums.txt, so there is nothing " +
 		"for it to read on a commit and nothing for it to assert about the code",

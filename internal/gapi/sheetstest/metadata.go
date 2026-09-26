@@ -6,12 +6,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // Developer metadata in the fake.
 //
-// The behaviour here is spike K's transcript rather than a reading of
+// The behavior here is spike K's transcript rather than a reading of
 // the reference, for the reason §13 gives about the coercion table: a
 // fake built from the documentation inherits the documentation's
 // errors. What the live run established, and what this reproduces:
@@ -185,8 +185,8 @@ func applyMetadata(d *Doc, req *gsheets.Request) (*gsheets.Reply, bool, error) {
 			if !anyFilter(u.DataFilters, md) {
 				continue
 			}
-			// The mask is honoured field by field, not treated as one
-			// value. A fake that recognised only the exact string it had
+			// The mask is honored field by field, not treated as one
+			// value. A fake that recognized only the exact string it had
 			// been shown would agree with any caller that widened the
 			// mask and never wrote the extra field.
 			want := u.DeveloperMetadata
@@ -386,7 +386,7 @@ func moveCells(sh *Sheet, r *gsheets.DimensionRange, destination int) {
 func permuteMetadata(d *Doc, sheetID, firstRow int, order []int) {
 	// Both sides are zero-based indices, which is what a location holds,
 	// and firstRow is the rect's one-based first row. Getting that
-	// conversion wrong by one put every anchor on its neighbour's row
+	// conversion wrong by one put every anchor on its neighbor's row
 	// after a sort — found by a test that read the values back rather
 	// than the location.
 	to := make(map[int]int, len(order))

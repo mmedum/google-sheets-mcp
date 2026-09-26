@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // The fake's charts and slicers.
@@ -26,7 +26,7 @@ import (
 // errChartInternal is Google's own answer to a basicChart with neither
 // domains nor series: HTTP 500, "Internal error encountered". It is
 // reproduced because §6.5 classes a 500 as retryable, so a client that
-// trusts the status retries it forever — and the only defence is the
+// trusts the status retries it forever — and the only defense is the
 // server refusing to send the request, which a test can only prove
 // against a fake that answers the way the API does.
 var errChartInternal = &statusError{status: 500, code: "INTERNAL", message: "Internal error encountered."}

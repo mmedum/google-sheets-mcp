@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 // Where the rows land is Google's decision. The result reports the block
@@ -36,7 +36,7 @@ func TestAppendReportsWhereItLanded(t *testing.T) {
 // insert=overwrite writes over whatever follows the block, and which
 // rows those are is decided during the call. So it is acknowledged
 // rather than checked, and the refusal says which of the two it is.
-func TestOverwriteAppendNeedsAcknowledgement(t *testing.T) {
+func TestOverwriteAppendNeedsAcknowledgment(t *testing.T) {
 	srv, svc := standard(t)
 	_, err := svc.Append(context.Background(), service.AppendRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "A1:B3",

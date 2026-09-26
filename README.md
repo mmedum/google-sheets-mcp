@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/mmedum/google-sheets-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mmedum/google-sheets-mcp/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/mmedum/google-sheets-mcp?sort=semver)](https://github.com/mmedum/google-sheets-mcp/releases/latest)
-[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/google-sheets-mcp.svg)](https://pkg.go.dev/github.com/mmedum/google-sheets-mcp)
+[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/google-sheets-mcp/v2.svg)](https://pkg.go.dev/github.com/mmedum/google-sheets-mcp/v2)
 [![License: Apache 2.0](https://img.shields.io/github/license/mmedum/google-sheets-mcp)](./LICENSE)
 
 Google Sheets as MCP tools. Read and write ranges without destroying the formulas underneath.
@@ -47,7 +47,7 @@ is §16 of [`docs/architecture.md`](docs/architecture.md).
 ## Install
 
 ```bash
-go install github.com/mmedum/google-sheets-mcp/cmd/google-sheets-mcp@latest
+go install github.com/mmedum/google-sheets-mcp/v2/cmd/google-sheets-mcp@latest
 ```
 
 Or take an archive from the
@@ -213,20 +213,20 @@ Sheets scope; in read-only mode the read tools ask for
 |---|---|---|
 | `get_spreadsheet` | The spreadsheet card: title, link, locale, and every sheet's exact title, id, size, frozen rows, hidden state and what it holds, plus named ranges, tables, protected ranges and filter views. No cell data, so it costs the same on a spreadsheet of ten cells and one of ten million. Call it first | `spreadsheets` |
 | `read_range` | An addressed grid of a range: column letters across the top, row numbers down the side. `show=both` prints each formula under the value it produced. Budgeted in cells and characters, with a continuation, and every read returns a checkpoint | `spreadsheets` |
-| `read_formatting` | What a range looks like — number formats, fonts, colours, borders, alignment — per block of identically formatted cells rather than per cell, with the merges, conditional rules, banding, validation and notes that decide how a cell looks without being on the cell | `spreadsheets` |
+| `read_formatting` | What a range looks like — number formats, fonts, colors, borders, alignment — per block of identically formatted cells rather than per cell, with the merges, conditional rules, banding, validation and notes that decide how a cell looks without being on the cell | `spreadsheets` |
 | `search_spreadsheets` | Find a spreadsheet by part of its title, by text inside it, by owner or by when it changed. The only Drive call this server makes | `drive.readonly` |
 | `find_in_spreadsheet` | Search one spreadsheet for text or an RE2 pattern and get back A1 addresses, saying whether each match was in a value, in the formula under it, or in a note beside it | `spreadsheets` |
 | `create_spreadsheet` | A new spreadsheet, optionally with extra sheets and seed values. Returns its card, including the id every later call needs | `spreadsheets` |
 | `write_values` | Write a rectangle, refusing first anything the write would destroy that you cannot see, then reporting every value Google stored differently from how it was sent | `spreadsheets` |
 | `append_rows` | Add rows after a block of data and report where they actually landed — Google decides the destination, and the same sheet given different ranges appends in different places | `spreadsheets` |
-| `format_cells` | Number format, font, colours, borders, alignment, wrapping, merges and notes, applied in one atomic batch. A merge, a clear and a note are the three that take something away, and each is refused until acknowledged | `spreadsheets` |
+| `format_cells` | Number format, font, colors, borders, alignment, wrapping, merges and notes, applied in one atomic batch. A merge, a clear and a note are the three that take something away, and each is refused until acknowledged | `spreadsheets` |
 | `manage_range` | Add, update or delete what is attached to a range: a named range, a protected range, a validation rule, a table, banding, or a conditional format rule. Existing ones are named by the range they cover, not by an id | `spreadsheets` |
 | `transform_range` | Sort, replace, trim, de-duplicate, split, shuffle, fill, copy or move a range — the operations that move data without you naming its new address, so each reads what it would land on first | `spreadsheets` |
 | `manage_anchor` | Label a row, column or sheet so it can be found again after the spreadsheet has been edited around it. An anchor follows its row through inserts, deletes, moves and sorts, where an A1 address goes stale the moment somebody inserts a row. Pass `anchor:<name>` anywhere a range or band is taken, including the two tools that delete rows | `spreadsheets` |
 | `manage_chart` | Add, update, move, delete or list charts and slicers. A chart floats above the grid, so adding one overwrites nothing, and its data is named in A1, one range per series. A listing reports which charts have lost their series — what deleting a charted column does, and what nothing in Sheets tells you | `spreadsheets` |
 | `manage_pivot_table` | Add, update, delete or list pivot tables. Columns are named in A1 or by their heading, never by counting, and every result reports the rectangle the table covers right now: the size is computed from the data rather than chosen | `spreadsheets` |
 | `manage_data_source` | Off by default: connect a BigQuery data source through Connected Sheets, refresh it, cancel a refresh, or list what is connected. `get_spreadsheet` already says whether a spreadsheet has one, with no extra scope | `spreadsheets`, `bigquery.readonly` |
-| `manage_sheet` | Add, rename, duplicate, copy to another spreadsheet, hide, unhide, reorder, resize, freeze or colour a sheet | `spreadsheets` |
+| `manage_sheet` | Add, rename, duplicate, copy to another spreadsheet, hide, unhide, reorder, resize, freeze or color a sheet | `spreadsheets` |
 | `edit_dimensions` | Insert, move, resize, auto-size, group or ungroup rows and columns | `spreadsheets` |
 | `delete_dimensions` | Destructive, off by default: remove rows or columns and the data on them, having counted what that is | `spreadsheets` |
 | `clear_values` | Destructive, off by default: clear a range's values and keep its formatting, notes and validation rules | `spreadsheets` |
@@ -297,7 +297,7 @@ Beyond the guard:
 - **`dry_run` on every write.** Sheets has no suggestion mode, so the
   preview reports what the guard found and what would change, having sent
   nothing. It is found by reflection rather than declared per tool, so a
-  write that offers the flag cannot fail to honour it.
+  write that offers the flag cannot fail to honor it.
 - **Read-only mode leaves the write tools unregistered.** A tool that is
   not registered cannot be called, whatever permission mode the client is
   in. It is set where you start the server, so it binds the session
@@ -365,7 +365,7 @@ make check     # everything CI runs
 
 `make check` is the definition of done: formatting, `go vet` including
 the build-tagged code, golangci-lint, race tests with a per-package
-coverage floor, `govulncheck`, a licence allow-list, two secret and
+coverage floor, `govulncheck`, a license allow-list, two secret and
 identifier scans, a stdio smoke test, a schema diff against the released
 tool surface, a check that the Claude Desktop bundle's manifest names
 only files that will be packed, a check that the Makefile and CI run the

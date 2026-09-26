@@ -24,7 +24,7 @@
 // The driver never reads a spreadsheet it did not write: it creates a
 // scratch one, fills it with its own invented data and works inside
 // that, so the values in a transcript are its own. Redaction of ids and
-// links is a second line of defence and lives in the print helper only —
+// links is a second line of defense and lives in the print helper only —
 // scrubbing on the read path means a step parses a placeholder out of
 // one result and feeds it back into the next call, which is a mistake a
 // sibling made on its driver's first run.
@@ -44,11 +44,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/auth"
-	"github.com/mmedum/google-sheets-mcp/internal/credentials"
-	"github.com/mmedum/google-sheets-mcp/internal/livecover"
-	"github.com/mmedum/google-sheets-mcp/internal/userconfig"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/credentials"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/livecover"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/userconfig"
 )
 
 func main() {

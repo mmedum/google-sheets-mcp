@@ -22,8 +22,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/internal/config"
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 // Kind says which world a tool touches. It is an enum over that rather
@@ -194,7 +194,7 @@ const DryRunField = "dry_run"
 // checkDryRun finds the flag by reflection rather than trusting each
 // tool to declare it.
 //
-// A write that offers dry_run and does not honour it is a preview that
+// A write that offers dry_run and does not honor it is a preview that
 // wrote, so the flag is looked for in the type rather than remembered
 // per tool. Reads have nothing to preview and must not offer one.
 func checkDryRun(k Kind, in reflect.Type) error {

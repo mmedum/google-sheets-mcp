@@ -19,7 +19,7 @@ builds:
     # produces byte-identical binaries.
     mod_timestamp: "{{ .CommitTimestamp }}"
     ldflags:
-      - -s -w -X github.com/mmedum/google-sheets-mcp/internal/version.Version={{.Tag}}
+      - -s -w -X github.com/mmedum/google-sheets-mcp/v2/internal/version.Version={{.Tag}}
 
 # A macOS universal binary, for the Claude Desktop bundle only.
 #
