@@ -10,7 +10,7 @@ review; contempt for a person is not. Assume the other person read the
 same documentation you did and reached a different conclusion for a
 reason.
 
-Unacceptable behaviour includes harassment, personal or political
+Unacceptable behavior includes harassment, personal or political
 attacks, publishing anyone's private information, and sustained
 disruption of discussions.
 
@@ -27,7 +27,7 @@ which is the one private channel this repository has. It is the wrong
 name for the purpose and the right level of privacy; say in the first
 line that it is a conduct report rather than a vulnerability.
 
-Reports are read by the maintainers. Expect an acknowledgement within a
+Reports are read by the maintainers. Expect an acknowledgment within a
 few days. What you send stays with the people handling it.
 
 **Do not include anything from a real spreadsheet** in a report — the

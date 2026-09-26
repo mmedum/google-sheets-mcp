@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 // batched reports whether a structural write reached the fake.
@@ -69,7 +69,7 @@ func TestFormattingGroupsCellsIntoBlocks(t *testing.T) {
 	}
 }
 
-// A cell can be coloured by something that is not on the cell. An answer
+// A cell can be colored by something that is not on the cell. An answer
 // that listed only cell formats would describe a green column as plain.
 func TestFormattingReportsWhatIsAttachedToTheRange(t *testing.T) {
 	srv := sheetstest.Standard(t)
@@ -131,12 +131,12 @@ func TestFormattingRefusesARangePastTheEnd(t *testing.T) {
 }
 
 // Everything set in one call is one atomic batch, so a header row that
-// is bold, centred and shaded costs one request rather than three.
+// is bold, centered and shaded costs one request rather than three.
 func TestFormatCellsSendsOneBatch(t *testing.T) {
 	srv := sheetstest.Standard(t)
 	res, err := newService(t, srv).FormatCells(context.Background(), service.FormatRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "A1:B1",
-		Bold: boolPtr(true), Background: "#d9e2f3", Horizontal: "centre",
+		Bold: boolPtr(true), Background: "#d9e2f3", Horizontal: "center",
 		NumberFormat: "currency", Borders: "1pt solid #cccccc", BorderSides: "outer",
 	})
 	if err != nil {
@@ -308,7 +308,7 @@ func TestFormatCellsRefusesWhatItCannotBuild(t *testing.T) {
 		"nothing to do":     {Range: "A1"},
 		"a bare pattern":    {Range: "A1", NumberFormat: "#,##0.00"},
 		"merge and unmerge": {Range: "A1:B2", Merge: "all", Unmerge: true},
-		"a bad colour":      {Range: "A1", Background: "puce"},
+		"a bad color":       {Range: "A1", Background: "puce"},
 		"a bad border":      {Range: "A1", Borders: "4pt solid"},
 		"a bad side":        {Range: "A1", Borders: "1pt solid", BorderSides: "sideways"},
 		"a bad alignment":   {Range: "A1", Horizontal: "top"},

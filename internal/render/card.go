@@ -137,7 +137,7 @@ func quoteAll(in []string) []string {
 	return out
 }
 
-// Plural is the one place this project pluralises a count, so the card
+// Plural is the one place this project pluralizes a count, so the card
 // and everything built beside it cannot end up saying it two ways.
 func Plural(n int, what string) string {
 	if n == 1 {

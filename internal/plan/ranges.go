@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // The builders for the things attached to a range: a name, a
@@ -137,12 +137,12 @@ func TableDelete(id string) *gsheets.Request {
 	return &gsheets.Request{DeleteTable: &gsheets.DeleteTableRequest{TableID: id}}
 }
 
-// BandingAdd colours alternate rows of a rectangle.
+// BandingAdd colors alternate rows of a rectangle.
 //
 // Rows, because that is what manage_range offers; §17a carries the
 // column form, which wants an argument on a tool that already takes
 // eighteen. BandingUpdate does take the axis, because a column banding
-// made elsewhere can be recoloured here and writing rowProperties onto
+// made elsewhere can be recolored here and writing rowProperties onto
 // one leaves it carrying both sets, which the API rejects.
 func BandingAdd(sheetID int, rect a1.Rect, props *gsheets.BandingProperties) *gsheets.Request {
 	return &gsheets.Request{AddBanding: &gsheets.AddBandingRequest{
@@ -150,7 +150,7 @@ func BandingAdd(sheetID int, rect a1.Rect, props *gsheets.BandingProperties) *gs
 	}}
 }
 
-// BandingUpdate re-colours an existing banding.
+// BandingUpdate re-colors an existing banding.
 func BandingUpdate(id int, columns bool, props *gsheets.BandingProperties) *gsheets.Request {
 	b := &gsheets.BandedRange{BandedRangeID: id}
 	field := "rowProperties"
@@ -167,10 +167,10 @@ func BandingDelete(id int) *gsheets.Request {
 	return &gsheets.Request{DeleteBanding: &gsheets.DeleteBandingRequest{BandedRangeID: id}}
 }
 
-// Banding builds the colours from one base colour: the header a shade
-// of it and the two bands the colour and white.
+// Banding builds the colors from one base color: the header a shade
+// of it and the two bands the color and white.
 //
-// One colour rather than four, because four is what a person does not
+// One color rather than four, because four is what a person does not
 // have in their hand and the interface asks for one too.
 func Banding(base *gsheets.ColorStyle, header bool) *gsheets.BandingProperties {
 	props := &gsheets.BandingProperties{
@@ -187,7 +187,7 @@ func white() *gsheets.ColorStyle {
 	return &gsheets.ColorStyle{RGBColor: &gsheets.Color{Red: 1, Green: 1, Blue: 1, Alpha: 1}}
 }
 
-// darker is the header's shade of the band colour. Two thirds, which is
+// darker is the header's shade of the band color. Two thirds, which is
 // enough to read as a heading and not so much that a pale band gives a
 // black header.
 func darker(c *gsheets.ColorStyle) *gsheets.ColorStyle {

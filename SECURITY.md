@@ -12,7 +12,7 @@ formulas, no sheet or spreadsheet titles, no spreadsheet ids or links, no
 account addresses. A synthetic reproduction is always enough; if it is
 not, say so and we will work out how to get what is needed without it.
 
-Expect an acknowledgement within a few days. Fixes go out as a normal
+Expect an acknowledgment within a few days. Fixes go out as a normal
 tagged release with the advisory published alongside.
 
 ## Supported versions

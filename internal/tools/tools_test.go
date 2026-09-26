@@ -9,8 +9,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/internal/config"
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 type fakeOut struct {
@@ -33,7 +33,7 @@ type badDryRun struct {
 }
 
 // TestDryRunIsFoundByReflectionNotByMemory is the rule §8 turns on: a
-// write that offers dry_run and does not honour it is a preview that
+// write that offers dry_run and does not honor it is a preview that
 // wrote, so the flag is looked for in the type rather than remembered
 // per tool.
 func TestDryRunIsFoundByReflectionNotByMemory(t *testing.T) {

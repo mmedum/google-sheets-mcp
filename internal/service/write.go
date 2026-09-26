@@ -4,12 +4,12 @@ import (
 	"context"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
 )
 
 // Input options as the caller spells them. The server never substitutes
@@ -30,7 +30,7 @@ type WriteRequest struct {
 	Values [][]any
 	TSV    string
 	Input  string
-	// The acknowledgements the guard requires, named as the tool names
+	// The acknowledgments the guard requires, named as the tool names
 	// them. Plain fields rather than plan's own type, so the tool layer
 	// describes the arguments and the service translates.
 	Overwrite             bool

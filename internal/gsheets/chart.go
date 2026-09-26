@@ -11,9 +11,9 @@ import "encoding/json"
 // field mask: it replaces the spec whole and refuses a partial one
 // (spike L). So an update has to send back everything it read.
 //
-// Reading a spec into a struct and marshalling it again would drop every
+// Reading a spec into a struct and marshaling it again would drop every
 // field the struct does not name — a waterfall chart's settings, an axis
-// title, a series colour — and report success. That is a silent destroy
+// title, a series color — and report success. That is a silent destroy
 // of exactly the kind §4.3 exists to prevent, and it would be caused by
 // this server rather than found in the API. So the spec is read as raw
 // JSON and edited as JSON, and only the spec this server *builds* from
@@ -100,7 +100,7 @@ type BasicChartSeries struct {
 	TargetAxis string     `json:"targetAxis,omitempty"`
 }
 
-// BasicChartAxis is one labelled axis.
+// BasicChartAxis is one labeled axis.
 type BasicChartAxis struct {
 	Position string `json:"position,omitempty"`
 	Title    string `json:"title,omitempty"`

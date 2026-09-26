@@ -16,7 +16,7 @@ import (
 )
 
 // The Claude Desktop bundle. A `.mcpb` is a zip carrying a manifest, the
-// binaries for every platform it claims, and the licence and README —
+// binaries for every platform it claims, and the license and README —
 // opened in Claude Desktop it installs the server and asks for the OAuth
 // client JSON, so nobody has to edit a config file by hand.
 //

@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
 )
 
 var rect = a1.Rect{FirstRow: 1, FirstCol: 1, LastRow: 3, LastCol: 2}
@@ -58,7 +58,7 @@ func TestEverySetterAddsItsField(t *testing.T) {
 		"userEnteredFormat.textFormat.strikethrough":        func(p *plan.Patch) { p.Strikethrough(true) },
 		"userEnteredFormat.textFormat.fontSize":             func(p *plan.Patch) { p.FontSize(12) },
 		"userEnteredFormat.textFormat.fontFamily":           func(p *plan.Patch) { p.FontFamily("Roboto") },
-		"userEnteredFormat.textFormat.foregroundColorStyle": func(p *plan.Patch) { p.TextColour(nil) },
+		"userEnteredFormat.textFormat.foregroundColorStyle": func(p *plan.Patch) { p.TextColor(nil) },
 		"userEnteredFormat.horizontalAlignment":             func(p *plan.Patch) { p.HorizontalAlign("LEFT") },
 		"userEnteredFormat.verticalAlignment":               func(p *plan.Patch) { p.VerticalAlign("TOP") },
 		"userEnteredFormat.wrapStrategy":                    func(p *plan.Patch) { p.Wrap("WRAP") },
@@ -86,9 +86,9 @@ func TestClearFormatIsTheBareMask(t *testing.T) {
 
 func TestParseBorder(t *testing.T) {
 	for _, tc := range []struct {
-		in     string
-		style  string
-		colour bool
+		in    string
+		style string
+		color bool
 	}{
 		{"1pt solid #cccccc", gsheets.BorderThin, true},
 		{"2pt solid", gsheets.BorderMedium, false},
@@ -106,8 +106,8 @@ func TestParseBorder(t *testing.T) {
 		if got.Style != tc.style {
 			t.Errorf("ParseBorder(%q).Style = %q, want %q", tc.in, got.Style, tc.style)
 		}
-		if (got.ColorStyle != nil) != tc.colour {
-			t.Errorf("ParseBorder(%q) colour = %v", tc.in, got.ColorStyle)
+		if (got.ColorStyle != nil) != tc.color {
+			t.Errorf("ParseBorder(%q) color = %v", tc.in, got.ColorStyle)
 		}
 	}
 	for _, bad := range []string{"", "4pt", "wavy", "1pt solid #gg"} {
@@ -190,8 +190,8 @@ func TestParseNumberFormat(t *testing.T) {
 }
 
 func TestParseAlignAndWrap(t *testing.T) {
-	if got, _ := plan.ParseAlign("centre", false); got != gsheets.AlignCentre {
-		t.Errorf("horizontal centre = %q", got)
+	if got, _ := plan.ParseAlign("center", false); got != gsheets.AlignCenter {
+		t.Errorf("horizontal center = %q", got)
 	}
 	if got, _ := plan.ParseAlign("middle", true); got != gsheets.AlignMiddle {
 		t.Errorf("vertical middle = %q", got)
@@ -203,6 +203,10 @@ func TestParseAlignAndWrap(t *testing.T) {
 	}
 	if _, err := plan.ParseAlign("left", true); err == nil {
 		t.Error("left was accepted as a vertical alignment")
+	}
+	// The British spelling was renamed with no alias, so it is refused.
+	if _, err := plan.ParseAlign("centre", false); err == nil { //nolint:misspell // the old spelling, on purpose
+		t.Error("centre was accepted; the value is center") //nolint:misspell // the old spelling, on purpose
 	}
 	if got, _ := plan.ParseWrap("wrap"); got != gsheets.WrapWrap {
 		t.Errorf("wrap = %q", got)

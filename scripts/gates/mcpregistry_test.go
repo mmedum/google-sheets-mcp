@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,6 +49,69 @@ func TestGithubRepoStripsTheMajorVersion(t *testing.T) {
 	}
 }
 
+func TestModuleMajor(t *testing.T) {
+	for module, want := range map[string]int{
+		testModule:          1,
+		testModule + "/v2":  2,
+		testModule + "/v12": 12,
+		// Go adds the suffix from v2, so /v1 and /v0 are ordinary
+		// directories rather than versions.
+		testModule + "/v1": 1,
+		testModule + "/v0": 1,
+	} {
+		if got := moduleMajor(module); got != want {
+			t.Errorf("moduleMajor(%s) = %d, want %d", module, got, want)
+		}
+	}
+}
+
+func TestTagMajor(t *testing.T) {
+	for tag, want := range map[string]int{
+		"v2.0.0":     2,
+		"v2.0.0-rc1": 2,
+		"v0.3.0":     0,
+		"v12.1.0":    12,
+	} {
+		if got, err := tagMajor(tag); err != nil || got != want {
+			t.Errorf("tagMajor(%s) = %d (%v), want %d", tag, got, err, want)
+		}
+	}
+	// strconv reads a sign, so v+1.0.0 would otherwise be major 1.
+	for _, tag := range []string{"2.0.0", "v2", "vnext", "v", "", "v.1.0", "v+1.0.0", "v-1.0.0"} {
+		if got, err := tagMajor(tag); err == nil {
+			t.Errorf("tag %q was read as major %d", tag, got)
+		}
+	}
+}
+
+// A tag and the module path it is cut from must name the same major, or
+// `go install ...@latest` serves the wrong one.
+func TestTheTagMajorMustBeTheModules(t *testing.T) {
+	for _, tc := range []struct {
+		tag, module string
+		want        string // "" passes; otherwise a fragment of the refusal
+	}{
+		{tag: "v2.0.0", module: testModule + "/v2"},
+		{tag: "v2.0.0-rc1", module: testModule + "/v2"},
+		{tag: "v0.3.0", module: testModule},
+		{tag: "v1.6.0", module: testModule},
+		{tag: "v1.6.0", module: testModule + "/v2", want: "a v1 tag needs no /vN suffix"},
+		{tag: "v2.0.0", module: testModule, want: "a v2 tag needs /v2"},
+		{tag: "v0.3.0", module: testModule + "/v2", want: "is major 2"},
+		{tag: "release-2", module: testModule + "/v2", want: "not vMAJOR.MINOR.PATCH"},
+	} {
+		err := tagMatchesModule(tc.tag, tc.module)
+		switch {
+		case tc.want == "" && err != nil:
+			t.Errorf("%s on %s was refused: %v", tc.tag, tc.module, err)
+		case tc.want != "" && err == nil:
+			t.Errorf("%s on %s passed", tc.tag, tc.module)
+		case tc.want != "" && !strings.Contains(err.Error(), tc.want):
+			t.Errorf("%s on %s: wanted %q, got %v", tc.tag, tc.module, tc.want, err)
+		}
+	}
+}
+
 // The bundle's hash is what a client verifies before installing, so
 // picking the wrong row, or a row that is not there, is worse than
 // failing.
@@ -77,8 +141,15 @@ func TestTheBundleRowMustBeExactlyOne(t *testing.T) {
 func TestTheEntryIsBuiltFromThisRepository(t *testing.T) {
 	t.Chdir("../..")
 
+	module, err := modulePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The release's major is go.mod's, or registryPublish refuses it.
+	version := fmt.Sprintf("%d.4.0", moduleMajor(module))
+
 	var out bytes.Buffer
-	if err := registryPublish(&out, "v1.4.0", checksumsFile(t, oneBundle)); err != nil {
+	if err := registryPublish(&out, "v"+version, checksumsFile(t, oneBundle)); err != nil {
 		t.Fatalf("registryPublish: %v", err)
 	}
 	var entry registryEntry
@@ -88,10 +159,10 @@ func TestTheEntryIsBuiltFromThisRepository(t *testing.T) {
 	if entry.Name != "io.github.mmedum/google-sheets-mcp" {
 		t.Errorf("namespace = %q", entry.Name)
 	}
-	if entry.Version != "1.4.0" || entry.Packages[0].Version != "1.4.0" {
+	if entry.Version != version || entry.Packages[0].Version != version {
 		t.Errorf("version = %q / %q", entry.Version, entry.Packages[0].Version)
 	}
-	if !strings.Contains(entry.Packages[0].Identifier, "/download/v1.4.0/") {
+	if !strings.Contains(entry.Packages[0].Identifier, "/download/v"+version+"/") {
 		t.Errorf("identifier = %q", entry.Packages[0].Identifier)
 	}
 	if entry.Packages[0].FileSHA256 == "" {
@@ -131,5 +202,24 @@ func TestTheVersionMayCarryItsVOrNot(t *testing.T) {
 	}
 	if withV.String() != without.String() {
 		t.Fatal("v2.3.4 and 2.3.4 produced different entries")
+	}
+}
+
+// The dispatch path reaches the registry without release.yml's check, so
+// the entry refuses a tag whose major is not go.mod's on its own.
+func TestTheEntryRefusesATagOfAnotherMajor(t *testing.T) {
+	t.Chdir("../..")
+	module, err := modulePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tag := fmt.Sprintf("v%d.0.0", moduleMajor(module)+1)
+	var out bytes.Buffer
+	err = registryPublish(&out, tag, checksumsFile(t, oneBundle))
+	if err == nil || !strings.Contains(err.Error(), "needs /v") {
+		t.Fatalf("%s on %s gave %v", tag, module, err)
+	}
+	if out.Len() > 0 {
+		t.Fatalf("a refused tag still wrote an entry: %s", out.String())
 	}
 }

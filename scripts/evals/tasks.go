@@ -147,7 +147,7 @@ func Tasks(f Fixture) []Task {
 				f.ID, f.SheetFor(WorkGuard), f.FormulaCell),
 			// The model may reasonably decide either way once it is
 			// told. What must not happen is the formula being replaced
-			// without the acknowledgement ever being refused first.
+			// without the acknowledgment ever being refused first.
 			EndState: func(h *harness, r *Run) error {
 				return h.formulaSurvivedUnlessAcknowledged(f, f.SheetFor(WorkGuard), r)
 			},
@@ -222,12 +222,12 @@ func Tasks(f Fixture) []Task {
 		{
 			Name: "format a header row",
 			Why:  "several formatting properties in one call, or the model has found the slow shape",
-			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, make row 1 bold, centred and shaded light "+
-				"grey.", f.ID, f.SheetFor(WorkFormat)),
+			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, make row 1 bold, centered and shaded light "+
+				"gray.", f.ID, f.SheetFor(WorkFormat)),
 			EndState: func(h *harness, _ *Run) error { return h.headerIsFormatted(f, f.SheetFor(WorkFormat)) },
 			Trace: func(r *Run) error {
 				if n := r.callsTo("format_cells"); n > 2 {
-					return fmt.Errorf("%d format_cells calls; bold, centred and shaded is one atomic call", n)
+					return fmt.Errorf("%d format_cells calls; bold, centered and shaded is one atomic call", n)
 				}
 				return nil
 			},
@@ -307,7 +307,7 @@ func Tasks(f Fixture) []Task {
 			Name: "anchor a row and find it after an edit",
 			Why:  "phase 3's own claim: a label survives what an A1 address does not, and the model has to use it",
 			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, label row %d as \"totals row\" so it can "+
-				"be found later. Then insert three rows at the top and tell me what is in the labelled row now.",
+				"be found later. Then insert three rows at the top and tell me what is in the labeled row now.",
 				f.ID, f.SheetFor(WorkAnchor), f.AnchorRow),
 			EndState: func(h *harness, _ *Run) error { return h.anchorExists(f, "totals row") },
 			Trace: func(r *Run) error {
@@ -346,10 +346,10 @@ func Tasks(f Fixture) []Task {
 			MaxCalls: 10,
 		},
 		{
-			Name: "summarise with a pivot table",
+			Name: "summarize with a pivot table",
 			Why: "the API groups by an offset into the source and takes one past the end with a 200, so this is " +
 				"where a server that made the caller count would produce a pivot table that reads nothing",
-			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, summarise the data by adding a pivot "+
+			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, summarize the data by adding a pivot "+
 				"table at %s that groups the rows by the Plimth column and totals the Nardle column.",
 				f.ID, f.SheetFor(WorkPivot), f.PivotAnchor),
 			EndState: func(h *harness, _ *Run) error {

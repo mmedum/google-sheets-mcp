@@ -14,10 +14,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 
-	"github.com/mmedum/google-sheets-mcp/internal/auth"
-	"github.com/mmedum/google-sheets-mcp/internal/config"
-	"github.com/mmedum/google-sheets-mcp/internal/userconfig"
-	"github.com/mmedum/google-sheets-mcp/internal/version"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/userconfig"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/version"
 )
 
 // This package is the whole command-line surface — login, logout,
@@ -171,7 +171,7 @@ func TestStatusKeepsTheDomainAndDropsTheRest(t *testing.T) {
 	}
 	// The local part goes and the domain stays. The domain is the half a
 	// diagnosis uses — a personal account cannot create a shared drive,
-	// so it decides which behaviour to explain — while the local part is
+	// so it decides which behavior to explain — while the local part is
 	// never an input to any command here and this output is what the
 	// issue form asks people to paste.
 	if strings.Contains(got, "someone@example.test") {
@@ -216,7 +216,7 @@ func TestCleanDisconnect(t *testing.T) {
 		want bool
 	}{
 		{"no error", nil, true},
-		{"the context was cancelled", context.Canceled, true},
+		{"the context was canceled", context.Canceled, true},
 		{"the client closed the pipe", io.EOF, true},
 		{"wrapped EOF", errors.Join(errors.New("read stdin"), io.EOF), true},
 		{"the SDK's disconnect codes", &jsonrpc.Error{Code: -32004}, true},

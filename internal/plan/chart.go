@@ -3,7 +3,7 @@ package plan
 import (
 	"encoding/json"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // The phase 4 builders: charts, slicers and the embedded-object requests

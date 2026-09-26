@@ -46,7 +46,7 @@ type PivotGroup struct {
 	Label              string `json:"label,omitempty"`
 }
 
-// PivotValue is one summarised column.
+// PivotValue is one summarized column.
 type PivotValue struct {
 	SourceColumnOffset int    `json:"sourceColumnOffset"`
 	SummarizeFunction  string `json:"summarizeFunction,omitempty"`

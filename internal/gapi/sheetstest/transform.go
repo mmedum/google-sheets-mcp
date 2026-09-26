@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // The fake's half of the transforms.
@@ -16,8 +16,8 @@ import (
 // Two kinds of request here, and the difference is the rule this package
 // is built on. A sort, a replacement, a trim, a de-duplication and a
 // paste are mechanical: what they do follows from the request, so doing
-// it here invents nothing. An autofill's series, a randomisation and a
-// delimiter Google detects for itself are judgements — so those are
+// it here invents nothing. An autofill's series, a randomization and a
+// delimiter Google detects for itself are judgments — so those are
 // validated and the cells are left alone, and a test that needs one uses
 // the live driver instead.
 
@@ -39,7 +39,7 @@ func applyTransform(d *Doc, req *gsheets.Request) (*gsheets.Reply, bool, error) 
 	case req.CutPaste != nil:
 		return reply(cutPaste(d, req.CutPaste))
 
-	// The two that turn on Google's own judgement. The range is checked,
+	// The two that turn on Google's own judgment. The range is checked,
 	// so a request naming a sheet that does not exist still fails here,
 	// and nothing is invented about what the cells become.
 	case req.RandomizeRange != nil:
@@ -353,7 +353,7 @@ func duplicateKey(line []*gsheets.CellData, compare []int) string {
 // textToColumns splits one column on a delimiter it was given.
 //
 // With the delimiter left to Google to detect, nothing is changed: which
-// character it picks is its judgement, and a fake that guessed would let
+// character it picks is its judgment, and a fake that guessed would let
 // a test agree with the guess.
 func textToColumns(d *Doc, req *gsheets.TextToColumnsRequest) error {
 	sh, rect, err := sheetForRange(d, req.Source)

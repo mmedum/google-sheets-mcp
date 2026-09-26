@@ -220,11 +220,11 @@ func (d *driver) sheetSteps() []step {
 			},
 		},
 		{
-			name: "colour the tab",
-			why:  "the API wants three floats and a person has a hex colour",
+			name: "color the tab",
+			why:  "the API wants three floats and a person has a hex color",
 			tool: "manage_sheet",
 			args: map[string]any{
-				"spreadsheet": d.spreadsheet, "action": "tab_color", "sheet": added, "colour": "#4a90d9",
+				"spreadsheet": d.spreadsheet, "action": "tab_color", "sheet": added, "color": "#4a90d9",
 			},
 		},
 		{
@@ -351,13 +351,13 @@ func (d *driver) writeSteps() []step {
 			expectError: "blocked",
 			check: func(text string, _ map[string]any) error {
 				if !strings.Contains(text, "overwrite_formulas") {
-					return fmt.Errorf("the refusal does not name the second acknowledgement: %s", text)
+					return fmt.Errorf("the refusal does not name the second acknowledgment: %s", text)
 				}
 				return nil
 			},
 		},
 		{
-			name: "both acknowledgements replace it",
+			name: "both acknowledgments replace it",
 			why:  "two refusals for one write would be a tool nobody could use",
 			tool: "write_values",
 			args: map[string]any{
@@ -383,7 +383,7 @@ func (d *driver) writeSteps() []step {
 		},
 		{
 			name: "acknowledged, it is written and named",
-			why:  "the gate is an acknowledgement, not a ban: the caller decides and is told what they wrote",
+			why:  "the gate is an acknowledgment, not a ban: the caller decides and is told what they wrote",
 			tool: "write_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "F1",
@@ -397,7 +397,7 @@ func (d *driver) writeSteps() []step {
 			},
 		},
 		{
-			// An IMPORTRANGE at a spreadsheet nobody has authorised
+			// An IMPORTRANGE at a spreadsheet nobody has authorized
 			// shows #REF!, so this cell holds a formula that evaluated
 			// to an error. A guard that tested the cell's kind treated
 			// it as an ordinary value and let overwrite alone replace

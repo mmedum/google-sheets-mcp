@@ -323,7 +323,7 @@ func TestUnrepeatableWritesAreNotRepeated(t *testing.T) {
 	}
 }
 
-func TestRetryAfterIsHonoured(t *testing.T) {
+func TestRetryAfterIsHonored(t *testing.T) {
 	if got := parseRetryAfter("7"); got != 7*time.Second {
 		t.Errorf("parseRetryAfter(7) = %v", got)
 	}
@@ -515,7 +515,7 @@ func TestContextCancellationIsNotRetried(t *testing.T) {
 	})
 	_, err := c.GetSpreadsheet(ctx, "id", GetOptions{Fields: CardFields})
 	if !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "context canceled") {
-		t.Fatalf("a cancelled context gave %v", err)
+		t.Fatalf("a canceled context gave %v", err)
 	}
 }
 
@@ -541,12 +541,12 @@ func TestAPartialRetryPolicyDoesNotPanic(t *testing.T) {
 	}
 }
 
-// TestACancelledWriteIsStillAmbiguous covers the two ways out of the
-// retry loop that are not a response: a context cancelled while waiting
-// on the limiter, and one cancelled during the backoff. A write that has
-// already been sent once may have landed, and saying "cancelled" instead
+// TestACanceledWriteIsStillAmbiguous covers the two ways out of the
+// retry loop that are not a response: a context canceled while waiting
+// on the limiter, and one canceled during the backoff. A write that has
+// already been sent once may have landed, and saying "canceled" instead
 // tells the caller nothing about what is in their spreadsheet.
-func TestACancelledWriteIsStillAmbiguous(t *testing.T) {
+func TestACanceledWriteIsStillAmbiguous(t *testing.T) {
 	attempts := 0
 	ctx, cancel := context.WithCancel(context.Background())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -567,10 +567,10 @@ func TestACancelledWriteIsStillAmbiguous(t *testing.T) {
 	})
 	_, err := c.do(ctx, request{op: "values.append", spreadsheet: "id", method: http.MethodPost, url: srv.URL + "/v4/x"})
 	if got := Class(err); got != "ambiguous_outcome" {
-		t.Fatalf("a cancelled append classified as %q (%v); it may already have inserted rows", got, err)
+		t.Fatalf("a canceled append classified as %q (%v); it may already have inserted rows", got, err)
 	}
 
-	// And a read cancelled the same way is not ambiguous: nothing was
+	// And a read canceled the same way is not ambiguous: nothing was
 	// changed, so there is nothing to go and look at.
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	c2 := New(staticToken{}, Options{
@@ -581,7 +581,7 @@ func TestACancelledWriteIsStillAmbiguous(t *testing.T) {
 	})
 	_, err = c2.do(ctx2, request{op: "values.get", spreadsheet: "id", method: http.MethodGet, url: srv.URL + "/v4/x"})
 	if got := Class(err); got == "ambiguous_outcome" {
-		t.Errorf("a cancelled read was reported as an ambiguous write")
+		t.Errorf("a canceled read was reported as an ambiguous write")
 	}
 }
 

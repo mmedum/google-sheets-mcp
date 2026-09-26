@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // The formatting half of the renderer: how a cell's format is put into
-// words, and how a range's formatting is summarised.
+// words, and how a range's formatting is summarized.
 //
 // The words live here rather than in the service, for the reason the
 // rest of this package exists: phrasing decided above the renderer is
@@ -27,7 +27,7 @@ type Style struct {
 	Strikethrough bool
 	FontFamily    string
 	FontSize      int
-	TextColour    string
+	TextColor     string
 	Background    string
 	Horizontal    string
 	Vertical      string
@@ -50,9 +50,9 @@ func StyleOf(f *gsheets.CellFormat) Style {
 	if t := f.TextFormat; t != nil {
 		s.Bold, s.Italic, s.Underline, s.Strikethrough = t.Bold, t.Italic, t.Underline, t.Strikethrough
 		s.FontFamily, s.FontSize = t.FontFamily, t.FontSize
-		s.TextColour = HexColour(t.ForegroundColorStyle)
+		s.TextColor = HexColor(t.ForegroundColorStyle)
 	}
-	s.Background = HexColour(f.BackgroundColorStyle)
+	s.Background = HexColor(f.BackgroundColorStyle)
 	s.Horizontal = lower(f.HorizontalAlign)
 	s.Vertical = lower(f.VerticalAlign)
 	s.Wrap = lower(f.WrapStrategy)
@@ -83,8 +83,8 @@ func (s Style) Describe() string {
 	if s.FontSize > 0 {
 		parts = append(parts, fmt.Sprintf("%dpt", s.FontSize))
 	}
-	if s.TextColour != "" {
-		parts = append(parts, "text "+s.TextColour)
+	if s.TextColor != "" {
+		parts = append(parts, "text "+s.TextColor)
 	}
 	if s.Background != "" {
 		parts = append(parts, "background "+s.Background)
@@ -126,7 +126,7 @@ func describeBorders(b *gsheets.Borders) string {
 			continue
 		}
 		drawn = append(drawn, e.name)
-		styles[lower(e.border.Style)+colourSuffix(e.border.ColorStyle)] = true
+		styles[lower(e.border.Style)+colorSuffix(e.border.ColorStyle)] = true
 	}
 	if len(drawn) == 0 {
 		return ""
@@ -143,18 +143,18 @@ func describeBorders(b *gsheets.Borders) string {
 	return name
 }
 
-func colourSuffix(c *gsheets.ColorStyle) string {
-	if hex := HexColour(c); hex != "" {
+func colorSuffix(c *gsheets.ColorStyle) string {
+	if hex := HexColor(c); hex != "" {
 		return " " + hex
 	}
 	return ""
 }
 
-// HexColour turns the API's colour union back into what a person wrote.
+// HexColor turns the API's color union back into what a person wrote.
 //
 // The inverse of the parser in plan, and it lives here because it is a
-// rendering: a theme colour has no hex at all and is named instead.
-func HexColour(c *gsheets.ColorStyle) string {
+// rendering: a theme color has no hex at all and is named instead.
+func HexColor(c *gsheets.ColorStyle) string {
 	if c == nil {
 		return ""
 	}
@@ -167,7 +167,7 @@ func HexColour(c *gsheets.ColorStyle) string {
 	}
 	// White is not special-cased, and it was. The argument for skipping
 	// it was that white is the default fill and naming it would bury the
-	// coloured blocks — but a background only reaches a cell's own format
+	// colored blocks — but a background only reaches a cell's own format
 	// when somebody set it, and setting white is how highlighting is
 	// cleared. Skipped, such a cell described itself as having no format
 	// of its own while the guard still refused clear_format over it and
@@ -212,7 +212,7 @@ type Formatting struct {
 //
 // Blocks first, because they are the answer; the attached objects after,
 // because they explain a block that looks unformatted and is not — a
-// conditional rule and a banding both colour cells that carry no format
+// conditional rule and a banding both color cells that carry no format
 // of their own.
 func Formats(f Formatting) string {
 	var b strings.Builder
@@ -438,9 +438,9 @@ func RuleText(r *gsheets.ConditionalFormatRule) string {
 	case r.GradientRule != nil:
 		// Named rather than described in full. A gradient is three
 		// interpolation points, and a caller who wants them can read the
-		// rule; what matters here is that the colour on a cell comes
+		// rule; what matters here is that the color on a cell comes
 		// from a rule and not from the cell's own format.
-		return "colour gradient"
+		return "color gradient"
 	}
 	return "rule with no condition"
 }

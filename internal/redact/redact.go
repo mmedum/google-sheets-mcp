@@ -33,17 +33,17 @@ func Path(p string) string { return clientID.ReplaceAllString(p, "<client-id>") 
 func ClientID(s string) string { return clientID.ReplaceAllString(s, "<client-id>") }
 
 // Email keeps enough of an address for the person who owns it to
-// recognise it, and not enough for anyone else to use it.
+// recognize it, and not enough for anyone else to use it.
 //
-// A domain is an organisation name, so it goes too — for an address that
+// A domain is an organization name, so it goes too — for an address that
 // belongs to somebody else, which is what this masks: a person found by
-// search_people is not the caller, and nothing about their organisation
+// search_people is not the caller, and nothing about their organization
 // is needed to read the result.
 //
 // The caller's own account is the exception, and Account below is it:
 // there the domain is the half that has to survive, because a personal
 // account cannot create a shared drive and a Workspace one can, so it
-// decides which behaviour a maintainer is looking at.
+// decides which behavior a maintainer is looking at.
 func Email(addr string) string {
 	local, domain, ok := strings.Cut(addr, "@")
 	if !ok || local == "" || domain == "" {
@@ -61,7 +61,7 @@ func Email(addr string) string {
 //
 // The domain is the half a diagnosis uses: shared drives are a Workspace
 // feature and a personal account cannot create one, so @gmail.com and a
-// Workspace domain are two different sets of behaviour to explain. The
+// Workspace domain are two different sets of behavior to explain. The
 // local part answers nothing — it is never an input to any command here,
 // and `status` output is what the issue form asks people to paste.
 //

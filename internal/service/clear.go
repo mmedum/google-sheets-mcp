@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
 )
 
 // ClearRequest is what clear_values asks for.
@@ -128,7 +128,7 @@ func (s *Service) Clear(ctx context.Context, req ClearRequest) (*ClearResult, er
 	// CheckDestination rather than Check: these are the refusals that
 	// apply to any write to a rectangle, and they are the only ones a
 	// clear has. Asking the full guard and then muting the rest with
-	// acknowledgements this tool does not offer is what this used to do,
+	// acknowledgments this tool does not offer is what this used to do,
 	// and it would have applied a later blocker to a clear silently.
 	if err := refuse(plan.CheckDestination(before), plan.Ack{}); err != nil {
 		return nil, err

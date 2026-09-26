@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 // addPivot is the pivot every test here starts from: the first sheet's
@@ -136,7 +136,7 @@ func TestPivotAddRefusals(t *testing.T) {
 		{"no values", service.PivotRequest{Anchor: "F1", Source: "A1:C6", Rows: []string{"A"}}, "values"},
 		{"no groups", service.PivotRequest{Anchor: "F1", Source: "A1:C6", Values: []string{"B sum"}}, "group_rows"},
 		{"a value with no function", service.PivotRequest{Anchor: "F1", Source: "A1:C6",
-			Rows: []string{"A"}, Values: []string{"B"}}, "how to summarise"},
+			Rows: []string{"A"}, Values: []string{"B"}}, "how to summarize"},
 		{"a function nobody offers", service.PivotRequest{Anchor: "F1", Source: "A1:C6",
 			Rows: []string{"A"}, Values: []string{"B mode"}}, "mode"},
 		{"a layout nobody offers", service.PivotRequest{Anchor: "F1", Source: "A1:C6",
@@ -355,9 +355,9 @@ func TestPivotDryRun(t *testing.T) {
 func TestPivotUnknownAction(t *testing.T) {
 	_, svc := standard(t)
 	_, err := svc.ManagePivotTable(context.Background(), service.PivotRequest{
-		Spreadsheet: sheetstest.FixtureID, Action: "summarise",
+		Spreadsheet: sheetstest.FixtureID, Action: "summarize",
 	})
-	if err == nil || !strings.Contains(err.Error(), "summarise") {
+	if err == nil || !strings.Contains(err.Error(), "summarize") {
 		t.Fatalf("error = %v, want the action named", err)
 	}
 }
@@ -713,7 +713,7 @@ func TestAdjacentPivotsAreMeasuredApart(t *testing.T) {
 		t.Errorf("the refusal does not name the pivot the cell belongs to:\n%s", err)
 	}
 	if strings.Contains(err.Error(), "anchored at F1") {
-		t.Errorf("the refusal blames the neighbour it would not have touched:\n%s", err)
+		t.Errorf("the refusal blames the neighbor it would not have touched:\n%s", err)
 	}
 }
 
@@ -771,7 +771,7 @@ func TestMergeOverPivotOutputIsRefusedWithTheReason(t *testing.T) {
 	}
 	// And it offers nothing to get past it, because nothing does.
 	if strings.Contains(err.Error(), "overwrite") {
-		t.Errorf("the refusal offers a flag the API will not honour:\n%s", err)
+		t.Errorf("the refusal offers a flag the API will not honor:\n%s", err)
 	}
 }
 

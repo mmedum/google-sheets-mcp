@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
 )
 
 func hex(s string) *gsheets.ColorStyle {
@@ -27,29 +27,29 @@ func hex(s string) *gsheets.ColorStyle {
 	return &gsheets.ColorStyle{RGBColor: &c}
 }
 
-// A colour goes out as three floats and has to come back as the six
-// digits somebody typed, or a formatting read describes a colour nobody
+// A color goes out as three floats and has to come back as the six
+// digits somebody typed, or a formatting read describes a color nobody
 // can pass to format_cells.
-func TestHexColourRoundTrips(t *testing.T) {
+func TestHexColorRoundTrips(t *testing.T) {
 	for _, want := range []string{"#d9e2f3", "#000000", "#3366cc", "#b7472a"} {
-		if got := render.HexColour(hex(want)); got != want {
-			t.Errorf("HexColour(%s) = %q", want, got)
+		if got := render.HexColor(hex(want)); got != want {
+			t.Errorf("HexColor(%s) = %q", want, got)
 		}
 	}
-	if got := render.HexColour(nil); got != "" {
-		t.Errorf("a missing colour rendered as %q", got)
+	if got := render.HexColor(nil); got != "" {
+		t.Errorf("a missing color rendered as %q", got)
 	}
-	// White is a colour somebody set, not a default to hide: a background
+	// White is a color somebody set, not a default to hide: a background
 	// only reaches a cell's own format when it was set, and setting white
 	// is how highlighting is cleared. Hidden here, such a cell read as
 	// unformatted while the guard still refused a clear_format over it
 	// and named it.
-	if got := render.HexColour(hex("#ffffff")); got != "#ffffff" {
+	if got := render.HexColor(hex("#ffffff")); got != "#ffffff" {
 		t.Errorf("white rendered as %q", got)
 	}
 	theme := &gsheets.ColorStyle{ThemeColor: "ACCENT1"}
-	if got := render.HexColour(theme); got != "accent1" {
-		t.Errorf("a theme colour rendered as %q, and it has no hex to give", got)
+	if got := render.HexColor(theme); got != "accent1" {
+		t.Errorf("a theme color rendered as %q, and it has no hex to give", got)
 	}
 }
 
@@ -100,7 +100,7 @@ func TestBordersAreDescribedByWhatIsDrawn(t *testing.T) {
 		t.Errorf("four edges read as %q", boxed.Describe())
 	}
 	if !strings.Contains(boxed.Describe(), "#cccccc") {
-		t.Errorf("the border colour is missing from %q", boxed.Describe())
+		t.Errorf("the border color is missing from %q", boxed.Describe())
 	}
 	partial := render.StyleOf(&gsheets.CellFormat{Borders: &gsheets.Borders{Top: thin, Bottom: thin}})
 	if !strings.Contains(partial.Describe(), "top+bottom") {
@@ -149,7 +149,7 @@ func TestRuleText(t *testing.T) {
 		t.Errorf("RuleText = %q", got)
 	}
 	// A gradient is named rather than described: what matters is that
-	// the colour on a cell comes from a rule and not from the cell.
+	// the color on a cell comes from a rule and not from the cell.
 	gradient := &gsheets.ConditionalFormatRule{GradientRule: &gsheets.GradientRule{}}
 	if got := render.RuleText(gradient); !strings.Contains(got, "gradient") {
 		t.Errorf("a gradient rule = %q", got)
