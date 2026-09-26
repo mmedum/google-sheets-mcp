@@ -1,17 +1,17 @@
 {
-  "fetched": "2026-09-13",
+  "fetched": "2026-09-26",
   "note": "Written by `gates api-diff`; nobody edits this. One verdict per item lives in testdata/api-coverage.tsv. A `method` is an API method; a `request` is a member of the Sheets batchUpdate union, which is where this API keeps most of its capability.",
   "apis": [
     {
       "api": "sheets",
       "version": "v4",
-      "revision": "20260904",
+      "revision": "20260921",
       "url": "https://sheets.googleapis.com/$discovery/rest?version=v4"
     },
     {
       "api": "drive",
       "version": "v3",
-      "revision": "20260904",
+      "revision": "20260923",
       "url": "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
     }
   ],
@@ -596,6 +596,11 @@
     {
       "api": "sheets",
       "kind": "request",
+      "name": "addCommentReply"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
       "name": "addConditionalFormatRule"
     },
     {
@@ -691,6 +696,16 @@
     {
       "api": "sheets",
       "kind": "request",
+      "name": "deleteComment"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "deleteCommentReply"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
       "name": "deleteConditionalFormatRule"
     },
     {
@@ -767,6 +782,11 @@
       "api": "sheets",
       "kind": "request",
       "name": "findReplace"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "insertComment"
     },
     {
       "api": "sheets",
@@ -857,6 +877,11 @@
       "api": "sheets",
       "kind": "request",
       "name": "updateChartSpec"
+    },
+    {
+      "api": "sheets",
+      "kind": "request",
+      "name": "updateCommentPost"
     },
     {
       "api": "sheets",

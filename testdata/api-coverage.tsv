@@ -105,3 +105,8 @@ drive	method	drive.about.get	used	gapi.About, behind doctor and the profile's ac
 drive	method	drive.files.get	used	gapi.GetFile, behind resolving a title and the card's owner
 drive	method	drive.files.list	used	gapi.SearchSpreadsheets, behind search_spreadsheets
 drive	method	*	out	file management belongs to a server built on the Drive API (§1); this server holds drive.readonly and uses Drive to turn a title into an id and to read a file's owner and modified time, and nothing else
+sheets	request	addCommentReply	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	request	deleteComment	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	request	deleteCommentReply	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	request	insertComment	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	request	updateCommentPost	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
