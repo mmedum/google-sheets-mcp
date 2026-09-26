@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // coercionTable is spike A's transcript, recorded live on 2026-09-06 and
@@ -256,7 +256,7 @@ func updateResponse(d *Doc, sh *Sheet, rect a1.Rect, sent [][]any, q url.Values)
 
 // detectTable finds the contiguous block of rows an append writes after.
 //
-// Recorded behaviour, not invented: given a range inside the first
+// Recorded behavior, not invented: given a range inside the first
 // block it reports that block, and given the whole sheet it reports the
 // last one. Both were observed live on a sheet holding rows 1-3, a gap,
 // and rows 6-7.
@@ -697,7 +697,7 @@ func updateProperties(d *Doc, req *gsheets.UpdateSheetPropertiesRequest) (*gshee
 	if req.Fields == "" {
 		return nil, errors.New("updateSheetProperties needs a field mask")
 	}
-	// The mask is honoured, not ignored. A fake that applied every field
+	// The mask is honored, not ignored. A fake that applied every field
 	// would let a request through that named the wrong one.
 	for _, f := range strings.Split(req.Fields, ",") {
 		switch strings.TrimSpace(f) {

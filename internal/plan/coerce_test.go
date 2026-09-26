@@ -3,8 +3,8 @@ package plan_test
 import (
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
 )
 
 var whole = a1.Rect{FirstRow: 1, FirstCol: 1, LastRow: 3, LastCol: 3}

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
 )
 
 // spikeQ answers §15.Q: what a merge and a clear do to a pivot table.

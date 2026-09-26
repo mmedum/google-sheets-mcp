@@ -282,7 +282,7 @@ func (c *Client) do(ctx context.Context, r request) ([]byte, error) {
 	}
 
 	// Every path out of the loop below goes through this, because the
-	// two that did not — a cancelled context during the rate-limit wait
+	// two that did not — a canceled context during the rate-limit wait
 	// or during the backoff — returned a bare context error for a write
 	// that had already been sent once. Hard rule 8 is that an
 	// unrepeatable write whose outcome nobody can know says so.

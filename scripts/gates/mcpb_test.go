@@ -95,7 +95,7 @@ func overrides(m map[string]any) map[string]any {
 }
 
 // The bundle is a zip with a fixed shape: a manifest at the root, the
-// binaries under server/, and the licence and README beside them. The
+// binaries under server/, and the license and README beside them. The
 // modes come from the name, because a Windows .exe staged from a
 // filesystem that lost the execute bit arrives unrunnable.
 func TestBundleLayoutAndModes(t *testing.T) {

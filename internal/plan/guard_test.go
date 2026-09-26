@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
 )
 
 // evaluated and literal are the two input options, as the guard sees
@@ -38,9 +38,9 @@ func blockerText(r plan.Report, ack plan.Ack) string {
 }
 
 // The guard's whole reason for existing: a formula and its result render
-// identically, so overwriting one needs its own acknowledgement rather
+// identically, so overwriting one needs its own acknowledgment rather
 // than being covered by the general one.
-func TestFormulasNeedTheirOwnAcknowledgement(t *testing.T) {
+func TestFormulasNeedTheirOwnAcknowledgment(t *testing.T) {
 	g := target(grid.Cell{Kind: grid.KindFormula, Formula: "=B1+1", Display: "3"})
 	r := plan.Check(g, [][]any{{"x", "y"}, {"z", "w"}}, evaluated)
 
@@ -53,7 +53,7 @@ func TestFormulasNeedTheirOwnAcknowledgement(t *testing.T) {
 		t.Errorf("overwrite alone allowed a write over a formula: %q", got)
 	}
 	if len(r.Blockers(plan.Ack{Overwrite: true, OverwriteFormulas: true})) != 0 {
-		t.Error("both acknowledgements together still blocked the write")
+		t.Error("both acknowledgments together still blocked the write")
 	}
 }
 
@@ -185,7 +185,7 @@ func TestExternalFormulasAreGated(t *testing.T) {
 		t.Errorf("the two risks were not named separately: %q", got)
 	}
 	if n := len(r.Blockers(plan.Ack{AllowExternalFormulas: true})); n != 0 {
-		t.Errorf("the acknowledgement left %d blocker(s)", n)
+		t.Errorf("the acknowledgment left %d blocker(s)", n)
 	}
 }
 
@@ -209,7 +209,7 @@ func TestCellsPastTheCharacterLimitAreRefused(t *testing.T) {
 	}
 }
 
-// An append has no destination to read, so its findings are labelled by
+// An append has no destination to read, so its findings are labeled by
 // position rather than by an address the server would be guessing.
 func TestCheckValuesLabelsByPosition(t *testing.T) {
 	var r plan.Report
@@ -236,7 +236,7 @@ func TestCellsNamesAFewAndCountsTheRest(t *testing.T) {
 
 // CheckDestination is what applies to any request touching a rectangle,
 // and none of the refusals a caller acknowledges. Clear used to ask the
-// full guard and switch the rest off with acknowledgements it does not
+// full guard and switch the rest off with acknowledgments it does not
 // offer, which would have applied a later blocker to a clear silently.
 //
 // A partial merge is not part of it. It refuses whatever writes into the

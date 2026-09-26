@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
 )
 
 // The words for a band live here now, so this is where they are checked.
@@ -64,7 +64,7 @@ func TestDimensionPreviewAndDoneAgree(t *testing.T) {
 			t.Errorf("a shifted address is not reported: %q", text)
 		}
 	}
-	// A result reads as a sentence, so the phrase is capitalised where
+	// A result reads as a sentence, so the phrase is capitalized where
 	// it starts one and lower-case where it does not.
 	if !strings.Contains(done, "Done: Delete") {
 		t.Errorf("the result does not start its sentence: %q", done)
@@ -82,21 +82,21 @@ func TestSheetActPhrasesEveryAction(t *testing.T) {
 		"reorder":   `move "Vandel" to position 2`,
 		"resize":    `resize "Vandel" to 500 rows and 26 columns`,
 		"freeze":    `freeze 500 row(s) and 26 column(s) on "Vandel"`,
-		"tab_color": `set the tab colour of "Vandel" to #4a90d9`,
+		"tab_color": `set the tab color of "Vandel" to #4a90d9`,
 	} {
 		act := render.SheetAct{
 			Action: action, Sheet: "Vandel", Title: "Oblisk", Index: 2,
-			Rows: 500, Cols: 26, Destination: "Skerry plan", Colour: "#4a90d9",
+			Rows: 500, Cols: 26, Destination: "Skerry plan", Color: "#4a90d9",
 		}
 		if got := act.Phrase(); got != want {
 			t.Errorf("%s = %q, want %q", action, got, want)
 		}
 	}
-	// An empty colour clears rather than setting one, and the sentence
+	// An empty color clears rather than setting one, and the sentence
 	// has to say which.
 	clearing := render.SheetAct{Action: "tab_color", Sheet: "Vandel"}
 	if got := clearing.Phrase(); !strings.Contains(got, "clear") {
-		t.Errorf("clearing a tab colour reads as %q", got)
+		t.Errorf("clearing a tab color reads as %q", got)
 	}
 }
 

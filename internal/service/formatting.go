@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
 )
 
 // maxBlocks is how many formatting blocks a read lists before it starts
@@ -55,7 +55,7 @@ func (r FormattingResult) Render() string { return r.Summary }
 // Formatting answers read_formatting.
 //
 // The other half of a read: read_range says what the cells hold, this
-// says what they look like. It is summarised per block rather than per
+// says what they look like. It is summarized per block rather than per
 // cell, because a format repeated down a column is one fact and a
 // thousand lines of it is none.
 func (s *Service) Formatting(ctx context.Context, req FormattingRequest) (*FormattingResult, error) {
@@ -182,7 +182,7 @@ func bandingsOver(bandings []*gsheets.BandedRange, window a1.Rect) []render.Name
 			detail, props = "columns", b.ColumnProperties
 		}
 		if props != nil {
-			if hex := render.HexColour(props.SecondBandColorStyle); hex != "" {
+			if hex := render.HexColor(props.SecondBandColorStyle); hex != "" {
 				detail += " " + hex
 			}
 		}
@@ -225,7 +225,7 @@ func firstLine(s string) string {
 //
 // Every field is optional and each one that is set is one op. They
 // travel together because a batchUpdate is atomic and counts once
-// against quota, so a header row that is bold, centred and shaded is one
+// against quota, so a header row that is bold, centered and shaded is one
 // call rather than three.
 type FormatRequest struct {
 	Spreadsheet string
@@ -242,7 +242,7 @@ type FormatRequest struct {
 	Strikethrough *bool
 	FontSize      int
 	FontFamily    string
-	TextColour    string
+	TextColor     string
 	Background    string
 
 	Borders     string
@@ -296,7 +296,7 @@ func (s *Service) FormatCells(ctx context.Context, req FormatRequest) (*FormatRe
 	ops, applied := plan2.ops, plan2.applied
 	if len(ops) == 0 {
 		return nil, Errorf("invalid",
-			"say what to change: a number_format, a font switch, a colour, borders, an alignment, a wrap, "+
+			"say what to change: a number_format, a font switch, a color, borders, an alignment, a wrap, "+
 				"merge or unmerge, clear_format, or a note")
 	}
 
@@ -517,16 +517,16 @@ func formatPatch(req FormatRequest) (plan.Patch, []render.Applied, error) {
 		patch.FontFamily(req.FontFamily)
 		applied = append(applied, render.Applied{Kind: "font", Value: req.FontFamily})
 	}
-	if req.TextColour != "" {
-		style, err := plan.ParseColour(req.TextColour)
+	if req.TextColor != "" {
+		style, err := plan.ParseColor(req.TextColor)
 		if err != nil {
 			return invalid(err)
 		}
-		patch.TextColour(style)
-		applied = append(applied, render.Applied{Kind: "text colour", Value: req.TextColour})
+		patch.TextColor(style)
+		applied = append(applied, render.Applied{Kind: "text color", Value: req.TextColor})
 	}
 	if req.Background != "" {
-		style, err := plan.ParseColour(req.Background)
+		style, err := plan.ParseColor(req.Background)
 		if err != nil {
 			return invalid(err)
 		}

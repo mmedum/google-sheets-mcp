@@ -24,7 +24,7 @@ import (
 	"math/rand/v2"
 	"strconv"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // FixtureID is the spreadsheet id every fixture uses. It says in its own
@@ -209,7 +209,7 @@ func Numbers(seed uint64, n int) []float64 {
 }
 
 // WithFormat attaches a cell format, which is what read_formatting
-// summarises and what clear_format takes away.
+// summarizes and what clear_format takes away.
 func WithFormat(c *gsheets.CellData, f *gsheets.CellFormat) *gsheets.CellData {
 	c.UserEnteredFormat = f
 	return c

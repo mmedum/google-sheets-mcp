@@ -1,6 +1,6 @@
 package grid
 
-import "github.com/mmedum/google-sheets-mcp/internal/a1"
+import "github.com/mmedum/google-sheets-mcp/v2/internal/a1"
 
 // Run is a rectangle of cells that all say the same thing.
 type Run[K comparable] struct {
@@ -14,7 +14,7 @@ type Run[K comparable] struct {
 // signature.
 //
 // It exists because a formatting answer per cell is unreadable and an
-// answer per range is what a person would write: "A1:D1 bold, centred"
+// answer per range is what a person would write: "A1:D1 bold, centered"
 // rather than four identical lines. The grouping is not exact — a run is
 // extended downwards only when the row below matches it column for
 // column — and that is deliberate: a maximal-rectangle decomposition

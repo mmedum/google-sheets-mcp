@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // The formatting builders. One repeatCell carries a number format, a
@@ -103,9 +103,9 @@ func (p *Patch) FontFamily(name string) {
 	p.set("userEnteredFormat.textFormat.fontFamily")
 }
 
-// TextColour sets the font colour. A nil style clears it, which the mask
+// TextColor sets the font color. A nil style clears it, which the mask
 // makes possible.
-func (p *Patch) TextColour(style *gsheets.ColorStyle) {
+func (p *Patch) TextColor(style *gsheets.ColorStyle) {
 	p.text().ForegroundColorStyle = style
 	p.set("userEnteredFormat.textFormat.foregroundColorStyle")
 }
@@ -116,7 +116,7 @@ func (p *Patch) Background(style *gsheets.ColorStyle) {
 	p.set("userEnteredFormat.backgroundColorStyle")
 }
 
-// HorizontalAlign sets left, centre or right.
+// HorizontalAlign sets left, center or right.
 func (p *Patch) HorizontalAlign(v string) {
 	p.format().HorizontalAlign = v
 	p.set("userEnteredFormat.horizontalAlignment")
@@ -233,7 +233,7 @@ func ParseBorder(s string) (*gsheets.Border, error) {
 		low := strings.ToLower(tok)
 		switch {
 		case strings.HasPrefix(tok, "#"):
-			style, err := ParseColour(tok)
+			style, err := ParseColor(tok)
 			if err != nil {
 				return nil, err
 			}
@@ -250,7 +250,7 @@ func ParseBorder(s string) (*gsheets.Border, error) {
 			style = low
 		default:
 			return nil, fmt.Errorf("%q is not part of a border; write a width (1pt), a style "+
-				"(solid, dotted, dashed, double, none) and a colour (#cccccc)", tok)
+				"(solid, dotted, dashed, double, none) and a color (#cccccc)", tok)
 		}
 	}
 	b.Style = borderStyle(style, width)
@@ -371,11 +371,11 @@ func ParseAlign(s string, vertical bool) (string, error) {
 		if !vertical {
 			return gsheets.AlignLeft, nil
 		}
-	case "centre", "center", "middle":
+	case "center", "middle":
 		if vertical {
 			return gsheets.AlignMiddle, nil
 		}
-		return gsheets.AlignCentre, nil
+		return gsheets.AlignCenter, nil
 	case "right":
 		if !vertical {
 			return gsheets.AlignRight, nil
@@ -392,7 +392,7 @@ func ParseAlign(s string, vertical bool) (string, error) {
 	if vertical {
 		return "", fmt.Errorf("vertical %q is not top, middle or bottom", s)
 	}
-	return "", fmt.Errorf("horizontal %q is not left, centre or right", s)
+	return "", fmt.Errorf("horizontal %q is not left, center or right", s)
 }
 
 // ParseWrap reads what happens to text too long for its cell.

@@ -5,7 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 // ReadFormattingInput is what read_formatting takes.
@@ -19,7 +19,7 @@ type ReadFormattingInput struct {
 // FormatCellsInput is what format_cells takes.
 //
 // Every field is optional and each one set is one op, applied in a
-// single atomic batch. A header row that is bold, centred and shaded is
+// single atomic batch. A header row that is bold, centered and shaded is
 // one call.
 type FormatCellsInput struct {
 	Spreadsheet string `json:"spreadsheet" jsonschema:"a spreadsheet id, any docs.google.com/spreadsheets URL, or an exact title"`
@@ -34,12 +34,12 @@ type FormatCellsInput struct {
 	Strikethrough *bool  `json:"strikethrough,omitempty" jsonschema:"as bold"`
 	FontSize      int    `json:"font_size,omitempty" jsonschema:"the point size"`
 	FontFamily    string `json:"font_family,omitempty" jsonschema:"the typeface, such as Roboto"`
-	TextColour    string `json:"text_colour,omitempty" jsonschema:"a hex colour such as #b7472a, or none to clear it"`
-	Background    string `json:"background,omitempty" jsonschema:"the cell fill, as a hex colour such as #d9e2f3, or none to clear it"`
+	TextColor     string `json:"text_color,omitempty" jsonschema:"a hex color such as #b7472a, or none to clear it"`
+	Background    string `json:"background,omitempty" jsonschema:"the cell fill, as a hex color such as #d9e2f3, or none to clear it"`
 
 	Borders     string `json:"borders,omitempty" jsonschema:"a border in the spelling a person writes: \"1pt solid #cccccc\", \"2pt dashed\", or \"none\" to remove one. Widths are 1pt, 2pt or 3pt and styles are solid, dotted, dashed or double"`
 	BorderSides string `json:"border_sides,omitempty" jsonschema:"which edges the border goes on: all (the default), outer, inner, or a list such as top,bottom,left,right,inner_horizontal,inner_vertical"`
-	Horizontal  string `json:"horizontal,omitempty" jsonschema:"left, centre or right"`
+	Horizontal  string `json:"horizontal,omitempty" jsonschema:"left, center or right"`
 	Vertical    string `json:"vertical,omitempty" jsonschema:"top, middle or bottom"`
 	Wrap        string `json:"wrap,omitempty" jsonschema:"what happens to text too long for its cell: overflow, clip or wrap"`
 
@@ -70,11 +70,11 @@ type ManageRangeInput struct {
 	Strict    *bool    `json:"strict,omitempty" jsonschema:"for data_validation: true (the default) rejects a value the rule refuses, false only flags it"`
 	Message   string   `json:"message,omitempty" jsonschema:"for data_validation: the message shown when someone selects the cell"`
 
-	Colour     string `json:"colour,omitempty" jsonschema:"a hex colour: the base shade for a banding, or the background a conditional_format rule applies"`
-	TextColour string `json:"text_colour,omitempty" jsonschema:"for conditional_format: the text colour the rule applies"`
-	Bold       *bool  `json:"bold,omitempty" jsonschema:"for conditional_format: whether the rule makes the text bold"`
-	Header     bool   `json:"header,omitempty" jsonschema:"for banding: give the first row a darker shade of the colour"`
-	Index      int    `json:"index,omitempty" jsonschema:"for conditional_format: which rule, counted from zero in the order they are evaluated. read_formatting lists the rules with their indexes. On add it is where the new rule goes, so 0 makes it the first to be tried"`
+	Color     string `json:"color,omitempty" jsonschema:"a hex color: the base shade for a banding, or the background a conditional_format rule applies"`
+	TextColor string `json:"text_color,omitempty" jsonschema:"for conditional_format: the text color the rule applies"`
+	Bold      *bool  `json:"bold,omitempty" jsonschema:"for conditional_format: whether the rule makes the text bold"`
+	Header    bool   `json:"header,omitempty" jsonschema:"for banding: give the first row a darker shade of the color"`
+	Index     int    `json:"index,omitempty" jsonschema:"for conditional_format: which rule, counted from zero in the order they are evaluated. read_formatting lists the rules with their indexes. On add it is where the new rule goes, so 0 makes it the first to be tried"`
 
 	Overwrite bool `json:"overwrite,omitempty" jsonschema:"allow deleting a table that takes conditional format rules with it. Deleting a table removes every rule over its range, and nothing in Sheets brings them back"`
 	DryRun    bool `json:"dry_run,omitempty" jsonschema:"say what would change and send nothing"`
@@ -114,8 +114,8 @@ type TransformRangeInput struct {
 func registerFormat(s *mcp.Server, d Deps) {
 	add(s, d, Def[ReadFormattingInput, *service.FormattingResult]{
 		Name: "read_formatting",
-		Description: "Describe what a range looks like: number formats, fonts, colours, borders, alignment and wrapping, " +
-			"summarised per block of identically formatted cells rather than per cell. " +
+		Description: "Describe what a range looks like: number formats, fonts, colors, borders, alignment and wrapping, " +
+			"summarized per block of identically formatted cells rather than per cell. " +
 			"It is the other half of read_range, which says what the cells hold. A cell with no format of its own is " +
 			"counted rather than listed, so what comes back is what somebody set. " +
 			"It also lists what is attached to the range and decides how a cell looks without being on the cell: " +
@@ -132,8 +132,8 @@ func registerFormat(s *mcp.Server, d Deps) {
 
 	add(s, d, Def[FormatCellsInput, *service.FormatResult]{
 		Name: "format_cells",
-		Description: "Set how a range looks: number format, font, colours, borders, alignment, wrapping, merges and notes. " +
-			"Everything you set in one call is applied in one atomic batch, so a header row that is bold, centred and " +
+		Description: "Set how a range looks: number format, font, colors, borders, alignment, wrapping, merges and notes. " +
+			"Everything you set in one call is applied in one atomic batch, so a header row that is bold, centered and " +
 			"shaded is one call rather than three. " +
 			"Formatting destroys nothing, with three exceptions, and each is refused unless overwrite is passed: a merge " +
 			"keeps the top-left value of every merged block and discards the rest, clear_format removes formatting " +
@@ -147,7 +147,7 @@ func registerFormat(s *mcp.Server, d Deps) {
 				NumberFormat: in.NumberFormat,
 				Bold:         in.Bold, Italic: in.Italic, Underline: in.Underline, Strikethrough: in.Strikethrough,
 				FontSize: in.FontSize, FontFamily: in.FontFamily,
-				TextColour: in.TextColour, Background: in.Background,
+				TextColor: in.TextColor, Background: in.Background,
 				Borders: in.Borders, BorderSides: in.BorderSides,
 				Horizontal: in.Horizontal, Vertical: in.Vertical, Wrap: in.Wrap,
 				Merge: in.Merge, Unmerge: in.Unmerge, ClearFormat: in.ClearFormat,
@@ -174,7 +174,7 @@ func registerFormat(s *mcp.Server, d Deps) {
 				Kind: in.Kind, Action: in.Action,
 				Name: in.Name, Description: in.Description, WarningOnly: in.WarningOnly,
 				Condition: in.Condition, Values: in.Values, Strict: in.Strict, Message: in.Message,
-				Colour: in.Colour, TextColour: in.TextColour, Bold: in.Bold, Header: in.Header,
+				Color: in.Color, TextColor: in.TextColor, Bold: in.Bold, Header: in.Header,
 				Index: in.Index, Overwrite: in.Overwrite, DryRun: in.DryRun,
 			})
 		},

@@ -33,7 +33,7 @@ func TestPathsExistCatchesADeadLink(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("README.md", "see [the licence](LICENSE) and [the plan](docs/architecture.md)\n"+
+	write("README.md", "see [the license](LICENSE) and [the plan](docs/architecture.md)\n"+
 		"and [a site](https://example.test/x) and [a heading](#tools)\n")
 	write("docs/architecture.md", "back to [the readme](../README.md), and [gone](../MISSING.md)\n")
 	write("LICENSE", "x\n")

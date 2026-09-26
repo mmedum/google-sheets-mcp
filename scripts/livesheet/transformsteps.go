@@ -44,7 +44,7 @@ func (d *driver) transformSteps() []step {
 			// because a relative reading would sort by B and leave the
 			// rows where they are.
 			name: "a sort key is the sheet's column, not an offset into the range",
-			why:  "a wrong reading here sorts by the neighbouring column and looks like a working sort",
+			why:  "a wrong reading here sorts by the neighboring column and looks like a working sort",
 			tool: "transform_range",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "B31:C34",
@@ -201,7 +201,7 @@ func (d *driver) transformSteps() []step {
 		},
 		{
 			name: "a series is filled downwards",
-			why:  "auto_fill is the other one the fake cannot simulate: the series is Google's judgement",
+			why:  "auto_fill is the other one the fake cannot simulate: the series is Google's judgment",
 			tool: "transform_range",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "B31:B32",

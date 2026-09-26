@@ -15,7 +15,7 @@ import (
 // what somebody works on rather than a password.
 //
 // Every rule below is an allow-list. A deny-list naming the domain, the
-// organisation or the account to watch for would itself be the
+// organization or the account to watch for would itself be the
 // disclosure, and it would be committed here in the clear.
 //
 // What a pattern cannot do is the other half of §9.1, and it is why this
@@ -120,7 +120,7 @@ func leakGate(history bool) error {
 // Ordering is the point, and it is a sibling repository's: refusing a
 // file while it is still untracked fails *before* `git add -A` can sweep
 // it in, where a tracked-only scan catches it one commit too late.
-// `--exclude-standard` honours .gitignore, so a build output with a rule
+// `--exclude-standard` honors .gitignore, so a build output with a rule
 // of its own is left alone — it cannot be committed either.
 func treeFiles() (files []string, tracked int, err error) {
 	out, err := git("ls-files", "-z")

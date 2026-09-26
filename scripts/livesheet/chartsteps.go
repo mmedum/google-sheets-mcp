@@ -103,7 +103,7 @@ func (d *driver) chartAddSteps() []step {
 		},
 		{
 			name: "a chart with neither domain nor series is refused here",
-			why:  "Google answers that shape with HTTP 500, which §6.5 classes retryable; the defence is never sending it",
+			why:  "Google answers that shape with HTTP 500, which §6.5 classes retryable; the defense is never sending it",
 			tool: "manage_chart",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "add",
@@ -345,7 +345,7 @@ func (d *driver) slicerEditSteps() []step {
 func (d *driver) pivotSteps() []step {
 	return []step{
 		{
-			name: "a dry run summarises nothing",
+			name: "a dry run summarizes nothing",
 			why:  "a preview that wrote a pivot table would be a preview that wrote",
 			tool: "manage_pivot_table",
 			args: map[string]any{
@@ -375,7 +375,7 @@ func (d *driver) pivotSteps() []step {
 		},
 		{
 			name: "a column outside the source is refused here",
-			why:  "an offset past the source's width is accepted with a 200 and summarises nothing",
+			why:  "an offset past the source's width is accepted with a 200 and summarizes nothing",
 			tool: "manage_pivot_table",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "add",
@@ -485,7 +485,7 @@ func (d *driver) pivotSteps() []step {
 			},
 		},
 		{
-			name: "change what it summarises",
+			name: "change what it summarizes",
 			why:  "an update replaces the pivot whole, so what it was not asked to change has to survive",
 			tool: "manage_pivot_table",
 			args: map[string]any{
@@ -522,7 +522,7 @@ func (d *driver) pivotSteps() []step {
 					return fmt.Errorf("the refusal does not give the API's reason: %q", text)
 				}
 				if strings.Contains(text, "overwrite") {
-					return fmt.Errorf("the refusal offers a flag the API will not honour: %q", text)
+					return fmt.Errorf("the refusal offers a flag the API will not honor: %q", text)
 				}
 				return nil
 			},

@@ -5,7 +5,7 @@ GO        ?= go
 EXE       := $(if $(filter Windows_NT,$(OS)),.exe,)
 BIN       ?= ./google-sheets-mcp$(EXE)
 VERSION   ?= dev
-PKG        = github.com/mmedum/google-sheets-mcp
+PKG        = github.com/mmedum/google-sheets-mcp/v2
 LDFLAGS    = -s -w -X $(PKG)/internal/version.Version=$(VERSION)
 COVER_MIN ?= 80
 # The gates are one binary. Building it once and running it saves six
@@ -25,7 +25,7 @@ GOLANGCI_LINT ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 GOVULNCHECK   ?= golang.org/x/vuln/cmd/govulncheck@v1.7.0
 GOLICENSES    ?= github.com/google/go-licenses@v1.6.0
 # The module path is zricethezav, not gitleaks: the project moved
-# organisation and the module path did not follow it. The version has to
+# organization and the module path did not follow it. The version has to
 # match the one the CI action bundles, which the pin gate checks.
 GITLEAKS      ?= github.com/zricethezav/gitleaks/v8@v8.30.1
 
@@ -106,7 +106,7 @@ api-coverage: gates ## Every published API method and batchUpdate request is use
 	@$(GATES) api-coverage
 
 .PHONY: api-fields
-api-fields: gates ## Every published field is modelled on purpose or written off
+api-fields: gates ## Every published field is modeled on purpose or written off
 	@$(GATES) api-fields
 
 .PHONY: api-diff

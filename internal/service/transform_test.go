@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 func transformReq(action, rangeA1 string) service.TransformRequest {
@@ -113,7 +113,7 @@ func TestReplacingInsideFormulasNeedsAcknowledging(t *testing.T) {
 
 	req.Overwrite, req.OverwriteFormulas = true, true
 	if _, err := svc.Transform(context.Background(), req); err != nil {
-		t.Errorf("the acknowledgements did not allow it: %v", err)
+		t.Errorf("the acknowledgments did not allow it: %v", err)
 	}
 }
 
@@ -173,7 +173,7 @@ func TestTextToColumnsGuardsWhatIsToTheRight(t *testing.T) {
 	req.Delimiter = "comma"
 	_, err := svc.Transform(context.Background(), req)
 	if err == nil || !strings.Contains(err.Error(), "B1") {
-		t.Fatalf("a split over an occupied neighbour gave %v", err)
+		t.Fatalf("a split over an occupied neighbor gave %v", err)
 	}
 	if batched(srv) {
 		t.Fatal("a refused split reached the wire")

@@ -5,9 +5,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // Sheet titles in the fixture. None is "Sheet1", and one is not ASCII,
@@ -64,8 +64,8 @@ func Fixture() (*Doc, *gapi.File) {
 		FilterViewID: 21, Title: "Grivet over 500",
 		Range: a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 4, LastRow: 21}.GridRange(0),
 	}}
-	// Formatting, so a formatting read has something to summarise and a
-	// clear has something to take: a bold, shaded, centred heading row
+	// Formatting, so a formatting read has something to summarize and a
+	// clear has something to take: a bold, shaded, centered heading row
 	// and a money column under it.
 	heading := &gsheets.CellFormat{
 		TextFormat:           &gsheets.TextFormat{Bold: true},
@@ -81,7 +81,7 @@ func Fixture() (*Doc, *gapi.File) {
 	for r := range 20 {
 		WithFormat(first.At(r+2, 2), money)
 	}
-	// A conditional rule and a banding, which colour cells that carry no
+	// A conditional rule and a banding, which color cells that carry no
 	// format of their own — the reason a formatting answer lists what is
 	// attached to the range as well as what is on the cells.
 	first.Conditional = []*gsheets.ConditionalFormatRule{{

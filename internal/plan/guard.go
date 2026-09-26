@@ -16,9 +16,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // MaxCellChars is the longest string one cell holds.
@@ -30,7 +30,7 @@ import (
 // whole write refused with a message that names none of them.
 const MaxCellChars = 50000
 
-// Ack are the acknowledgements the caller passed. Each one exists
+// Ack are the acknowledgments the caller passed. Each one exists
 // because the thing it permits is invisible in a values read: a formula
 // renders as its result, and a formula that fetches a URL renders as
 // whatever came back.
@@ -224,7 +224,7 @@ type Blocker struct {
 }
 
 // Blockers is what stands between this report and the write, given the
-// acknowledgements the caller passed.
+// acknowledgments the caller passed.
 //
 // Order matters: the refusals nothing can acknowledge come first, so a
 // caller who reads only the first line is not told to pass a flag that
@@ -309,7 +309,7 @@ func (r Report) Blockers(ack Ack) []Blocker {
 	// are non-empty too, and "not empty" is true of a pivot's output and
 	// says nothing about the table it belongs to.
 	//
-	// Under the same acknowledgement as its neighbours. Whoever fills
+	// Under the same acknowledgment as its neighbors. Whoever fills
 	// DrawnBy decides whether to look at all, and a report built by
 	// something that decided differently must still not offer a caller
 	// the flag they already passed.
@@ -420,7 +420,7 @@ func Check(g *grid.Grid, values [][]any, formulasEvaluated bool) Report {
 //
 // Separate from Check because clear_values needs exactly this and none
 // of the rest. It used to call Check and switch the other findings off
-// with acknowledgements it does not offer — which worked, and meant any
+// with acknowledgments it does not offer — which worked, and meant any
 // blocker added later applied to a clear silently.
 //
 // The partial-merge scan used to be here too, and phase 2 brought that

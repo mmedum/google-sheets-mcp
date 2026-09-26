@@ -2,7 +2,7 @@
 // Google Sheets, plus the subcommands that set it up.
 //
 //	google-sheets-mcp            serve over stdio (what a client runs)
-//	google-sheets-mcp login      authorise a Google account
+//	google-sheets-mcp login      authorize a Google account
 //	google-sheets-mcp logout     revoke and forget the stored token
 //	google-sheets-mcp status     what this profile has stored
 //	google-sheets-mcp doctor     check the setup end to end
@@ -32,16 +32,16 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-sheets-mcp/internal/auth"
-	"github.com/mmedum/google-sheets-mcp/internal/config"
-	"github.com/mmedum/google-sheets-mcp/internal/credentials"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/internal/redact"
-	"github.com/mmedum/google-sheets-mcp/internal/server"
-	"github.com/mmedum/google-sheets-mcp/internal/service"
-	"github.com/mmedum/google-sheets-mcp/internal/tools"
-	"github.com/mmedum/google-sheets-mcp/internal/userconfig"
-	"github.com/mmedum/google-sheets-mcp/internal/version"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/credentials"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/redact"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/server"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/tools"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/userconfig"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/version"
 )
 
 // below takes them as io.Writer, so nothing else can reach stdout.
@@ -127,7 +127,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 const usage = `google-sheets-mcp — a Model Context Protocol server for Google Sheets.
 
   google-sheets-mcp            serve over stdio (what an MCP client runs)
-  google-sheets-mcp login      authorise a Google account
+  google-sheets-mcp login      authorize a Google account
   google-sheets-mcp logout     revoke and forget the stored token
   google-sheets-mcp status     what this profile has stored
   google-sheets-mcp doctor     check the setup end to end
@@ -553,7 +553,7 @@ func doctor(ctx context.Context, cfg config.Config, spreadsheet string, out io.W
 		if err != nil {
 			return "", fmt.Errorf("%w\n        enable the Google Drive API in your Cloud project", err)
 		}
-		// Enough of the address for the person to recognise their own
+		// Enough of the address for the person to recognize their own
 		// account, and nothing for a reader of a pasted report.
 		return who, nil
 	})
@@ -589,7 +589,7 @@ func doctor(ctx context.Context, cfg config.Config, spreadsheet string, out io.W
 			// would put the sheet title or a cell's contents into
 			// output the issue form asks people to paste, and a title
 			// has no shape a redactor could catch. Removing the value
-			// path beats sanitising it: there is then nothing here for
+			// path beats sanitizing it: there is then nothing here for
 			// a later edit to reintroduce.
 			if _, err := svc.Read(ctx, service.ReadRequest{
 				Spreadsheet: spreadsheet, Sheet: sheetTitle, Range: "A1:A1",

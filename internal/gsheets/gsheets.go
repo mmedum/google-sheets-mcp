@@ -193,13 +193,13 @@ type NumberFormat struct {
 	Pattern string `json:"pattern,omitempty"`
 }
 
-// ColorStyle is the API's colour union.
+// ColorStyle is the API's color union.
 type ColorStyle struct {
 	RGBColor   *Color `json:"rgbColor,omitempty"`
 	ThemeColor string `json:"themeColor,omitempty"`
 }
 
-// Color is an RGBA colour with components in 0..1.
+// Color is an RGBA color with components in 0..1.
 type Color struct {
 	Red   float64 `json:"red,omitempty"`
 	Green float64 `json:"green,omitempty"`
@@ -257,7 +257,7 @@ type TableColumn struct {
 	ColumnType  string `json:"columnType,omitempty"`
 }
 
-// BandedRange is alternating-colour banding over a range. Exactly one
+// BandedRange is alternating-color banding over a range. Exactly one
 // of the two property sets is used: banding runs down rows or across
 // columns, not both.
 type BandedRange struct {
@@ -467,7 +467,7 @@ type Reply struct {
 // NewSheetProperties is a sheet that does not exist yet.
 //
 // It has no sheetId, and that absence is the type's whole reason for
-// being: SheetProperties carries one, the zero value serialises as
+// being: SheetProperties carries one, the zero value serializes as
 // `"sheetId": 0`, and Google reads that as a request for id 0 — which
 // the first sheet always has. Live, an addSheet built from
 // SheetProperties came back as "Sheet with id 0 already exists", and a
@@ -545,7 +545,7 @@ type DimensionRange struct {
 }
 
 // InsertDimensionRequest makes room. InheritFromBefore decides which
-// neighbour's formatting the new band takes; it cannot be true at index
+// neighbor's formatting the new band takes; it cannot be true at index
 // zero, since there is nothing before it.
 type InsertDimensionRequest struct {
 	Range             *DimensionRange `json:"range,omitempty"`

@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // The fake's pivot tables.
@@ -111,7 +111,7 @@ func validatePivot(raw json.RawMessage) error {
 // One spelling, because three places in this fake now turn on it: the
 // delete that takes a pivot's output, the clear that must leave such a
 // cell alone, and the merge Google refuses over one. Two of them are
-// modelling opposite behaviours from the same fact, so a drift between
+// modeling opposite behaviors from the same fact, so a drift between
 // them would make the fake self-inconsistent rather than merely wrong.
 func drawnCell(cell *gsheets.CellData) bool {
 	return cell != nil && cell.EffectiveValue != nil && cell.UserEnteredValue == nil
@@ -191,7 +191,7 @@ func drawPivot(d *Doc, sh *Sheet, row, col int, raw json.RawMessage) {
 		at++
 		setComputed(sh, at, col, key)
 		for i, v := range pivot.Values {
-			setComputedNumber(sh, at, col+1+i, summarise(v.SummarizeFunction, columnOf(source, rect, groups[key], v.SourceColumnOffset)))
+			setComputedNumber(sh, at, col+1+i, summarize(v.SummarizeFunction, columnOf(source, rect, groups[key], v.SourceColumnOffset)))
 		}
 	}
 	if !pivot.Rows[0].ShowTotals {
@@ -205,7 +205,7 @@ func drawPivot(d *Doc, sh *Sheet, row, col int, raw json.RawMessage) {
 	}
 	sort.Ints(every)
 	for i, v := range pivot.Values {
-		setComputedNumber(sh, at, col+1+i, summarise(v.SummarizeFunction, columnOf(source, rect, every, v.SourceColumnOffset)))
+		setComputedNumber(sh, at, col+1+i, summarize(v.SummarizeFunction, columnOf(source, rect, every, v.SourceColumnOffset)))
 	}
 }
 
@@ -247,7 +247,7 @@ func columnOf(source *Sheet, rect a1.Rect, rows []int, offset int) []float64 {
 	return out
 }
 
-func summarise(fn string, values []float64) float64 {
+func summarize(fn string, values []float64) float64 {
 	switch fn {
 	case "COUNT", "COUNTA", "COUNTUNIQUE":
 		return float64(len(values))

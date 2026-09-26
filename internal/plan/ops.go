@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // The builders below are the only way a request reaches the batchUpdate
@@ -101,9 +101,9 @@ func Freeze(sheetID, rows, cols int) *gsheets.Request {
 	}, "gridProperties.frozenRowCount", "gridProperties.frozenColumnCount")
 }
 
-// TabColour sets or clears a tab's colour. A nil style clears it, which
+// TabColor sets or clears a tab's color. A nil style clears it, which
 // the mask makes possible.
-func TabColour(sheetID int, style *gsheets.ColorStyle) *gsheets.Request {
+func TabColor(sheetID int, style *gsheets.ColorStyle) *gsheets.Request {
 	return updateSheet(&gsheets.SheetProperties{SheetID: sheetID, TabColorStyle: style}, "tabColorStyle")
 }
 
@@ -186,12 +186,12 @@ func UngroupDimensions(sheetID int, dimension string, first, last int) *gsheets.
 	}}
 }
 
-// ParseColour reads "#rrggbb" or "#rgb" into the API's colour union, and
+// ParseColor reads "#rrggbb" or "#rgb" into the API's color union, and
 // "none" into nil, which clears.
 //
 // Hex because that is what a person has in their hand. The API wants
 // three floats between 0 and 1, which nobody types.
-func ParseColour(s string) (*gsheets.ColorStyle, error) {
+func ParseColor(s string) (*gsheets.ColorStyle, error) {
 	s = strings.TrimSpace(s)
 	if s == "" || strings.EqualFold(s, "none") {
 		return nil, nil
@@ -201,13 +201,13 @@ func ParseColour(s string) (*gsheets.ColorStyle, error) {
 		hex = string([]byte{hex[0], hex[0], hex[1], hex[1], hex[2], hex[2]})
 	}
 	if len(hex) != 6 {
-		return nil, fmt.Errorf("colour %q is not a hex colour; write #rrggbb, #rgb, or none to clear", s)
+		return nil, fmt.Errorf("color %q is not a hex color; write #rrggbb, #rgb, or none to clear", s)
 	}
 	var c gsheets.Color
 	for i, part := range []*float64{&c.Red, &c.Green, &c.Blue} {
 		n, err := strconv.ParseUint(hex[i*2:i*2+2], 16, 8)
 		if err != nil {
-			return nil, fmt.Errorf("colour %q is not a hex colour; write #rrggbb, #rgb, or none to clear", s)
+			return nil, fmt.Errorf("color %q is not a hex color; write #rrggbb, #rgb, or none to clear", s)
 		}
 		*part = float64(n) / 255
 	}

@@ -23,8 +23,8 @@ defaults:
     shell: bash
 
 # A push supersedes the run before it on the same ref. Not on main,
-# though: cancelling a superseded branch run costs nothing, while
-# cancelling one on the default branch leaves a merged commit with no
+# though: canceling a superseded branch run costs nothing, while
+# canceling one on the default branch leaves a merged commit with no
 # verdict, and whoever bisects later walks a green history with a hole in
 # it.
 concurrency:
@@ -128,7 +128,7 @@ jobs:
           install-mode: goinstall
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
-      - name: licences
+      - name: licenses
         run: go run github.com/google/go-licenses@v1.6.0 check ./... --allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC
 
   secrets:

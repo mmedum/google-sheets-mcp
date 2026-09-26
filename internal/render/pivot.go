@@ -32,11 +32,11 @@ func (a PivotAct) Phrase() string {
 		if len(a.Groups) > 0 {
 			by = " grouped by " + JoinAnd(a.Groups)
 		}
-		summarising := ""
+		summarizing := ""
 		if len(a.Values) > 0 {
-			summarising = " summarising " + JoinAnd(a.Values)
+			summarizing = " summarizing " + JoinAnd(a.Values)
 		}
-		return fmt.Sprintf("add a pivot table at %s on %q over %s%s%s", a.Anchor, a.Sheet, a.Source, by, summarising)
+		return fmt.Sprintf("add a pivot table at %s on %q over %s%s%s", a.Anchor, a.Sheet, a.Source, by, summarizing)
 	case "update":
 		return fmt.Sprintf("change the %s of the pivot table at %s on %q", JoinAnd(a.Changed), a.Anchor, a.Sheet)
 	default:

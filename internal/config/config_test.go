@@ -61,7 +61,7 @@ func TestEnvironmentThenFlag(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 	if c.Profile != "work" || c.LogLevel != LogDebug || !c.ReadOnly || !c.EnableDestructive || c.MaxCells != 1234 {
-		t.Errorf("environment not honoured: %+v", c)
+		t.Errorf("environment not honored: %+v", c)
 	}
 
 	// A flag on the command line beats the same setting in the
@@ -140,7 +140,7 @@ func TestLoggerWritesWhereItIsTold(t *testing.T) {
 	log = NewLogger(Config{LogLevel: LogWarn, LogFormat: LogText}, &buf)
 	log.Info("quiet")
 	if buf.Len() != 0 {
-		t.Errorf("level not honoured: %q", buf.String())
+		t.Errorf("level not honored: %q", buf.String())
 	}
 }
 

@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
 )
 
 // ReadRequest is what read_range asks for, after the tool has validated
@@ -59,7 +59,7 @@ type ReadResult struct {
 	ContinueFrom int        `json:"continue_from,omitempty" jsonschema:"the first row not shown; pass it back as continue_from to read on"`
 	Rows         [][]string `json:"rows,omitempty" jsonschema:"the values as arrays, present only when format is json, csv or tsv"`
 	// text is what the text block carries, which is the requested
-	// format. It is not serialised: the structured half already has the
+	// format. It is not serialized: the structured half already has the
 	// grid and the rows.
 	text string
 }

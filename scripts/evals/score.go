@@ -132,7 +132,7 @@ func (h *harness) headerIsFormatted(f Fixture, sheet string) error {
 	}
 	var missing []string
 	for what, marker := range map[string]string{
-		"bold": "bold", "centred": "cent", "shaded": "background",
+		"bold": "bold", "centered": "cent", "shaded": "background",
 	} {
 		if !strings.Contains(strings.ToLower(text), marker) {
 			missing = append(missing, what)
@@ -273,7 +273,7 @@ func (h *harness) pivotAtAnchor(f Fixture, sheet, anchor string) error {
 			continue
 		}
 		// The output, not just the definition. A pivot table that
-		// summarises nothing is anchored where it was asked for and
+		// summarizes nothing is anchored where it was asked for and
 		// draws one cell, and "is there a pivot at F1" would call that
 		// a pass.
 		out, _ := p["output"].(string)

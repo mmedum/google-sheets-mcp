@@ -5,7 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 // ManageChartInput is what manage_chart takes.
@@ -72,7 +72,7 @@ type ManagePivotTableInput struct {
 	Action      string `json:"action" jsonschema:"add, update, delete or list"`
 	Anchor      string `json:"anchor,omitempty" jsonschema:"the cell the pivot table's top-left corner sits on, such as F1. A pivot table has no id in the API, so this is its whole name: update and delete take the same anchor add was given"`
 
-	Source       string   `json:"source,omitempty" jsonschema:"the block of data to summarise, such as A1:C200. Its first row is read as headings"`
+	Source       string   `json:"source,omitempty" jsonschema:"the block of data to summarize, such as A1:C200. Its first row is read as headings"`
 	GroupRows    []string `json:"group_rows,omitempty" jsonschema:"the column(s) whose values become the rows of the summary, each a column letter inside source or a heading from its first row"`
 	GroupColumns []string `json:"group_columns,omitempty" jsonschema:"the column(s) whose values become the columns of the summary, named the same way"`
 	Values       []string `json:"values,omitempty" jsonschema:"what to work out for each group, as \"B sum\" or \"Units sum\", one per entry. Add \"as Total units\" to name the column. The summaries are sum, count, count_numbers, count_unique, average, max, min, median, product, stdev and var"`

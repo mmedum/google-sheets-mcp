@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
 )
 
 // forget drops a spreadsheet's cached metadata.
@@ -187,8 +187,8 @@ type SheetRequest struct {
 	Cols int
 	// Destination is another spreadsheet, for copy_to.
 	Destination string
-	// Colour is "#rrggbb", "#rgb" or "none".
-	Colour string
+	// Color is "#rrggbb", "#rgb" or "none".
+	Color  string
 	DryRun bool
 }
 
@@ -364,14 +364,14 @@ func gridRequest(req SheetRequest, props *gsheets.SheetProperties) (*gsheets.Req
 		}
 		return plan.Freeze(props.SheetID, req.Rows, req.Cols), act, nil
 	default:
-		style, err := plan.ParseColour(req.Colour)
+		style, err := plan.ParseColor(req.Color)
 		if err != nil {
 			return nil, act, Errorf("invalid", "%s", err)
 		}
 		if style != nil {
-			act.Colour = strings.TrimSpace(req.Colour)
+			act.Color = strings.TrimSpace(req.Color)
 		}
-		return plan.TabColour(props.SheetID, style), act, nil
+		return plan.TabColor(props.SheetID, style), act, nil
 	}
 }
 
@@ -386,7 +386,7 @@ func (s *Service) copySheet(ctx context.Context, ref Reference, props *gsheets.S
 	}
 	// Named the way the caller named it. A truncated id is what a log
 	// line needs; a result should hand back the reference the caller
-	// used, which is the one they will recognise.
+	// used, which is the one they will recognize.
 	act := render.SheetAct{Action: SheetCopyTo, Sheet: props.Title, Destination: strings.TrimSpace(req.Destination)}
 	if req.DryRun {
 		res.DryRun = true

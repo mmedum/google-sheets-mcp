@@ -146,7 +146,7 @@ func TestTraceChecks(t *testing.T) {
 		}
 	})
 
-	t.Run("an external formula is recognised however it is nested", func(t *testing.T) {
+	t.Run("an external formula is recognized however it is nested", func(t *testing.T) {
 		r := &Run{Calls: []ToolCall{{Tool: "write_values", Args: map[string]any{
 			"values": []any{[]any{"=IMPORTRANGE(\"x\",\"y\")"}},
 		}}}}
@@ -226,13 +226,13 @@ func TestEndStateChecksReadBack(t *testing.T) {
 
 	t.Run("a header missing one of the three properties fails", func(t *testing.T) {
 		h := &harness{call: func(string, map[string]any) (string, map[string]any, error) {
-			return "A1:D1 bold, background #eeeeee\n", nil, nil // not centred
+			return "A1:D1 bold, background #eeeeee\n", nil, nil // not centered
 		}}
 		err := h.headerIsFormatted(f, f.Sheet)
 		if err == nil {
-			t.Fatal("a header that was bold and shaded but not centred passed")
+			t.Fatal("a header that was bold and shaded but not centered passed")
 		}
-		if !strings.Contains(err.Error(), "centred") {
+		if !strings.Contains(err.Error(), "centered") {
 			t.Errorf("err = %v, want it to name the property that is missing", err)
 		}
 	})

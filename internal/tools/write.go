@@ -5,7 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 // CreateInput is what create_spreadsheet takes.
@@ -62,7 +62,7 @@ type SheetInput struct {
 	Rows        int    `json:"rows,omitempty" jsonschema:"for resize, how many rows the sheet has room for; for freeze, how many rows to pin at the top, where zero unfreezes"`
 	Cols        int    `json:"cols,omitempty" jsonschema:"for resize, how many columns the sheet has room for; for freeze, how many columns to pin at the left"`
 	Destination string `json:"destination,omitempty" jsonschema:"for copy_to, the other spreadsheet: an id, a URL or an exact title"`
-	Colour      string `json:"colour,omitempty" jsonschema:"for tab_color, a hex colour such as #4a90d9, or none to clear it"`
+	Color       string `json:"color,omitempty" jsonschema:"for tab_color, a hex color such as #4a90d9, or none to clear it"`
 	DryRun      bool   `json:"dry_run,omitempty" jsonschema:"say what would change and send nothing"`
 }
 
@@ -171,7 +171,7 @@ func registerWrite(s *mcp.Server, d Deps) {
 
 	add(s, d, Def[SheetInput, *service.SheetResult]{
 		Name: "manage_sheet",
-		Description: "Add, rename, duplicate, copy, hide, unhide, reorder, resize, freeze or colour a sheet. " +
+		Description: "Add, rename, duplicate, copy, hide, unhide, reorder, resize, freeze or color a sheet. " +
 			"One request, whichever action. resize changes how many rows and columns the sheet has room for and only " +
 			"grows: shrinking would take whatever is on the rows it removes, and edit_dimensions is where removing " +
 			"lives, because it says what is on them first. freeze pins rows at the top and columns at the left, and " +
@@ -182,7 +182,7 @@ func registerWrite(s *mcp.Server, d Deps) {
 			return d.Service.ManageSheet(ctx, service.SheetRequest{
 				Spreadsheet: in.Spreadsheet, Action: in.Action, Sheet: in.Sheet, Title: in.Title,
 				Index: in.Index, Rows: in.Rows, Cols: in.Cols,
-				Destination: in.Destination, Colour: in.Colour, DryRun: in.DryRun,
+				Destination: in.Destination, Color: in.Color, DryRun: in.DryRun,
 			})
 		},
 	})

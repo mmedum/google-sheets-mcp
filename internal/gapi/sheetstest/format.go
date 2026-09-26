@@ -5,17 +5,17 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // The fake's half of the formatting union.
 //
 // Mechanical, all of it: a mask applied to a rectangle, a merge recorded
 // and its non-anchor cells emptied, a rule inserted at an index. None of
-// this is Google's judgement, so implementing it here invents nothing —
+// this is Google's judgment, so implementing it here invents nothing —
 // which is the line this package draws. Where the API does exercise
-// judgement, the request is validated and the cells are left alone, and
+// judgment, the request is validated and the cells are left alone, and
 // the comment on it says so.
 
 // applyFormat is the formatting and attached-object half of the union.
@@ -88,7 +88,7 @@ func sheetForRange(d *Doc, r *gsheets.GridRange) (*Sheet, a1.Rect, error) {
 
 // repeatCell writes one cell's masked fields across a rectangle.
 //
-// The mask is honoured field by field, as the real API honours it: a
+// The mask is honored field by field, as the real API honors it: a
 // request naming userEnteredFormat.textFormat.bold sets bold and leaves
 // the background alone, and one naming the bare userEnteredFormat
 // replaces the whole format, which is how clearing works.
@@ -241,7 +241,7 @@ func edge(into **gsheets.Border, outer, inner *gsheets.Border, onBoundary bool) 
 // mergeCells records a merge and empties every cell but the one each
 // merged block keeps.
 //
-// The emptying is the API's own behaviour rather than this fake's
+// The emptying is the API's own behavior rather than this fake's
 // invention, and it is the reason format_cells reads the rectangle
 // before it merges: nothing in the response says a value went.
 func mergeCells(d *Doc, req *gsheets.MergeCellsRequest) error {

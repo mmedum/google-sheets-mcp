@@ -7,12 +7,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
 )
 
 // Pivot actions.
@@ -512,7 +512,7 @@ func extentFrom(drawn map[int]map[int]bool, anchors []a1.Rect, anchor, window a1
 	if lastCol < anchor.FirstCol {
 		return a1.Rect{}
 	}
-	lastRow, lastCol = clipToNeighbours(anchors, anchor, lastRow, lastCol)
+	lastRow, lastCol = clipToNeighbors(anchors, anchor, lastRow, lastCol)
 	if lastRow < anchor.FirstRow || lastCol < anchor.FirstCol {
 		return a1.Rect{}
 	}
@@ -521,7 +521,7 @@ func extentFrom(drawn map[int]map[int]bool, anchors []a1.Rect, anchor, window a1
 	}
 }
 
-// clipToNeighbours pulls a measured rectangle back off any other pivot's
+// clipToNeighbors pulls a measured rectangle back off any other pivot's
 // anchor inside it. Two pivots never overlap, so an anchor within this
 // rectangle is proof the walk went too far.
 //
@@ -533,7 +533,7 @@ func extentFrom(drawn map[int]map[int]bool, anchors []a1.Rect, anchor, window a1
 // back — the rectangle then understates what the pivot draws, which
 // costs a sentence, where overstating it names a table the caller would
 // not have broken.
-func clipToNeighbours(anchors []a1.Rect, anchor a1.Rect, lastRow, lastCol int) (int, int) {
+func clipToNeighbors(anchors []a1.Rect, anchor a1.Rect, lastRow, lastCol int) (int, int) {
 	for _, o := range anchors {
 		if o == anchor || o.FirstRow < anchor.FirstRow || o.FirstCol < anchor.FirstCol {
 			continue
@@ -597,7 +597,7 @@ func (s *Service) pivotSource(ctx context.Context, ref Reference, props *gsheets
 		return target, a1.Format(target.Props.Title, target.Rect), nil
 	}
 	if req.Action == PivotAdd {
-		return SheetRef{}, "", Errorf("invalid", "add needs source, the block of data to summarise")
+		return SheetRef{}, "", Errorf("invalid", "add needs source, the block of data to summarize")
 	}
 	// An update that leaves the source alone still needs it, because
 	// every column it names is an offset into that rectangle.
@@ -696,7 +696,7 @@ func (s *Service) editPivot(ctx context.Context, ref Reference, source SheetRef,
 	if req.Action == PivotAdd {
 		if _, ok := pivot["values"]; !ok {
 			return nil, Errorf("invalid",
-				"add needs values, at least one column to summarise, such as \"B sum\"")
+				"add needs values, at least one column to summarize, such as \"B sum\"")
 		}
 		_, hasRows := pivot["rows"]
 		_, hasCols := pivot["columns"]
@@ -769,7 +769,7 @@ func pivotOffset(name string, source a1.Rect, headers map[string]int, arg string
 		offset, ok := columnOffset(name, source)
 		if !ok {
 			return 0, Errorf("invalid",
-				"column %s is outside the source %s, so it is not a column this pivot table can group or summarise",
+				"column %s is outside the source %s, so it is not a column this pivot table can group or summarize",
 				strings.ToUpper(name), a1.FormatRect(source))
 		}
 		return offset, nil
@@ -794,7 +794,7 @@ func pivotValue(spec string, source a1.Rect, headers map[string]int) (*gsheets.P
 	field, fn, ok := strings.Cut(strings.TrimSpace(body), " ")
 	if !ok {
 		return nil, Errorf("invalid",
-			"%q does not say how to summarise the column; write it as \"B sum\", and add \"as Total\" to name it",
+			"%q does not say how to summarize the column; write it as \"B sum\", and add \"as Total\" to name it",
 			spec)
 	}
 	summarize, ok := summarizeFunctions[strings.ToLower(strings.TrimSpace(fn))]

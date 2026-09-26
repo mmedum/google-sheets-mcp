@@ -235,7 +235,7 @@ func (d *driver) anchorDurabilitySteps() []step {
 		},
 		{
 			name: "the anchor followed the values through the sort",
-			why:  "the one behaviour here that a reading of the reference would have got backwards",
+			why:  "the one behavior here that a reading of the reference would have got backwards",
 			tool: "read_range",
 			args: map[string]any{"spreadsheet": d.spreadsheet, "range": "anchor:third row"},
 			check: func(text string, _ map[string]any) error {

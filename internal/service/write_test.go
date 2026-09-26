@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 // wrote reports whether a value write reached the fake.
@@ -69,7 +69,7 @@ func TestWriteRefusesWhatItWouldDestroy(t *testing.T) {
 			want: []string{"[blocked]", "A1", "not empty", "overwrite"},
 		},
 		{
-			name: "formulas need their own acknowledgement",
+			name: "formulas need their own acknowledgment",
 			req: service.WriteRequest{
 				Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "D2:D3",
 				Values: [][]any{{float64(1)}, {float64(2)}}, Overwrite: true, OverwriteFormulas: false, AllowExternalFormulas: false,
@@ -123,7 +123,7 @@ func TestWriteRefusesWhatItWouldDestroy(t *testing.T) {
 	}
 }
 
-func TestWriteWithBothAcknowledgementsGoesThrough(t *testing.T) {
+func TestWriteWithBothAcknowledgmentsGoesThrough(t *testing.T) {
 	srv, svc := standard(t)
 	res, err := svc.Write(context.Background(), service.WriteRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "D2:D3",
@@ -406,7 +406,7 @@ func TestDryRunPreviewsAWriteThatWouldBeRefused(t *testing.T) {
 	}
 }
 
-// The same for a protected range, which no acknowledgement clears: the
+// The same for a protected range, which no acknowledgment clears: the
 // preview has to say so rather than imply a flag would help.
 func TestDryRunPreviewsAWriteNothingCanAllow(t *testing.T) {
 	_, svc := standard(t)

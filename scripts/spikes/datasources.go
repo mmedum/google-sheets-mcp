@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/mmedum/google-sheets-mcp/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/auth"
 )
 
 // spikeN answers §15.N: whether manage_data_source is a tool this

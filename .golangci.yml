@@ -23,6 +23,8 @@ linters:
     - makezero
     - forbidigo
   settings:
+    misspell:
+      locale: US
     forbidigo:
       # The MCP spec's stdio transport is normative: the server MUST NOT
       # write anything to stdout that is not a valid MCP message, and MAY
@@ -57,6 +59,9 @@ linters:
         linters: [forbidigo]
       - path: _test\.go
         linters: [gocyclo, unparam, errcheck, bodyclose, revive, prealloc]
+      # CANCELLED is Google's refresh state, spelled as the API sends it.
+      - linters: [misspell]
+        text: "`CANCELLED` is a misspelling"
 
 formatters:
   enable:

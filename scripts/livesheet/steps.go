@@ -322,7 +322,7 @@ func (d *driver) findSteps() []step {
 			},
 		},
 		{
-			name: "a note is searchable and labelled",
+			name: "a note is searchable and labeled",
 			why:  "a note is a Sheets field and is in scope, unlike a comment thread",
 			tool: "find_in_spreadsheet",
 			args: map[string]any{"spreadsheet": d.spreadsheet, "query": "reconciliation", "search_notes": true},
@@ -474,7 +474,7 @@ func (d *driver) searchWithIndexingLag() {
 	})
 	// Full text is a second index and a slower one, so it gets the same
 	// polling. The search term is a bare word on purpose: Drive
-	// tokenises, and the first version of this step asked for
+	// tokenizes, and the first version of this step asked for
 	// "Quorbin-01" — a term that can never match however long the index
 	// is given. It reported "cannot tell lag from broken" for two runs,
 	// which is the failure mode of an undetermined result: it looked
@@ -519,7 +519,7 @@ func (d *driver) poll(s step) {
 	// else, the query works and the index is behind. If it matches
 	// nothing anywhere, the query itself is suspect — which is what was
 	// happening when this step searched for a hyphenated compound Drive
-	// tokenises apart, and reported patience for two runs instead.
+	// tokenizes apart, and reported patience for two runs instead.
 	d.undetermined++
 	line("UNKNOWN %s", s.name)
 	text, _, err := d.call(s.tool, s.args)
@@ -529,7 +529,7 @@ func (d *driver) poll(s step) {
 	case strings.Contains(text, "no spreadsheets matched"):
 		line("     THE QUERY MATCHES NOTHING AT ALL, not even spreadsheets indexed long ago.")
 		line("     That is not indexing lag. Suspect the query or the search itself:")
-		line("     Drive tokenises, so a hyphenated or punctuated term can never match.")
+		line("     Drive tokenizes, so a hyphenated or punctuated term can never match.")
 	default:
 		line("     The query matches other spreadsheets, so the search works and Drive")
 		line("     has not indexed this one yet — content indexing lags well behind")

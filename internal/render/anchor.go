@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
 )
 
 // Anchor is one durable label, in the terms a caller reads.

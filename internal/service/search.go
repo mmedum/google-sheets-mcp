@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/internal/redact"
-	"github.com/mmedum/google-sheets-mcp/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/redact"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
 )
 
 // SearchRequest is what search_spreadsheets asks for.
@@ -110,7 +110,7 @@ func looksLikeRFC3339(v string) bool {
 //
 // Masked, and the display name dropped entirely. The issue form asks
 // people to paste doctor's output, so what it prints has to be safe to
-// paste: enough for somebody to recognise their own account, and nothing
+// paste: enough for somebody to recognize their own account, and nothing
 // for a reader of the report. A person's name is not enough for that.
 func (s *Service) Describe(ctx context.Context) (string, error) {
 	addr, err := s.Account(ctx)

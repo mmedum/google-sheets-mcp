@@ -33,7 +33,7 @@ why.
 
 - Work on a short topic branch. `main` is released code and is never
   pushed to directly.
-- Add tests for new behaviour. A rule with no test is a rule nobody is
+- Add tests for new behavior. A rule with no test is a rule nobody is
   keeping: five rules in a sibling repository were true on paper and
   false in the code at the same time, and not one was caught by reading.
 - Put an entry under `[Unreleased]` in `CHANGELOG.md`. The staleness gate
@@ -54,7 +54,7 @@ evidence:
 
 - A1 notation is the contract. The model never sees a `GridRange`.
 - The write guard is on by default, and needs two separate
-  acknowledgements to overwrite a formula.
+  acknowledgments to overwrite a formula.
 - `input` is explicit and never substituted; the coercion report is what
   makes it safe.
 - Checkpoints are best effort and say so; protected ranges are the only

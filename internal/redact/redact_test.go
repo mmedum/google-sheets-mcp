@@ -22,7 +22,7 @@ func TestEmail(t *testing.T) {
 }
 
 // TestEmailKeepsNothingUsable is the property, rather than the exact
-// spelling: whatever the format, the local part and the organisation
+// spelling: whatever the format, the local part and the organization
 // must not survive.
 func TestEmailKeepsNothingUsable(t *testing.T) {
 	for _, addr := range []string{
@@ -125,10 +125,10 @@ func TestLineMasksWhatSomebodyElseAssembled(t *testing.T) {
 // TestAnAlreadyMaskedAddressIsStillRedacted: Accounts runs upstream in
 // gapi and rewrites an address to "…@domain"; Line runs downstream over
 // an artifact a person may paste, and its pattern needs a local part. So
-// masking more, upstream, had made the artifact keep the organisation.
+// masking more, upstream, had made the artifact keep the organization.
 func TestAnAlreadyMaskedAddressIsStillRedacted(t *testing.T) {
 	const line = "permission denied for ann@acme-corp.example"
 	if got := Line(Accounts(line)); strings.Contains(got, "acme-corp") {
-		t.Errorf("the organisation domain survived into the artifact: %s", got)
+		t.Errorf("the organization domain survived into the artifact: %s", got)
 	}
 }

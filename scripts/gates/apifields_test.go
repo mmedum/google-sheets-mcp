@@ -35,7 +35,7 @@ func fieldsFixture() fieldsSnapshot {
 	}}
 }
 
-func fieldsModelled() map[string]map[string]bool {
+func fieldsModeled() map[string]map[string]bool {
 	return map[string]map[string]bool{
 		"Message":    {"name": true, "text": true},
 		"Membership": {"name": true, "role": true},
@@ -61,14 +61,14 @@ func TestFieldsProblems(t *testing.T) {
 	}{
 		{"a matched set", both(), ""},
 		{
-			name: "a name two APIs publish, with nothing saying which is modelled",
+			name: "a name two APIs publish, with nothing saying which is modeled",
 			rows: []fieldsRow{unrelatedRow},
 			want: "add an owner row saying which API it models",
 		},
 		{
 			name: "a struct that only shares a name, with nothing saying so",
 			rows: []fieldsRow{ownerRow},
-			want: "Section.sortOrder is modelled and sheets Section does not publish it",
+			want: "Section.sortOrder is modeled and sheets Section does not publish it",
 		},
 		{
 			name: "unrelated claimed for one property rather than the schema",
@@ -115,7 +115,7 @@ func TestFieldsProblems(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			problems, _, _ := fieldsProblems(fieldsFixture(), tc.rows, fieldsModelled())
+			problems, _, _ := fieldsProblems(fieldsFixture(), tc.rows, fieldsModeled())
 			joined := strings.Join(problems, "\n")
 			switch {
 			case tc.want == "" && len(problems) > 0:
@@ -137,14 +137,14 @@ func TestFieldsProblemsCatchesAFieldGoogleAdds(t *testing.T) {
 		{API: "sheets", Schema: "Section", Property: "*", Verdict: "unrelated", Reason: "a sidebar section", line: 2},
 	}
 	rows = rows[:len(rows):len(rows)] // no room to append into a shared array
-	problems, _, _ := fieldsProblems(snap, rows, fieldsModelled())
+	problems, _, _ := fieldsProblems(snap, rows, fieldsModeled())
 	if !strings.Contains(strings.Join(problems, "\n"), "sheets Message.somethingNew is published") {
 		t.Errorf("a new published field was not reported: %v", problems)
 	}
 	// And writing it off with a reason settles it.
 	rows = append(rows, fieldsRow{API: "sheets", Schema: "Message", Property: "somethingNew",
 		Verdict: "out", Reason: "no tool reads it", line: 3})
-	if problems, _, out := fieldsProblems(snap, rows, fieldsModelled()); len(problems) > 0 || out != 1 {
+	if problems, _, out := fieldsProblems(snap, rows, fieldsModeled()); len(problems) > 0 || out != 1 {
 		t.Errorf("an out row should settle it: %v (out = %d)", problems, out)
 	}
 }
@@ -188,35 +188,35 @@ func TestFieldsWireStructsResolvesEmbedding(t *testing.T) {
 // a floor of 20 against a real 128 could not notice.
 func TestUnmatchedStructsMustBeAccountedFor(t *testing.T) {
 	published := map[string][]string{"sheets:Spreadsheet": {"spreadsheetId"}}
-	modelled := map[string]map[string]bool{
+	modeled := map[string]map[string]bool{
 		"Spreadsheet":    {"spreadsheetId": true},
 		"NewSpreadsheet": {"properties": true},
 		"Helper":         {}, // no JSON tag anywhere: not a wire type
 	}
 
-	rec, problems := readDecisions(published, map[string][]string{"Spreadsheet": {"sheets:Spreadsheet"}}, nil, modelled)
+	rec, problems := readDecisions(published, map[string][]string{"Spreadsheet": {"sheets:Spreadsheet"}}, nil, modeled)
 	if len(problems) > 0 {
 		t.Fatalf("no rows should be no problems: %v", problems)
 	}
-	got := unmatchedStructs(published, rec, modelled)
+	got := unmatchedStructs(published, rec, modeled)
 	if len(got) != 1 || !strings.Contains(got[0], "NewSpreadsheet") {
 		t.Errorf("want NewSpreadsheet reported and Helper skipped, got %v", got)
 	}
 
 	// With a local row it is accounted for, and Helper still is not asked about.
 	rows := []fieldsRow{{API: "-", Schema: "NewSpreadsheet", Property: "*", Verdict: "local", Reason: "the create body", line: 1}}
-	rec, problems = readDecisions(published, map[string][]string{"Spreadsheet": {"sheets:Spreadsheet"}}, rows, modelled)
+	rec, problems = readDecisions(published, map[string][]string{"Spreadsheet": {"sheets:Spreadsheet"}}, rows, modeled)
 	if len(problems) > 0 {
 		t.Fatalf("a valid local row is not a problem: %v", problems)
 	}
-	if got := unmatchedStructs(published, rec, modelled); len(got) != 0 {
+	if got := unmatchedStructs(published, rec, modeled); len(got) != 0 {
 		t.Errorf("want nothing left unaccounted for, got %v", got)
 	}
 
 	// A local row naming a published schema is a mistake, and a rejected
 	// row must not still count as a decision.
 	bad := []fieldsRow{{API: "-", Schema: "Spreadsheet", Property: "*", Verdict: "local", Reason: "no", line: 1}}
-	rec, problems = readDecisions(published, map[string][]string{"Spreadsheet": {"sheets:Spreadsheet"}}, bad, modelled)
+	rec, problems = readDecisions(published, map[string][]string{"Spreadsheet": {"sheets:Spreadsheet"}}, bad, modeled)
 	if len(problems) != 1 || !strings.Contains(problems[0], "not local") {
 		t.Errorf("want the local row refused, got %v", problems)
 	}

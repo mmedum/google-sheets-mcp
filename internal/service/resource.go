@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/config"
-	"github.com/mmedum/google-sheets-mcp/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
 )
 
 // MaxResourceChars is what one resource hands back.
@@ -72,7 +72,7 @@ func (s *Service) SheetCSV(ctx context.Context, spreadsheet, sheet string) (*She
 
 	// Trimmed before rendering, not after. The window is the sheet's
 	// allocated size and the used range is usually a fraction of it, so
-	// rendering the whole window first materialises every empty cell as
+	// rendering the whole window first materializes every empty cell as
 	// a string only to slice them away — 388 KB and a thousand
 	// allocations to describe sixty cells, on a sparse sheet.
 	g.Cells = g.Cells[:used.LastRow-window.FirstRow+1]

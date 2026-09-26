@@ -14,7 +14,7 @@ make check     # everything CI runs
 
 `make check` is the definition of done: gofmt, `go vet` including the
 tagged tests, golangci-lint, race tests with an 80% coverage floor per
-package, govulncheck, the licence allow-list, the error-class gate, the
+package, govulncheck, the license allow-list, the error-class gate, the
 leak scan, the workflow pin and shell check, the schema diff, the stdio
 smoke test and the staleness gate.
 
@@ -36,7 +36,8 @@ nothing" print the same sentence otherwise.
 | `go run ./scripts/gates live-cover` | Every option of every registered tool is exercised by a step in the live driver, compared against the schema the binary publishes rather than a list anybody maintains. §13 promises the driver covers every tool and every op; when this first ran it covered 14 of 28 options. This half reads the driver's *source*, so it runs in CI without credentials — and it can be satisfied by a step that exists and never executes, which is why `make live` measures the same thing on the wire. Both read `internal/livecover` for the exemption list, so they cannot disagree. |
 | `go run ./scripts/gates pins` | Every action pinned to a full commit SHA, every tool version exact, and every workflow pinning its shell at the workflow level. |
 | `go run ./scripts/gates smoke` | Drives the built binary over stdio without credentials and asserts a clean exit when stdin closes. |
-| `go run ./scripts/gates schema-diff` | Dumps the tool schemas and compares them with the last tag's, built in a throwaway worktree. A removed tool or field, or a new required field, is breaking. |
+| `go run ./scripts/gates schema-diff` | Dumps the tool schemas and compares them with the last tag's, built in a throwaway worktree. A removed tool or field, or a new required field, is breaking. It fails on a break unless go.mod's major version (`/vN`, none is 1) is above the last tag's; either way it lists every break. |
+| `go run ./scripts/gates release-tag v2.0.0` | The tag's major version against go.mod's (`/vN`, none is 1; a v0 tag needs none either). `release.yml` runs it before anything is built, because `go install ...@latest` never serves a v2 tag on a module without `/v2`. It runs at release time and is excused from `parity` by name. |
 | `go run ./scripts/gates mcpb` | The Claude Desktop bundle's manifest against the files the packer will stage: `entry_point`, `mcp_config.command`, every `platform_overrides.*.command`, and every `${user_config.x}` an env value spends. It needs no build, because the staged *names* are static — so a manifest naming something that will never exist fails today rather than at the tag. The packing itself is `mcpb-pack`, which runs at release time and is excused from `parity` by name. |
 | `go run ./scripts/gates parity` | `make check` and `ci.yml` run the same things. The gate list is derived from the dispatcher's own case labels, so it catches the third direction two lists compared with each other cannot: a gate the program implements that neither file runs. An excused gate needs a written reason, and an empty reason is itself a failure. |
 | `go run ./scripts/gates staleness` | The README's tool table against the registered tools, `docs/configuration.md` against the settings `config.go` registers, the CHANGELOG against what changed since the last tag, every repository path the documents link to, the architecture's package tree against the packages that exist, and a status line claiming a version nothing can confirm. |
@@ -89,7 +90,7 @@ Four rules keep that from happening here:
 - The driver creates its own spreadsheets and fills them with its own
   synthetic data. It never reads a spreadsheet it did not write, so the
   values in a transcript are its own and are safe to paste into a commit
-  message. Redaction of ids and links is a second line of defence and
+  message. Redaction of ids and links is a second line of defense and
   lives in the print helper only: scrubbing on the read path means a step
   parses a placeholder out of one result and feeds it back into the next
   call, which is a mistake a sibling project made and had to undo.

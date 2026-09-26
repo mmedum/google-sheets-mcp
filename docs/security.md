@@ -111,11 +111,11 @@ link, and no longer for `parents`: a raw folder id is unusable — no tool
 here takes a folder, and turning one into a name needs a Drive call this
 server does not make — so it was an identifier fetched and printed
 because it happened to be in the response. A field mask is where
-minimisation is cheap.
+minimization is cheap.
 
 The risk that is real is the **paste path**: a result copied into a
 public issue. That is why the issue form says to describe a tool result
-rather than paste it, and why the three artefacts that *are* meant to be
+rather than paste it, and why the three artifacts that *are* meant to be
 pasted — a debug log, `doctor` and `status` — are the ones that mask.
 
 ## What the server refuses to do
@@ -132,7 +132,7 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
   the request is built, with the obstacle named in A1. Sheets has no
   undo and the API cannot restore version history, so this is the only
   guard there is. A formula that evaluated to an error is still a
-  formula and still needs the second acknowledgement: a live run found
+  formula and still needs the second acknowledgment: a live run found
   the version of this check that tested the cell's *kind*, which
   `#REF!` overwrites.
 - **A formula that reaches outside the spreadsheet needs saying so.**
@@ -161,7 +161,7 @@ credentials, in the pre-commit hook and in CI. **`go run ./scripts/gates
 leaks`** covers identifiers and data, which are not secrets and pass a
 credential scanner untouched — a spreadsheet id in a fixture leaks what
 somebody works on rather than a password. Every rule in it is an
-allow-list: a deny-list naming the domain or the organisation to watch
+allow-list: a deny-list naming the domain or the organization to watch
 for would itself be the disclosure.
 
 What a pattern cannot do is the other half. A cell value, a sheet title,

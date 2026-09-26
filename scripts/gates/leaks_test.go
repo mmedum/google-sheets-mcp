@@ -243,7 +243,7 @@ func gitIn(t *testing.T, dir string, args ...string) {
 
 // fixtureRepo is a throwaway repository with enough tracked files to
 // meet the scan's own "am I seeing a repository" floor, and one
-// gitignored name to prove the ignore rules are still honoured.
+// gitignored name to prove the ignore rules are still honored.
 func fixtureRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

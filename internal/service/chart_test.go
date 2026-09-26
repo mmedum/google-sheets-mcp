@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
 )
 
 // addOne is the chart every test here starts from: a column chart on the
@@ -49,7 +49,7 @@ func TestChartAdd(t *testing.T) {
 // TestChartAddRefusesWhatGoogleAnswersWith500 is the reason manage_chart
 // validates a spec at all. Live, a basicChart with neither domains nor
 // series comes back HTTP 500 "Internal error encountered", and §6.5
-// classes a 500 as retryable — so the only defence is never sending it.
+// classes a 500 as retryable — so the only defense is never sending it.
 func TestChartAddRefusesWhatGoogleAnswersWith500(t *testing.T) {
 	srv, svc := standard(t)
 	_, err := svc.ManageChart(context.Background(), service.ChartRequest{

@@ -72,7 +72,7 @@ func abTest(ctx context.Context, cfg, model string, budget float64, f Fixture) R
 		res.Note = fmt.Sprintf("the arms disagree about which row that is: %s against %s. That is the finding, "+
 			"and it is a stronger one than a call count", gridCell, rowsCell)
 	default:
-		res.Note = fmt.Sprintf("both arms wrote to %s; the difference is %d call(s) in favour of %s",
+		res.Note = fmt.Sprintf("both arms wrote to %s; the difference is %d call(s) in favor of %s",
 			gridCell, abs(len(withGrid.Calls)-len(withRows.Calls)), cheaper(withGrid, withRows))
 	}
 	line("  %s", res.Note)

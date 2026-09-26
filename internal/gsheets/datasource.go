@@ -4,7 +4,7 @@ package gsheets
 // removal. Added in phase 4, behind a setting (§17.6a) because
 // addDataSource needs a scope this server does not ask for by default.
 //
-// Only the BigQuery arm is modelled. Looker is the other, and it needs a
+// Only the BigQuery arm is modeled. Looker is the other, and it needs a
 // Looker instance rather than a Cloud project, which is a second thing
 // nobody has by accident.
 

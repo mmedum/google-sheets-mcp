@@ -34,7 +34,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // Limits the API enforces, and the reason a parse can refuse a
@@ -240,12 +240,12 @@ func ParseRect(s string) (Rect, error) {
 	if (a.col == 0) != (b.col == 0) {
 		return Rect{}, invalid("%q mixes a column with a row; write a rectangle (B2:D40), whole columns (B:D) or whole rows (2:5)", s)
 	}
-	return Rect{FirstCol: a.col, FirstRow: a.row, LastCol: b.col, LastRow: b.row}.Normalise(), nil
+	return Rect{FirstCol: a.col, FirstRow: a.row, LastCol: b.col, LastRow: b.row}.Normalize(), nil
 }
 
-// Normalise puts a reversed rectangle the right way round. "D40:B2" and
+// Normalize puts a reversed rectangle the right way round. "D40:B2" and
 // "B2:D40" are the same rectangle and Sheets accepts both.
-func (r Rect) Normalise() Rect {
+func (r Rect) Normalize() Rect {
 	if r.FirstCol != 0 && r.LastCol != 0 && r.FirstCol > r.LastCol {
 		r.FirstCol, r.LastCol = r.LastCol, r.FirstCol
 	}

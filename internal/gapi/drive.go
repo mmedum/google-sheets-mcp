@@ -47,8 +47,8 @@ type FileList struct {
 // turning one into a name needs a Drive call this server does not make.
 // So it was an identifier fetched, returned and printed because it
 // happened to be in the response — the "return the whole upstream
-// payload" habit in miniature. A field mask is where data minimisation
-// is actually cheap, so it is minimised here rather than masked later.
+// payload" habit in miniature. A field mask is where data minimization
+// is actually cheap, so it is minimized here rather than masked later.
 const SearchFields = "nextPageToken,files(id,name,mimeType,modifiedTime,createdTime,owners(displayName,emailAddress),webViewLink)"
 
 // FileFields is what GetFile asks for.

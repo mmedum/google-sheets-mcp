@@ -1,6 +1,6 @@
 package service
 
-import "github.com/mmedum/google-sheets-mcp/internal/config"
+import "github.com/mmedum/google-sheets-mcp/v2/internal/config"
 
 // Budget is what one call may read, render and hand back.
 //

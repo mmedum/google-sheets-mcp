@@ -3,7 +3,7 @@ package a1_test
 import (
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
 )
 
 // A1 parsing is on the path of every call, several times: a range is

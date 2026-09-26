@@ -111,7 +111,7 @@ func build(ctx context.Context, bin string) (Fixture, func(), error) {
 	// in the formula and invisible in the value it produced.
 	//
 	// Written left to right. "E21:D21" was the first spelling, which A1
-	// normalises to D21:E21 — so the zero and the formula landed the
+	// normalizes to D21:E21 — so the zero and the formula landed the
 	// wrong way round, the formula referred to itself, and the task told
 	// the model to diagnose an error in a cell holding a plain 0.
 	if _, err := call("write_values", map[string]any{

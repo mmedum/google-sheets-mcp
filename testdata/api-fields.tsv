@@ -2,8 +2,8 @@
 # testdata/api-fields.json, is not — `gates api-diff` writes that.
 #
 # out		the property is published and this server deliberately does not model it
-# extra		the field is modelled and public discovery does not publish it
-# alias		the schema is modelled by the struct the reason names (property *)
+# extra		the field is modeled and public discovery does not publish it
+# alias		the schema is modeled by the struct the reason names (property *)
 # owner		which API a struct of a shared name models (property *)
 # unrelated	a struct sharing this schema's name is about something else (property *)
 # local		a struct in internal/gsheets that models no published schema at all (property *)
@@ -103,13 +103,13 @@ sheets	SetDataValidationRequest	filteredRowsIncluded	out	format_cells, transform
 sheets	SlicerSpec	filterCriteria	out	format_cells, transform_range and manage_pivot_table take ranges and rules rather than a per-column criteria set, so nothing here builds one or reads one back
 #
 # Chart kinds this server cannot rebuild.
-sheets	ChartSpec	bubbleChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modelling it
-sheets	ChartSpec	candlestickChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modelling it
-sheets	ChartSpec	histogramChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modelling it
-sheets	ChartSpec	orgChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modelling it
-sheets	ChartSpec	scorecardChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modelling it
-sheets	ChartSpec	treemapChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modelling it
-sheets	ChartSpec	waterfallChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modelling it
+sheets	ChartSpec	bubbleChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modeling it
+sheets	ChartSpec	candlestickChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modeling it
+sheets	ChartSpec	histogramChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modeling it
+sheets	ChartSpec	orgChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modeling it
+sheets	ChartSpec	scorecardChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modeling it
+sheets	ChartSpec	treemapChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modeling it
+sheets	ChartSpec	waterfallChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modeling it
 #
 # Chart and slicer painting.
 sheets	BasicChartAxis	format	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
@@ -148,33 +148,33 @@ sheets	SlicerSpec	backgroundColorStyle	out	manage_chart sets a chart's data, kin
 sheets	SlicerSpec	horizontalAlignment	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
 sheets	SlicerSpec	textFormat	out	manage_chart sets a chart's data, kind, title and placement; how it is painted is left to the Sheets UI, and read_formatting reports cell formatting rather than chart styling
 #
-# The flat colour Sheets deprecated.
-sheets	BandingProperties	firstBandColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
-sheets	BandingProperties	footerColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
-sheets	BandingProperties	headerColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
-sheets	BandingProperties	secondBandColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
-sheets	Border	color	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
-sheets	CellFormat	backgroundColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
-sheets	SheetProperties	tabColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
-sheets	SortSpec	backgroundColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
-sheets	SortSpec	foregroundColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
-sheets	TextFormat	foregroundColor	out	Sheets deprecated a flat Color in favour of ColorStyle, which carries a theme colour as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's colour through tabColorStyle
+# The flat color Sheets deprecated.
+sheets	BandingProperties	firstBandColor	out	Sheets deprecated a flat Color in favor of ColorStyle, which carries a theme color as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's color through tabColorStyle
+sheets	BandingProperties	footerColor	out	Sheets deprecated a flat Color in favor of ColorStyle, which carries a theme color as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's color through tabColorStyle
+sheets	BandingProperties	headerColor	out	Sheets deprecated a flat Color in favor of ColorStyle, which carries a theme color as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's color through tabColorStyle
+sheets	BandingProperties	secondBandColor	out	Sheets deprecated a flat Color in favor of ColorStyle, which carries a theme color as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's color through tabColorStyle
+sheets	Border	color	out	Sheets deprecated a flat Color in favor of ColorStyle, which carries a theme color as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's color through tabColorStyle
+sheets	CellFormat	backgroundColor	out	Sheets deprecated a flat Color in favor of ColorStyle, which carries a theme color as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's color through tabColorStyle
+sheets	SheetProperties	tabColor	out	Sheets deprecated a flat Color in favor of ColorStyle, which carries a theme color as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's color through tabColorStyle
+sheets	SortSpec	backgroundColor	out	Sheets deprecated a flat Color in favor of ColorStyle, which carries a theme color as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's color through tabColorStyle
+sheets	SortSpec	foregroundColor	out	Sheets deprecated a flat Color in favor of ColorStyle, which carries a theme color as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's color through tabColorStyle
+sheets	TextFormat	foregroundColor	out	Sheets deprecated a flat Color in favor of ColorStyle, which carries a theme color as well; this server reads and writes the one the API asks new callers to use, and manage_sheet sets a tab's color through tabColorStyle
 #
 # A border width Sheets deprecated.
-sheets	Border	width	out	Border here is a cell border, which format_cells writes and read_formatting reports; width was deprecated in favour of style, which is the one modelled
+sheets	Border	width	out	Border here is a cell border, which format_cells writes and read_formatting reports; width was deprecated in favor of style, which is the one modeled
 #
 # Sorting and grouping detail no tool sets.
-sheets	BandingProperties	footerColorStyle	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
-sheets	ChartData	columnReference	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
-sheets	ChartData	groupRule	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
-sheets	PivotGroup	groupLimit	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
-sheets	PivotGroup	groupRule	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
-sheets	PivotGroup	repeatHeadings	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
-sheets	PivotGroup	valueBucket	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
-sheets	PivotGroup	valueMetadata	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
-sheets	PivotValue	calculatedDisplayType	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
-sheets	SortSpec	backgroundColorStyle	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
-sheets	SortSpec	foregroundColorStyle	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colours, bucketing rules and repeated headings are refinements no tool offers
+sheets	BandingProperties	footerColorStyle	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
+sheets	ChartData	columnReference	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
+sheets	ChartData	groupRule	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
+sheets	PivotGroup	groupLimit	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
+sheets	PivotGroup	groupRule	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
+sheets	PivotGroup	repeatHeadings	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
+sheets	PivotGroup	valueBucket	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
+sheets	PivotGroup	valueMetadata	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
+sheets	PivotValue	calculatedDisplayType	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
+sheets	SortSpec	backgroundColorStyle	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
+sheets	SortSpec	foregroundColorStyle	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
 #
 # Request and response members no tool builds.
 sheets	AutoFillRequest	range	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability

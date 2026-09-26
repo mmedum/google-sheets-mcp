@@ -14,8 +14,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
 )
 
 // Kind says what a cell holds. A formula is a kind of its own because it
@@ -251,7 +251,7 @@ func cell(cd *gsheets.CellData, formatted Formatted) Cell {
 	return c
 }
 
-// describeValidation summarises a rule in a few words. The whole rule is
+// describeValidation summarizes a rule in a few words. The whole rule is
 // read_formatting's business; here it only has to say the cell has one,
 // so a write can be told it is about to remove it.
 func describeValidation(r *gsheets.DataValidationRule) string {
@@ -310,7 +310,7 @@ func (g *Grid) AnyComputed() bool {
 	return false
 }
 
-// Counts summarises what a rectangle holds, which is what a guard
+// Counts summarizes what a rectangle holds, which is what a guard
 // refusal and a dry run both report.
 type Counts struct {
 	NonEmpty int

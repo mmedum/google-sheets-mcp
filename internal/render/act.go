@@ -5,14 +5,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
 )
 
 // The words for a structural change, in one place.
 //
 // They used to be composed in the service, which built a fragment
 // ("insert 2 row(s) before row 2 on %q") that this package then
-// capitalised and wrapped. Phrasing decided above the renderer is
+// capitalized and wrapped. Phrasing decided above the renderer is
 // phrasing the goldens cannot cover, and the same fragment appeared in a
 // refusal, a preview and a result, where it had to agree with itself.
 // So the service passes the parts and the template lives here.
@@ -159,8 +159,8 @@ type SheetAct struct {
 	// Destination is the other spreadsheet for copy_to, named the way
 	// the caller named it.
 	Destination string
-	// Colour is a hex colour or empty, which clears.
-	Colour string
+	// Color is a hex color or empty, which clears.
+	Color string
 }
 
 // Phrase says what the act does.
@@ -185,10 +185,10 @@ func (a SheetAct) Phrase() string {
 	case "freeze":
 		return fmt.Sprintf("freeze %d row(s) and %d column(s) on %q", a.Rows, a.Cols, a.Sheet)
 	default:
-		if a.Colour == "" {
-			return fmt.Sprintf("clear the tab colour of %q", a.Sheet)
+		if a.Color == "" {
+			return fmt.Sprintf("clear the tab color of %q", a.Sheet)
 		}
-		return fmt.Sprintf("set the tab colour of %q to %s", a.Sheet, a.Colour)
+		return fmt.Sprintf("set the tab color of %q to %s", a.Sheet, a.Color)
 	}
 }
 
@@ -211,7 +211,7 @@ func CopyDone(a SheetAct, copied string) string {
 		upperFirst(a.Phrase()), copied)
 }
 
-// upperFirst capitalises a phrase that was written to sit mid-sentence.
+// upperFirst capitalizes a phrase that was written to sit mid-sentence.
 func upperFirst(s string) string {
 	if s == "" {
 		return s

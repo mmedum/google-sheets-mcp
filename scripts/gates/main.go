@@ -20,6 +20,7 @@
 //	go run ./scripts/gates api-fields
 //	go run ./scripts/gates api-diff
 //	go run ./scripts/gates parity
+//	go run ./scripts/gates release-tag v2.0.0
 //	go run ./scripts/gates precommit
 package main
 
@@ -34,7 +35,7 @@ func main() {
 		fail("usage: gates coverage PROFILE MIN | classes | leaks [history] | transcript | " +
 			"live-cover BIN | pins | smoke BIN | staleness BIN | schema-diff BIN | mcpb | " +
 			"mcpb-pack VERSION [DIST] | api-coverage | api-fields | api-diff | schema-refetch | parity | " +
-			"release-notes VERSION [CHANGELOG] | precommit")
+			"release-notes VERSION [CHANGELOG] | release-tag TAG | precommit")
 	}
 	root, err := repoRoot()
 	if err != nil {
@@ -83,6 +84,10 @@ func main() {
 		// statement, because this switch is already at the cyclomatic
 		// limit the linter enforces.
 		releaseNotesToStdout(os.Args[2:])
+	case "release-tag":
+		// Release only: it runs before goreleaser, and refuses a tag
+		// whose major version is not go.mod's.
+		check(releaseTag(tagArg()), "release tag")
 	case "registry-publish":
 		// Not a gate: it runs after a release, printing the entry the
 		// publish workflow hands mcp-publisher.
@@ -124,6 +129,13 @@ func contractCommand(name string) bool {
 		return false
 	}
 	return true
+}
+
+func tagArg() string {
+	if len(os.Args) < 3 {
+		fail("usage: gates release-tag TAG")
+	}
+	return os.Args[2]
 }
 
 func binArg() string {
