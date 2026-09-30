@@ -244,3 +244,15 @@ func destructive(t *testing.T) (*sheetstest.Server, *service.Service) {
 	fs.EnableDestructive = true
 	return srv, service.New(service.Deps{API: srv.Client(), Config: fs})
 }
+
+// accepting is a person who confirms every question, for tests of what a
+// write does once it is confirmed.
+type accepting struct{}
+
+func (accepting) Ask(_ context.Context, build service.Build) error {
+	_, err := build()
+	return err
+}
+
+// accepted is a context whose asking writes are confirmed.
+func accepted() context.Context { return service.WithAsker(context.Background(), accepting{}) }

@@ -338,7 +338,7 @@ func TestDeleteSheetCountsBeforeItAsks(t *testing.T) {
 	srv, svc := destructive(t)
 	ctx := context.Background()
 
-	_, err := svc.DeleteSheet(ctx, service.DeleteSheetRequest{
+	_, err := svc.DeleteSheet(service.WithAsker(ctx, accepting{}), service.DeleteSheetRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet,
 	})
 	if err == nil || !strings.HasPrefix(err.Error(), "[blocked]") {
@@ -353,7 +353,7 @@ func TestDeleteSheetCountsBeforeItAsks(t *testing.T) {
 		}
 	}
 
-	res, err := svc.DeleteSheet(ctx, service.DeleteSheetRequest{
+	res, err := svc.DeleteSheet(service.WithAsker(ctx, accepting{}), service.DeleteSheetRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Confirm: true,
 	})
 	if err != nil {
@@ -369,7 +369,7 @@ func TestDeleteSheetCountsBeforeItAsks(t *testing.T) {
 
 func TestDeleteSheetDryRunSendsNothing(t *testing.T) {
 	srv, svc := destructive(t)
-	res, err := svc.DeleteSheet(context.Background(), service.DeleteSheetRequest{
+	res, err := svc.DeleteSheet(accepted(), service.DeleteSheetRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, DryRun: true,
 	})
 	if err != nil {

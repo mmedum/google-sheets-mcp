@@ -742,9 +742,10 @@ func (d *driver) deleteDimensionSteps() []step {
 			},
 		},
 		{
-			name: "confirmed, it deletes",
-			why:  "a gate that never opens is a tool nobody can use",
-			tool: "delete_dimensions",
+			name:   "confirmed, it deletes",
+			why:    "a gate that never opens is a tool nobody can use",
+			tool:   "delete_dimensions",
+			answer: "accept",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet,
 				"dimension": "rows", "band": "30:31", "confirm": true,
@@ -807,9 +808,10 @@ func (d *driver) clearSteps() []step {
 			},
 		},
 		{
-			name: "confirmed, it clears the values and keeps the rest",
-			why:  "the API keeps formatting, notes and validation rules, and the result says so",
-			tool: "clear_values",
+			name:   "confirmed, it clears the values and keeps the rest",
+			why:    "the API keeps formatting, notes and validation rules, and the result says so",
+			tool:   "clear_values",
+			answer: "accept",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A40:B41", "confirm": true,
 			},
@@ -861,10 +863,25 @@ func (d *driver) deleteSteps() []step {
 			},
 		},
 		{
-			name: "confirmed, the sheet goes",
-			why:  "and the result lists what is left, so the next call can name one",
-			tool: "delete_sheet",
-			args: map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "confirm": true},
+			name:        "declined by the person, the sheet stays",
+			why:         "§9a: confirm is the model's word, and the person is asked as well",
+			tool:        "delete_sheet",
+			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "confirm": true},
+			answer:      "decline",
+			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "not confirmed by the person") {
+					return fmt.Errorf("the refusal is not the person's: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name:   "confirmed, the sheet goes",
+			why:    "and the result lists what is left, so the next call can name one",
+			tool:   "delete_sheet",
+			answer: "accept",
+			args:   map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "confirm": true},
 			check: func(_ string, s map[string]any) error {
 				if cells, _ := s["cells"].(float64); cells < 1 {
 					return fmt.Errorf("the deletion reported %v cell(s) on a sheet this run filled", cells)

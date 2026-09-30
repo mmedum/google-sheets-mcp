@@ -214,6 +214,7 @@ func registerWrite(s *mcp.Server, d Deps) {
 			"where it did. " +
 			"To make room rather than remove it, or to hide a band, use edit_dimensions. confirm is required.",
 		Kind: Destructive,
+		Asks: true,
 		Handle: func(ctx context.Context, in DeleteDimensionsInput) (*service.DimensionResult, error) {
 			return d.Service.EditDimensions(ctx, service.DimensionRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Action: service.DimDelete,
@@ -231,6 +232,7 @@ func registerWrite(s *mcp.Server, d Deps) {
 			"Sheets cannot undo it, so confirm is required and dry_run shows what is there. " +
 			"To replace values rather than remove them, use write_values.",
 		Kind: Destructive,
+		Asks: true,
 		Handle: func(ctx context.Context, in ClearInput) (*service.ClearResult, error) {
 			return d.Service.Clear(ctx, service.ClearRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range,
@@ -246,6 +248,7 @@ func registerWrite(s *mcp.Server, d Deps) {
 			"Consider manage_sheet duplicate first, or manage_sheet hide, which keeps the sheet and takes it out of " +
 			"the way. confirm is required.",
 		Kind: Destructive,
+		Asks: true,
 		Handle: func(ctx context.Context, in DeleteSheetInput) (*service.DeleteSheetResult, error) {
 			return d.Service.DeleteSheet(ctx, service.DeleteSheetRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Confirm: in.Confirm, DryRun: in.DryRun,

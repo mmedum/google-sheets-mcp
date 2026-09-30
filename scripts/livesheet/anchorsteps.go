@@ -321,9 +321,10 @@ func (d *driver) anchorRemovalSteps() []step {
 			expectError: "invalid",
 		},
 		{
-			name: "confirmed, the delete takes it",
-			why:  "the count in the refusal has to be what actually happens, not a warning nobody checked",
-			tool: "delete_dimensions",
+			name:   "confirmed, the delete takes it",
+			why:    "the count in the refusal has to be what actually happens, not a warning nobody checked",
+			tool:   "delete_dimensions",
+			answer: "accept",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": anchorSheet,
 				"dimension": "rows", "band": "12:12", "confirm": true,

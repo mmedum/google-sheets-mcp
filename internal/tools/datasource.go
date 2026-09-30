@@ -27,7 +27,7 @@ type ManageDataSourceInput struct {
 type DeleteDataSourceInput struct {
 	Spreadsheet string `json:"spreadsheet" jsonschema:"a spreadsheet id, any docs.google.com/spreadsheets URL, or an exact title"`
 	ID          string `json:"id" jsonschema:"which data source, as manage_data_source list and get_spreadsheet both report"`
-	Confirm     bool   `json:"confirm" jsonschema:"required: this removes the data source and the sheet Google made for it, with everything on that sheet, and getting it back means re-running the query"`
+	Confirm     bool   `json:"confirm,omitempty" jsonschema:"required: this removes the data source and the sheet Google made for it, with everything on that sheet, and getting it back means re-running the query"`
 	DryRun      bool   `json:"dry_run,omitempty" jsonschema:"say what would change and send nothing"`
 }
 
@@ -43,6 +43,7 @@ func registerDataSource(s *mcp.Server, d Deps) {
 			"this tool is only needed to change one. " +
 			"Deleting one is delete_data_source, which is off by default and needs confirm.",
 		Kind: Connected,
+		Asks: true,
 		Handle: func(ctx context.Context, in ManageDataSourceInput) (*service.SourceResult, error) {
 			return d.Service.ManageDataSource(ctx, service.SourceRequest{
 				Spreadsheet: in.Spreadsheet, Action: in.Action, ID: in.ID,
@@ -74,6 +75,7 @@ func registerDeleteDataSource(s *mcp.Server, d Deps) {
 			"manage_data_source list and get_spreadsheet both report the ids. " +
 			"This needs no BigQuery scope, so it reaches a data source somebody else connected.",
 		Kind: Destructive,
+		Asks: true,
 		Handle: func(ctx context.Context, in DeleteDataSourceInput) (*service.SourceResult, error) {
 			return d.Service.ManageDataSource(ctx, service.SourceRequest{
 				Spreadsheet: in.Spreadsheet, Action: service.SourceDelete, ID: in.ID,

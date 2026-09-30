@@ -478,6 +478,13 @@ func (s *Service) DeleteSheet(ctx context.Context, req DeleteSheetRequest) (*Del
 				"it. Pass confirm to go ahead, or duplicate the sheet first",
 			props.Title, counts.NonEmpty, counts.Formulas, charts, render.AnchorsTaken(doomed))
 	}
+	if err := ask(ctx, func() (render.Question, error) {
+		return render.AskDeleteSheet(ref.ID, titleOf(sp), props.SheetID, props.Title, render.Contents{
+			Cells: counts.NonEmpty, Formulas: counts.Formulas, Charts: charts, Anchors: len(doomed),
+		}), nil
+	}); err != nil {
+		return nil, err
+	}
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{plan.DeleteSheet(props.SheetID)},
 	}); err != nil {

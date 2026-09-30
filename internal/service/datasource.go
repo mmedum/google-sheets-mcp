@@ -139,12 +139,24 @@ func (s *Service) addSource(ctx context.Context, ref Reference, req SourceReques
 		return res, nil
 	}
 	op := plan.AddDataSource(project, query)
+	whole := ""
 	if table != "" {
 		tableProject := strings.TrimSpace(req.TableProject)
 		if tableProject == "" {
 			tableProject = project
 		}
-		op = plan.AddDataSourceTable(project, tableProject, strings.TrimSpace(req.Dataset), table)
+		dataset := strings.TrimSpace(req.Dataset)
+		op = plan.AddDataSourceTable(project, tableProject, dataset, table)
+		whole = tableProject + "." + dataset + "." + table
+	}
+	if err := ask(ctx, func() (render.Question, error) {
+		sp, err := s.card(ctx, ref.ID)
+		if err != nil {
+			return render.Question{}, err
+		}
+		return render.AskAddSource(ref.ID, titleOf(sp), project, query, whole), nil
+	}); err != nil {
+		return nil, err
 	}
 	reply, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{op},
@@ -179,6 +191,19 @@ func (s *Service) refreshSource(ctx context.Context, ref Reference, req SourceRe
 	if req.Action == SourceCancel {
 		op = plan.CancelDataSourceRefresh(id)
 	}
+	if req.Action == SourceRefresh && id == "" {
+		// Refreshing every source runs every query again, each billed
+		// (§9a). One source the caller named asks nothing.
+		if err := ask(ctx, func() (render.Question, error) {
+			sp, err := s.card(ctx, ref.ID)
+			if err != nil {
+				return render.Question{}, err
+			}
+			return render.AskRefreshAll(ref.ID, titleOf(sp), len(sp.DataSources)), nil
+		}); err != nil {
+			return nil, err
+		}
+	}
 	reply, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{op},
 	})
@@ -212,11 +237,16 @@ func (s *Service) deleteSource(ctx context.Context, ref Reference, req SourceReq
 	}
 	// Named before it goes, from the card: the delete takes a whole
 	// sheet with it, and the reply says nothing about what that was.
-	_, byID := sheetTitles(sp)
-	var sheet string
-	for _, ds := range sp.DataSources {
-		if ds.DataSourceID == id {
-			sheet = byID[ds.SheetID]
+	sheet, found := sourceSheet(sp, id)
+	if !found {
+		// Read again past the cache before saying so: a source connected
+		// in the last half minute is not on a cached card.
+		s.forget(ref.ID)
+		if sp, err = s.card(ctx, ref.ID); err != nil {
+			return nil, err
+		}
+		if sheet, found = sourceSheet(sp, id); !found {
+			return nil, Errorf("not_found", "this spreadsheet has no data source %q; manage_data_source list names them", id)
 		}
 	}
 	act := render.SourceAct{Action: SourceDelete, ID: id, Sheet: sheet}
@@ -242,6 +272,11 @@ func (s *Service) deleteSource(ctx context.Context, ref Reference, req SourceReq
 			"deleting the data source %s removes it%s, and getting it back means re-running the query it was "+
 				"built from. Pass confirm to go ahead", id, where)
 	}
+	if err := ask(ctx, func() (render.Question, error) {
+		return render.AskDeleteSource(ref.ID, titleOf(sp), id, sheet), nil
+	}); err != nil {
+		return nil, err
+	}
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{plan.DeleteDataSource(id)},
 	}); err != nil {
@@ -251,6 +286,18 @@ func (s *Service) deleteSource(ctx context.Context, ref Reference, req SourceReq
 	res.ID = id
 	res.Summary = render.SourceDone(act)
 	return res, nil
+}
+
+// sourceSheet is the title of the sheet a data source made, and whether
+// the card has that source at all.
+func sourceSheet(sp *gsheets.Spreadsheet, id string) (string, bool) {
+	_, byID := sheetTitles(sp)
+	for _, ds := range sp.DataSources {
+		if ds.DataSourceID == id {
+			return byID[ds.SheetID], true
+		}
+	}
+	return "", false
 }
 
 // sourceRecords flattens the card's data sources.

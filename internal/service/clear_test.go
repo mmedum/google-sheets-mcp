@@ -16,7 +16,7 @@ func TestClearNeedsConfirmAndSaysWhatIsThere(t *testing.T) {
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "A1:B3",
 	}
 
-	_, err := svc.Clear(ctx, req)
+	_, err := svc.Clear(service.WithAsker(ctx, accepting{}), req)
 	if err == nil || !strings.HasPrefix(err.Error(), "[blocked]") {
 		t.Fatalf("a clear without confirm gave %v", err)
 	}
@@ -28,7 +28,7 @@ func TestClearNeedsConfirmAndSaysWhatIsThere(t *testing.T) {
 	}
 
 	req.Confirm = true
-	res, err := svc.Clear(ctx, req)
+	res, err := svc.Clear(service.WithAsker(ctx, accepting{}), req)
 	if err != nil {
 		t.Fatalf("Clear: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestClearNeedsConfirmAndSaysWhatIsThere(t *testing.T) {
 
 func TestClearDryRunSendsNothing(t *testing.T) {
 	srv, svc := destructive(t)
-	res, err := svc.Clear(context.Background(), service.ClearRequest{
+	res, err := svc.Clear(accepted(), service.ClearRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "A1:B3", DryRun: true,
 	})
 	if err != nil {
@@ -62,7 +62,7 @@ func TestClearDryRunSendsNothing(t *testing.T) {
 // saying so before the call beats a 403 from Google that names an id.
 func TestClearRefusesAProtectedRange(t *testing.T) {
 	srv, svc := destructive(t)
-	_, err := svc.Clear(context.Background(), service.ClearRequest{
+	_, err := svc.Clear(accepted(), service.ClearRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "A1:D1", Confirm: true,
 	})
 	if err == nil || !strings.Contains(err.Error(), "protected") {
@@ -75,7 +75,7 @@ func TestClearRefusesAProtectedRange(t *testing.T) {
 
 func TestClearPastTheSheetIsRefused(t *testing.T) {
 	_, svc := destructive(t)
-	_, err := svc.Clear(context.Background(), service.ClearRequest{
+	_, err := svc.Clear(accepted(), service.ClearRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "A60:B70", Confirm: true,
 	})
 	if err == nil || !strings.HasPrefix(err.Error(), "[not_found]") {

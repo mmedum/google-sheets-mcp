@@ -237,6 +237,13 @@ The four destructive tools are **not registered at all** unless
 `GSHEETS_ENABLE_DESTRUCTIVE=true`, and each still needs `confirm: true`
 on the call.
 
+When your client supports MCP elicitation, the server also asks you
+itself before those four, before connecting a BigQuery data source, and
+before refreshing every data source at once. Only your Accept lets the
+write go ahead; anything else is `[blocked]`. A client that cannot ask
+gets no question, unless `GSHEETS_REQUIRE_PROMPT=true`, which refuses
+those writes instead.
+
 `manage_data_source` is not registered either, unless
 `GSHEETS_ENABLE_DATA_SOURCES=true` — and that setting is also what makes
 `login` ask for a third scope. It is off by default because Connected

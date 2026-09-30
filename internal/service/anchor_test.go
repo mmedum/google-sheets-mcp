@@ -50,7 +50,7 @@ func TestAnchorFollowsItsRowThroughEdits(t *testing.T) {
 
 	// Ten rows inserted above it. An address of row 24 now points at
 	// somebody else's data; the anchor does not.
-	if _, err := svc.EditDimensions(ctx, service.DimensionRequest{
+	if _, err := svc.EditDimensions(service.WithAsker(ctx, accepting{}), service.DimensionRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 		Action: service.DimInsert, Dimension: "rows", Band: "1:10",
 	}); err != nil {
@@ -84,7 +84,7 @@ func TestAnchorDiesWithItsRow(t *testing.T) {
 
 	// Nothing in the API's reply mentions the anchor, which is why the
 	// guard on delete_dimensions has to name it beforehand.
-	if _, err := svc.EditDimensions(ctx, service.DimensionRequest{
+	if _, err := svc.EditDimensions(service.WithAsker(ctx, accepting{}), service.DimensionRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 		Action: service.DimDelete, Dimension: "rows", Band: "24:24", Confirm: true,
 	}); err != nil {
@@ -294,7 +294,7 @@ func TestDeletingRowsNamesTheAnchorsItWouldTake(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := svc.EditDimensions(ctx, service.DimensionRequest{
+	_, err := svc.EditDimensions(service.WithAsker(ctx, accepting{}), service.DimensionRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 		Action: service.DimDelete, Dimension: "rows", Band: "20:26",
 	})
@@ -305,7 +305,7 @@ func TestDeletingRowsNamesTheAnchorsItWouldTake(t *testing.T) {
 		t.Errorf("err = %v, want it to name the anchor that would go", err)
 	}
 
-	res, err := svc.EditDimensions(ctx, service.DimensionRequest{
+	res, err := svc.EditDimensions(service.WithAsker(ctx, accepting{}), service.DimensionRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 		Action: service.DimDelete, Dimension: "rows", Band: "20:26", Confirm: true,
 	})
@@ -329,7 +329,7 @@ func TestDeletingColumnsIgnoresRowAnchors(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := svc.EditDimensions(ctx, service.DimensionRequest{
+	_, err := svc.EditDimensions(service.WithAsker(ctx, accepting{}), service.DimensionRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 		Action: service.DimDelete, Dimension: "columns", Band: "H:J",
 	})
@@ -351,7 +351,7 @@ func TestAnchorFollowsAMoveAndASort(t *testing.T) {
 	t.Run("moveDimension", func(t *testing.T) {
 		_, svc := standard(t)
 		anchorOn(t, svc, "moved", "24:24")
-		if _, err := svc.EditDimensions(ctx, service.DimensionRequest{
+		if _, err := svc.EditDimensions(service.WithAsker(ctx, accepting{}), service.DimensionRequest{
 			Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 			Action: service.DimMove, Dimension: "rows", Band: "24:24", To: 2,
 		}); err != nil {
@@ -402,7 +402,7 @@ func TestAnchorWorksWhereABandIsTaken(t *testing.T) {
 	t.Run("delete the row an anchor names", func(t *testing.T) {
 		_, svc := destructive(t)
 		anchorOn(t, svc, "the doomed row", "24:24")
-		res, err := svc.EditDimensions(ctx, service.DimensionRequest{
+		res, err := svc.EditDimensions(service.WithAsker(ctx, accepting{}), service.DimensionRequest{
 			Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 			Action: service.DimDelete, Dimension: "rows",
 			Band: service.AnchorPrefix + "the doomed row", Confirm: true,
@@ -423,7 +423,7 @@ func TestAnchorWorksWhereABandIsTaken(t *testing.T) {
 		anchorOn(t, svc, "a row", "24:24")
 		// The same mistake ParseBand refuses for "rows" with "B:D": a
 		// caller who meant one axis and typed the other.
-		_, err := svc.EditDimensions(ctx, service.DimensionRequest{
+		_, err := svc.EditDimensions(service.WithAsker(ctx, accepting{}), service.DimensionRequest{
 			Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 			Action: service.DimResize, Dimension: "columns",
 			Band: service.AnchorPrefix + "a row", Pixels: 100,
@@ -444,7 +444,7 @@ func TestAnchorWorksWhereABandIsTaken(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		_, err := svc.EditDimensions(ctx, service.DimensionRequest{
+		_, err := svc.EditDimensions(service.WithAsker(ctx, accepting{}), service.DimensionRequest{
 			Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 			Action: service.DimGroup, Dimension: "rows",
 			Band: service.AnchorPrefix + "the whole sheet",
@@ -456,7 +456,7 @@ func TestAnchorWorksWhereABandIsTaken(t *testing.T) {
 
 	t.Run("a name nobody set is refused", func(t *testing.T) {
 		_, svc := standard(t)
-		_, err := svc.EditDimensions(ctx, service.DimensionRequest{
+		_, err := svc.EditDimensions(service.WithAsker(ctx, accepting{}), service.DimensionRequest{
 			Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 			Action: service.DimGroup, Dimension: "rows", Band: service.AnchorPrefix + "nothing here",
 		})
@@ -562,7 +562,7 @@ func TestAnchorMoveReportsTheNoteItActuallyStored(t *testing.T) {
 // The band path gets the band wording, and neither path gets the other's.
 func TestAnchorBandRefusalOffersABand(t *testing.T) {
 	_, svc := standard(t)
-	_, err := svc.EditDimensions(context.Background(), service.DimensionRequest{
+	_, err := svc.EditDimensions(accepted(), service.DimensionRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 		Action: service.DimGroup, Dimension: "rows", Band: service.AnchorPrefix + "nothing here",
 	})
@@ -582,14 +582,14 @@ func TestAnchorNamesReadTheSameInRefusalAndResult(t *testing.T) {
 	ctx := context.Background()
 	anchorOn(t, svc, "invoice totals", "24:24")
 
-	_, refusal := svc.EditDimensions(ctx, service.DimensionRequest{
+	_, refusal := svc.EditDimensions(service.WithAsker(ctx, accepting{}), service.DimensionRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 		Action: service.DimDelete, Dimension: "rows", Band: "24:24",
 	})
 	if refusal == nil {
 		t.Fatal("an unconfirmed delete went through")
 	}
-	res, err := svc.EditDimensions(ctx, service.DimensionRequest{
+	res, err := svc.EditDimensions(service.WithAsker(ctx, accepting{}), service.DimensionRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 		Action: service.DimDelete, Dimension: "rows", Band: "24:24", Confirm: true,
 	})

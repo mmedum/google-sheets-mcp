@@ -5,6 +5,20 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- The server asks the person through the client before `delete_sheet`, `delete_dimensions`, `clear_values`, `delete_data_source`, `manage_data_source` `add`, and a refresh of every data source. Only an accept lets the write go ahead.
+- `GSHEETS_REQUIRE_PROMPT=true` refuses those writes when the client cannot ask.
+
+### Changed
+
+- **Breaking:** a client that declares elicitation and does not accept, including one answering with nobody present, gets `[blocked]` on those writes.
+
+### Fixed
+
+- `delete_data_source` with `dry_run` no longer needs `confirm`.
+- The schema dump and the architecture record the SDK as v1.8.0, and the configuration reference names all four destructive tools.
+
 ## [2.0.0] - 2026-09-26
 
 ### Added

@@ -63,6 +63,9 @@ type Deps struct {
 	Service *service.Service
 	Config  config.Config
 	Logger  *slog.Logger
+
+	// asking is this server's way to the person, made by Register.
+	asking *asking
 }
 
 // Register adds every tool the configuration allows.
@@ -70,6 +73,8 @@ func Register(s *mcp.Server, d Deps) {
 	if d.Logger == nil {
 		d.Logger = slog.New(slog.DiscardHandler)
 	}
+	d.asking = newAsking(d.Logger)
+	s.AddReceivingMiddleware(askFailures(d.asking))
 	registerRead(s, d)
 	registerWrite(s, d)
 	registerFormat(s, d)
@@ -92,7 +97,10 @@ type Def[In any, Out service.Rendered] struct {
 	Name        string
 	Description string
 	Kind        Kind
-	Handle      func(ctx context.Context, in In) (Out, error)
+	// Asks puts the write to the person through the client before it is
+	// made, when the service reaches its question (§9a).
+	Asks   bool
+	Handle func(ctx context.Context, in In) (Out, error)
 }
 
 // add registers one tool if the configuration allows it.
@@ -121,11 +129,30 @@ func add[In any, Out service.Rendered](s *mcp.Server, d Deps, def Def[In, Out]) 
 	if def.Kind == Destructive {
 		tool.Meta = mcp.Meta{"anthropic/requiresUserInteraction": true}
 	}
-	mcp.AddTool(s, tool, func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+	if def.Asks {
+		d.asking.markAsks(def.Name)
+		tool.Description += asksNote
+	}
+	mcp.AddTool(s, tool, func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		var zero Out
+		var p *person
+		if def.Asks {
+			var err error
+			if ctx, p, err = d.asking.begin(ctx, req, def.Name, in, d.Config.RequirePrompt); err != nil {
+				return nil, zero, fail(err)
+			}
+		}
 		out, err := def.Handle(ctx, in)
+		if p != nil && p.asked != nil {
+			// The service stopped before its write; the question goes out.
+			setStage(ctx, stageWaiting)
+			return p.inputRequest(), zero, nil
+		}
 		if err != nil {
-			var zero Out
 			return nil, zero, fail(err)
+		}
+		if stageOf(ctx) == stageWriting {
+			setStage(ctx, stageWritten)
 		}
 		// Content is set here, always. Left unset the SDK fills it with
 		// the JSON of the output, which is the same bytes twice and the
@@ -187,6 +214,10 @@ func annotationsFor(k Kind) *mcp.ToolAnnotations {
 		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: no}
 	}
 }
+
+// asksNote closes the description of every tool that asks the person.
+const asksNote = " When the client can, the server also asks the person before the write; a call they do not " +
+	"confirm is [blocked], and is not made again unless they ask."
 
 // DryRunField is the name a write tool's preview flag must have.
 const DryRunField = "dry_run"

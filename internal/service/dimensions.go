@@ -157,6 +157,15 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 			act.Band, props.Title, res.Cells, res.Formulas,
 			render.AnchorsTaken(res.Anchors), chartClause(res.Charts))
 	}
+	if req.Action == DimDelete {
+		if err := ask(ctx, func() (render.Question, error) {
+			return render.AskDeleteDimensions(ref.ID, titleOf(sp), props.SheetID, props.Title, act.Band.String(),
+				render.Contents{Cells: res.Cells, Formulas: res.Formulas, Anchors: len(res.Anchors),
+					Charted: len(res.Charts)}), nil
+		}); err != nil {
+			return nil, err
+		}
+	}
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{op},
 	}); err != nil {

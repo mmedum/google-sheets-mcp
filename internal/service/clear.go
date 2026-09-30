@@ -145,6 +145,16 @@ func (s *Service) Clear(ctx context.Context, req ClearRequest) (*ClearResult, er
 			res.Range, counts.Removable(), counts.Formulas,
 			clearNotes(before, counts, false))
 	}
+	if err := ask(ctx, func() (render.Question, error) {
+		sp, err := s.card(ctx, ref.ID)
+		if err != nil {
+			return render.Question{}, err
+		}
+		return render.AskClear(ref.ID, titleOf(sp), res.Range,
+			render.Contents{Cells: counts.Removable(), Formulas: counts.Formulas, Pivots: counts.Pivots}), nil
+	}); err != nil {
+		return nil, err
+	}
 	if _, err := s.api.ClearValues(ctx, ref.ID, res.Range); err != nil {
 		return nil, wrap(err)
 	}
