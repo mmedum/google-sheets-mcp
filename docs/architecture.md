@@ -1,9 +1,11 @@
 # Architecture — google-sheets-mcp
 
-**Status: v3.0.0 (2026-09-30).** The server asks the person before the six
-writes of §9a; that is breaking, so the module path is `/v3`. Unproven since
-v2.0.0: the release pipeline under the new path, and the data-source questions
-against a real BigQuery project, which are tested offline only. Reading,
+**Status: v3.0.0 (2026-09-30), released and verified from outside:** checksums,
+the cosign signature and the provenance attestation, each also against a tampered
+copy, the version in five places, the registry entry, and the Go proxy resolving
+`/v3`. The server asks the person before the six writes of §9a. Still unproven:
+the data-source questions against a real BigQuery project, tested offline only.
+Reading,
 writing, formatting, the objects attached to a range, `gsheets://`
 resources, durable anchors and now charts, pivot tables and Connected
 Sheets all work, and `make check` is green. v1.5.0 adds no tool: it is
