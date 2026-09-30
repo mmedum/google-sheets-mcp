@@ -44,11 +44,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/auth"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/credentials"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/livecover"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/userconfig"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/credentials"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/livecover"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/userconfig"
 )
 
 func main() {
@@ -167,6 +167,7 @@ func run(ctx context.Context, bin, profile string, keep bool) error {
 	coverErr := d.coverage()
 
 	sec("Result")
+	line("%d question(s) put to the person, %d declined", answerer.asked, answerer.declined)
 	line("%d step(s), %d failed, %d undetermined", d.steps, d.failed, d.undetermined)
 	if coverErr != nil {
 		line("")
@@ -230,7 +231,11 @@ func startServer(ctx context.Context, bin, profile string) (*mcp.ClientSession, 
 	cmd.Env = append(cmd.Environ(),
 		"GSHEETS_PROFILE="+profile, "GSHEETS_LOG_LEVEL=warn", "GSHEETS_ENABLE_DESTRUCTIVE=true")
 	cmd.Stderr = os.Stderr
-	client := mcp.NewClient(&mcp.Implementation{Name: "livesheet", Version: "0"}, nil)
+	// The driver declares form elicitation, so the server asks it before
+	// each write that asks the person (§9a), the way a client with a
+	// person at it would be asked.
+	client := mcp.NewClient(&mcp.Implementation{Name: "livesheet", Version: "0"},
+		&mcp.ClientOptions{ElicitationHandler: answerer.handle})
 	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect to %s: %w", bin, err)
@@ -268,6 +273,49 @@ type step struct {
 	// anything. This is the half that catches a call which succeeded and
 	// told the truth about nothing.
 	check func(text string, structured map[string]any) error
+	// answer is what the person answers the server's question on this
+	// step, which must then be asked; empty accepts any question.
+	answer string
+}
+
+// person is who the server asks before a write Sheets cannot undo
+// (§9a). It prints every question into the transcript and accepts,
+// unless a step has queued another answer.
+type person struct {
+	// next is the answer to the next question, accept when empty; that
+	// question spends it.
+	next     string
+	asked    int
+	declined int
+}
+
+// answerer is the run's person, one per process like the session.
+var answerer = &person{}
+
+func (p *person) handle(_ context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+	p.asked++
+	a := p.next
+	p.next = ""
+	if a == "" {
+		a = "accept"
+	}
+	if a != "accept" {
+		p.declined++
+	}
+	line("     the server asked the person:")
+	for _, l := range strings.Split(strings.TrimSpace(req.Params.Message), "\n") {
+		if l != "" {
+			line("       %s", l)
+		}
+	}
+	line("     the person answered: %s", a)
+	res := &mcp.ElicitResult{Action: a}
+	if a == "accept" {
+		// The question's form has no fields (§9a): the accept is the
+		// answer.
+		res.Content = map[string]any{}
+	}
+	return res, nil
 }
 
 type driver struct {
@@ -364,10 +412,16 @@ func (d *driver) runAll() {
 func (d *driver) run(steps ...step) {
 	for _, s := range steps {
 		d.steps++
+		before := answerer.asked
+		answerer.next = s.answer
 		text, structured, err := d.call(s.tool, s.args)
+		answerer.next = ""
 		switch {
 		case err != nil:
 			d.fail(s, "the call itself failed: %v", err)
+			continue
+		case s.answer != "" && answerer.asked == before:
+			d.fail(s, "the server did not ask the person, and this step answers %s", s.answer)
 			continue
 		case s.expectError != "" && !strings.HasPrefix(text, "["+s.expectError+"]"):
 			d.fail(s, "expected a [%s] refusal, got: %s", s.expectError, firstLine(text))

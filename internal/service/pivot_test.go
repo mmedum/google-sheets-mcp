@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
 )
 
 // addPivot is the pivot every test here starts from: the first sheet's
@@ -807,7 +807,7 @@ func TestMergeOverPivotAnchorIsRefused(t *testing.T) {
 func TestClearOverPivotAnchorSaysWhatItTakes(t *testing.T) {
 	_, svc := destructive(t)
 	addPivot(t, svc, "F1")
-	_, err := svc.Clear(context.Background(), service.ClearRequest{
+	_, err := svc.Clear(accepted(), service.ClearRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "F1:F2",
 	})
 	if err == nil {
@@ -822,7 +822,7 @@ func TestClearOverPivotAnchorSaysWhatItTakes(t *testing.T) {
 	// The gate sends the caller to dry_run, so the dry run has to say it
 	// too — and so does the result, which used to announce that the
 	// pivot's cells had survived a call that had just destroyed them.
-	dry, err := svc.Clear(context.Background(), service.ClearRequest{
+	dry, err := svc.Clear(accepted(), service.ClearRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "F1:F2", DryRun: true,
 	})
 	if err != nil {
@@ -831,7 +831,7 @@ func TestClearOverPivotAnchorSaysWhatItTakes(t *testing.T) {
 	if !strings.Contains(dry.Render(), "F1 anchors a pivot table") {
 		t.Errorf("the dry run does not name the pivot the gate warned about:\n%s", dry.Render())
 	}
-	done, err := svc.Clear(context.Background(), service.ClearRequest{
+	done, err := svc.Clear(accepted(), service.ClearRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "F1:F2", Confirm: true,
 	})
 	if err != nil {
@@ -859,7 +859,7 @@ func TestClearCountsOnlyWhatItCanRemove(t *testing.T) {
 	_, svc := destructive(t)
 	addPivot(t, svc, "F1")
 	// G2:G3 is output and nothing else: nobody typed either cell.
-	_, err := svc.Clear(context.Background(), service.ClearRequest{
+	_, err := svc.Clear(accepted(), service.ClearRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "G2:G3",
 	})
 	if err == nil {
@@ -942,7 +942,7 @@ func TestMergeAcrossTwoPivotsNamesBoth(t *testing.T) {
 // rather than promising they stay.
 func TestClearOfAnArrayFormulaDoesNotPromiseSurvival(t *testing.T) {
 	_, svc := destructive(t)
-	_, err := svc.Clear(context.Background(), service.ClearRequest{
+	_, err := svc.Clear(accepted(), service.ClearRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "A1:C3",
 	})
 	if err == nil {

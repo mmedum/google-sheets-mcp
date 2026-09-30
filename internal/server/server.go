@@ -13,9 +13,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/tools"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/tools"
 )
 
 // Name is the MCP server name.
@@ -23,7 +23,7 @@ const Name = "google-sheets-mcp"
 
 // SDKVersion is recorded in schema dumps, so a diff caused by an SDK
 // upgrade can be told apart from a change to the tool surface.
-const SDKVersion = "v1.7.0"
+const SDKVersion = "v1.8.0"
 
 const instructions = "Google Sheets tools that work inside one spreadsheet. " +
 	"Start with get_spreadsheet: it costs the same on any size of spreadsheet and gives the exact sheet titles every " +
@@ -42,7 +42,10 @@ const instructions = "Google Sheets tools that work inside one spreadsheet. " +
 	"append_rows lands where Google decides and reports it; write_values is the one to use when you know the " +
 	"addresses. " +
 	"Files, folders, sharing, revisions and comment threads are not here: they belong to a server built on the Drive " +
-	"API. A cell note is a Sheets field and is here."
+	"API. A cell note is a Sheets field and is here. " +
+	"Before deleting a sheet, rows, columns or a data source, clearing values, connecting BigQuery, or refreshing " +
+	"every data source, the server also asks the person through the client when it can; a call they did not " +
+	"confirm is [blocked], and is not made again unless they ask."
 
 // Deps are what the server needs.
 type Deps struct {

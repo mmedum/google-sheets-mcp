@@ -1,6 +1,9 @@
 # Architecture — google-sheets-mcp
 
-**Status: v2.0.0 (2026-09-26).** Reading,
+**Status: v3.0.0 (2026-09-30).** The server asks the person before the six
+writes of §9a; that is breaking, so the module path is `/v3`. Unproven since
+v2.0.0: the release pipeline under the new path, and the data-source questions
+against a real BigQuery project, which are tested offline only. Reading,
 writing, formatting, the objects attached to a range, `gsheets://`
 resources, durable anchors and now charts, pivot tables and Connected
 Sheets all work, and `make check` is green. v1.5.0 adds no tool: it is
@@ -447,13 +450,12 @@ including the gates and the live driver, so a contributor needs one
 toolchain and the code holding the gates shut is built, vetted, linted
 and tested like the rest.
 
-Dependencies, all pinned: `modelcontextprotocol/go-sdk` v1.7.0 (with
+Dependencies, all pinned: `modelcontextprotocol/go-sdk` v1.8.0 (with
 `google/jsonschema-go`), `golang.org/x/oauth2` v0.36.0,
 `zalando/go-keyring` v0.2.8, `golang.org/x/time` v0.15.0. Nothing else.
 
 Toolchain, current as of 2026-09-05 and matching the sibling servers:
-Go 1.27.1 (`go 1.27.1` in go.mod), go-sdk v1.7.0 (v1.8.0-pre.2 exists;
-Dependabot proposes it when final), golangci-lint v2.13.2, govulncheck
+Go 1.27.1 (`go 1.27.1` in go.mod), go-sdk v1.8.0, golangci-lint v2.13.2, govulncheck
 v1.7.0, go-licenses v1.6.0, gitleaks v8.30.1, GoReleaser v2.18.
 
 **Scaffolding first.** The Makefile, the gates, `.golangci.yml`, the CI,
@@ -1247,6 +1249,70 @@ an existing spreadsheet is not offered.
 **The evals seed their own data too** (phase 3), for the same reason:
 a task is scored against a spreadsheet the harness built.
 
+### 9a. A write Sheets cannot undo is confirmed by the person
+
+`confirm: true` is an argument the model writes, and a persuaded model
+writes it too. So when the client can ask, the server asks the person
+itself, through MCP form elicitation, before six writes:
+
+- `delete_sheet`, `delete_dimensions`, `clear_values` and
+  `delete_data_source`, always;
+- `manage_data_source` `add`, which runs a BigQuery query billed to the
+  named Cloud project, now and on every refresh;
+- `manage_data_source` `refresh` with no `id`, which runs every source's
+  query again. Refreshing one named source, and canceling, ask nothing.
+
+1. **A second gate, not a replacement.** `confirm` and every other guard
+   are checked first; a call a guard refuses asks nothing. The question
+   comes just before the write, so it shows what the write would do.
+2. **Accepting is the confirmation.** The form has no fields (§18,
+   "Asking the person"). Anything but `accept` is `[blocked]`, refused
+   before the retry reads anything, and nothing is written. The refusal
+   says the call was "not confirmed by the person", never that the
+   person declined: a client can answer with nobody present. So an
+   unattended client that declares elicitation cannot make these writes,
+   which the changelog marks **Breaking**.
+3. **No question possible.** A client that declares no form elicitation
+   gets no question, and the arguments are the guard, as before.
+   `GSHEETS_REQUIRE_PROMPT=true` refuses those writes as `[blocked]`
+   instead.
+4. **A dry run never asks**, and needs no `confirm`.
+5. **What the question says.** The tool, the target and the consequence,
+   in the server's words: the sheet, band or range and the spreadsheet,
+   with what it holds now, the pivot tables a clear takes whole, and the
+   charts a deleted band leaves without their series; the data source and the sheet it made; the
+   Cloud project billed and the start of the query. Text from the
+   spreadsheet or from the call stands in a code span, on one line, made
+   inert as in the sibling servers: invisible characters removed, every
+   quote and backtick lookalike made a plain single quote, every link
+   shape broken wherever it starts and in any script, cut at 120
+   characters or 300 for a query, and said in words when nothing is left
+   to show.
+6. **One handler on every protocol.** The handler returns the question
+   as an input request, the multi-round-trip pattern of 2026-07-28;
+   before it the SDK asks with `elicitation/create` itself. A client
+   failure there becomes `[blocked]`.
+7. **The answer is bound to its question.** `requestState` is signed
+   with HMAC-SHA256 under a key drawn per process, and carries the tool,
+   a hash of the arguments, a hash of what the question binds, a nonce
+   and an expiry. A forged, cross-call, expired or reused state is
+   refused. A question binds its first line and the ids and whole texts
+   the write depends on — the sheet id, the whole range, the whole
+   query — and not the
+   counts, since a collaborator typing while the person reads would
+   otherwise make it impossible to confirm.
+8. **The expiry applies where the state travels**: 5 minutes from
+   2026-07-28, and the request's own lifetime before it.
+9. **A failure after the answer is never "nothing written".** From an
+   accept on, a call that fails without a result is
+   `[ambiguous_outcome]`; while the question is out, `[blocked]`.
+10. **Logs** say `person_asked` and `person_answered` with the tool and
+    the client's action, never the question.
+11. **Held in one place.** A tool asks by `Asks` on its definition, which
+    `add` turns into the per-call asker. The service asks at its write,
+    and a write reached with no way to ask is refused. A test finds every
+    tool that takes `confirm` from the published schemas and holds each.
+
 ## 10. Auth, config, process model
 
 - **Setup**, in the order `doctor` checks it: create a Cloud project →
@@ -2033,6 +2099,30 @@ count and a correct result are different things — applies to that too.
    topic branch, a pull request, CI green, merge, then the tag pushed on
    its own.
 4. Stop and wait for "go".
+
+**Asking the person (v3.0.0). Built 2026-09-30.** The server asks the
+person through the client before the six writes of §9a. The set is the
+one the maintainer chose from the family's elicitation review: the four
+tools that take `confirm`, plus the two data source actions that spend
+money. Fixed on the way: `delete_data_source` declared `confirm`
+required in its schema, so a dry run without it was refused before the
+server saw it; the SDK version stamp and §5's pins still said v1.7.0;
+and `GSHEETS_ENABLE_DESTRUCTIVE`'s row in `docs/configuration.md` named
+two of the four tools it registers. The live driver now declares
+elicitation, prints every question, accepts, and declines one
+`delete_sheet`; a confirmed step fails if the server did not ask.
+Breaking, so the module path moves to `/v3`.
+
+The review found no path to these writes around the ask, and three
+things fixed here: a `clear_values` answer bound its range only through
+the quoted head, which is cut at 120 characters, so two ranges on a long
+sheet title bound alike, and the whole range is now bound; the question
+left out the pivot tables a clear takes whole and the charts a deleted
+band empties; and a `delete_data_source` whose id was not on a cached
+card asked without naming the sheet it takes, and is now read again and
+refused `[not_found]` if it is still absent. The question is built only
+when it will be put or checked, so a client that cannot ask costs no
+extra read.
 
 ## 17. Open decisions
 
@@ -3159,3 +3249,14 @@ identical on disk.
 | `tokeninfo` carries the account address | **Absent under this server's scopes.** Google's OAuth2 reference says of `email` and `verified_email` both: "Present only if the email scope is present in the request". §17.6 asks for neither `openid` nor `userinfo.email`, so `auth.Inspect` returns an empty address on every login this server can perform — there is no configuration under which it returns one | `login` assigned it over the address `recordAccount` had just fetched from Drive, so the profile recorded no account at all: `status` printed `(none)` while `doctor` resolved the address from the same Drive call. The assignment is gone, and the block it lived in is now a seam a test can reach |
 | Drive's `about.get` always carries an address | **Refuted by the reference.** `User.emailAddress` "may not be present in certain contexts if the user has not made their email address visible to the requester", and `Service.Account` passes that through as `""` with a nil error | An absent address no longer erases a recorded one. The two states print differently now: `(none)` is not signed in, `(not recorded)` is signed in with nothing to show |
 | The bundle manifest's format version is current, and its `$schema` pins what it validates against | **Both refuted, 2026-09-17, against the published schemas.** Fetched: `mcpb-manifest-v0.2`, `v0.3` and `v0.4` are served and `v0.5` is not, so this manifest sat one version behind while every check on it passed — the checks hold the document against ITSELF, and 0.2 beside a 0.2 schema is self-consistent. Diffing 0.3 against 0.4 settled which way to go: the only difference is a `uv` value added to the `server.type` enum, and this bundle's type is `binary`, so 0.4 is not adopted. And `$schema` named `main` — the path pins the FORMAT, the ref pins the BYTES, so an amendment upstream silently changes what the document conforms to; the copy at tag `v2.1.2` is byte-identical to `main` today, which is the point rather than the counter-argument | **A floor under `manifest_version`, and an allow-list over the whole `$schema` URL** — upstream's path at a full release tag or a commit SHA. Refusing branch NAMES was the first attempt and it passes a partial tag like `v2.1`, which upstream re-points as it releases |
+
+**Asking the person, 2026-09-30.** §9a's conventions. Tier 1
+where the MCP Go SDK v1.8.0's source was read here; tier 2 where the
+verdict comes from a sibling server's evidence log.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| The Go SDK asks the same way on every protocol | **Refuted, tier 1**: `mcp/server.go` L1614-1627 refuses a server-initiated `elicitation/create` from 2026-07-28, and L440-446 skips structured output when a handler returns `InputRequests` | One handler returns the question; before 2026-07-28 the SDK asks inside the call |
+| A form elicitation must ask for at least one field | **Refuted, tier 1**: `validateElicitSchema`, `mcp/client.go` L923-950, accepts an object with no properties; tier 2 for the specification and a person's check in Claude Code | The form has no fields and the accept is the answer |
+| A client that declares elicitation has a person to answer it | **Refuted, tier 2**: `claude -p` declares it and answers `cancel`; Codex under approval policy `never` with full access accepts a fieldless form | A refusal never says the person declined, and an unattended client cannot make these writes |
+| A client draws a question as plain text | **Refuted, tier 2**: VS Code builds the message as a `MarkdownString` | Spreadsheet text stands in a code span, and the server's own lines hold no Markdown |

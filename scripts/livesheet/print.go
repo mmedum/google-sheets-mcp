@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	redactpkg "github.com/mmedum/google-sheets-mcp/v2/internal/redact"
+	redactpkg "github.com/mmedum/google-sheets-mcp/v3/internal/redact"
 )
 
 // Redaction lives here and only here.

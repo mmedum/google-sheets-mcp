@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/mmedum/google-sheets-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mmedum/google-sheets-mcp/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/mmedum/google-sheets-mcp?sort=semver)](https://github.com/mmedum/google-sheets-mcp/releases/latest)
-[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/google-sheets-mcp/v2.svg)](https://pkg.go.dev/github.com/mmedum/google-sheets-mcp/v2)
+[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/google-sheets-mcp/v3.svg)](https://pkg.go.dev/github.com/mmedum/google-sheets-mcp/v3)
 [![License: Apache 2.0](https://img.shields.io/github/license/mmedum/google-sheets-mcp)](./LICENSE)
 
 Google Sheets as MCP tools. Read and write ranges without destroying the formulas underneath.
@@ -47,7 +47,7 @@ is §16 of [`docs/architecture.md`](docs/architecture.md).
 ## Install
 
 ```bash
-go install github.com/mmedum/google-sheets-mcp/v2/cmd/google-sheets-mcp@latest
+go install github.com/mmedum/google-sheets-mcp/v3/cmd/google-sheets-mcp@latest
 ```
 
 Or take an archive from the
@@ -236,6 +236,13 @@ Sheets scope; in read-only mode the read tools ask for
 The four destructive tools are **not registered at all** unless
 `GSHEETS_ENABLE_DESTRUCTIVE=true`, and each still needs `confirm: true`
 on the call.
+
+When your client supports MCP elicitation, the server also asks you
+itself before those four, before connecting a BigQuery data source, and
+before refreshing every data source at once. Only your Accept lets the
+write go ahead; anything else is `[blocked]`. A client that cannot ask
+gets no question, unless `GSHEETS_REQUIRE_PROMPT=true`, which refuses
+those writes instead.
 
 `manage_data_source` is not registered either, unless
 `GSHEETS_ENABLE_DATA_SOURCES=true` — and that setting is also what makes

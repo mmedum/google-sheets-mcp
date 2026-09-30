@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
 )
 
 func TestDimensionActions(t *testing.T) {
@@ -53,7 +53,7 @@ func TestDimensionActions(t *testing.T) {
 			_, svc := standard(t)
 			tc.req.Spreadsheet = sheetstest.FixtureID
 			tc.req.Sheet = sheetstest.SecondSheet
-			res, err := svc.EditDimensions(context.Background(), tc.req)
+			res, err := svc.EditDimensions(accepted(), tc.req)
 			if err != nil {
 				t.Fatalf("EditDimensions: %v", err)
 			}
@@ -109,7 +109,7 @@ func TestDimensionRefusals(t *testing.T) {
 			_, svc := standard(t)
 			tc.req.Spreadsheet = sheetstest.FixtureID
 			tc.req.Sheet = sheetstest.SecondSheet
-			_, err := svc.EditDimensions(context.Background(), tc.req)
+			_, err := svc.EditDimensions(accepted(), tc.req)
 			if err == nil {
 				t.Fatal("it was allowed")
 			}
@@ -125,7 +125,7 @@ func TestDimensionRefusals(t *testing.T) {
 // description is not a gate.
 func TestDeleteIsOffUnlessDestructiveIsOn(t *testing.T) {
 	_, svc := standard(t)
-	_, err := svc.EditDimensions(context.Background(), service.DimensionRequest{
+	_, err := svc.EditDimensions(accepted(), service.DimensionRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet,
 		Action: service.DimDelete, Dimension: "rows", Band: "2:3",
 	})
@@ -145,7 +145,7 @@ func TestDeleteCountsThenNeedsConfirm(t *testing.T) {
 		Action: service.DimDelete, Dimension: "rows", Band: "2:3",
 	}
 
-	_, err := svc.EditDimensions(ctx, req)
+	_, err := svc.EditDimensions(service.WithAsker(ctx, accepting{}), req)
 	if err == nil || !strings.HasPrefix(err.Error(), "[blocked]") {
 		t.Fatalf("delete without confirm gave %v", err)
 	}
@@ -159,7 +159,7 @@ func TestDeleteCountsThenNeedsConfirm(t *testing.T) {
 	}
 
 	req.Confirm = true
-	res, err := svc.EditDimensions(ctx, req)
+	res, err := svc.EditDimensions(service.WithAsker(ctx, accepting{}), req)
 	if err != nil {
 		t.Fatalf("EditDimensions: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestDeleteCountsThenNeedsConfirm(t *testing.T) {
 
 func TestDimensionDryRunSendsNothing(t *testing.T) {
 	srv, svc := destructive(t)
-	res, err := svc.EditDimensions(context.Background(), service.DimensionRequest{
+	res, err := svc.EditDimensions(accepted(), service.DimensionRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 		Action: service.DimDelete, Dimension: "rows", Band: "2:3", DryRun: true,
 	})

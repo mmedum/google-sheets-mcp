@@ -5,9 +5,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
 )
 
 // Sheet titles in the fixture. None is "Sheet1", and one is not ASCII,

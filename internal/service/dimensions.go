@@ -4,11 +4,11 @@ import (
 	"context"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
 )
 
 // Dimension actions.
@@ -156,6 +156,15 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 				"Pass confirm to go ahead",
 			act.Band, props.Title, res.Cells, res.Formulas,
 			render.AnchorsTaken(res.Anchors), chartClause(res.Charts))
+	}
+	if req.Action == DimDelete {
+		if err := ask(ctx, func() (render.Question, error) {
+			return render.AskDeleteDimensions(ref.ID, titleOf(sp), props.SheetID, props.Title, act.Band.String(),
+				render.Contents{Cells: res.Cells, Formulas: res.Formulas, Anchors: len(res.Anchors),
+					Charted: len(res.Charts)}), nil
+		}); err != nil {
+			return nil, err
+		}
 	}
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{op},

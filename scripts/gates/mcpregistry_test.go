@@ -29,7 +29,7 @@ func TestGithubRepoStripsTheMajorVersion(t *testing.T) {
 		wantErr             bool
 	}{
 		{module: "github.com/mmedum/google-sheets-mcp", owner: "mmedum", repo: "google-sheets-mcp"},
-		{module: "github.com/mmedum/google-sheets-mcp/v2", owner: "mmedum", repo: "google-sheets-mcp"},
+		{module: "github.com/mmedum/google-sheets-mcp/v3", owner: "mmedum", repo: "google-sheets-mcp"},
 		// Go adds the suffix from v2, so /v1 is an ordinary directory and
 		// stripping it would name the wrong repository.
 		{module: "github.com/mmedum/google-sheets-mcp/v1", wantErr: true},
@@ -194,14 +194,14 @@ func TestTheVersionMayCarryItsVOrNot(t *testing.T) {
 	t.Chdir("../..")
 	path := checksumsFile(t, oneBundle)
 	var withV, without bytes.Buffer
-	if err := registryPublish(&withV, "v2.3.4", path); err != nil {
+	if err := registryPublish(&withV, "v3.2.1", path); err != nil {
 		t.Fatal(err)
 	}
-	if err := registryPublish(&without, "2.3.4", path); err != nil {
+	if err := registryPublish(&without, "3.2.1", path); err != nil {
 		t.Fatal(err)
 	}
 	if withV.String() != without.String() {
-		t.Fatal("v2.3.4 and 2.3.4 produced different entries")
+		t.Fatal("v3.2.1 and 3.2.1 produced different entries")
 	}
 }
 

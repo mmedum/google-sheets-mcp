@@ -5,7 +5,7 @@ GO        ?= go
 EXE       := $(if $(filter Windows_NT,$(OS)),.exe,)
 BIN       ?= ./google-sheets-mcp$(EXE)
 VERSION   ?= dev
-PKG        = github.com/mmedum/google-sheets-mcp/v2
+PKG        = github.com/mmedum/google-sheets-mcp/v3
 LDFLAGS    = -s -w -X $(PKG)/internal/version.Version=$(VERSION)
 COVER_MIN ?= 80
 # The gates are one binary. Building it once and running it saves six

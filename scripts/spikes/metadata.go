@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
 )
 
 // spikeK answers §15.K: whether developer metadata is the durable anchor

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
 )
 
 // addOne is the chart every test here starts from: a column chart on the
@@ -356,7 +356,7 @@ func TestChartLosesItsSeriesToAColumnDelete(t *testing.T) {
 
 	// Refused first, and the refusal has to name the chart: a caller who
 	// confirms should know what they are agreeing to.
-	_, err := svc.EditDimensions(context.Background(), service.DimensionRequest{
+	_, err := svc.EditDimensions(accepted(), service.DimensionRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 		Action: service.DimDelete, Dimension: "columns", Band: "B:B",
 	})
@@ -367,7 +367,7 @@ func TestChartLosesItsSeriesToAColumnDelete(t *testing.T) {
 		t.Errorf("the refusal does not name the chart:\n%v", err)
 	}
 
-	res, err := svc.EditDimensions(context.Background(), service.DimensionRequest{
+	res, err := svc.EditDimensions(accepted(), service.DimensionRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 		Action: service.DimDelete, Dimension: "columns", Band: "B:B", Confirm: true,
 	})
@@ -520,7 +520,7 @@ func TestARefusalCountsTheSeriesItWouldTake(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	_, err := svc.EditDimensions(context.Background(), service.DimensionRequest{
+	_, err := svc.EditDimensions(accepted(), service.DimensionRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
 		Action: service.DimDelete, Dimension: "columns", Band: "B:B",
 	})

@@ -78,11 +78,15 @@ type Config struct {
 	// and a Sheets server whose login screen asks for BigQuery is asking
 	// most of its users to grant access to a product they do not have.
 	EnableDataSources bool
-	MaxCells          int
-	MaxChars          int
-	HTTPTimeout       time.Duration
-	WriteTimeout      time.Duration
-	ClientSecretPath  string
+	// RequirePrompt refuses the writes that ask the person when the
+	// client cannot ask, rather than letting the call's own arguments
+	// stand in for the person.
+	RequirePrompt    bool
+	MaxCells         int
+	MaxChars         int
+	HTTPTimeout      time.Duration
+	WriteTimeout     time.Duration
+	ClientSecretPath string
 }
 
 // Settings holds the raw string values before validation. Flags and the
@@ -94,6 +98,7 @@ type Settings struct {
 	ReadOnly          string
 	EnableDestructive string
 	EnableDataSources string
+	RequirePrompt     string
 	MaxCells          string
 	MaxChars          string
 	HTTPTimeout       string
@@ -122,6 +127,8 @@ func Define(fs *flag.FlagSet, env func(string) string) *Settings {
 	def(&s.ReadOnly, "read-only", "READ_ONLY", "false", "register only read tools and request read-only scopes")
 	def(&s.EnableDestructive, "enable-destructive", "ENABLE_DESTRUCTIVE", "false", "register the destructive tools; each still needs confirm on the call")
 	def(&s.EnableDataSources, "enable-data-sources", "ENABLE_DATA_SOURCES", "false", "register manage_data_source and ask for the bigquery.readonly scope at login")
+	def(&s.RequirePrompt, "require-prompt", "REQUIRE_PROMPT", "false",
+		"refuse the writes that ask the person when the client cannot ask them")
 	def(&s.MaxCells, "max-cells", "MAX_CELLS", strconv.Itoa(DefaultMaxCells), "default cell budget for a read")
 	def(&s.MaxChars, "max-chars", "MAX_CHARS", strconv.Itoa(DefaultMaxChars), "default character budget for a read")
 	def(&s.HTTPTimeout, "http-timeout", "HTTP_TIMEOUT", "60s", "per-attempt timeout for a read")
@@ -166,6 +173,9 @@ func (s *Settings) Build() (Config, error) {
 		errs = append(errs, err)
 	}
 	if c.EnableDestructive, err = parseBool("enable-destructive", s.EnableDestructive); err != nil {
+		errs = append(errs, err)
+	}
+	if c.RequirePrompt, err = parseBool("require-prompt", s.RequirePrompt); err != nil {
 		errs = append(errs, err)
 	}
 

@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
 )
 
 // forget drops a spreadsheet's cached metadata.
@@ -477,6 +477,13 @@ func (s *Service) DeleteSheet(ctx context.Context, req DeleteSheetRequest) (*Del
 			"deleting %q takes %d non-empty cell(s), %d formula(s) and %d chart(s) with it%s, and Sheets cannot undo "+
 				"it. Pass confirm to go ahead, or duplicate the sheet first",
 			props.Title, counts.NonEmpty, counts.Formulas, charts, render.AnchorsTaken(doomed))
+	}
+	if err := ask(ctx, func() (render.Question, error) {
+		return render.AskDeleteSheet(ref.ID, titleOf(sp), props.SheetID, props.Title, render.Contents{
+			Cells: counts.NonEmpty, Formulas: counts.Formulas, Charts: charts, Anchors: len(doomed),
+		}), nil
+	}); err != nil {
+		return nil, err
 	}
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{plan.DeleteSheet(props.SheetID)},

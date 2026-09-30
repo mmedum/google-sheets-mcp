@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
 )
 
 // The fake's charts and slicers.

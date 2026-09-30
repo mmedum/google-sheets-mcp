@@ -574,9 +574,10 @@ func (d *driver) pivotSteps() []step {
 			},
 		},
 		{
-			name: "clearing the cell brings all of it back",
-			why:  "the damage is total and reversible, and a refusal that said otherwise would be scaremongering",
-			tool: "clear_values",
+			name:   "clearing the cell brings all of it back",
+			why:    "the damage is total and reversible, and a refusal that said otherwise would be scaremongering",
+			tool:   "clear_values",
+			answer: "accept",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "I3", "confirm": true,
 			},
@@ -661,9 +662,10 @@ func (d *driver) chartLossSteps() []step {
 			},
 		},
 		{
-			name: "the confirmed delete says what it did to the chart",
-			why:  "Google's reply mentions none of this, so the result is the only place it is said",
-			tool: "delete_dimensions",
+			name:   "the confirmed delete says what it did to the chart",
+			why:    "Google's reply mentions none of this, so the result is the only place it is said",
+			tool:   "delete_dimensions",
+			answer: "accept",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "dimension": "columns", "band": "B:B",
 				"confirm": true,
