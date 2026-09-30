@@ -7,10 +7,10 @@ import (
 	"io"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/redact"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/userconfig"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/version"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/redact"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/userconfig"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/version"
 )
 
 // statusSchemaVersion is the version of the JSON object `status --json`

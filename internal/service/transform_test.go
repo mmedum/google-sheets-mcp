@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
 )
 
 func transformReq(action, rangeA1 string) service.TransformRequest {

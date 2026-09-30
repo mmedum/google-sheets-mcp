@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
 )
 
 // update regenerates the goldens from the fixtures. They are generated,

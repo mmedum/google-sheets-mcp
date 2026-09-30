@@ -24,7 +24,7 @@ import (
 	"math/rand/v2"
 	"strconv"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
 )
 
 // FixtureID is the spreadsheet id every fixture uses. It says in its own

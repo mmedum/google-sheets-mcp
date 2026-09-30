@@ -1,7 +1,9 @@
 # Architecture — google-sheets-mcp
 
-**Status: v2.0.0 (2026-09-26); asking the person built 2026-09-30, unreleased.**
-The server asks the person before the six writes of §9a; it ships as 3.0.0. Reading,
+**Status: v3.0.0 (2026-09-30).** The server asks the person before the six
+writes of §9a; that is breaking, so the module path is `/v3`. Unproven since
+v2.0.0: the release pipeline under the new path, and the data-source questions
+against a real BigQuery project, which are tested offline only. Reading,
 writing, formatting, the objects attached to a range, `gsheets://`
 resources, durable anchors and now charts, pivot tables and Connected
 Sheets all work, and `make check` is green. v1.5.0 adds no tool: it is
@@ -2109,7 +2111,7 @@ and `GSHEETS_ENABLE_DESTRUCTIVE`'s row in `docs/configuration.md` named
 two of the four tools it registers. The live driver now declares
 elicitation, prints every question, accepts, and declines one
 `delete_sheet`; a confirmed step fails if the server did not ask.
-Breaking, so 3.0.0 with the module path at `/v3`.
+Breaking, so the module path moves to `/v3`.
 
 The review found no path to these writes around the ask, and three
 things fixed here: a `clear_values` answer bound its range only through

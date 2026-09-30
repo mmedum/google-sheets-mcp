@@ -12,11 +12,11 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/server"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/tools"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/server"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/tools"
 )
 
 func newServer(t *testing.T, cfg config.Config, log *slog.Logger) (*mcp.Server, *sheetstest.Server) {

@@ -5,7 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
 )
 
 // ManageDataSourceInput is what manage_data_source takes.

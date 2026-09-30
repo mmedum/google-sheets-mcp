@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
 )
 
 // §11's two rendering targets: a 5 000-cell read rendered well under

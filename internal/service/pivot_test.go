@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
 )
 
 // addPivot is the pivot every test here starts from: the first sheet's

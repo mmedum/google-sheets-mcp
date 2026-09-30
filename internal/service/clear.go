@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
 )
 
 // ClearRequest is what clear_values asks for.

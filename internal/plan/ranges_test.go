@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
 )
 
 // The operand count is the check worth having: a "between" with one

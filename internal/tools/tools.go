@@ -22,8 +22,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
 )
 
 // Kind says which world a tool touches. It is an enum over that rather

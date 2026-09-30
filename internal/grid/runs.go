@@ -1,6 +1,6 @@
 package grid
 
-import "github.com/mmedum/google-sheets-mcp/v2/internal/a1"
+import "github.com/mmedum/google-sheets-mcp/v3/internal/a1"
 
 // Run is a rectangle of cells that all say the same thing.
 type Run[K comparable] struct {

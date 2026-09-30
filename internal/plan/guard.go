@@ -16,9 +16,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
 )
 
 // MaxCellChars is the longest string one cell holds.

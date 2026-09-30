@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
 )
 
 // spikeL answers §15.L: what a chart is once it exists, and what it

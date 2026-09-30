@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/mmedum/google-sheets-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mmedum/google-sheets-mcp/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/mmedum/google-sheets-mcp?sort=semver)](https://github.com/mmedum/google-sheets-mcp/releases/latest)
-[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/google-sheets-mcp/v2.svg)](https://pkg.go.dev/github.com/mmedum/google-sheets-mcp/v2)
+[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/google-sheets-mcp/v3.svg)](https://pkg.go.dev/github.com/mmedum/google-sheets-mcp/v3)
 [![License: Apache 2.0](https://img.shields.io/github/license/mmedum/google-sheets-mcp)](./LICENSE)
 
 Google Sheets as MCP tools. Read and write ranges without destroying the formulas underneath.
@@ -47,7 +47,7 @@ is §16 of [`docs/architecture.md`](docs/architecture.md).
 ## Install
 
 ```bash
-go install github.com/mmedum/google-sheets-mcp/v2/cmd/google-sheets-mcp@latest
+go install github.com/mmedum/google-sheets-mcp/v3/cmd/google-sheets-mcp@latest
 ```
 
 Or take an archive from the

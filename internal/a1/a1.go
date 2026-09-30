@@ -34,7 +34,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v2/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
 )
 
 // Limits the API enforces, and the reason a parse can refuse a

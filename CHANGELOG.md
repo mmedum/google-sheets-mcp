@@ -5,6 +5,8 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-09-30
+
 ### Added
 
 - The server asks the person through the client before `delete_sheet`, `delete_dimensions`, `clear_values`, `delete_data_source`, `manage_data_source` `add`, and a refresh of every data source. Only an accept lets the write go ahead.
@@ -13,10 +15,12 @@ and this project follows [semantic versioning](https://semver.org).
 ### Changed
 
 - **Breaking:** a client that declares elicitation and does not accept, including one answering with nobody present, gets `[blocked]` on those writes.
+- **Breaking:** the module path is `github.com/mmedum/google-sheets-mcp/v3`; install with `go install github.com/mmedum/google-sheets-mcp/v3/cmd/google-sheets-mcp@latest`.
 
 ### Fixed
 
 - `delete_data_source` with `dry_run` no longer needs `confirm`.
+- `delete_data_source` for an id the spreadsheet does not have is `[not_found]`.
 - The schema dump and the architecture record the SDK as v1.8.0, and the configuration reference names all four destructive tools.
 
 ## [2.0.0] - 2026-09-26
@@ -1286,7 +1290,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.5.1...v2.0.0
 [1.5.1]: https://github.com/mmedum/google-sheets-mcp/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.4.0...v1.5.0
