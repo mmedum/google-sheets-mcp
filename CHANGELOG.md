@@ -5,6 +5,12 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [3.0.2] - 2026-10-01
+
+### Fixed
+
+- 3.0.1 was tagged but never published: its release stopped on a status line that still named 3.0.0. 3.0.2 carries the same fixes.
+
 ## [3.0.1] - 2026-10-01
 
 ### Fixed
@@ -1298,7 +1304,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.1...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.2...HEAD
+[3.0.2]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.5.1...v2.0.0
