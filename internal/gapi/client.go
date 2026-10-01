@@ -289,7 +289,7 @@ func (c *Client) do(ctx context.Context, r request) ([]byte, error) {
 	var lastErr error
 	finish := func(err error) error {
 		if r.writes() && !r.repeatable() && lastErr != nil {
-			return markAmbiguous(lastErr)
+			return markAmbiguous(r.op, lastErr)
 		}
 		return err
 	}
@@ -370,7 +370,9 @@ func (c *Client) once(ctx context.Context, r request, timeout time.Duration) (*a
 	resp, err := c.httpc.Do(req)
 	if err != nil {
 		if errors.Is(err, context.Canceled) && ctx.Err() == context.Canceled {
-			return nil, err
+			// The context's own error, not the transport's: a
+			// *url.Error names the URL, which carries the payload.
+			return nil, ctx.Err()
 		}
 		return nil, wrapTransportError(r.op, err)
 	}
@@ -393,10 +395,10 @@ func (c *Client) once(ctx context.Context, r request, timeout time.Duration) (*a
 // retryable decides whether an attempt may be repeated.
 //
 // A repeatable request retries on anything transient. A write that is
-// not repeatable retries only where Google's answer proves it never
-// began: 429 is a refusal to start, and 503 is Google declining to serve
-// the request at all. A 500 after the request began, or a connection cut
-// mid-flight, may have applied and is reported as such instead.
+// not repeatable retries only on 429, a refusal to start. Any 5xx,
+// including 503, or a connection cut mid-flight may have applied: of
+// UNAVAILABLE, Google's code.proto says it is "not always safe to retry
+// non-idempotent operations". Those are reported as such instead.
 func retryable(r request, err error) (bool, time.Duration) {
 	var te *transientError
 	if errors.As(err, &te) {
@@ -404,7 +406,7 @@ func retryable(r request, err error) (bool, time.Duration) {
 			return true, te.after
 		}
 		var ae *APIError
-		if errors.As(te.err, &ae) && (ae.Status == 429 || ae.Status == 503) {
+		if errors.As(te.err, &ae) && ae.Status == 429 {
 			return true, te.after
 		}
 		return false, 0
@@ -417,7 +419,7 @@ func retryable(r request, err error) (bool, time.Duration) {
 
 // markAmbiguous re-classifies a failed unrepeatable write whose outcome
 // nobody can know from here.
-func markAmbiguous(err error) error {
+func markAmbiguous(op string, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -429,7 +431,8 @@ func markAmbiguous(err error) error {
 	if !errors.Is(err, ErrUnavailable) && !errors.Is(err, ErrRateLimited) {
 		return err
 	}
-	return fmt.Errorf("%w: %w", ErrAmbiguousOutcome, err)
+	return fmt.Errorf("%w: %s may have been applied; read the spreadsheet before repeating it, "+
+		"since a repeat could apply it twice (%w)", ErrAmbiguousOutcome, op, err)
 }
 
 func statusOf(err error) int {

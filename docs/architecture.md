@@ -1371,10 +1371,10 @@ itself, through MCP form elicitation, before six writes:
   method**: GET and PUT may be repeated, a POST only when the call site
   says why. So `values.update` retries and `values.append` and
   `batchUpdate` do not — appending twice duplicates rows and a repeated
-  `addSheet` makes two sheets. A refusal to *begin* (429, or a 503 before
-  any response) proves nothing was applied and is repeatable; a 5xx after
-  the request began is `[ambiguous_outcome]` naming the read that settles
-  it.
+  `addSheet` makes two sheets. A refusal to *begin* (429) proves nothing
+  was applied and is repeatable; any 5xx, 503 included, or a cut
+  connection is `[ambiguous_outcome]`, which says to read the spreadsheet
+  before repeating the write.
 - **POSTs that only read.** Three of them: `spreadsheets.getByDataFilter`,
   `values.batchGetByDataFilter` and `developerMetadata.search`. Beside
   them sit two POSTs that do write — `values.batchClearByDataFilter` and
@@ -3262,3 +3262,4 @@ verdict comes from a sibling server's evidence log.
 | A form elicitation must ask for at least one field | **Refuted, tier 1**: `validateElicitSchema`, `mcp/client.go` L923-950, accepts an object with no properties; tier 2 for the specification and a person's check in Claude Code | The form has no fields and the accept is the answer |
 | A client that declares elicitation has a person to answer it | **Refuted, tier 2**: `claude -p` declares it and answers `cancel`; Codex under approval policy `never` with full access accepts a fieldless form | A refusal never says the person declined, and an unattended client cannot make these writes |
 | A client draws a question as plain text | **Refuted, tier 2**: VS Code builds the message as a `MarkdownString` | Spreadsheet text stands in a code span, and the server's own lines hold no Markdown |
+| A 503 proves an unrepeatable write never began, so it may be retried | **Refuted, tier 1**: Google's `google/rpc/code.proto` says of `UNAVAILABLE` that it is "not always safe to retry non-idempotent operations". Checked 2026-10-01 | An append, `batchUpdate`, `create` or `copyTo` retries only on 429. Any 5xx is `[ambiguous_outcome]`, and the class wins over the wrapped 429 |

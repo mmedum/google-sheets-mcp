@@ -5,6 +5,12 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+
+- `append_rows`, `batchUpdate` writes and `create_spreadsheet` are no longer repeated after a 503, which could apply them twice; the failure is `[ambiguous_outcome]`.
+- An `[ambiguous_outcome]` error says the write may have been applied and to read the spreadsheet before repeating it, and is no longer reported as `[rate_limited]` when the last attempt got a 429.
+- A canceled request's error no longer carries the request URL, which held the spreadsheet id, the range and a Drive search term.
+
 ## [3.0.0] - 2026-09-30
 
 ### Added
