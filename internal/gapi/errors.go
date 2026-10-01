@@ -236,6 +236,14 @@ func Classes() []string {
 // "[class] message" a tool returns.
 func Class(err error) string {
 	switch {
+	case errors.Is(err, ErrAmbiguousOutcome):
+		// First, because it wraps the failure that caused it: a 429
+		// after an earlier attempt must not read as "retry shortly".
+		//
+		// Not "ambiguous", which means a reference matched several things
+		// and asks the caller to choose. This one says a write may or may
+		// not have landed and asks them to go and look.
+		return "ambiguous_outcome"
 	case errors.Is(err, ErrMissingScope), errors.Is(err, ErrForbidden):
 		return "forbidden"
 	case errors.Is(err, ErrUnauthorized):
@@ -246,11 +254,6 @@ func Class(err error) string {
 		return "rate_limited"
 	case errors.Is(err, ErrInvalid):
 		return "invalid"
-	case errors.Is(err, ErrAmbiguousOutcome):
-		// Not "ambiguous", which means a reference matched several things
-		// and asks the caller to choose. This one says a write may or may
-		// not have landed and asks them to go and look.
-		return "ambiguous_outcome"
 	}
 	return "unavailable"
 }

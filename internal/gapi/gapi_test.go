@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -290,18 +291,18 @@ func TestUnrepeatableWritesAreNotRepeated(t *testing.T) {
 	put := request{method: http.MethodPut, op: "values.update"}
 
 	// A 429 is a refusal to begin: nothing was applied, so it may be
-	// sent again. So is a 503.
-	for _, status := range []int{429, 503} {
-		err := &transientError{err: &APIError{Status: status}}
-		if ok, _ := retryable(post, err); !ok {
-			t.Errorf("a %d on an append should be retried; it never ran", status)
+	// sent again.
+	if ok, _ := retryable(post, &transientError{err: &APIError{Status: 429}}); !ok {
+		t.Error("a 429 on an append should be retried; it never ran")
+	}
+	// A 500 or a 503 may have applied. Repeating it would append the
+	// rows twice.
+	for _, status := range []int{500, 503} {
+		if ok, _ := retryable(post, &transientError{err: &APIError{Status: status}}); ok {
+			t.Errorf("a %d on an append must not be repeated", status)
 		}
 	}
-	// A 500 may have applied. Repeating it would append the rows twice.
 	err := &transientError{err: &APIError{Status: 500}}
-	if ok, _ := retryable(post, err); ok {
-		t.Error("a 500 on an append must not be repeated")
-	}
 	if ok, _ := retryable(put, err); !ok {
 		t.Error("a 500 on an update may be repeated; PUT is repeatable by construction")
 	}
@@ -310,16 +311,16 @@ func TestUnrepeatableWritesAreNotRepeated(t *testing.T) {
 		t.Error("a dropped connection on an append must not be repeated")
 	}
 
-	if got := Class(markAmbiguous(ErrUnavailable)); got != "ambiguous_outcome" {
+	if got := Class(markAmbiguous("values.append", ErrUnavailable)); got != "ambiguous_outcome" {
 		t.Errorf("a failed append classified as %q, want ambiguous_outcome", got)
 	}
 	// A refusal Google explained is not ambiguous: it never ran.
 	refused := error(&APIError{Status: 400, Message: "bad range"})
-	if got := Class(markAmbiguous(refused)); got != "invalid" {
+	if got := Class(markAmbiguous("values.append", refused)); got != "invalid" {
 		t.Errorf("a 400 became %q; it never reached the spreadsheet", got)
 	}
-	if markAmbiguous(nil) != nil {
-		t.Error("markAmbiguous(nil) must stay nil")
+	if markAmbiguous("values.append", nil) != nil {
+		t.Error("markAmbiguous of nil must stay nil")
 	}
 }
 
@@ -551,8 +552,9 @@ func TestACanceledWriteIsStillAmbiguous(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		attempts++
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte(`{"error":{"code":503,"status":"UNAVAILABLE","message":"try later"}}`))
+		// A 429, the one answer that lets an append reach the backoff.
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"quota"}}`))
 	}))
 	defer srv.Close()
 
@@ -628,5 +630,72 @@ func TestCompactJSONLeavesAnExplicitChoiceAlone(t *testing.T) {
 	q := req.URL.Query()
 	if q.Get("fields") != "a" || q.Get("prettyPrint") != "false" {
 		t.Errorf("want both fields and prettyPrint, got %q", req.URL.RawQuery)
+	}
+}
+
+// TestAnAppendIsNotRepeatedAfterA5xx is the rule that no 5xx proves
+// anything about a write. Google's code.proto says of UNAVAILABLE that it
+// is "not always safe to retry non-idempotent operations", so an append
+// that got a 500, a 503 or a cut connection may already have inserted
+// its rows.
+func TestAnAppendIsNotRepeatedAfterA5xx(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		reply func(http.ResponseWriter)
+	}{
+		{"500", func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":{"code":500,"status":"INTERNAL","message":"Internal error encountered."}}`))
+		}},
+		{"503", func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":{"code":503,"status":"UNAVAILABLE","message":"The service is currently unavailable."}}`))
+		}},
+		{"connection cut", func(w http.ResponseWriter) {
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err == nil {
+				_ = conn.Close()
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var attempts atomic.Int32
+			c, _ := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				attempts.Add(1)
+				tc.reply(w)
+			})
+			_, err := c.AppendValues(context.Background(), "id", "A1", [][]any{{"x"}},
+				WriteOptions{Input: InputRaw, Insert: "INSERT_ROWS"})
+			if n := attempts.Load(); n != 1 {
+				t.Errorf("the append was sent %d times, want 1", n)
+			}
+			if got := Class(err); got != "ambiguous_outcome" {
+				t.Errorf("Class = %q, want ambiguous_outcome (%v)", got, err)
+			}
+			// The model must be told to look before it repeats the call.
+			if !strings.Contains(err.Error(), "values.append may have been applied; read the spreadsheet before repeating it") {
+				t.Errorf("the error does not say to read first: %v", err)
+			}
+		})
+	}
+}
+
+// TestACanceledRequestCarriesNoURL holds the logging rule on the one
+// error the transport returns unwrapped. A *url.Error names the URL,
+// which carries the spreadsheet id, the range and a Drive search term.
+func TestACanceledRequestCarriesNoURL(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	c, srv := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		cancel()
+		<-r.Context().Done()
+	})
+	_, err := c.SearchSpreadsheets(ctx, "name contains 'Quorbin'", 5, "")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("a canceled search gave %v", err)
+	}
+	for _, forbidden := range []string{"Quorbin", srv.URL, "http://"} {
+		if strings.Contains(err.Error(), forbidden) {
+			t.Errorf("the error carries %q: %v", forbidden, err)
+		}
 	}
 }
