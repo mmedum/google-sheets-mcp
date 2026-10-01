@@ -250,7 +250,11 @@ func TestThrottling403BacksOff(t *testing.T) {
 	if _, err := c.GetSpreadsheet(context.Background(), "id", GetOptions{Fields: CardFields}); err != nil {
 		t.Fatalf("a throttling 403 was not retried: %v", err)
 	}
-	// A daily quota does not refill, so backing off cannot help.
+	// A daily quota does not refill, so backing off cannot help, and it
+	// is still a quota rather than a permission.
+	if got := Class(&APIError{Status: 403, Reason: "dailyLimitExceeded"}); got != "rate_limited" {
+		t.Errorf("a daily quota refusal classified as %q, want rate_limited", got)
+	}
 	if retryableThrottle(&APIError{Status: 403, Reason: "dailyLimitExceeded"}) {
 		t.Error("a daily quota refusal must not be retried")
 	}
@@ -677,6 +681,59 @@ func TestAnAppendIsNotRepeatedAfterA5xx(t *testing.T) {
 				t.Errorf("the error does not say to read first: %v", err)
 			}
 		})
+	}
+}
+
+// TestAnAppendRetriesOnlyARefusalToBegin: a 429 never started, so the
+// append goes again; a 400 is final and is sent once.
+func TestAnAppendRetriesOnlyARefusalToBegin(t *testing.T) {
+	attempts := 0
+	c, _ := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"quota"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"spreadsheetId":"id"}`))
+	})
+	opts := WriteOptions{Input: InputRaw, Insert: "INSERT_ROWS"}
+	if _, err := c.AppendValues(context.Background(), "id", "A1", [][]any{{"x"}}, opts); err != nil {
+		t.Fatalf("an append after a 429 failed: %v", err)
+	}
+	if attempts != 2 {
+		t.Errorf("took %d attempts after a 429, want 2", attempts)
+	}
+
+	attempts = 0
+	c, _ = testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"bad range"}}`))
+	})
+	_, err := c.AppendValues(context.Background(), "id", "A1", [][]any{{"x"}}, opts)
+	if attempts != 1 {
+		t.Errorf("a 400 was sent %d times, want 1", attempts)
+	}
+	if got := Class(err); got != "invalid" {
+		t.Errorf("Class = %q, want invalid", got)
+	}
+}
+
+// TestAReadGivesUpAfterFiveAttempts pins the attempt budget.
+func TestAReadGivesUpAfterFiveAttempts(t *testing.T) {
+	attempts := 0
+	c, _ := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"code":503,"status":"UNAVAILABLE","message":"try later"}}`))
+	})
+	_, err := c.GetSpreadsheet(context.Background(), "id", GetOptions{Fields: CardFields})
+	if attempts != 5 {
+		t.Errorf("took %d attempts, want 5", attempts)
+	}
+	if got := Class(err); got != "unavailable" {
+		t.Errorf("Class = %q, want unavailable", got)
 	}
 }
 

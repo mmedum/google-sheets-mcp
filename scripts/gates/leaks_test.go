@@ -18,7 +18,7 @@ func TestRulesCatchPlantedIdentifiers(t *testing.T) {
 		text  string
 		leaks bool
 	}{
-		{"address at a real domain", "contact alice@acme.co.uk for access", true}, // leakcheck:allow
+		{"address at a real domain", "contact plimth@quorbinnardle.co.uk for access", true}, // leakcheck:allow
 		{"documentation address", "owner fixture@example.test signed in", false},
 		{"test domain", "a@b.test", false},
 		{"example.com", "a@example.com", false},
@@ -167,6 +167,8 @@ func TestSafeDomain(t *testing.T) {
 		// But not a domain that merely ends in the same letters.
 		"notexample.com": false, "example.com.evil.co": false,
 		"localhost": false, "acme.co.uk": false, "EXAMPLE.COM": true, "example.com.": true,
+		// A reserved label inside a real domain is still a real domain.
+		"example.dk": false, "corp.test.com": false, "test.example.co": false,
 	} {
 		if got := safeDomain(domain); got != want {
 			t.Errorf("safeDomain(%q) = %v, want %v", domain, got, want)
@@ -271,4 +273,38 @@ func inDir(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(wd) })
+}
+
+// TestHistoryKeepsWhatTheTreeDropped: an id deleted from the tip is still
+// in the log, so the history scan finds it after the tree scan passes.
+// A clean history passes too, or the gate could never be green.
+func TestHistoryKeepsWhatTheTreeDropped(t *testing.T) {
+	dir := fixtureRepo(t)
+	inDir(t, dir)
+	if err := scanHistory(); err != nil {
+		t.Fatalf("a clean history was refused: %v", err)
+	}
+
+	write(t, dir, "leak.go", "const id = \"1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789\"\n") // leakcheck:allow
+	gitIn(t, dir, "add", "leak.go")
+	gitIn(t, dir, "commit", "-qm", "add")
+	gitIn(t, dir, "rm", "-q", "leak.go")
+	gitIn(t, dir, "commit", "-qm", "remove")
+
+	if err := scanTree(); err != nil {
+		t.Fatalf("the tree no longer has the id, yet: %v", err)
+	}
+	err := scanHistory()
+	if err == nil {
+		t.Fatal("an id removed from the tip was not found in history")
+	}
+	if !strings.Contains(err.Error(), "leak.go (blob ") {
+		t.Errorf("err = %v, want it to name the file and blob", err)
+	}
+
+	// A commit message is history too.
+	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "see plimth@quorbinnardle.co.uk") // leakcheck:allow
+	if err := scanHistory(); err == nil || !strings.Contains(err.Error(), "a commit message: ") {
+		t.Errorf("an address in a commit message was missed: %v", err)
+	}
 }
