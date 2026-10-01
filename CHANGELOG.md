@@ -5,6 +5,8 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-10-01
+
 ### Fixed
 
 - `append_rows`, `batchUpdate` writes and `create_spreadsheet` are no longer repeated after a 503, which could apply them twice; the failure is `[ambiguous_outcome]`.
@@ -1296,7 +1298,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.1...HEAD
+[3.0.1]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v1.5.1...v2.0.0
 [1.5.1]: https://github.com/mmedum/google-sheets-mcp/compare/v1.5.0...v1.5.1
