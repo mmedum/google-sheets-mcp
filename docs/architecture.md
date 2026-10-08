@@ -154,7 +154,7 @@ here, where those say `search_files`, `search_documents`, `read_file`.
   `update_values`, `update_formulas`, `update_spreadsheet` and
   `insert_dimension`. `update_spreadsheet` is the raw `batchUpdate`
   passed straight through — Google's own page calls it "75+ update
-  types", where the discovery document has 69 — so the model composes
+  types", where the discovery document has 74 — so the model composes
   `GridRange` objects, with their zero-based half-open indices, by hand. It is remote HTTP, needs a
   **Web application** OAuth client, asks for four scopes
   (`spreadsheets`, `spreadsheets.readonly`, `drive.file`,
@@ -221,7 +221,7 @@ Sheets guides on 2026-09-05.
 | Constraint | Consequence |
 |---|---|
 | **There is no write guard.** Sheets v4 has no `writeControl`, no `requiredRevisionId` and no ETag: the string does not occur in the discovery document. Docs has one; Sheets does not. | Concurrency is the server's problem. A read hands out a **checkpoint** over the values it read; a write may require it and re-reads to compare (§6.3). It narrows the window and cannot close it, and the tool descriptions say so. |
-| **The whole surface is 17 methods.** One `spreadsheets.batchUpdate` carries a union of **69 request kinds**; `spreadsheets.values.*` carries the value paths. Power is in the union, not in the method list. | `internal/plan` compiles typed ops into union members. The model never writes a union member itself. |
+| **The whole surface is 17 methods.** One `spreadsheets.batchUpdate` carries a union of **74 request kinds** (revision 20260927); `spreadsheets.values.*` carries the value paths. Power is in the union, not in the method list. | `internal/plan` compiles typed ops into union members. The model never writes a union member itself. |
 | **A batch is atomic, and Google still will not promise the result.** The discovery document: "If any request is not valid then the entire request will fail and nothing will be applied … it is guaranteed that the updates in the request will be applied together atomically", followed by "Due to the collaborative nature of spreadsheets, it is not guaranteed that the spreadsheet will reflect exactly your changes after this completes … Your changes may be altered with respect to collaborator changes." | Ops are never split across batches: splitting costs quota and gives up atomicity. And the platform states in its own words why the checkpoint (§4.7) is best effort — Google does not claim a write survives a collaborator. |
 | **`GridRange` is zero-based and half-open; A1 is one-based and inclusive.** The discovery document is explicit: "All indexes are zero-based. Indexes are half open … Missing indexes indicate the range is unbounded on that side." `Sheet1!A1:A1` is `startRowIndex: 0, endRowIndex: 1`. | Index arithmetic lives in `internal/a1`. The model sees A1 notation only, which is also what the person sees on screen. |
 | **A1 quoting has three traps, and the third is narrower than the guide's wording but still a correctness bug.** Single quotes are required for sheet names with spaces or special characters (`'My Custom Sheet'!A:A`); `A1` without a sheet means cell A1 of the **first visible sheet** while `'A1'` means the whole sheet *named* A1; and the concepts guide says "if there's a named range titled `Sheet1`, then `Sheet1` refers to the named range and `'Sheet1'` refers to the sheet". **Measured (spike C, §18): that last rule applies only to a reference with no `!`.** A bare name resolves as a named range first; anything with a `!` reads its left side as a sheet title regardless. | `internal/a1` builds every range from a parsed sheet title and **always quotes it**, never by string concatenation, and a range is never sent with the sheet omitted. Quoting is load-bearing for the whole-sheet form this server sends (`'Data'` is the sheet, `Data` is the named range) and inert for `'Data'!A1:B2` — kept everywhere so no call site has to know which case it is in. |
@@ -377,7 +377,7 @@ person needs a real one, `manage_range` can protect the range.
 `internal/gsheets` holds hand-written structs for the fields this server
 reads. `google.golang.org/api` is not a dependency: it drags in gRPC,
 OpenTelemetry and the cloud auth stack for a binary that needs JSON and
-HTTP. The 69-member request union is written as typed builders, not as
+HTTP. The request union is written as typed builders, not as
 free-form maps.
 
 ### 4.9 Results say what changed
@@ -418,7 +418,7 @@ internal/credentials/     refresh token: OS keyring → 0600 file under os.UserC
 internal/userconfig/      non-secret profile file: client_secret path, account email, token location, scopes
 internal/auth/            loopback OAuth (127.0.0.1:<random>, PKCE), scope sets (full / read-only)
 internal/gsheets/         Sheets API wire types: Spreadsheet, Sheet, GridData, CellData, ExtendedValue,
-                          the 69 Request union members and their responses. No dependencies
+                          the Request union members it sends and their responses. No dependencies
 internal/gapi/            raw REST client: client.go (retry, limiters, slog, host allowlist), sheets.go,
                           values.go, batch.go, drive.go (locate only), errors.go. No MCP imports
 internal/gapi/sheetstest/ an in-memory Sheets behind httptest: sheets, cells with formulas and errors,
@@ -1958,7 +1958,7 @@ again), and both review passes ran with every finding fixed. Not tagged:
 `main` is the maintainer's.** `manage_chart`,
 `manage_pivot_table`, `manage_data_source`, each verified live before it
 is designed in detail. Then the discovery document is diffed against what
-the client calls, and every one of the 69 union members is either used or
+the client calls, and every union member is either used or
 listed here as deliberately out.
 
 **The diff, run 2026-09-07 against revision 20260831: 54 of the 69 are

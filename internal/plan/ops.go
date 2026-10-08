@@ -10,8 +10,8 @@ import (
 )
 
 // The builders below are the only way a request reaches the batchUpdate
-// union. The API has 69 members; these are the ones phase 1 sends, and
-// each later phase adds its own.
+// union. They are the members this server sends, not the whole union;
+// each phase added its own.
 //
 // Typed rather than free-form maps (§4.8). A map would let a request be
 // sent that no code here has read, which is how a server ends up passing

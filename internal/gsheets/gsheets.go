@@ -388,9 +388,9 @@ type BatchUpdateSpreadsheetResponse struct {
 	Replies       []*Reply `json:"replies,omitempty"`
 }
 
-// Request is one member of the batchUpdate union. The API has 69; this
-// is the set phase 1 builds, and each later phase adds its own rather
-// than the whole union arriving as free-form maps.
+// Request is one member of the batchUpdate union. It holds the members
+// this server sends, not the whole union: each phase added its own
+// rather than the union arriving as free-form maps.
 //
 // Exactly one field is set. Nothing here accepts a raw map: a typed
 // builder is what stops a request being sent that no code has read.
