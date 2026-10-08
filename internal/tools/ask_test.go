@@ -481,3 +481,37 @@ func TestALateAnswerIsRefusedOnlyWhenTheStateTravels(t *testing.T) {
 		}
 	}
 }
+
+// A tool that asks the person before every write carries Claude Code's
+// requiresUserInteraction mark only for a client that cannot ask; with
+// both, the person would answer twice for one call. The list is the
+// four §9a asks before every write: a new name here needs a look at
+// whether it really asks every time.
+func TestTheMarkIsForAClientThatCannotAsk(t *testing.T) {
+	marked := func(cs *mcp.ClientSession) []string {
+		t.Helper()
+		res, err := cs.ListTools(context.Background(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, tool := range res.Tools {
+			if tool.Meta["anthropic/requiresUserInteraction"] == true {
+				out = append(out, tool.Name)
+			}
+		}
+		slices.Sort(out)
+		return out
+	}
+	all := "clear_values delete_data_source delete_dimensions delete_sheet"
+	for _, protocol := range protocols {
+		cs, _, _ := connect(t, everything(t), protocol, &person{action: "accept"})
+		if got := marked(cs); len(got) != 0 {
+			t.Errorf("%s, a client that can ask: marked %v, want none", protocol, got)
+		}
+		cs, _, _ = connect(t, everything(t), protocol, nil)
+		if got := strings.Join(marked(cs), " "); got != all {
+			t.Errorf("%s, a client that cannot ask: marked %q, want %q", protocol, got, all)
+		}
+	}
+}

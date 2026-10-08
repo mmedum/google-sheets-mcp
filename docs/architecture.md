@@ -1029,7 +1029,8 @@ whose reference mentions none of them.
 snake_case verb_noun, no dots. Claude Code prefixes `mcp__<server>__`.
 "Gated" means registered only with `GSHEETS_ENABLE_DESTRUCTIVE=true`, and
 each gated tool also requires `confirm: true` on the call and sets
-`_meta["anthropic/requiresUserInteraction"]`. `GSHEETS_READ_ONLY=true`
+`_meta["anthropic/requiresUserInteraction"]` for a client that cannot ask
+the person (§9a). `GSHEETS_READ_ONLY=true`
 registers only the readOnly rows and requests read-only scopes.
 
 | Tool | Purpose | Annotations | Phase |
@@ -1282,7 +1283,13 @@ itself, through MCP form elicitation, before six writes:
 3. **No question possible.** A client that declares no form elicitation
    gets no question, and the arguments are the guard, as before.
    `GSHEETS_REQUIRE_PROMPT=true` refuses those writes as `[blocked]`
-   instead.
+   instead. Only such a client sees Claude Code's
+   `requiresUserInteraction` mark on the four tools that always ask:
+   `tools/list` drops it when the request declares form elicitation, so
+   the person answers once, to the question that says what the write
+   destroys. `destructiveHint` stays, as the client's allow-listable
+   prompt. `claude -p` declares elicitation and answers `cancel`, so an
+   unattended delete is still `[blocked]`.
 4. **A dry run never asks**, and needs no `confirm`.
 5. **What the question says.** The tool, the target and the consequence,
    in the server's words: the sheet, band or range and the spreadsheet,
@@ -3268,3 +3275,4 @@ verdict comes from a sibling server's evidence log.
 | A client that declares elicitation has a person to answer it | **Refuted, tier 2**: `claude -p` declares it and answers `cancel`; Codex under approval policy `never` with full access accepts a fieldless form | A refusal never says the person declined, and an unattended client cannot make these writes |
 | A client draws a question as plain text | **Refuted, tier 2**: VS Code builds the message as a `MarkdownString` | Spreadsheet text stands in a code span, and the server's own lines hold no Markdown |
 | A 503 proves an unrepeatable write never began, so it may be retried | **Refuted, tier 1**: Google's `google/rpc/code.proto` says of `UNAVAILABLE` that it is "not always safe to retry non-idempotent operations". Checked 2026-10-01 | An append, `batchUpdate`, `create` or `copyTo` retries only on 429. Any 5xx is `[ambiguous_outcome]`, and the class wins over the wrapped 429 |
+| A destructive tool should carry both `requiresUserInteraction` and the server's own question | **Refuted, tier 2**, 2026-10-09, after the owner was asked twice for one delete in google-docs-mcp. No source recommends two hard gates for one call: the spec puts confirmation on the client, GitHub's `delete_repository` and Supabase confirm with `destructiveHint` plus a form elicitation and set no mark, and Claude Code's documentation scopes the mark to "tools whose permission prompt is itself the point" | The mark is sent per client, present only when the request declares no form elicitation, on the four tools that always ask. A typed confirmation, which would stop Codex accepting an empty form unseen, was offered and not chosen |
