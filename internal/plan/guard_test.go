@@ -165,6 +165,25 @@ func TestAnnotationsSurviveAndAreReportedAsSuch(t *testing.T) {
 	}
 }
 
+// A smart chip reads as its text, so "not empty" alone would not say a
+// write erases a person or a file link. It is named, under overwrite.
+func TestASmartChipIsNamedBeforeAWriteErasesIt(t *testing.T) {
+	g := target(grid.Cell{Kind: grid.KindText, Display: "Jane Doe", Chip: true})
+	r := plan.Check(g, [][]any{{"Jane"}}, evaluated)
+	var why []string
+	for _, b := range r.Blockers(plan.Ack{}) {
+		if strings.Contains(b.Why, "smart chip") {
+			why = append(why, b.Why+" / "+b.Allow)
+		}
+	}
+	if want := "A1 holds a smart chip (a person or a file link), which a value write erases / overwrite"; len(why) != 1 || why[0] != want {
+		t.Errorf("chip blockers = %q, want [%q]", why, want)
+	}
+	if bs := r.Blockers(plan.Ack{Overwrite: true}); len(bs) != 0 {
+		t.Errorf("overwrite did not clear the write: %+v", bs)
+	}
+}
+
 // A formula that fetches a URL is an outbound request made by a machine
 // the person cannot see, and IMPORTRANGE is the other direction. Both
 // are gated, and each is named for what it is.

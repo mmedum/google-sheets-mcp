@@ -163,6 +163,27 @@ func TestACellWithOnlyAnAnnotationIsEmpty(t *testing.T) {
 	}
 }
 
+// A read returns every run of a cell's text, and a plain run carries an
+// empty chip, so a cell is a chip only where a run names a person or a
+// link.
+func TestACellWithASmartChip(t *testing.T) {
+	text := "@"
+	for _, tc := range []struct {
+		name string
+		runs []gsheets.ChipRun
+		want bool
+	}{
+		{"a person", []gsheets.ChipRun{{Chip: &gsheets.Chip{PersonProperties: &gsheets.PersonProperties{Email: "janedoe@example.com"}}}}, true},
+		{"a file link after text", []gsheets.ChipRun{{Chip: &gsheets.Chip{}}, {StartIndex: 4, Chip: &gsheets.Chip{RichLinkProperties: &gsheets.RichLinkProperties{URI: "https://docs.google.com/document/d/AAAAdoc1"}}}}, true},
+		{"plain runs only", []gsheets.ChipRun{{Chip: &gsheets.Chip{}}, {StartIndex: 3}}, false},
+	} {
+		c := cell(&gsheets.CellData{UserEnteredValue: &gsheets.ExtendedValue{StringValue: &text}, ChipRuns: tc.runs}, AsRaw)
+		if c.Chip != tc.want {
+			t.Errorf("%s: Chip = %t, want %t", tc.name, c.Chip, tc.want)
+		}
+	}
+}
+
 func TestDescribeValidation(t *testing.T) {
 	for _, tc := range []struct {
 		in   *gsheets.DataValidationRule

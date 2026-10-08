@@ -5,6 +5,10 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+
+- A write over a smart chip (a person or a file link) says so before it erases it. A chip reads as its text, and the refusal called the cell only "not empty"; `overwrite` erased the chip with nothing said.
+
 ## [3.0.2] - 2026-10-01
 
 ### Fixed

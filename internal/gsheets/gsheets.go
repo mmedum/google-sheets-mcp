@@ -124,9 +124,34 @@ type CellData struct {
 	Note              string              `json:"note,omitempty"`
 	Hyperlink         string              `json:"hyperlink,omitempty"`
 	TextFormatRuns    []json.RawMessage   `json:"textFormatRuns,omitempty"`
-	ChipRuns          []json.RawMessage   `json:"chipRuns,omitempty"`
+	ChipRuns          []ChipRun           `json:"chipRuns,omitempty"`
 	PivotTable        json.RawMessage     `json:"pivotTable,omitempty"`
 	DataSourceFormula json.RawMessage     `json:"dataSourceFormula,omitempty"`
+}
+
+// ChipRun is one run of a cell's text. A read returns every run, and a
+// run that is plain text carries an empty Chip.
+type ChipRun struct {
+	StartIndex int64 `json:"startIndex,omitempty"`
+	Chip       *Chip `json:"chip,omitempty"`
+}
+
+// Chip is a smart chip: a person, or a link to a Google resource.
+type Chip struct {
+	PersonProperties   *PersonProperties   `json:"personProperties,omitempty"`
+	RichLinkProperties *RichLinkProperties `json:"richLinkProperties,omitempty"`
+}
+
+// PersonProperties is the person a chip names.
+type PersonProperties struct {
+	Email         string `json:"email,omitempty"`
+	DisplayFormat string `json:"displayFormat,omitempty"`
+}
+
+// RichLinkProperties is the resource a link chip points at.
+type RichLinkProperties struct {
+	URI      string `json:"uri,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
 }
 
 // ExtendedValue is the API's cell value union: exactly one field is set.

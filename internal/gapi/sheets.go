@@ -31,14 +31,14 @@ const CardFields = "spreadsheetId," +
 
 // GridFields is the field mask behind a read of cells. It asks for what
 // a values read cannot show: the entered value under a formatted one,
-// the note, the validation rule.
+// the note, the validation rule, the smart chips.
 //
 // userEnteredValue and effectiveValue are both here because a formula
 // and its result render identically, and the difference between them is
 // what the write guard is built on.
 const GridFields = sheetHead +
 	"data(startRow,startColumn,rowData(values(userEnteredValue,effectiveValue,formattedValue,note,dataValidation," +
-	"hyperlink,pivotTable(source)))))"
+	"hyperlink,chipRuns,pivotTable(source)))))"
 
 // sheetHead is what every mask that reads cells asks for around them:
 // the sheet's identity and size, its merges, and its protected ranges.

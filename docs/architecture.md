@@ -328,8 +328,12 @@ value would silently destroy:
 - **a protected range** this account may not edit — refused before the
   request is built, with the protection named;
 - **a partially covered merge** — refused with the merged range named;
-- a cell carrying a **note**, **data validation** or a **chip** is
-  reported in the refusal, since those are invisible in a values read.
+- **a smart chip** (a person or a file link) — named in the refusal and
+  allowed by `overwrite`, because it reads as plain text and a value
+  write erases it: "Writing a new user_entered_value will erase previous
+  runs" (`CellData.chipRuns`, discovery 20260930);
+- a cell carrying a **note** or **data validation** is reported as kept,
+  since those are invisible in a values read and survive a value write.
 
 `suggest`-style modes do not exist here: Sheets has no tracked changes.
 What stands in their place is `dry_run`, which reports the guard's

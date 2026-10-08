@@ -69,6 +69,9 @@ type Cell struct {
 	// behind a guarded write does.
 	Computed  bool
 	Hyperlink string
+	// Chip says the cell holds a smart chip, a person or a file link. A
+	// values read shows only its text, and a value write erases it.
+	Chip bool
 
 	// Format is what the cell was explicitly given, and nil unless the
 	// read asked for it: a write's pre-read does not, and
@@ -213,6 +216,11 @@ func cell(cd *gsheets.CellData, formatted Formatted) Cell {
 	}
 	c.Pivot = len(cd.PivotTable) > 0
 	c.Computed = Computed(cd)
+	for _, run := range cd.ChipRuns {
+		if ch := run.Chip; ch != nil && (ch.PersonProperties != nil || ch.RichLinkProperties != nil) {
+			c.Chip = true
+		}
+	}
 	if v := cd.UserEnteredValue; v != nil && v.FormulaValue != nil {
 		c.Formula = *v.FormulaValue
 		c.Kind = KindFormula

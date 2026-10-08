@@ -158,6 +158,9 @@ type Report struct {
 	// are counted in NonEmpty too: a formula is a non-empty cell.
 	NonEmpty Cells
 	Formulas Cells
+	// Chips are cells holding a smart chip, which a value write erases
+	// and a values read does not show. They are in NonEmpty too.
+	Chips Cells
 	// Notes and Validation are invisible in a values read and survive a
 	// value write, so they are reported as surviving: a rule that still
 	// applies to a value the caller has just replaced is worth knowing
@@ -298,6 +301,15 @@ func (r Report) Blockers(ack Ack) []Blocker {
 			Allow: "overwrite_formulas (and overwrite)",
 		})
 	}
+	// Named before the plain non-empty finding, like a formula: a chip
+	// reads as its text, so "not empty" does not say what is lost.
+	if r.Chips.Any() && !ack.Overwrite {
+		out = append(out, Blocker{
+			Why: fmt.Sprintf("%s %s a smart chip (a person or a file link), which a value write erases",
+				r.Chips, r.Chips.Verb("holds", "hold")),
+			Allow: "overwrite",
+		})
+	}
 	if r.Pivots.Any() && !ack.Overwrite {
 		out = append(out, Blocker{
 			Why: fmt.Sprintf("%s %s a pivot table, and a write there replaces it and clears everything it draws",
@@ -393,6 +405,9 @@ func Check(g *grid.Grid, values [][]any, formulasEvaluated bool) Report {
 				r.NonEmpty.AddCell(g, i, j)
 			} else if !cell.Empty() {
 				r.NonEmpty.AddCell(g, i, j)
+			}
+			if cell.Chip {
+				r.Chips.AddCell(g, i, j)
 			}
 			if cell.Pivot {
 				r.Pivots.AddCell(g, i, j)
