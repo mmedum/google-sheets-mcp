@@ -143,6 +143,22 @@ type Grid struct {
 	DataRows  int
 	Merges    []a1.Rect
 	Protected []Protection
+	// HiddenRows and HiddenCols are the one-based rows and columns of
+	// Rect a person hid, when the read asked for them.
+	HiddenRows []int
+	HiddenCols []int
+}
+
+// hidden lists the one-based positions, from first, that a person hid
+// and that lie within [lo, hi].
+func hidden(meta []*gsheets.DimensionProperties, first, lo, hi int) []int {
+	var out []int
+	for i, m := range meta {
+		if n := first + i; m != nil && m.HiddenByUser != nil && *m.HiddenByUser && n >= lo && n <= hi {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // Formatted selects which of the API's renderings Display carries.
@@ -182,6 +198,8 @@ func Build(sheet string, sheetID int, rect a1.Rect, data *gsheets.GridData, form
 	// The response says where its own rectangle starts, which need not
 	// be where the request asked it to. The conversion is a1's.
 	rowOffset, colOffset := rect.OffsetOf(data.StartRow, data.StartColumn)
+	g.HiddenRows = hidden(data.RowMetadata, rect.FirstRow+rowOffset, rect.FirstRow, rect.LastRow)
+	g.HiddenCols = hidden(data.ColumnMetadata, rect.FirstCol+colOffset, rect.FirstCol, rect.LastCol)
 	for i, row := range data.RowData {
 		r := i + rowOffset
 		if r < 0 || r >= rows || row == nil {

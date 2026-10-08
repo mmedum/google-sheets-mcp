@@ -227,7 +227,7 @@ Sheets scope; in read-only mode the read tools ask for
 | `manage_pivot_table` | Add, update, delete or list pivot tables. Columns are named in A1 or by their heading, never by counting, and every result reports the rectangle the table covers right now: the size is computed from the data rather than chosen | `spreadsheets` |
 | `manage_data_source` | Off by default: connect a BigQuery data source through Connected Sheets, refresh it, cancel a refresh, or list what is connected. `get_spreadsheet` already says whether a spreadsheet has one, with no extra scope | `spreadsheets`, `bigquery.readonly` |
 | `manage_sheet` | Add, rename, duplicate, copy to another spreadsheet, hide, unhide, reorder, resize, freeze or color a sheet | `spreadsheets` |
-| `edit_dimensions` | Insert, move, resize, auto-size, group or ungroup rows and columns | `spreadsheets` |
+| `edit_dimensions` | Insert, move, resize, auto-size, group, ungroup, hide or unhide rows and columns | `spreadsheets` |
 | `delete_dimensions` | Destructive, off by default: remove rows or columns and the data on them, having counted what that is | `spreadsheets` |
 | `clear_values` | Destructive, off by default: clear a range's values and keep its formatting, notes and validation rules | `spreadsheets` |
 | `delete_sheet` | Destructive, off by default: delete a sheet and everything on it, having counted what that is | `spreadsheets` |

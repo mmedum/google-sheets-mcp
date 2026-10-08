@@ -753,7 +753,9 @@ value.
   non-empty cells, formulas and charts go with it, and the description
   points at `duplicate` first.
 - `edit_dimensions`: `action` — `insert`, `move`, `resize`,
-  `auto_resize`, `group`, `ungroup`, over rows or columns. `move`'s `to`
+  `auto_resize`, `group`, `ungroup`, `hide`, `unhide`, over rows or
+  columns. A hidden band shows nothing in the values, so `read_range`
+  names the hidden rows and columns inside what it read. `move`'s `to`
   is where the band ends up: the API reads its index against the sheet
   *before* the move, verified live, and the conversion is this server's.
 - `delete_dimensions`: gated, and needs `confirm: true`. Deleting a

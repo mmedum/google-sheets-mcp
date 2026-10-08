@@ -12,6 +12,7 @@ package render
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -385,8 +386,38 @@ func Footer(g *grid.Grid, res GridResult, o GridOptions) string {
 		}
 		parts = append(parts, fmt.Sprintf("%d value(s) shortened to %d characters%s", res.Shortened, MaxCellWidth, at))
 	}
+	if len(g.HiddenRows) > 0 {
+		parts = append(parts, "hidden rows "+runs(g.HiddenRows, strconv.Itoa, "-"))
+	}
+	if len(g.HiddenCols) > 0 {
+		parts = append(parts, "hidden columns "+runs(g.HiddenCols, columnName, ":"))
+	}
 	if res.ContinueFrom > 0 {
 		parts = append(parts, fmt.Sprintf("cut at the character budget; continue at row %d", res.ContinueFrom))
 	}
 	return strings.Join(parts, "; ")
+}
+
+// runs writes ascending positions as runs: 2, 4-6 for rows, B, D:F for
+// columns, each position named by name and a run joined by sep.
+func runs(ns []int, name func(int) string, sep string) string {
+	var parts []string
+	for i := 0; i < len(ns); {
+		j := i
+		for j+1 < len(ns) && ns[j+1] == ns[j]+1 {
+			j++
+		}
+		if j == i {
+			parts = append(parts, name(ns[i]))
+		} else {
+			parts = append(parts, name(ns[i])+sep+name(ns[j]))
+		}
+		i = j + 1
+	}
+	return strings.Join(parts, ", ")
+}
+
+func columnName(n int) string {
+	s, _ := a1.ColumnName(n)
+	return s
 }

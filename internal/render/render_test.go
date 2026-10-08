@@ -135,6 +135,31 @@ func TestGridClipsLongValuesAndSaysSo(t *testing.T) {
 	}
 }
 
+// A hidden row or column shows nothing in the values, so the footer
+// names it. Rows 2 and 4-6 and columns B and D:F are hidden here; row 9
+// is hidden but outside the read.
+func TestTheFooterNamesHiddenRowsAndColumns(t *testing.T) {
+	yes := true
+	h := &gsheets.DimensionProperties{HiddenByUser: &yes}
+	rowMeta := make([]*gsheets.DimensionProperties, 9)
+	for _, r := range []int{2, 4, 5, 6, 9} {
+		rowMeta[r-1] = h
+	}
+	colMeta := []*gsheets.DimensionProperties{nil, h, nil, h, h, h}
+	data := &gsheets.GridData{RowMetadata: rowMeta, ColumnMetadata: colMeta}
+	g := grid.Build("Vandel", 0, a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 6, LastRow: 8}, data, grid.AsRaw)
+	opts := render.GridOptions{}
+	footer := render.Footer(g, render.Grid(g, opts), opts)
+	for _, want := range []string{"hidden rows 2, 4-6", "hidden columns B, D:F"} {
+		if !strings.Contains(footer, want) {
+			t.Errorf("the footer lacks %q:\n%s", want, footer)
+		}
+	}
+	if strings.Contains(footer, "9") {
+		t.Errorf("the footer names row 9, outside the read:\n%s", footer)
+	}
+}
+
 func TestGridKeepsAlignmentThroughNewlines(t *testing.T) {
 	// A newline inside a cell would break every address below it.
 	data := &gsheets.GridData{RowData: []*gsheets.RowData{{Values: []*gsheets.CellData{

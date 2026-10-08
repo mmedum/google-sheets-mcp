@@ -36,9 +36,17 @@ const CardFields = "spreadsheetId," +
 // userEnteredValue and effectiveValue are both here because a formula
 // and its result render identically, and the difference between them is
 // what the write guard is built on.
-const GridFields = sheetHead +
-	"data(startRow,startColumn,rowData(values(userEnteredValue,effectiveValue,formattedValue,note,dataValidation," +
-	"hyperlink,chipRuns,pivotTable(source)))))"
+const GridFields = sheetHead + "data(startRow,startColumn,rowData(values(" + cellFields + ")))))"
+
+// ReadFields is GridFields plus which rows and columns a person hid,
+// for read_range: a hidden band is invisible in the values, and hiding
+// one is something edit_dimensions does.
+const ReadFields = sheetHead +
+	"data(startRow,startColumn,rowMetadata(hiddenByUser),columnMetadata(hiddenByUser),rowData(values(" + cellFields + ")))))"
+
+// cellFields is what both masks read of each cell, written once so the
+// read and the write guard cannot see different cells.
+const cellFields = "userEnteredValue,effectiveValue,formattedValue,note,dataValidation,hyperlink,chipRuns,pivotTable(source)"
 
 // sheetHead is what every mask that reads cells asks for around them:
 // the sheet's identity and size, its merges, and its protected ranges.

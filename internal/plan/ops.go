@@ -165,6 +165,15 @@ func ResizeDimension(sheetID int, dimension string, first, last, pixels int) *gs
 	}}
 }
 
+// HideDimension hides a band, or shows it again when hidden is false.
+func HideDimension(sheetID int, dimension string, first, last int, hidden bool) *gsheets.Request {
+	return &gsheets.Request{UpdateDimensionProperties: &gsheets.UpdateDimensionPropertiesRequest{
+		Range:      dimensionRange(sheetID, dimension, first, last),
+		Properties: &gsheets.DimensionProperties{HiddenByUser: &hidden},
+		Fields:     "hiddenByUser",
+	}}
+}
+
 // AutoResizeDimensions sizes a band to fit what is on it.
 func AutoResizeDimensions(sheetID int, dimension string, first, last int) *gsheets.Request {
 	return &gsheets.Request{AutoResizeDimensions: &gsheets.AutoResizeDimensionsRequest{

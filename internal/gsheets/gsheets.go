@@ -103,6 +103,10 @@ type GridData struct {
 	StartRow    int        `json:"startRow,omitempty"`
 	StartColumn int        `json:"startColumn,omitempty"`
 	RowData     []*RowData `json:"rowData,omitempty"`
+	// RowMetadata and ColumnMetadata are one entry per row and column of
+	// the range, from its start, when the mask asks for them.
+	RowMetadata    []*DimensionProperties `json:"rowMetadata,omitempty"`
+	ColumnMetadata []*DimensionProperties `json:"columnMetadata,omitempty"`
 }
 
 // RowData is one row of a GridData. Trailing empty cells are omitted by
@@ -590,10 +594,11 @@ type MoveDimensionRequest struct {
 	DestinationIndex int             `json:"destinationIndex"`
 }
 
-// DimensionProperties is a band's size. Hiding a row or a column is
-// phase 2's, and the field arrives with the code that sets it.
+// DimensionProperties is a band's size and whether a person hid it.
+// HiddenByUser is a pointer so that false, which unhides, is sent.
 type DimensionProperties struct {
-	PixelSize int `json:"pixelSize,omitempty"`
+	PixelSize    int   `json:"pixelSize,omitempty"`
+	HiddenByUser *bool `json:"hiddenByUser,omitempty"`
 }
 
 // UpdateDimensionPropertiesRequest resizes or hides a band.

@@ -670,6 +670,52 @@ func (d *driver) dimensionSteps() []step {
 			},
 		},
 		{
+			name: "hide rows",
+			why:  "a hidden band shows nothing in the values, so the read has to say so",
+			tool: "edit_dimensions",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet,
+				"action": "hide", "dimension": "rows", "band": "12:13",
+			},
+		},
+		{
+			name: "and the read names them",
+			why:  "rowMetadata is asked for only by read_range's own mask",
+			tool: "read_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A10:B14", "show": "values",
+			},
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "hidden rows 12-13") {
+					return fmt.Errorf("the read does not name the hidden rows: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "show them again",
+			why:  "unhide sends hiddenByUser false, not an absent field",
+			tool: "edit_dimensions",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet,
+				"action": "unhide", "dimension": "rows", "band": "12:13",
+			},
+		},
+		{
+			name: "and the read no longer names them",
+			why:  "the other half",
+			tool: "read_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A10:B14", "show": "values",
+			},
+			check: func(text string, _ map[string]any) error {
+				if strings.Contains(text, "hidden rows") {
+					return fmt.Errorf("rows are still hidden after unhide: %s", text)
+				}
+				return nil
+			},
+		},
+		{
 			name: "a dry run says what it would do and does nothing",
 			why:  "the preview and the result describe the same act, so they come from the same code",
 			tool: "edit_dimensions",

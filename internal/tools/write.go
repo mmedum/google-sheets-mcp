@@ -70,7 +70,7 @@ type SheetInput struct {
 type DimensionInput struct {
 	Spreadsheet string `json:"spreadsheet" jsonschema:"a spreadsheet id, any docs.google.com/spreadsheets URL, or an exact title"`
 	Sheet       string `json:"sheet,omitempty" jsonschema:"the sheet to act on, by title or numeric sheet id"`
-	Action      string `json:"action" jsonschema:"insert, move, resize, auto_resize, group or ungroup"`
+	Action      string `json:"action" jsonschema:"insert, move, resize, auto_resize, group, ungroup, hide or unhide"`
 	Dimension   string `json:"dimension" jsonschema:"rows or columns"`
 	Band        string `json:"band" jsonschema:"which ones, in A1: 2:5 for rows, B:D for columns. It must agree with dimension. anchor:<name> works here too, and resolves to whatever row or column that label points at now"`
 	To          int    `json:"to,omitempty" jsonschema:"for move, the one-based row or column the band should start at afterwards"`
@@ -189,7 +189,7 @@ func registerWrite(s *mcp.Server, d Deps) {
 
 	add(s, d, Def[DimensionInput, *service.DimensionResult]{
 		Name: "edit_dimensions",
-		Description: "Insert, move, resize, auto-size, group or ungroup rows or columns. " +
+		Description: "Insert, move, resize, auto-size, group, ungroup, hide or unhide rows or columns. " +
 			"dimension and band must agree — rows with 2:5, columns with B:D — and a mismatch is refused rather than " +
 			"guessed at, because either reading would move somebody's data somewhere they did not ask for. " +
 			"insert and move change the addresses of everything after the band, so a checkpoint or an address from " +

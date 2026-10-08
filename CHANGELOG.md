@@ -5,6 +5,10 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- `edit_dimensions` hides and unhides rows and columns, and `read_range` names the hidden rows and columns inside the range it read.
+
 ### Changed
 
 - A delete asks once in Claude Code, not twice. In a client that can ask the person, `delete_sheet`, `delete_dimensions`, `clear_values` and `delete_data_source` no longer carry the `requiresUserInteraction` mark; the server's own question, which shows what the write destroys, is the confirmation. To see only that question, add the four tools to Claude Code's allow list.

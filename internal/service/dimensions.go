@@ -19,6 +19,8 @@ const (
 	DimAutoResize = "auto_resize"
 	DimGroup      = "group"
 	DimUngroup    = "ungroup"
+	DimHide       = "hide"
+	DimUnhide     = "unhide"
 	DimDelete     = "delete"
 )
 
@@ -203,9 +205,11 @@ func dimensionRequest(req DimensionRequest, b plan.Band, props *gsheets.SheetPro
 		return plan.GroupDimensions(props.SheetID, b.Dimension, b.First, b.Last), nil
 	case DimUngroup:
 		return plan.UngroupDimensions(props.SheetID, b.Dimension, b.First, b.Last), nil
+	case DimHide, DimUnhide:
+		return plan.HideDimension(props.SheetID, b.Dimension, b.First, b.Last, req.Action == DimHide), nil
 	}
 	return nil, Errorf("invalid",
-		"action %q is not one of insert, move, resize, auto_resize, group, ungroup", req.Action)
+		"action %q is not one of insert, move, resize, auto_resize, group, ungroup, hide, unhide", req.Action)
 }
 
 // bandFits refuses a band past the sheet's allocated size, with the
