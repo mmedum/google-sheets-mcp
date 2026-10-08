@@ -114,15 +114,19 @@ func compare(old, current *schemaDump) (breaking, added []string) {
 	type tool = struct {
 		required   []string
 		properties map[string]bool
+		outputs    map[string]bool
 	}
 	index := func(d *schemaDump) map[string]tool {
 		m := map[string]tool{}
 		for _, t := range d.Tools {
-			props := map[string]bool{}
+			props, outs := map[string]bool{}, map[string]bool{}
 			for name := range t.InputSchema.Properties {
 				props[name] = true
 			}
-			m[t.Name] = tool{required: t.InputSchema.Required, properties: props}
+			for name := range t.OutputSchema.Properties {
+				outs[name] = true
+			}
+			m[t.Name] = tool{required: t.InputSchema.Required, properties: props, outputs: outs}
 		}
 		return m
 	}
@@ -142,6 +146,11 @@ func compare(old, current *schemaDump) (breaking, added []string) {
 		for _, f := range slices.Sorted(maps.Keys(o[name].properties)) {
 			if !nt.properties[f] {
 				breaking = append(breaking, fmt.Sprintf("%s: field removed %s", name, f))
+			}
+		}
+		for _, f := range slices.Sorted(maps.Keys(o[name].outputs)) {
+			if !nt.outputs[f] {
+				breaking = append(breaking, fmt.Sprintf("%s: output field removed %s", name, f))
 			}
 		}
 	}

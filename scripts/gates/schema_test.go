@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -46,4 +47,32 @@ func TestAnUnreadableTagFailsABreak(t *testing.T) {
 			t.Errorf("tag %q was read as a version", tag)
 		}
 	}
+}
+
+func TestALostOutputFieldBreaks(t *testing.T) {
+	released := mustDump(t, `{"tools":[{"name":"write_values","inputSchema":{"properties":{"range":{}}},
+		"outputSchema":{"properties":{"updated_range":{},"changed":{}}}}]}`)
+	for _, tc := range []struct {
+		name, built string
+		want        []string
+	}{
+		{"an output field dropped", `{"tools":[{"name":"write_values","inputSchema":{"properties":{"range":{}}},
+			"outputSchema":{"properties":{"updated_range":{}}}}]}`, []string{"write_values: output field removed changed"}},
+		{"an output field added", `{"tools":[{"name":"write_values","inputSchema":{"properties":{"range":{}}},
+			"outputSchema":{"properties":{"updated_range":{},"changed":{},"kept":{}}}}]}`, nil},
+	} {
+		breaking, _ := compare(released, mustDump(t, tc.built))
+		if strings.Join(breaking, "|") != strings.Join(tc.want, "|") {
+			t.Errorf("%s: breaking = %q, want %q", tc.name, breaking, tc.want)
+		}
+	}
+}
+
+func mustDump(t *testing.T, s string) *schemaDump {
+	t.Helper()
+	var d schemaDump
+	if err := json.Unmarshal([]byte(s), &d); err != nil {
+		t.Fatal(err)
+	}
+	return &d
 }

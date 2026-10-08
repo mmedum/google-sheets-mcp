@@ -34,6 +34,9 @@ type schemaDump struct {
 			Required   []string                   `json:"required"`
 			Properties map[string]json.RawMessage `json:"properties"`
 		} `json:"inputSchema"`
+		OutputSchema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		} `json:"outputSchema"`
 	} `json:"tools"`
 }
 

@@ -38,9 +38,9 @@ on the Drive API. A cell **note** is a Sheets field and is here.
 
 Reading, writing, formatting, the objects attached to a range,
 `gsheets://` resources, durable anchors, charts, pivot tables and
-Connected Sheets data sources all work. The twenty-one tools and their
-arguments are stable: a breaking change needs a major version, and a gate
-compares every commit against the last tag. It has been driven by one MCP
+Connected Sheets data sources all work. The twenty-one tools, their
+arguments and the fields they return are stable: a breaking change needs a
+major version, and a gate compares every commit against the last tag. It has been driven by one MCP
 client, which is what to know before trusting it in a second. The history
 is §16 of [`docs/architecture.md`](docs/architecture.md).
 
