@@ -335,6 +335,9 @@ type driver struct {
 	created    string
 	workSheet  string
 	checkpoint string
+	// commaLocale is the spreadsheet in a comma-decimal locale that the
+	// color-scale steps make.
+	commaLocale string
 	// The phase 4 objects, each learned from the reply that made it. A
 	// chart and a slicer are addressed by id and a pivot table by its
 	// anchor cell, so only the first two need carrying.

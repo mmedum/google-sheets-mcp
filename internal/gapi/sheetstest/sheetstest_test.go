@@ -308,3 +308,77 @@ func TestBatchUpdateAppliesNothingWhenOneRequestFails(t *testing.T) {
 		t.Error("the first request of a failed batch was applied; the API applies none of them")
 	}
 }
+
+// TestConditionalRulesAreChecked holds the fake to the refusals §18
+// records as beliefs for a conditional format rule, so no test passes on
+// a color scale Google is expected to refuse.
+func TestConditionalRulesAreChecked(t *testing.T) {
+	point := func(kind, value string) *gsheets.InterpolationPoint {
+		return &gsheets.InterpolationPoint{
+			Type: kind, Value: value,
+			ColorStyle: &gsheets.ColorStyle{RGBColor: &gsheets.Color{Red: 1, Green: 1, Blue: 1, Alpha: 1}},
+		}
+	}
+	condition := &gsheets.BooleanRule{
+		Condition: &gsheets.BooleanCondition{Type: "NOT_BLANK"},
+		Format:    &gsheets.CellFormat{TextFormat: &gsheets.TextFormat{Bold: true}},
+	}
+	for _, tc := range []struct {
+		name string
+		rule gsheets.ConditionalFormatRule
+		want string // "" for accepted
+	}{
+		{"a color scale with a midpoint",
+			gsheets.ConditionalFormatRule{GradientRule: &gsheets.GradientRule{
+				Minpoint: point("MIN", ""), Midpoint: point("PERCENTILE", "50"), Maxpoint: point("MAX", ""),
+			}}, ""},
+		{"neither kind", gsheets.ConditionalFormatRule{},
+			"exactly one of booleanRule and gradientRule is required"},
+		{"both kinds",
+			gsheets.ConditionalFormatRule{BooleanRule: condition, GradientRule: &gsheets.GradientRule{
+				Minpoint: point("MIN", ""), Maxpoint: point("MAX", ""),
+			}}, "exactly one of booleanRule and gradientRule is required"},
+		{"no maxpoint",
+			gsheets.ConditionalFormatRule{GradientRule: &gsheets.GradientRule{Minpoint: point("MIN", "")}},
+			"minpoint and maxpoint are required"},
+		{"a number with no value",
+			gsheets.ConditionalFormatRule{GradientRule: &gsheets.GradientRule{
+				Minpoint: point("NUMBER", ""), Maxpoint: point("MAX", ""),
+			}}, "type NUMBER requires a value"},
+		{"a percentile midpoint with no value",
+			gsheets.ConditionalFormatRule{GradientRule: &gsheets.GradientRule{
+				Minpoint: point("MIN", ""), Midpoint: point("PERCENTILE", ""), Maxpoint: point("MAX", ""),
+			}}, "type PERCENTILE requires a value"},
+		{"a point with no type",
+			gsheets.ConditionalFormatRule{GradientRule: &gsheets.GradientRule{
+				Minpoint: point("", "1"), Maxpoint: point("MAX", ""),
+			}}, `unknown type ""`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := Standard(t)
+			rule := tc.rule
+			rule.Ranges = []*gsheets.GridRange{{SheetID: 0}}
+			_, err := srv.Client().BatchUpdate(context.Background(), FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+				Requests: []*gsheets.Request{{AddConditionalFormatRule: &gsheets.AddConditionalFormatRuleRequest{
+					Index: 0, Rule: &rule,
+				}}},
+			})
+			stored := srv.Doc(FixtureID).Find(FirstSheet).Conditional
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("refused: %v", err)
+				}
+				if len(stored) != 2 || stored[0].GradientRule == nil || stored[0].GradientRule.Midpoint.Value != "50" {
+					t.Errorf("the color scale was not stored first: %+v", stored)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want it to say %q", err, tc.want)
+			}
+			if len(stored) != 1 {
+				t.Errorf("a refused rule was stored: %d rules", len(stored))
+			}
+		})
+	}
+}

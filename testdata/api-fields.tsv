@@ -201,9 +201,6 @@ sheets	CellFormat	textDirection	out	read_formatting reports the formatting this 
 sheets	CellFormat	textRotation	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
 sheets	DimensionProperties	hiddenByFilter	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
 sheets	DimensionProperties	hiddenByUser	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
-sheets	GradientRule	maxpoint	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
-sheets	GradientRule	midpoint	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
-sheets	GradientRule	minpoint	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
 sheets	GridData	columnMetadata	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
 sheets	GridData	rowMetadata	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
 sheets	PivotValue	formula	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer

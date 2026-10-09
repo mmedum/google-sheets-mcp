@@ -299,6 +299,108 @@ func TestConditionalFormatRules(t *testing.T) {
 	}
 }
 
+// A color scale is a conditional format rule of its own. It is written
+// whole, read back in the spelling it was written in, and replaced whole
+// by an update, the same as a rule with a condition.
+func TestColorScaleRoundTrip(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	svc := newService(t, srv)
+	ctx := context.Background()
+	const written = "color scale: min #ffffff -> percentile 50 #ffd666 -> max #57bb8a"
+
+	add := rangeReq(service.RangeRule, service.RangeAdd, "A1:B3")
+	add.Gradient = []string{"min #ffffff", "percentile 50 #ffd666", "max #57bb8a"}
+	res, err := svc.ManageRange(ctx, add)
+	if err != nil {
+		t.Fatalf("adding a color scale: %v", err)
+	}
+	if len(res.Applied) != 1 || res.Applied[0] != "conditional rule added "+written {
+		t.Errorf("applied = %q", res.Applied)
+	}
+	rules := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Conditional
+	if len(rules) != 1 || rules[0].GradientRule == nil || rules[0].BooleanRule != nil {
+		t.Fatalf("rules = %+v", rules)
+	}
+	mid := rules[0].GradientRule.Midpoint
+	if mid == nil || mid.Type != "PERCENTILE" || mid.Value != "50" || mid.ColorStyle == nil || mid.Color != nil {
+		t.Errorf("the midpoint was sent as %+v; want PERCENTILE 50 in colorStyle alone", mid)
+	}
+
+	read, err := svc.Formatting(ctx, service.FormattingRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "A1:B3",
+	})
+	if err != nil {
+		t.Fatalf("reading it back: %v", err)
+	}
+	if len(read.Rules) != 1 || read.Rules[0] != "index 0 on A1:B3: "+written {
+		t.Errorf("read back as %q", read.Rules)
+	}
+
+	update := rangeReq(service.RangeRule, service.RangeUpdate, "A1:B3")
+	update.Gradient = []string{"number 0 #ffffff", "max #57bb8a"}
+	if _, err := svc.ManageRange(ctx, update); err != nil {
+		t.Fatalf("updating the color scale: %v", err)
+	}
+	rules = srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Conditional
+	if len(rules) != 1 || rules[0].GradientRule.Midpoint != nil || rules[0].GradientRule.Minpoint.Type != "NUMBER" {
+		t.Errorf("the update did not replace the whole scale: %+v", rules[0].GradientRule)
+	}
+
+	// And a condition replaces a color scale outright.
+	swap := rangeReq(service.RangeRule, service.RangeUpdate, "A1:B3")
+	swap.Condition = "not_blank"
+	swap.Bold = boolPtr(true)
+	if _, err := svc.ManageRange(ctx, swap); err != nil {
+		t.Fatalf("replacing the color scale with a condition: %v", err)
+	}
+	rules = srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Conditional
+	if rules[0].GradientRule != nil || rules[0].BooleanRule == nil {
+		t.Errorf("the rule carries %+v after a condition replaced the scale", rules[0])
+	}
+}
+
+// A color scale has its colors in its points and no condition, so any
+// of the arguments a condition rule takes beside it is refused rather
+// than left unsent.
+func TestColorScaleRefusals(t *testing.T) {
+	scale := []string{"min #ffffff", "max #57bb8a"}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*service.RangeRequest)
+		want   string
+	}{
+		{"beside a condition", func(r *service.RangeRequest) { r.Condition = "not_blank" },
+			"[invalid] gradient is a color scale, a rule of its own with its colors in its points, so it does not " +
+				"take condition. Pass gradient alone, or a condition and a format"},
+		{"beside every format argument", func(r *service.RangeRequest) {
+			r.Values = []string{"1"}
+			r.Color = "#d9ead3"
+			r.TextColor = "#b7472a"
+			r.Bold = boolPtr(false)
+		}, "does not take values, color, text_color and bold"},
+		{"on another kind", func(r *service.RangeRequest) { r.Kind = service.RangeBanding; r.Color = "#d9ead3" },
+			"[invalid] gradient is a color scale, which only kind conditional_format takes"},
+		{"a point the parser refuses", func(r *service.RangeRequest) { r.Gradient = []string{"max #ffffff", "min #57bb8a"} },
+			`[invalid] gradient point "max #ffffff" uses max, which is only for the last point`},
+		{"neither a condition nor a scale", func(r *service.RangeRequest) { r.Gradient = nil },
+			"[invalid] a conditional format rule needs condition and a format to apply, or gradient for a color scale"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := sheetstest.Standard(t)
+			req := rangeReq(service.RangeRule, service.RangeAdd, "A1:B3")
+			req.Gradient = scale
+			tc.mutate(&req)
+			_, err := newService(t, srv).ManageRange(context.Background(), req)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want it to say %q", err, tc.want)
+			}
+			if batched(srv) {
+				t.Error("a refused color scale reached the wire")
+			}
+		})
+	}
+}
+
 func TestManageRangeRefusesWhatItCannotBuild(t *testing.T) {
 	srv := sheetstest.Standard(t)
 	svc := newService(t, srv)

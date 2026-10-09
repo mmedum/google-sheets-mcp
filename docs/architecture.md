@@ -816,6 +816,19 @@ value.
   by position in the sheet's list, so they take an `index`, which
   `read_formatting` reports beside each rule.
 
+  **A color scale is a conditional format rule too.** `gradient` takes
+  two or three points, lowest first, each
+  `<min|max|number|percent|percentile> [value] #hex`, in place of a
+  condition and a format, and is refused beside either. min and max take no value, being the range's
+  own lowest and highest, and sit only at the ends, as the Sheets
+  interface offers them. A value is sent as written, since the API takes
+  it as text and it may be a formula. A point is sent with `colorStyle`
+  alone and read from either it or the deprecated `color`.
+  `read_formatting` reads a scale back in the spelling it was written in,
+  `color scale: min #ffffff -> percentile 50 #ffd666 -> max #57bb8a`,
+  with a theme color by name. An update replaces the whole rule, as it
+  does for a condition.
+
   A protection never blocks the request that lifts it. Anything else
   would be a trap rather than a guard.
 - `transform_range`: `sort`, `find_replace`, `trim_whitespace`,
@@ -1856,6 +1869,11 @@ forgotten. Results go into §18.
   anchor goes when rows move, how an assignee reads back, what a bad id
   answers, and whether a failed comment write is a 400 or a 200 that only
   `commentUpdateState` admits. Results in §18.
+- **S. Color scales** (written 2026-10-09, **not yet run**): what a
+  scale sent with `colorStyle` alone reads back as, which midpoint types
+  are taken, whether the refusals the fake makes are Google's, and what a
+  number value means under a comma-decimal locale. §18 has the beliefs
+  it settles.
 
 ## 16. Delivery phases
 
@@ -3362,3 +3380,15 @@ Sheets API's filters guide.
 | Convention | Verdict | Effect |
 |---|---|---|
 | Creating a filter view changes what everybody sees on opening the file (`addFilterView` in `testdata/api-coverage.tsv`) | **Refuted**: "A FilterView is a named filter that you can turn off and on whenever you like." What everybody sees is the basic filter, "the default filter that's applied whenever anyone views the spreadsheet" | The two reasons were swapped. `addFilterView`'s now says a view changes nobody else's view, and `setBasicFilter`'s that a basic filter changes everybody's. Both stay written off |
+
+**Color scales on `manage_range`, 2026-10-09**, read against the Sheets
+discovery document (revision 20261005) and the conditional formatting
+guide and samples. Three of the four rows are beliefs, and spike S and
+the live driver are what settle them.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| A color scale's point carries its color in `color`, as the samples page writes it | **Refined**: `InterpolationPoint.color` is deprecated, "Use color_style", and `colorStyle` "takes precedence" where both are set | A point is sent with `colorStyle` alone and read from either, `colorStyle` first. A unit test reads each |
+| Google refuses a malformed color scale | **Unverified**: the discovery document gives the shape and no refusal. It calls the midpoint optional, the value "Unused if type is MIN or MAX", and the type's default "do not use" | The fake refuses a scale with no minpoint or maxpoint, a point with no type, a number, percent or percentile point with no value, and a rule with both kinds or neither, in wording of its own. `manage_range` refuses each before the request. Spike S sends each to Google |
+| Any point type may be a midpoint | **Unverified**: the enum allows `MIN` and `MAX` at any point; the Sheets interface offers number, percent and percentile for a midpoint | `manage_range` puts min first and max last only. The live driver writes each of the three midpoint types and reads it back; spike S also sends `MIN` and `MAX` as a midpoint |
+| A number value means the same in every locale | **Unverified**: the value is text and "May be a formula", so a locale that writes a decimal with a comma may read `1.5` as something else | The value is sent as written, never rewritten. The live driver writes `1.5` and `1,5` under `de_DE` and reads both back; which one the sheet takes as one and a half only a person can see, and the transcript says where to look. Spike S asks the same |

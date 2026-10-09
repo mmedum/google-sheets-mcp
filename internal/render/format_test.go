@@ -148,17 +148,58 @@ func TestRuleText(t *testing.T) {
 	if !strings.Contains(got, "text contains Quorbin") || !strings.Contains(got, "#d9ead3") {
 		t.Errorf("RuleText = %q", got)
 	}
-	// A gradient is named rather than described: what matters is that
-	// the color on a cell comes from a rule and not from the cell.
-	gradient := &gsheets.ConditionalFormatRule{GradientRule: &gsheets.GradientRule{}}
-	if got := render.RuleText(gradient); !strings.Contains(got, "gradient") {
-		t.Errorf("a gradient rule = %q", got)
-	}
 	if render.RuleText(nil) != "" {
 		t.Error("a missing rule described itself")
 	}
 	if got := render.RuleText(&gsheets.ConditionalFormatRule{}); !strings.Contains(got, "no condition") {
 		t.Errorf("a rule with neither kind = %q", got)
+	}
+}
+
+// A color scale reads in the spelling manage_range takes, so a rule read
+// back can be written again as it reads.
+func TestGradientRuleText(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		scale *gsheets.GradientRule
+		want  string
+	}{
+		{"three points", &gsheets.GradientRule{
+			Minpoint: &gsheets.InterpolationPoint{Type: "MIN", ColorStyle: hex("#ffffff")},
+			Midpoint: &gsheets.InterpolationPoint{Type: "PERCENTILE", Value: "50", ColorStyle: hex("#ffd666")},
+			Maxpoint: &gsheets.InterpolationPoint{Type: "MAX", ColorStyle: hex("#57bb8a")},
+		}, "color scale: min #ffffff -> percentile 50 #ffd666 -> max #57bb8a"},
+		{"two points with values", &gsheets.GradientRule{
+			Minpoint: &gsheets.InterpolationPoint{Type: "NUMBER", Value: "0", ColorStyle: hex("#ffffff")},
+			Maxpoint: &gsheets.InterpolationPoint{Type: "PERCENT", Value: "=AVERAGE(B2:B9)", ColorStyle: hex("#57bb8a")},
+		}, "color scale: number 0 #ffffff -> percent =AVERAGE(B2:B9) #57bb8a"},
+		// The deprecated color field, which an older client writes alone.
+		{"the deprecated color", &gsheets.GradientRule{
+			Minpoint: &gsheets.InterpolationPoint{Type: "MIN", Color: hex("#ffffff").RGBColor},
+			Maxpoint: &gsheets.InterpolationPoint{Type: "MAX", Color: hex("#57bb8a").RGBColor},
+		}, "color scale: min #ffffff -> max #57bb8a"},
+		// colorStyle wins where both are set, as the API says it does.
+		{"both colors", &gsheets.GradientRule{
+			Minpoint: &gsheets.InterpolationPoint{Type: "MIN", Color: hex("#000000").RGBColor, ColorStyle: hex("#ffffff")},
+			Maxpoint: &gsheets.InterpolationPoint{Type: "MAX", ColorStyle: hex("#57bb8a")},
+		}, "color scale: min #ffffff -> max #57bb8a"},
+		{"a theme color", &gsheets.GradientRule{
+			Minpoint: &gsheets.InterpolationPoint{Type: "MIN", ColorStyle: &gsheets.ColorStyle{ThemeColor: "ACCENT1"}},
+			Maxpoint: &gsheets.InterpolationPoint{Type: "MAX", ColorStyle: hex("#57bb8a")},
+		}, "color scale: min accent1 -> max #57bb8a"},
+		// The API ignores a value on min and max, so the reading does too.
+		{"a value on min", &gsheets.GradientRule{
+			Minpoint: &gsheets.InterpolationPoint{Type: "MIN", Value: "5", ColorStyle: hex("#ffffff")},
+			Maxpoint: &gsheets.InterpolationPoint{Type: "MAX", ColorStyle: hex("#57bb8a")},
+		}, "color scale: min #ffffff -> max #57bb8a"},
+		{"no points", &gsheets.GradientRule{}, "color scale"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := render.RuleText(&gsheets.ConditionalFormatRule{GradientRule: tc.scale})
+			if got != tc.want {
+				t.Errorf("RuleText = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -172,8 +213,17 @@ func TestFormattingReadsAsAnAnswer(t *testing.T) {
 			{Range: "A1:D1", Style: "bold, background #d9e2f3, center"},
 			{Range: "B2:B10", Style: `currency "$"#,##0.00, right`},
 		},
-		Merges:     []string{"A8:C8"},
-		Rules:      []render.NamedItem{{Range: "B2:B10", Name: "index 0", Detail: "number greater 100 -> background #d9ead3"}},
+		Merges: []string{"A8:C8"},
+		Rules: []render.NamedItem{
+			{Range: "B2:B10", Name: "index 0", Detail: "number greater 100 -> background #d9ead3"},
+			{Range: "C2:C10", Name: "index 1", Detail: render.RuleText(&gsheets.ConditionalFormatRule{
+				GradientRule: &gsheets.GradientRule{
+					Minpoint: &gsheets.InterpolationPoint{Type: "MIN", ColorStyle: hex("#ffffff")},
+					Midpoint: &gsheets.InterpolationPoint{Type: "PERCENTILE", Value: "50", ColorStyle: hex("#ffd666")},
+					Maxpoint: &gsheets.InterpolationPoint{Type: "MAX", ColorStyle: &gsheets.ColorStyle{ThemeColor: "ACCENT1"}},
+				},
+			})},
+		},
 		Bandings:   []render.NamedItem{{Range: "A1:D10", Detail: "rows #d9e2f3"}},
 		Validation: []render.NamedItem{{Range: "A9", Detail: "one of list: Quorbin, Vandel"}},
 		Notes:      []render.NamedItem{{Range: "A2", Detail: "reconciliation pending"}},

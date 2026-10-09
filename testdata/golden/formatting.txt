@@ -8,6 +8,7 @@ Merged:
 
 Conditional rules on this sheet:
   B2:B10 (index 0) — number greater 100 -> background #d9ead3
+  C2:C10 (index 1) — color scale: min #ffffff -> percentile 50 #ffd666 -> max accent1
 
 Banding:
   A1:D10 — rows #d9e2f3

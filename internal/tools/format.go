@@ -70,11 +70,12 @@ type ManageRangeInput struct {
 	Strict    *bool    `json:"strict,omitempty" jsonschema:"for data_validation: true (the default) rejects a value the rule refuses, false only flags it"`
 	Message   string   `json:"message,omitempty" jsonschema:"for data_validation: the message shown when someone selects the cell"`
 
-	Color     string `json:"color,omitempty" jsonschema:"a hex color: the base shade for a banding, or the background a conditional_format rule applies"`
-	TextColor string `json:"text_color,omitempty" jsonschema:"for conditional_format: the text color the rule applies"`
-	Bold      *bool  `json:"bold,omitempty" jsonschema:"for conditional_format: whether the rule makes the text bold"`
-	Header    bool   `json:"header,omitempty" jsonschema:"for banding: give the first row a darker shade of the color"`
-	Index     int    `json:"index,omitempty" jsonschema:"for conditional_format: which rule, counted from zero in the order they are evaluated. read_formatting lists the rules with their indexes. On add it is where the new rule goes, so 0 makes it the first to be tried"`
+	Color     string   `json:"color,omitempty" jsonschema:"a hex color: the base shade for a banding, or the background a conditional_format rule applies"`
+	TextColor string   `json:"text_color,omitempty" jsonschema:"for conditional_format: the text color the rule applies"`
+	Bold      *bool    `json:"bold,omitempty" jsonschema:"for conditional_format: whether the rule makes the text bold"`
+	Gradient  []string `json:"gradient,omitempty" jsonschema:"for conditional_format: a color scale instead of a condition. Two or three points, lowest first, each \"<min|max|number|percent|percentile> [value] #hex\", such as [\"min #ffffff\", \"percentile 50 #ffd666\", \"max #57bb8a\"]. min and max take no value; min is only for the first point and max only for the last. Not with condition, values, color, text_color or bold"`
+	Header    bool     `json:"header,omitempty" jsonschema:"for banding: give the first row a darker shade of the color"`
+	Index     int      `json:"index,omitempty" jsonschema:"for conditional_format: which rule, counted from zero in the order they are evaluated. read_formatting lists the rules with their indexes. On add it is where the new rule goes, so 0 makes it the first to be tried"`
 
 	Overwrite bool `json:"overwrite,omitempty" jsonschema:"allow deleting a table that takes conditional format rules with it. Deleting a table removes every rule over its range, and nothing in Sheets brings them back"`
 	DryRun    bool `json:"dry_run,omitempty" jsonschema:"say what would change and send nothing"`
@@ -160,7 +161,8 @@ func registerFormat(s *mcp.Server, d Deps) {
 	add(s, d, Def[ManageRangeInput, *service.RangeResult]{
 		Name: "manage_range",
 		Description: "Add, update or delete the things attached to a range rather than written into it: a named range, " +
-			"a protected range, a data validation rule, a table, banding, or a conditional format rule. " +
+			"a protected range, a data validation rule, a table, banding, or a conditional format rule, which is a " +
+			"condition and a format or a color scale. " +
 			"An existing one is named by the range it covers, which has to match exactly — so you never need to fetch " +
 			"an id first, and a range matching several is refused with the list rather than picked from. A conditional " +
 			"format rule is the exception: the API identifies those by position, so they take index, which " +
@@ -174,7 +176,7 @@ func registerFormat(s *mcp.Server, d Deps) {
 				Kind: in.Kind, Action: in.Action,
 				Name: in.Name, Description: in.Description, WarningOnly: in.WarningOnly,
 				Condition: in.Condition, Values: in.Values, Strict: in.Strict, Message: in.Message,
-				Color: in.Color, TextColor: in.TextColor, Bold: in.Bold, Header: in.Header,
+				Color: in.Color, TextColor: in.TextColor, Bold: in.Bold, Gradient: in.Gradient, Header: in.Header,
 				Index: in.Index, Overwrite: in.Overwrite, DryRun: in.DryRun,
 			})
 		},

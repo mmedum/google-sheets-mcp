@@ -32,6 +32,8 @@ func (d *driver) formatAll() {
 	d.run(d.readFormattingSteps()...)
 	sec("manage_range")
 	d.run(d.rangeSteps()...)
+	d.run(d.tableSteps()...)
+	d.commaLocaleAll()
 	sec("transform_range")
 	d.run(d.transformSteps()...)
 }
@@ -252,7 +254,7 @@ func (d *driver) readFormattingSteps() []step {
 
 func (d *driver) rangeSteps() []step {
 	const named = "Livesheet_band"
-	return []step{
+	return append([]step{
 		{
 			name: "a dry run attaches nothing",
 			why:  "a preview that named a range would be a preview that wrote",
@@ -430,6 +432,94 @@ func (d *driver) rangeSteps() []step {
 				"kind": "conditional_format", "action": "delete", "index": 0,
 			},
 		},
+	}, d.colorScaleSteps()...)
+}
+
+// colorScaleSteps write a color scale with each midpoint type and read
+// it back. Which midpoint types Google takes is unverified (§18): the
+// Sheets interface offers number, percent and percentile there, and these
+// are the three manage_range sends.
+func (d *driver) colorScaleSteps() []step {
+	const percentile = "color scale: min #ffffff -> percentile 50 #ffd666 -> max #57bb8a"
+	const percent = "color scale: number 0 #ffffff -> percent 50 #ffd666 -> max #57bb8a"
+	const number = "color scale: min #ffffff -> number 10 #ffd666 -> percentile 90 #57bb8a"
+	return []step{
+		{
+			name: "a color scale with a percentile midpoint",
+			why:  "a gradient rule is a conditional format with no condition: its colors are in its points",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
+				"kind": "conditional_format", "action": "add", "index": 0,
+				"gradient": []any{"min #ffffff", "percentile 50 #ffd666", "max #57bb8a"},
+			},
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, percentile) {
+					return fmt.Errorf("the result does not describe the scale: %s", text)
+				}
+				return nil
+			},
+		},
+		d.readsBack("A5:C8", percentile),
+		{
+			name: "a percent midpoint replaces the scale whole",
+			why:  "an update sends the whole rule, so the old points must not survive it",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
+				"kind": "conditional_format", "action": "update", "index": 0,
+				"gradient": []any{"number 0 #ffffff", "percent 50 #ffd666", "max #57bb8a"},
+			},
+		},
+		d.readsBack("A5:C8", percent),
+		{
+			name: "a number midpoint",
+			why:  "the third midpoint type manage_range sends",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
+				"kind": "conditional_format", "action": "update", "index": 0,
+				"gradient": []any{"min #ffffff", "number 10 #ffd666", "percentile 90 #57bb8a"},
+			},
+		},
+		d.readsBack("A5:C8", number),
+		{
+			name: "the color scale is deleted by its index",
+			why:  "the table steps below count the rules over this band",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
+				"kind": "conditional_format", "action": "delete", "index": 0,
+			},
+		},
+	}
+}
+
+// readsBack is the read after a color-scale write. The result describes
+// the request; only a read says what Google stored, colorStyle or color.
+func (d *driver) readsBack(rangeA1, want string) step {
+	return d.readsBackFrom(d.spreadsheet, d.workSheet, rangeA1, want)
+}
+
+func (d *driver) readsBackFrom(spreadsheet, sheet, rangeA1, want string) step {
+	return step{
+		name: "read back as written: " + want,
+		why:  "the result describes the request; only a read says what Google stored",
+		tool: "read_formatting",
+		args: map[string]any{"spreadsheet": spreadsheet, "sheet": sheet, "range": rangeA1},
+		check: func(text string, _ map[string]any) error {
+			if !strings.Contains(text, want) {
+				return fmt.Errorf("the read does not say %q: %s", want, text)
+			}
+			return nil
+		},
+	}
+}
+
+// tableSteps are the table's add, rename and delete, and the rule a
+// delete takes with it.
+func (d *driver) tableSteps() []step {
+	return []step{
 		{
 			name: "a table over the band",
 			why:  "a table is a first-class object in the API and nothing else here creates one",
@@ -495,5 +585,66 @@ func (d *driver) rangeSteps() []step {
 				return nil
 			},
 		},
+	}
+}
+
+// commaLocaleAll asks what a number point means under a locale that
+// writes a decimal with a comma, which is unverified (§18): manage_range
+// sends the value as written, and the API takes it as text. It needs a
+// spreadsheet in that locale, so it makes one.
+func (d *driver) commaLocaleAll() {
+	d.run(step{
+		name: "a spreadsheet in a comma-decimal locale",
+		why:  "a color scale's number value is text, and only a spreadsheet in such a locale can say how it is read",
+		tool: "create_spreadsheet",
+		args: map[string]any{
+			"title":  scratchTitle + " comma locale",
+			"sheets": []any{"Grivet"},
+			"values": [][]any{{1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}},
+			"locale": "de_DE",
+		},
+		check: func(_ string, s map[string]any) error {
+			id, _ := s["spreadsheet"].(string)
+			if id == "" {
+				return fmt.Errorf("no spreadsheet id came back")
+			}
+			d.commaLocale = id
+			reg(id, "<comma-locale-spreadsheet>")
+			return nil
+		},
+	})
+	if d.commaLocale == "" {
+		return
+	}
+	d.run(d.commaLocaleSteps()...)
+	line("     LOOK: no reply says how de_DE read either value. In the comma-locale spreadsheet, column A")
+	line("     scales from 1.5 and column B from 1,5, both over 1 to 5. The column whose color first")
+	line("     changes between 1 and 2 is the spelling de_DE reads as one and a half; record it in §18.")
+}
+
+func (d *driver) commaLocaleSteps() []step {
+	return []step{
+		{
+			name: "a number point written with a decimal point, under de_DE",
+			why:  "manage_range sends the value as written, and de_DE writes one and a half as 1,5",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.commaLocale, "sheet": "Grivet", "range": "A1:A5",
+				"kind": "conditional_format", "action": "add", "index": 0,
+				"gradient": []any{"number 1.5 #ffffff", "max #57bb8a"},
+			},
+		},
+		d.readsBackFrom(d.commaLocale, "Grivet", "A1:A5", "color scale: number 1.5 #ffffff -> max #57bb8a"),
+		{
+			name: "the same point written with a decimal comma",
+			why:  "the spelling a person in that locale types; the two are compared by eye afterwards",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.commaLocale, "sheet": "Grivet", "range": "B1:B5",
+				"kind": "conditional_format", "action": "add", "index": 0,
+				"gradient": []any{"number 1,5 #ffffff", "max #57bb8a"},
+			},
+		},
+		d.readsBackFrom(d.commaLocale, "Grivet", "B1:B5", "color scale: number 1,5 #ffffff -> max #57bb8a"),
 	}
 }

@@ -55,6 +55,10 @@ type RangeRequest struct {
 	Color     string
 	TextColor string
 	Bold      *bool
+	// Gradient is a color scale, which a conditional format rule is
+	// instead of a condition and a format: two or three points, lowest
+	// first, each "<type> [value] #hex".
+	Gradient []string
 	// Header gives a banding a heading row in a darker shade.
 	Header bool
 	// Index names a conditional format rule, which is the only one of
@@ -177,7 +181,11 @@ func (s *Service) rangeOp(ctx context.Context, req RangeRequest, action string, 
 				a1.FormatRect(rect), len(rules), join(rules))
 		}
 	}
-	switch strings.ToLower(strings.TrimSpace(req.Kind)) {
+	kind := strings.ToLower(strings.TrimSpace(req.Kind))
+	if len(req.Gradient) > 0 && kind != RangeRule {
+		return nil, nil, Errorf("invalid", "gradient is a color scale, which only kind conditional_format takes")
+	}
+	switch kind {
 	case RangeNamed:
 		return namedRangeOp(req, action, card, props, rect)
 	case RangeProtected:
@@ -390,11 +398,7 @@ func (s *Service) ruleOp(ctx context.Context, req RangeRequest, action string, r
 		return plan.RuleDelete(req.Index, props.SheetID),
 			[]render.Applied{{Kind: "conditional rule deleted", Value: fmt.Sprintf("index %d", req.Index)}}, nil
 	}
-	cond, err := plan.ParseCondition(req.Condition, req.Values)
-	if err != nil {
-		return nil, nil, Errorf("invalid", "%s", err)
-	}
-	format, err := ruleFormat(req)
+	rule, err := buildRule(req, props.SheetID, rect)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -402,7 +406,6 @@ func (s *Service) ruleOp(ctx context.Context, req RangeRequest, action string, r
 	// two used to compose the sentence separately, so what manage_range
 	// said it had written and what read_formatting said was there could
 	// drift — and the service half is the one no golden covers.
-	rule := plan.Rule(props.SheetID, rect, cond, format)
 	text := render.RuleText(rule)
 	if action == RangeAdd {
 		return plan.RuleAdd(req.Index, rule),
@@ -410,6 +413,53 @@ func (s *Service) ruleOp(ctx context.Context, req RangeRequest, action string, r
 	}
 	return plan.RuleUpdate(req.Index, props.SheetID, rule),
 		[]render.Applied{{Kind: fmt.Sprintf("conditional rule %d replaced", req.Index), Value: text}}, nil
+}
+
+// buildRule is the rule an add or an update sends whole: a color scale,
+// or a condition and the format it applies.
+func buildRule(req RangeRequest, sheetID int, rect a1.Rect) (*gsheets.ConditionalFormatRule, error) {
+	if len(req.Gradient) == 0 {
+		if strings.TrimSpace(req.Condition) == "" {
+			return nil, Errorf("invalid",
+				"a conditional format rule needs condition and a format to apply, or gradient for a color scale")
+		}
+		cond, err := plan.ParseCondition(req.Condition, req.Values)
+		if err != nil {
+			return nil, Errorf("invalid", "%s", err)
+		}
+		format, err := ruleFormat(req)
+		if err != nil {
+			return nil, err
+		}
+		return plan.Rule(sheetID, rect, cond, format), nil
+	}
+	// A color scale has no condition, and its colors are its own. Taking
+	// a format beside it would leave one of the two unsent.
+	var extra []string
+	for _, arg := range []struct {
+		name string
+		set  bool
+	}{
+		{"condition", strings.TrimSpace(req.Condition) != ""},
+		{"values", len(req.Values) > 0},
+		{"color", req.Color != ""},
+		{"text_color", req.TextColor != ""},
+		{"bold", req.Bold != nil},
+	} {
+		if arg.set {
+			extra = append(extra, arg.name)
+		}
+	}
+	if len(extra) > 0 {
+		return nil, Errorf("invalid",
+			"gradient is a color scale, a rule of its own with its colors in its points, so it does not take %s. "+
+				"Pass gradient alone, or a condition and a format", join(extra))
+	}
+	scale, err := plan.ParseGradient(req.Gradient)
+	if err != nil {
+		return nil, Errorf("invalid", "%s", err)
+	}
+	return plan.Gradient(sheetID, rect, scale), nil
 }
 
 // ruleFormat is what a rule applies when its condition holds.

@@ -596,9 +596,49 @@ func deleteBanding(d *Doc, id int) error {
 	return errors.New("No banded range with id: " + strconv.Itoa(id))
 }
 
+// checkRule makes the refusals a conditional format rule is believed to
+// meet. Each is a belief rather than a recording, and §18 says so: the
+// reference documents the shape and none of the refusals, and the wording
+// here is this fake's own. Spike S asks Google each one.
+//
+// Exactly one of the two kinds. A color scale needs both end points, and
+// every point a type, since the type's default is documented as "do not
+// use". A number, percent or percentile point needs a value, which the
+// reference calls unused only for min and max.
+func checkRule(rule *gsheets.ConditionalFormatRule) error {
+	if (rule.BooleanRule == nil) == (rule.GradientRule == nil) {
+		return errors.New("invalid ConditionalFormatRule: exactly one of booleanRule and gradientRule is required")
+	}
+	scale := rule.GradientRule
+	if scale == nil {
+		return nil
+	}
+	if scale.Minpoint == nil || scale.Maxpoint == nil {
+		return errors.New("invalid GradientRule: minpoint and maxpoint are required")
+	}
+	for _, p := range []*gsheets.InterpolationPoint{scale.Minpoint, scale.Midpoint, scale.Maxpoint} {
+		if p == nil {
+			continue
+		}
+		switch p.Type {
+		case gsheets.PointMin, gsheets.PointMax:
+		case gsheets.PointNumber, gsheets.PointPercent, gsheets.PointPercentile:
+			if p.Value == "" {
+				return errors.New("invalid InterpolationPoint: type " + p.Type + " requires a value")
+			}
+		default:
+			return errors.New("invalid InterpolationPoint: unknown type " + strconv.Quote(p.Type))
+		}
+	}
+	return nil
+}
+
 func addRule(d *Doc, req *gsheets.AddConditionalFormatRuleRequest) error {
 	if req.Rule == nil || len(req.Rule.Ranges) == 0 {
 		return errors.New("addConditionalFormatRule needs a rule with a range")
+	}
+	if err := checkRule(req.Rule); err != nil {
+		return err
 	}
 	sh, _, err := sheetForRange(d, req.Rule.Ranges[0])
 	if err != nil {
@@ -620,6 +660,11 @@ func updateRule(d *Doc, req *gsheets.UpdateConditionalFormatRuleRequest) error {
 	}
 	if req.Index < 0 || req.Index >= len(sh.Conditional) {
 		return errors.New("index " + strconv.Itoa(req.Index) + " is out of range")
+	}
+	if req.Rule != nil {
+		if err := checkRule(req.Rule); err != nil {
+			return err
+		}
 	}
 	sh.Conditional[req.Index] = req.Rule
 	return nil

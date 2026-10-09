@@ -98,14 +98,38 @@ type BooleanRule struct {
 	Format    *CellFormat       `json:"format,omitempty"`
 }
 
-// GradientRule colors by value between interpolation points.
+// GradientRule colors a cell by where its value falls between two or
+// three points: a color scale. The midpoint is optional.
+type GradientRule struct {
+	Minpoint *InterpolationPoint `json:"minpoint,omitempty"`
+	Midpoint *InterpolationPoint `json:"midpoint,omitempty"`
+	Maxpoint *InterpolationPoint `json:"maxpoint,omitempty"`
+}
+
+// Interpolation point types, as the API spells them.
+const (
+	PointMin        = "MIN"
+	PointMax        = "MAX"
+	PointNumber     = "NUMBER"
+	PointPercent    = "PERCENT"
+	PointPercentile = "PERCENTILE"
+)
+
+// InterpolationPoint is one point of a color scale: a color, and the
+// value it sits at.
 //
-// Empty on purpose. Nothing here builds a gradient and nothing reads its
-// points; a formatting read only needs to know that the color on a cell
-// came from a rule rather than from the cell, which is this field being
-// present. The points arrive with the code that reads them, as every
-// other field in this package does.
-type GradientRule struct{}
+// Color is deprecated in favor of ColorStyle, which wins where both are
+// set. This server sends ColorStyle alone and reads either, since a rule
+// written by an older client may carry only Color.
+//
+// Value is text, and may be a formula. The API ignores it for MIN and
+// MAX.
+type InterpolationPoint struct {
+	Color      *Color      `json:"color,omitempty"`
+	ColorStyle *ColorStyle `json:"colorStyle,omitempty"`
+	Type       string      `json:"type,omitempty"`
+	Value      string      `json:"value,omitempty"`
+}
 
 // BandingProperties are the colors of an alternating band.
 type BandingProperties struct {

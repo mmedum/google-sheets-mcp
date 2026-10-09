@@ -223,3 +223,71 @@ func TestCheckNamedRange(t *testing.T) {
 		t.Errorf("the cell-address refusal offers no alternative: %v", err)
 	}
 }
+
+// A color scale is two or three points, lowest first, each with its
+// type, its value where the type needs one, and a hex color sent as
+// colorStyle, never the deprecated color.
+func TestParseGradientBuildsThePoints(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		points []string
+		want   string
+	}{
+		{"three points", []string{"min #ffffff", "percentile 50 #ffd666", "max #57bb8a"},
+			`{"minpoint":{"colorStyle":{"rgbColor":{"red":1,"green":1,"blue":1,"alpha":1}},"type":"MIN"},` +
+				`"midpoint":{"colorStyle":{"rgbColor":{"red":1,"green":0.8392156862745098,"blue":0.4,"alpha":1}},"type":"PERCENTILE","value":"50"},` +
+				`"maxpoint":{"colorStyle":{"rgbColor":{"red":0.3411764705882353,"green":0.7333333333333333,"blue":0.5411764705882353,"alpha":1}},"type":"MAX"}}`},
+		// The type is read in any case, the value kept as written, and a
+		// formula with spaces in it survives whole.
+		{"two points with values", []string{"NUMBER  0  #fff", "percent =MAX(B2:B9, 1) #000"},
+			`{"minpoint":{"colorStyle":{"rgbColor":{"red":1,"green":1,"blue":1,"alpha":1}},"type":"NUMBER","value":"0"},` +
+				`"maxpoint":{"colorStyle":{"rgbColor":{"alpha":1}},"type":"PERCENT","value":"=MAX(B2:B9, 1)"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scale, err := plan.ParseGradient(tc.points)
+			if err != nil {
+				t.Fatalf("ParseGradient: %v", err)
+			}
+			got, _ := json.Marshal(scale)
+			if string(got) != tc.want {
+				t.Errorf("scale =\n%s\nwant\n%s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseGradientRefusals(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		points []string
+		want   string
+	}{
+		{"one point", []string{"min #ffffff"}, "two or three points"},
+		{"four points", []string{"min #ffffff", "number 1 #ffffff", "number 2 #ffffff", "max #57bb8a"},
+			"two or three points"},
+		{"no color", []string{"min", "max #57bb8a"}, `"min" needs a color at the end`},
+		{"a value where the color goes", []string{"percentile 50", "max #57bb8a"},
+			`"percentile 50" ends in "50", which is not a hex color`},
+		{"a color with no #", []string{"min ffffff", "max #57bb8a"}, `ends in "ffffff"`},
+		{"none for a color", []string{"min none", "max #57bb8a"}, `ends in "none"`},
+		{"an unknown type", []string{"lowest #ffffff", "max #57bb8a"}, `starts with "lowest"`},
+		{"a value on min", []string{"min 5 #ffffff", "max #57bb8a"},
+			`"min 5 #ffffff" gives min a value, and min takes none: it is the lowest value in the range. Write "min #ffffff"`},
+		{"a value on max", []string{"min #ffffff", "max 9 #57bb8a"},
+			`gives max a value, and max takes none: it is the highest value in the range. Write "max #57bb8a"`},
+		{"no value on number", []string{"number #ffffff", "max #57bb8a"},
+			`"number #ffffff" needs a value between number and the color, such as "number 50 #ffffff"`},
+		{"no value on percent", []string{"min #ffffff", "percent #57bb8a"}, `"percent #57bb8a" needs a value`},
+		{"max first", []string{"max #ffffff", "number 9 #57bb8a"}, "only for the last point"},
+		{"min last", []string{"number 1 #ffffff", "min #57bb8a"}, "only for the first point"},
+		{"min in the middle", []string{"number 1 #ffffff", "min #ffd666", "max #57bb8a"}, "only for the first point"},
+		{"max in the middle", []string{"min #ffffff", "max #ffd666", "number 9 #57bb8a"}, "only for the last point"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := plan.ParseGradient(tc.points)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %v, want it to say %q", err, tc.want)
+			}
+		})
+	}
+}

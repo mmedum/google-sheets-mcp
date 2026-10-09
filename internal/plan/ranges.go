@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
@@ -211,6 +212,97 @@ func Rule(sheetID int, rect a1.Rect, cond *gsheets.BooleanCondition, format *gsh
 		Ranges:      []*gsheets.GridRange{rect.GridRange(sheetID)},
 		BooleanRule: &gsheets.BooleanRule{Condition: cond, Format: format},
 	}
+}
+
+// Gradient builds a color scale over one rectangle, for the same reason
+// Rule exists: the request and the description share one value.
+func Gradient(sheetID int, rect a1.Rect, scale *gsheets.GradientRule) *gsheets.ConditionalFormatRule {
+	return &gsheets.ConditionalFormatRule{
+		Ranges:       []*gsheets.GridRange{rect.GridRange(sheetID)},
+		GradientRule: scale,
+	}
+}
+
+// pointTypes are the color-scale point types a caller writes.
+var pointTypes = map[string]string{
+	"min":        gsheets.PointMin,
+	"max":        gsheets.PointMax,
+	"number":     gsheets.PointNumber,
+	"percent":    gsheets.PointPercent,
+	"percentile": gsheets.PointPercentile,
+}
+
+// ParseGradient builds a color scale from two or three points, lowest
+// first, each "<type> [value] #hex": "min #ffffff", "percentile 50
+// #ffd666", "max #57bb8a".
+//
+// min and max take no value: they are the range's own lowest and
+// highest. number, percent and percentile need one, which is kept as
+// written, since the API takes it as text and it may be a formula. min
+// is only for the first point and max only for the last, the way the
+// Sheets interface offers them; whether the API takes either as a
+// midpoint is unverified (§18), so neither is sent there.
+func ParseGradient(points []string) (*gsheets.GradientRule, error) {
+	if len(points) < 2 || len(points) > 3 {
+		return nil, fmt.Errorf("gradient takes two or three points, lowest first, such as "+
+			"[\"min #ffffff\", \"max #57bb8a\"]; it was given %d", len(points))
+	}
+	built := make([]*gsheets.InterpolationPoint, len(points))
+	for i, text := range points {
+		point, err := parsePoint(text)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case point.Type == gsheets.PointMax && i < len(points)-1:
+			return nil, fmt.Errorf("gradient point %q uses max, which is only for the last point", strings.TrimSpace(text))
+		case point.Type == gsheets.PointMin && i > 0:
+			return nil, fmt.Errorf("gradient point %q uses min, which is only for the first point", strings.TrimSpace(text))
+		}
+		built[i] = point
+	}
+	scale := &gsheets.GradientRule{Minpoint: built[0], Maxpoint: built[len(built)-1]}
+	if len(built) == 3 {
+		scale.Midpoint = built[1]
+	}
+	return scale, nil
+}
+
+// parsePoint reads one "<type> [value] #hex". The value is everything
+// between the first word and the last, so a formula with spaces in it
+// survives.
+func parsePoint(text string) (*gsheets.InterpolationPoint, error) {
+	text = strings.TrimSpace(text)
+	first := strings.IndexFunc(text, unicode.IsSpace)
+	if first < 0 {
+		return nil, fmt.Errorf("gradient point %q needs a color at the end, such as \"max #57bb8a\"", text)
+	}
+	last := strings.LastIndexFunc(text, unicode.IsSpace)
+	name := strings.ToLower(text[:first])
+	value := strings.TrimSpace(text[first : last+1])
+	colorText := text[last+1:]
+
+	kind, ok := pointTypes[name]
+	if !ok {
+		return nil, fmt.Errorf("gradient point %q starts with %q, which is not min, max, number, percent or percentile",
+			text, text[:first])
+	}
+	color, err := ParseColor(colorText)
+	if err != nil || color == nil || !strings.HasPrefix(colorText, "#") {
+		return nil, fmt.Errorf("gradient point %q ends in %q, which is not a hex color such as #57bb8a", text, colorText)
+	}
+	switch {
+	case kind == gsheets.PointMin && value != "":
+		return nil, fmt.Errorf("gradient point %q gives min a value, and min takes none: it is the lowest value "+
+			"in the range. Write \"min %s\"", text, colorText)
+	case kind == gsheets.PointMax && value != "":
+		return nil, fmt.Errorf("gradient point %q gives max a value, and max takes none: it is the highest value "+
+			"in the range. Write \"max %s\"", text, colorText)
+	case kind != gsheets.PointMin && kind != gsheets.PointMax && value == "":
+		return nil, fmt.Errorf("gradient point %q needs a value between %s and the color, such as \"%s 50 %s\"",
+			text, name, name, colorText)
+	}
+	return &gsheets.InterpolationPoint{ColorStyle: color, Type: kind, Value: value}, nil
 }
 
 // RuleAdd inserts a conditional format rule at an index. Rules are

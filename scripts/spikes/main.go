@@ -61,7 +61,7 @@ var scratchID string
 // a list rather than one letter, because a phase asking four questions
 // otherwise leaves four spreadsheets behind.
 var only = flag.String("only", "",
-	"run these spikes, comma-separated (A, B, C, E, F, G, H, I, J, K, L, M, N, P, Q, R); default runs all")
+	"run these spikes, comma-separated (A, B, C, E, F, G, H, I, J, K, L, M, N, P, Q, R, S); default runs all")
 
 func main() {
 	flag.Parse()
@@ -110,6 +110,7 @@ func run(ctx context.Context) error {
 		{"P", func() { spikeP(ctx) }},
 		{"Q", func() { spikeQ(ctx) }},
 		{"R", func() { spikeR(ctx) }},
+		{"S", func() { spikeS(ctx) }},
 	} {
 		if wanted(p.letter) {
 			p.probe()
