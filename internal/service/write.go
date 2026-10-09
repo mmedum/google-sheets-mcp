@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
@@ -111,6 +112,11 @@ func (s *Service) Write(ctx context.Context, req WriteRequest) (*WriteResult, er
 	}
 
 	report := plan.Check(before, values, typed)
+	headers, err := s.tableHeaders(ctx, tgt, values, typed)
+	if err != nil {
+		return nil, err
+	}
+	plan.CheckTableHeaders(&report, before, values, typed, headers)
 	// Only where the guard has already refused, and it reads to answer,
 	// so it goes here rather than inside the guard: plan is a pure
 	// function over what was read.
@@ -204,6 +210,41 @@ func (s *Service) readBack(ctx context.Context, id, sheet string, sheetID int, r
 	out.grid = renderRegion(after)
 	out.checkpoint = grid.Checkpoint(id, after)
 	return out
+}
+
+// tableHeaders is the header row of every table on the target's sheet,
+// for the guard that keeps a formula out of one. It costs nothing unless
+// a formula is being written, and then only the cached card.
+func (s *Service) tableHeaders(ctx context.Context, t target, values [][]any, typed bool) ([]a1.Rect, error) {
+	if !typed || !anyFormula(values) {
+		return nil, nil
+	}
+	card, err := s.card(ctx, t.ref.ID)
+	if err != nil {
+		return nil, err
+	}
+	rows, cols := extent(t.props)
+	var out []a1.Rect
+	for _, table := range sheetOf(card, t.props.SheetID).Tables {
+		if table == nil {
+			continue
+		}
+		head := a1.FromGridRange(table.Range).Clamp(rows, cols)
+		head.LastRow = head.FirstRow
+		out = append(out, head)
+	}
+	return out, nil
+}
+
+// anyFormula reports whether a write sends a string that typed input
+// makes a formula.
+func anyFormula(values [][]any) bool {
+	for _, row := range values {
+		if slices.ContainsFunc(row, plan.IsFormula) {
+			return true
+		}
+	}
+	return false
 }
 
 // target is a resolved write destination: which spreadsheet, which

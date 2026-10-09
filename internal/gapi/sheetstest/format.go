@@ -551,6 +551,49 @@ func writeHeader(sh *Sheet, row, col int, name string) {
 	cell.ChipRuns = nil
 }
 
+// headerWritten is what Google does with a value written into a table's
+// header cell: the column takes the cell's text as its name, and a
+// formula is replaced by a name of Google's own.
+//
+// Spike T, 2026-10-09: a formula written into B1 of a table over A1:D4
+// was answered 200 and read back as "Column 2", B's place in the table,
+// and the column took that name (Q7); a person chip written into D1
+// named its column after the chip's text (Q9).
+func headerWritten(sh *Sheet, written a1.Rect) {
+	for _, t := range sh.Tables {
+		rect := clamp(sh, a1.FromGridRange(t.Range))
+		row := rect.FirstRow
+		if row < written.FirstRow || row > written.LastRow {
+			continue
+		}
+		for col := max(rect.FirstCol, written.FirstCol); col <= min(rect.LastCol, written.LastCol); col++ {
+			cell := sh.At(row, col)
+			if cell == nil {
+				continue
+			}
+			index := col - rect.FirstCol
+			if cell.UserEnteredValue != nil && cell.UserEnteredValue.FormulaValue != nil {
+				writeHeader(sh, row, col, "Column "+strconv.Itoa(index+1))
+			}
+			if cell.FormattedValue != "" {
+				nameColumn(t, index, cell.FormattedValue)
+			}
+		}
+	}
+}
+
+// nameColumn gives a table's column a name, adding its entry if the
+// table has none for it.
+func nameColumn(t *gsheets.Table, index int, name string) {
+	for _, c := range t.ColumnProperties {
+		if c.ColumnIndex == index {
+			c.ColumnName = name
+			return
+		}
+	}
+	t.ColumnProperties = append(t.ColumnProperties, &gsheets.TableColumn{ColumnIndex: index, ColumnName: name})
+}
+
 // columnTypes is the API's column type enum, chips included.
 var columnTypes = map[string]bool{
 	gsheets.ColumnText: true, gsheets.ColumnDouble: true, gsheets.ColumnCurrency: true,

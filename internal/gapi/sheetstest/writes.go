@@ -228,10 +228,12 @@ func (s *Server) put(sh *Sheet, firstRow, firstCol int, values [][]any, input st
 			sh.Set(firstRow+i, firstCol+j, store(v, input))
 		}
 	}
-	return a1.Rect{
+	written := a1.Rect{
 		FirstRow: firstRow, FirstCol: firstCol,
 		LastRow: firstRow + len(values) - 1, LastCol: firstCol + width - 1,
 	}
+	headerWritten(sh, written)
+	return written
 }
 
 // updateResponse builds what a values write returns, including the

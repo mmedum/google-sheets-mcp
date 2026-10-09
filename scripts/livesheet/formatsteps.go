@@ -595,11 +595,11 @@ const typedBand = "A50:D53"
 
 // typedColumnSteps type a table's columns on add, retype one on update,
 // and check that the rest, a dropdown's list included, survive the
-// whole-array round trip. Five things here are unverified (§18), and
-// each step says which it settles: whether a sparse columnProperties is
-// taken on add, whether the header cells survive both writes, whether an
-// update replaces the whole array, what a type does to the cells, and
-// whether a header cell can hold a formula.
+// whole-array round trip, the header cells with them. A formula into the
+// header is refused, since Google would replace it (spike T). Two things
+// here are unverified (§18), and each step says which it settles:
+// whether an update replaces the whole array, and what a type does to
+// the cells.
 func (d *driver) typedColumnSteps() []step {
 	headers := func(when string) step {
 		return step{
@@ -702,39 +702,20 @@ func (d *driver) typedColumnSteps() []step {
 		card("after the update", "currency", "date", "dropdown (Open, In progress, Done)"),
 		headers("after the update"),
 		{
-			name: "a formula in a table's header cell",
-			why: "whether a table's header cell can hold a formula is unverified (§18); a refusal here is the " +
-				"answer, and leaves the next step nothing to refuse",
+			name: "a formula into a table's header cell is refused",
+			why: "spike T: Google replaces a formula written there with a column name of its own and answers " +
+				"200, so the formula is lost with nothing said",
 			tool: "write_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "D50", "input": "typed",
 				"values": [][]any{{`="Sta"&"tus"`}}, "overwrite": true,
 			},
-		},
-		{
-			name: "a type change over a formula header is refused",
-			why: "an update sends every column's name back, and a name written into the header cell would " +
-				"replace the formula with its text",
-			tool: "manage_range",
-			args: map[string]any{
-				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": typedBand,
-				"kind": "table", "action": "update", "column_types": []any{"Amount number"},
-			},
 			expectError: "blocked",
 			check: func(text string, _ map[string]any) error {
-				if !strings.Contains(text, "D50") || !strings.Contains(text, "holds a formula") {
-					return fmt.Errorf("the refusal does not name the formula header: %s", text)
+				if !strings.Contains(text, "D50") || !strings.Contains(text, "table's header row") {
+					return fmt.Errorf("the refusal does not name the header cell: %s", text)
 				}
 				return nil
-			},
-		},
-		{
-			name: "the header goes back to text",
-			why:  "the band is left as the steps found it",
-			tool: "write_values",
-			args: map[string]any{
-				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "D50", "input": "typed",
-				"values": [][]any{{"Status"}}, "overwrite": true, "overwrite_formulas": true,
 			},
 		},
 		{

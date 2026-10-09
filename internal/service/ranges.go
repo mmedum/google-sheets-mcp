@@ -487,8 +487,12 @@ func (s *Service) readHeader(ctx context.Context, ref Reference, props *gsheets.
 //
 // The refusal is there because the update sends every column's name
 // (merge says why), and Google writes a name sent into its header cell
-// as plain text (spike T Q4), which erases a chip (Q9) and would
-// replace a formula with the text it shows.
+// as plain text (spike T Q4), which erases a chip (Q9). A formula is
+// checked too, though Google does not keep one written into an existing
+// table's header (Q7), and write_values refuses to write one there. A
+// table added over a formula in a column the add did not type may still
+// hold one, which nothing has answered yet, and the check costs no
+// request: it reads the cells the chip check reads.
 func (s *Service) readTable(ctx context.Context, ref Reference, props *gsheets.SheetProperties, tableID string,
 	rect a1.Rect) (*tableNow, error) {
 

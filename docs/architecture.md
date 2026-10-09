@@ -708,7 +708,11 @@ acknowledgments the guard requires. The path is fixed:
 - `write_values`: `values` as rows of scalars, or `tsv` for bulk text;
   `input: typed | literal`; `overwrite`, `overwrite_formulas`. A write
   shorter than the previous contents leaves the tail alone and the result
-  says so (§2, `values.update` does not clear).
+  says so (§2, `values.update` does not clear). A formula into a table's
+  header row is refused, and nothing allows it: Google answers 200 and
+  replaces the formula with a column name of its own, such as "Column 2"
+  (spike T, §18). The tables come from the cached card, read only when a
+  formula is being written.
 - `append_rows`: appends after the table detected in the range,
   `insert: rows` (default) or `overwrite`, and reports the range Google
   actually chose.
@@ -830,8 +834,11 @@ value.
   header cell holding a formula or a smart chip is the exception:
   written over, the formula or the chip is lost. So the fresh read takes
   the header row as well, chips included, and the update is refused
-  while a header cell holds either. A rename alone sends no columns and
-  is not refused.
+  while a header cell holds either. Google does not keep a formula
+  written into a table's header, and `write_values` refuses one there,
+  so the formula check is for a table added over a formula it did not
+  name, which may keep it; it reads nothing more. A rename alone sends
+  no columns and is not refused.
 
   Typing a column boolean, on add or update, reads the cells under its
   header first and is refused while one holds anything other than TRUE

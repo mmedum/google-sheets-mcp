@@ -455,6 +455,38 @@ func TestTableColumnsAreChecked(t *testing.T) {
 	}
 }
 
+// TestATableHeaderTakesWhatIsWrittenIntoIt is spike T as Google
+// answered it: text written into a table's header cell names the
+// column, and a formula there is replaced by "Column" and the column's
+// place in the table, which names it too (Q7).
+func TestATableHeaderTakesWhatIsWrittenIntoIt(t *testing.T) {
+	srv := Standard(t)
+	ctx := context.Background()
+	c := srv.Client()
+	_, err := c.BatchUpdate(ctx, FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*gsheets.Request{{AddTable: &gsheets.AddTableRequest{Table: &gsheets.Table{
+			Name: "Trennow", Range: a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 2, LastRow: 3}.GridRange(1837),
+		}}}},
+	})
+	if err != nil {
+		t.Fatalf("addTable: %v", err)
+	}
+	for _, write := range []struct{ cell, value string }{{"A1", "Quorbin"}, {"B1", "=1+2"}} {
+		if _, err := c.UpdateValues(ctx, FixtureID, "'"+SecondSheet+"'!"+write.cell, [][]any{{write.value}},
+			gapi.WriteOptions{Input: gapi.InputUserEntered}); err != nil {
+			t.Fatalf("writing %s: %v", write.cell, err)
+		}
+	}
+	sh := srv.Doc(FixtureID).Find(SecondSheet)
+	if got := sh.At(1, 2); got.UserEnteredValue.FormulaValue != nil || got.FormattedValue != "Column 2" {
+		t.Errorf("B1 holds %+v, want the text Column 2", got.UserEnteredValue)
+	}
+	columns, _ := json.Marshal(sh.Tables[0].ColumnProperties)
+	if string(columns) != `[{"columnName":"Quorbin"},{"columnIndex":1,"columnName":"Column 2"}]` {
+		t.Errorf("columns = %s", columns)
+	}
+}
+
 func TestUpdateTableReplacesTheColumnsWhole(t *testing.T) {
 	srv := Standard(t)
 	// The fixture's table: Plimth TEXT and Nardle DOUBLE.

@@ -913,10 +913,12 @@ func TestTableUpdateNamesAColumnTheReadLeftOutByItsHeader(t *testing.T) {
 	}
 }
 
-// TestTableUpdateIsRefusedOverAFormulaInTheHeader is the one header a
-// name sent back could change: written into the cell, the name would
-// replace the formula with the text it shows. A rename alone sends no
-// column, so it is not held back.
+// TestTableUpdateIsRefusedOverAFormulaInTheHeader is a header a name
+// sent back would change: written into the cell, the name replaces the
+// formula with the text it shows. Google does not keep a formula written
+// into a table's header (spike T Q7), so this is a table added over one,
+// which may keep it; the fake is seeded with it directly. A rename alone
+// sends no column, so it is not held back.
 func TestTableUpdateIsRefusedOverAFormulaInTheHeader(t *testing.T) {
 	srv := sheetstest.Standard(t)
 	seedTypedTable(srv)
