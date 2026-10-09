@@ -126,6 +126,34 @@ func TestGetSpreadsheetRefusesUnboundedReads(t *testing.T) {
 	}
 }
 
+// Every field mask this server sends is balanced. Google answers one
+// that is not with a bare 400, and the in-memory fake refuses it too, but
+// a test here names which mask it is.
+func TestFieldMasksAreBalanced(t *testing.T) {
+	for name, mask := range map[string]string{
+		"CardFields": CardFields, "GridFields": GridFields, "ReadFields": ReadFields, "FormatFields": FormatFields,
+		"FormatTargetFields": FormatTargetFields, "RuleFields": RuleFields, "ChartFields": ChartFields,
+		"PivotFields": PivotFields, "PivotExtentFields": PivotExtentFields,
+		"SearchFields": SearchFields, "FileFields": FileFields,
+	} {
+		depth := 0
+		for _, r := range mask {
+			switch r {
+			case '(':
+				depth++
+			case ')':
+				depth--
+			}
+			if depth < 0 {
+				break
+			}
+		}
+		if depth != 0 {
+			t.Errorf("%s is unbalanced by %d: %s", name, depth, mask)
+		}
+	}
+}
+
 // The other side of that rule: a mask naming no cell fields is a
 // metadata read and goes through with no range, which is how the card
 // and the conditional format rules are read.

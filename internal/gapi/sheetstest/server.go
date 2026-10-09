@@ -296,6 +296,13 @@ func (s *Server) spreadsheetsGet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "this fake refuses an unmasked get, as this server refuses to send one")
 		return
 	}
+	// Google answers an unbalanced mask with this and nothing more. The
+	// fake read no mask at all once, and a mask one parenthesis over
+	// passed every unit test and failed every live read.
+	if !balanced(q.Get("fields")) {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "Request contains an invalid argument.")
+		return
+	}
 	out := docCard(d)
 	grid := q.Get("includeGridData") == "true"
 	ranges := q["ranges"]
@@ -624,4 +631,21 @@ func rpcFor(status int) string {
 		return "UNAVAILABLE"
 	}
 	return "INTERNAL"
+}
+
+// balanced says every parenthesis in a field mask closes, in order.
+func balanced(mask string) bool {
+	depth := 0
+	for _, r := range mask {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth < 0 {
+				return false
+			}
+		}
+	}
+	return depth == 0
 }
