@@ -462,7 +462,7 @@ Dependencies, all pinned: `modelcontextprotocol/go-sdk` v1.8.0 (with
 `zalando/go-keyring` v0.2.8, `golang.org/x/time` v0.15.0. Nothing else.
 
 Toolchain, current as of 2026-09-05 and matching the sibling servers:
-Go 1.27.1 (`go 1.27.1` in go.mod), go-sdk v1.8.0, golangci-lint v2.13.2, govulncheck
+Go 1.27.2 (`go 1.27.2` in go.mod), go-sdk v1.8.0, golangci-lint v2.14.0, govulncheck
 v1.7.0, go-licenses v1.6.0, gitleaks v8.30.1, GoReleaser v2.18.
 
 **Scaffolding first.** The Makefile, the gates, `.golangci.yml`, the CI,
@@ -2190,7 +2190,7 @@ they are not reopened.
    accepted under the existing scopes, so `get_spreadsheet` reports that
    a spreadsheet is connected to a data source for every user, at no
    cost and no consent.
-7. **Go directive `go 1.27.1`**, matching the sibling servers.
+7. **Go directive `go 1.27.2`**, matching the sibling servers.
 8. **A tool result is not masked; the artifacts meant to be pasted are**
    (decided 2026-09-06, after the live run raised it). `read_range`
    returns cells and `search_spreadsheets` returns titles, ids and the
@@ -3278,3 +3278,5 @@ verdict comes from a sibling server's evidence log.
 | A client draws a question as plain text | **Refuted, tier 2**: VS Code builds the message as a `MarkdownString` | Spreadsheet text stands in a code span, and the server's own lines hold no Markdown |
 | A 503 proves an unrepeatable write never began, so it may be retried | **Refuted, tier 1**: Google's `google/rpc/code.proto` says of `UNAVAILABLE` that it is "not always safe to retry non-idempotent operations". Checked 2026-10-01 | An append, `batchUpdate`, `create` or `copyTo` retries only on 429. Any 5xx is `[ambiguous_outcome]`, and the class wins over the wrapped 429 |
 | A destructive tool should carry both `requiresUserInteraction` and the server's own question | **Refuted, tier 2**, 2026-10-09, after the owner was asked twice for one delete in google-docs-mcp. No source recommends two hard gates for one call: the spec puts confirmation on the client, GitHub's `delete_repository` and Supabase confirm with `destructiveHint` plus a form elicitation and set no mark, and Claude Code's documentation scopes the mark to "tools whose permission prompt is itself the point" | The mark is sent per client, present only when the request declares no form elicitation, on the four tools that always ask. A typed confirmation, which would stop Codex accepting an empty form unseen, was offered and not chosen |
+| golangci-lint v2.13.2 lints this module on Go 1.27.2 | **Refuted, tier 1**, 2026-10-09: Go 1.27.2 writes export data version 5 (`internal/pkgbits/version.go`, go.dev/issue/81188). v2.13.2 is built on `golang.org/x/tools` v0.49.0, which reads up to version 4, so the typecheck fails. v2.14.0, a final release of 2026-09-24, is built on x/tools v0.50.0, which reads version 5 | Go 1.27.2, and golangci-lint v2.14.0 in the Makefile and CI |
+| A package's coverage reads the same on Go 1.27.1 and 1.27.2 | **Refuted, tier 1**, 2026-10-09: 1.27.1's `cmd/cover` gave each piece of a block that a comment splits the statement count of the whole block, and 1.27.2 counts each piece's own (`mergeRangesWithinStatements`). The same tests read lower: the fake from 82.4% to 79.9%, and `cmd/` from 56.9% to 53.1% | No floor moved. A test of `format_cells` `unmerge`, which no test ran against the fake, puts the fake at 80.3% |

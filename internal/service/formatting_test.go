@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
 )
@@ -190,6 +191,33 @@ func TestMergingOverValuesIsRefused(t *testing.T) {
 	}
 	if sh.At(1, 2) != nil {
 		t.Error("the merge kept a cell it should have discarded")
+	}
+}
+
+// An unmerge splits the merge its range covers and leaves the others.
+func TestUnmergeSplitsOnlyTheMergeItCovers(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	svc := newService(t, srv)
+	ctx := context.Background()
+	for _, rng := range []string{"A1:B2", "D1:E2"} {
+		if _, err := svc.FormatCells(ctx, service.FormatRequest{
+			Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: rng,
+			Merge: "all", Overwrite: true,
+		}); err != nil {
+			t.Fatalf("merging %s: %v", rng, err)
+		}
+	}
+	if _, err := svc.FormatCells(ctx, service.FormatRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "A1:B2", Unmerge: true,
+	}); err != nil {
+		t.Fatalf("unmerging A1:B2: %v", err)
+	}
+	sh := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet)
+	if len(sh.Merges) != 1 {
+		t.Fatalf("%d merges after unmerging A1:B2, want 1", len(sh.Merges))
+	}
+	if got, want := a1.FromGridRange(sh.Merges[0]), (a1.Rect{FirstCol: 4, FirstRow: 1, LastCol: 5, LastRow: 2}); got != want {
+		t.Errorf("the merge left is %+v, want D1:E2 %+v", got, want)
 	}
 }
 
