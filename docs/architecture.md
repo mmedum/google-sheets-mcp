@@ -1,6 +1,8 @@
 # Architecture — google-sheets-mcp
 
-**Status: v3.0.2 (2026-10-01):** a write that may have landed is reported as
+**Status: v3.1.0 (2026-10-09):** the 2026-10-08 gap analysis (cell comments,
+typed table columns, pivot rules, color scales), built, reviewed and run live:
+300 steps, none failed. v3.0.2 (2026-10-01): a write that may have landed is reported as
 `[ambiguous_outcome]` and never repeated. v3.0.0 (2026-09-30) was released and
 verified from outside: checksums, the cosign signature and the provenance
 attestation, each also against a tampered copy, the version in five places, the
