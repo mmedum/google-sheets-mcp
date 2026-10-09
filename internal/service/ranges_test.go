@@ -616,6 +616,9 @@ func TestATableAddGoogleFailedIsSettledByARead(t *testing.T) {
 			}
 			srv.FailOnce("spreadsheets.batchUpdate", sheetstest.Failure{Status: 500, Body: internal, Applied: tc.applied})
 			if tc.getFail {
+				// The add's read of the header row goes through; the read
+				// after the 500 does not.
+				srv.FailOnce("spreadsheets.get", sheetstest.Failure{Pass: true})
 				srv.Fail("spreadsheets.get", sheetstest.Failure{Status: 500})
 			}
 			req := rangeReq(service.RangeTable, tc.action, "A1:B3")
@@ -738,6 +741,30 @@ func TestTableColumnsCountFromTheTablesFirstColumn(t *testing.T) {
 	}
 }
 
+// TestATableAddOverAFormulaHeaderIsRefused is spike T Q10: Google refuses
+// a table over a formula in its header row, typed or not, with
+// "Formulas are not supported in a table header row." A plain add is
+// refused here before it is sent, a dry run included, naming every cell.
+func TestATableAddOverAFormulaHeaderIsRefused(t *testing.T) {
+	const want = `[invalid] A1, C1 in the header row of A1:D3 hold a formula, and Google takes no table over ` +
+		`one: "Formulas are not supported in a table header row." Replace them with the text they show first`
+	for _, dryRun := range []bool{false, true} {
+		srv := sheetstest.Standard(t)
+		typedSheet(srv).Set(1, 1, sheetstest.Formula(`="Tren"&"now"`, 0, "Trennow")).
+			Set(1, 3, sheetstest.Formula(`="Sta"&"tus"`, 0, "Status"))
+		add := rangeReq(service.RangeTable, service.RangeAdd, "A1:D3")
+		add.Name = "Trennow"
+		add.DryRun = dryRun
+		_, err := newService(t, srv).ManageRange(context.Background(), add)
+		if err == nil || err.Error() != want {
+			t.Errorf("dry_run=%v: error =\n%v\nwant\n%s", dryRun, err, want)
+		}
+		if batched(srv) {
+			t.Errorf("dry_run=%v: a refused add reached the wire", dryRun)
+		}
+	}
+}
+
 // TestTableAddKeepsTheHeaderRow is the header row after a typed add.
 // Google writes "Column 1", "Column 2" into the header cell of a typed
 // column sent with no name (spike T Q1), so the add names each one after
@@ -795,11 +822,12 @@ func boldStart() *gsheets.CellData {
 }
 
 // TestTableAddIsRefusedOverAHeaderANameWouldReplace is a typed column
-// whose header cell holds a formula, a smart chip or rich text. The add
-// sends the text the cell shows as the column's name, and Google writes
-// it into the cell as plain text, which loses the formula, the chip or
-// the formatting. A column the add does not type is sent no name, so
-// what is in its header is not held against it.
+// whose header cell holds a smart chip or rich text. The add sends the
+// text the cell shows as the column's name, and Google writes it into the
+// cell as plain text, which loses the chip or the formatting. A column
+// the add does not type is sent no name, so what is in its header is not
+// held against it. A formula is refused in any column: Google takes no
+// table over one (spike T Q10).
 func TestTableAddIsRefusedOverAHeaderANameWouldReplace(t *testing.T) {
 	chip := func() *gsheets.CellData {
 		c := sheetstest.Str("Jane Doe")
@@ -815,9 +843,11 @@ func TestTableAddIsRefusedOverAHeaderANameWouldReplace(t *testing.T) {
 		want  string
 	}{
 		{"a formula", sheetstest.Formula(`="Sta"&"tus"`, 0, "Status"), []string{"Status date"},
-			"[blocked] in the header row of the table on A1:D3, C1 holds a formula. Typing a column sends its " +
-				"header's text as the column's name, and Google writes each name into its header cell as plain " +
-				"text, so the formula would be lost. Make it plain text first, or set the type in Sheets"},
+			`[invalid] C1 in the header row of A1:D3 holds a formula, and Google takes no table over one: ` +
+				`"Formulas are not supported in a table header row." Replace it with the text it shows first`},
+		{"a formula in a column not typed", sheetstest.Formula(`="Sta"&"tus"`, 0, "Status"), []string{"B date"},
+			`[invalid] C1 in the header row of A1:D3 holds a formula, and Google takes no table over one: ` +
+				`"Formulas are not supported in a table header row." Replace it with the text it shows first`},
 		{"a chip", chip(), []string{"C date", "D number"},
 			"[blocked] in the header row of the table on A1:D3, C1 holds a smart chip (a person or a file link). " +
 				"Typing a column sends its header's text as the column's name, and Google writes each name into " +
@@ -994,9 +1024,9 @@ func TestTableUpdateNamesAColumnTheReadLeftOutByItsHeader(t *testing.T) {
 // TestTableUpdateIsRefusedOverAFormulaInTheHeader is a header a name
 // sent back would change: written into the cell, the name replaces the
 // formula with the text it shows. Google does not keep a formula written
-// into a table's header (spike T Q7), so this is a table added over one,
-// which may keep it; the fake is seeded with it directly. A rename alone
-// sends no column, so it is not held back.
+// into a table's header (spike T Q7), and takes no table over one (Q10),
+// so this is a header made some other way; the fake is seeded with it
+// directly. A rename alone sends no column, so it is not held back.
 func TestTableUpdateIsRefusedOverAFormulaInTheHeader(t *testing.T) {
 	srv := sheetstest.Standard(t)
 	seedTypedTable(srv)

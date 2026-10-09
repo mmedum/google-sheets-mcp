@@ -764,6 +764,32 @@ func (d *driver) typedColumnSteps() []step {
 			},
 		},
 		{
+			name: "a block with a formula heading, beside the table",
+			why:  "a table over it is the next step's to refuse",
+			tool: "write_values",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "F1:G3", "input": "typed",
+				"values": [][]any{{`="Ite"&"m"`, "Cost"}, {"Quorbin", "4"}, {"Skerry", "5"}},
+			},
+		},
+		{
+			name: "a table over a formula heading is refused, though the column is not typed",
+			why: "spike T: Google takes no table over a formula in its header row, typed or not, so the add is " +
+				"refused before it is sent, naming the cell",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "F1:G3",
+				"kind": "table", "action": "add", "name": "LivesheetFormulaHead", "column_types": []any{"Cost number"},
+			},
+			expectError: "invalid",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "F1") || !strings.Contains(text, "Formulas are not supported in a table header row") {
+					return fmt.Errorf("the refusal does not name the cell and Google's reason: %s", text)
+				}
+				return nil
+			},
+		},
+		{
 			name: "the typed table goes",
 			why:  "the band is left as the steps found it, values aside",
 			tool: "manage_range",

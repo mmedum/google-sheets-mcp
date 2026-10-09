@@ -838,11 +838,11 @@ value.
   §18). So the fresh read takes the header row as well, chips and
   `textFormatRuns` included, and the update is refused while a header
   cell holds any of them. A run with an empty format formats nothing and
-  does not count. Google does not keep a formula
-  written into a table's header, and `write_values` refuses one there,
-  so the formula check is for a table added over a formula it did not
-  name, which may keep it; it reads nothing more. A rename alone sends
-  no columns and is not refused.
+  does not count. Google does not keep a formula written into a table's
+  header, `write_values` refuses one there, and Google takes no table
+  added over one, so the formula check is for a header made some other
+  way; it reads nothing more. A rename alone sends no columns and is not
+  refused.
 
   Typing a column boolean, on add or update, reads the cells under its
   header first and is refused while one holds anything but a TRUE or
@@ -854,13 +854,17 @@ value.
   a value rather than text. An empty cell becomes FALSE, and the tool
   description says so.
 
-  An add names every column it types after its header cell's text,
-  read first with the same mask. A typed column sent with no name has
-  Google write "Column 1", "Column 2" and so on into its header cell,
-  over the heading that was there (spike T, §18). An empty header cell
-  has no text to send and gets one of those names, which takes nothing;
-  the result says so. The add is refused while the header of a column
-  it types holds a formula, a smart chip or rich text, as an update is. A column it
+  An add reads the header row first, with the same mask, whether it
+  types a column or not. It is refused while any header cell holds a
+  formula: Google takes no table over one, "Formulas are not supported
+  in a table header row." (spike T, §18). Refused here, the cells are
+  named and a dry run says so. An add names every column it types after
+  its header cell's text. A typed column sent with no name has Google
+  write "Column 1", "Column 2" and so on into its header cell, over the
+  heading that was there (spike T, §18). An empty header cell has no
+  text to send and gets one of those names, which takes nothing; the
+  result says so. The add is refused while the header of a column it
+  types holds a smart chip or rich text, as an update is. A column it
   does not type is sent nothing. `get_spreadsheet` shows the types in
   the spelling `column_types` takes, `Status dropdown (Open, In
   progress, Done)`.
@@ -2046,13 +2050,14 @@ forgotten. Results go into §18.
   cell into FALSE; Q5b asks what it does to a TRUE or FALSE value, on
   update and on add. It answered Q7 for rich text: a name sent as read
   drops its runs; Q7 now asks the same of a whole-cell format. It
-  answered Q11 without explaining it: the live run's add was taken, and
-  every add after the seventh table in the spreadsheet was a 500,
-  requests just taken included. So Q12 makes a fresh
-  spreadsheet and adds tables three seconds apart until one fails or
-  twelve are taken, then deletes one and tries the failed add again, at
-  once and a minute later, and a plain add last. It tells a count from
-  timing.
+  answered Q10: Google takes no table over a formula in its header row.
+  It answered Q11 without explaining it: the live run's add was taken,
+  and every add after the seventh table in the spreadsheet was a 500,
+  requests just taken included. So Q12 makes a fresh spreadsheet and
+  adds tables three seconds apart until one fails or twelve are taken,
+  then deletes one and tries the failed add again, at once and a minute
+  later, and a plain add last. It tells a count from timing. Owed, then:
+  Q5b, Q7's whole-cell format and Q12.
 - **U. Pivot grouping rules, filters and calculated values** (**run
   2026-10-09**, two answers owed): what Google answers for each refusal
   `manage_pivot_table` makes first — a value with an offset and a
@@ -3601,7 +3606,8 @@ still owed.
 | A table add Google has taken once is taken again | **Refuted, cause unknown, spike T Q11, second run**: on a new sheet of the spike's spreadsheet, the live run's add, number on B, date on C and a dropdown on D with no names, was a 200, and so were currency, number, date and text alone. Every add after those was `500 INTERNAL: Internal error encountered.` and made no table: percent, time, date-time, boolean and dropdown alone, all ten again with names, and the live run's add on a new sheet frozen as the driver's was. The spreadsheet held seven tables by then. The live run's add was a 500 after one table, added and deleted. Whether a count of tables, the time between adds or something else draws it is not known | On a 500, or a reply that never came, `manage_range` reads the card and says whether a table of the name and range sent is there: added, or nothing added and safe to repeat (§7.5). The live driver's typed-column steps make a spreadsheet of their own. Owed: spike T Q12 adds tables three seconds apart in a fresh spreadsheet until one fails, then deletes one and tries again |
 | An update with `fields=columnProperties` replaces the whole array | **Verified, spike T Q3b, second run**: column 1 sent alone, named as read and typed `DATE`, over a table whose column 1 was `CURRENCY` and column 3 a dropdown of x, y and z, was a 200. Four entries read back: column 1 `DATE`, and the other three named by their headers with no type, the dropdown's list gone. Every update before it sent every column and read back four entries, not eight, so the list is not appended to either, whatever field_mask.proto says of a repeated field | The update reads the columns fresh and sends every one back. The fake replaces the whole list: a column left out keeps its header's text as its name and loses its type and list. A unit test holds the fake to Q3b, and the update's round trip test fails against it if the update sends fewer columns |
 | A column name sent, or left out, leaves the header cell alone | **Refuted, spike T Q1, Q3, Q4, Q5**: a name sent is written into its header cell; column 0 sent as "SPIKE-RENAMED" and A1 read "SPIKE-RENAMED" after. An update entry with no name is refused, `400 Invalid requests[0].updateTable: Table header row cell must have a value.`, for one column (Q3) and for every column (Q5). On add, a typed entry with no name has "Column N" written over its header (Q1) | An update sends every column's name as the same fresh read gave it, which Q6 shows is taken and leaves the header as it was. An add sends names too. The fake refuses an update entry with no name in Google's words, and writes a name sent into its header cell |
-| A name sent as read rewrites a header cell, if at all, with what it already shows | **Refuted for rich text, answered for a formula, spike T Q7, both runs**: `values.update` wrote a formula into B1, the header of a typed column, and answered 200. Google had already replaced it with "Column 2", B's place in the table, before any update, and the column took that name, in both runs. A table's header does not keep a formula written into it. C1 held "Flag" with its first two letters bold, read back as two `textFormatRuns`, the second with an empty format. An update sending every name as read, "Flag" included, left C1 holding "Flag" with no runs: the bold was gone. A format set on a whole header cell was not asked, nor a number header | `write_values` refuses a formula into a table's header row (§7.3). The update's refusal over a formula header stays for a table added over a formula it did not type, which nothing has asked about. An update is refused while any header cell holds rich text, and an add while the header of a column it types does; the header read asks for `textFormatRuns`, and a run counts only where it carries a format. The fake replaces a formula written into a header with "Column" and the column's place, and drops a header's runs when a name is written into it. It keeps the whole-cell format, a belief. Owed: Q7 now formats A1 as a whole cell and reads it before and after the update; and spike T Q10, an add over a formula header it does not type |
+| A name sent as read rewrites a header cell, if at all, with what it already shows | **Refuted for rich text, answered for a formula, spike T Q7, both runs**: `values.update` wrote a formula into B1, the header of a typed column, and answered 200. Google had already replaced it with "Column 2", B's place in the table, before any update, and the column took that name, in both runs. A table's header does not keep a formula written into it. C1 held "Flag" with its first two letters bold, read back as two `textFormatRuns`, the second with an empty format. An update sending every name as read, "Flag" included, left C1 holding "Flag" with no runs: the bold was gone. A format set on a whole header cell was not asked, nor a number header | `write_values` refuses a formula into a table's header row (§7.3), and an add over one is refused (Q10, below), so no header written through the API holds one; the update's refusal over a formula header stays for one made some other way. An update is refused while any header cell holds rich text, and an add while the header of a column it types does; the header read asks for `textFormatRuns`, and a run counts only where it carries a format. The fake replaces a formula written into a header with "Column" and the column's place, and drops a header's runs when a name is written into it. It keeps the whole-cell format, a belief. Owed: Q7 now formats A1 as a whole cell and reads it before and after the update |
+| A table may be added over a formula in its header row | **Refuted, spike T Q10**: F1 held a formula showing "Item", and G1 the text "Cost". An add over F1:G3 typing G alone, named "Cost", was `400 Invalid requests[0].addTable: Formulas are not supported in a table header row.`, and F1 kept its formula. The column with the formula was not typed | `manage_range` reads the header row before every table add, typed or not, and refuses a formula in any of its cells with Google's reason, naming the cells; a dry run says so too. The fake refuses in Google's words. The live driver writes a formula heading and expects the refusal |
 | Google returns an entry for every column of a table | **Verified, spike T Q1**: after an add that sent two of four columns, four entries read back, each column left out named by its header cell, with no type. The first entry has no `columnIndex`, being 0 | The update's entry for a column the read left out stays, though it is not expected. The fake reads back an entry for every column |
 | An entry with a name and no type is taken | **Verified, spike T Q8**: column 0 sent as "Item" with no type, the rest as read, is a 200, and the header is unchanged | The update sends one only for a column a read gave no entry |
 | A name sent as read leaves a smart chip in a header cell | **Refuted, spike T Q9**: a person chip written into D1 renamed its column to the chip's text. An update sending every name as read then left D1 holding that text, with no `chipRuns`: the chip was erased | An update is refused while any header cell holds a chip, and an add while the header of a column it types does |

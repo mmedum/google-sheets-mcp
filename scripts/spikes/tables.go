@@ -63,9 +63,10 @@ import (
 // The second run answered Q11: no part of the request. The driver's add
 // was taken first, and every add after the seventh table in the
 // spreadsheet was a 500, the requests just taken included. Q5 answered
-// that a word, the text TRUE and an empty cell all become FALSE, and Q7
-// that a name sent as read drops rich text's runs; Q7 now formats A1 as a
-// whole cell too, which the run did not ask. So:
+// that a word, the text TRUE and an empty cell all become FALSE; Q7 that
+// a name sent as read drops rich text's runs, and Q7 now formats A1 as a
+// whole cell too, which the run did not ask; and Q10 that Google takes no
+// table over a formula in its header row. So:
 //
 // Q5b. Is a TRUE or FALSE value kept under a boolean typing, on update
 // and on add? manage_range lets one through. The add's column holds a

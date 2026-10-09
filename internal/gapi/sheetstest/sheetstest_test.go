@@ -534,6 +534,28 @@ func TestATableHeaderTakesWhatIsWrittenIntoIt(t *testing.T) {
 	}
 }
 
+// TestAnAddOverAFormulaHeaderIsRefused is spike T Q10: a formula in the
+// header of a column the add does not type is refused in Google's words,
+// and the formula stays.
+func TestAnAddOverAFormulaHeaderIsRefused(t *testing.T) {
+	srv := Standard(t)
+	srv.Doc(FixtureID).Find(SecondSheet).Set(1, 1, Formula(`="Tren"&"now"`, 0, "Trennow"))
+	_, err := srv.Client().BatchUpdate(context.Background(), FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*gsheets.Request{{AddTable: &gsheets.AddTableRequest{Table: &gsheets.Table{
+			Name: "Trennow", Range: a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 2, LastRow: 3}.GridRange(1837),
+			ColumnProperties: []*gsheets.TableColumn{{ColumnIndex: 1, ColumnName: "Bractal", ColumnType: gsheets.ColumnDouble}},
+		}}}},
+	})
+	const want = "Invalid requests[0].addTable: Formulas are not supported in a table header row."
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %v, want it to say %q", err, want)
+	}
+	sh := srv.Doc(FixtureID).Find(SecondSheet)
+	if len(sh.Tables) != 0 || sh.At(1, 1).UserEnteredValue.FormulaValue == nil {
+		t.Errorf("a refused add left %d table(s), and A1 holds %+v", len(sh.Tables), sh.At(1, 1).UserEnteredValue)
+	}
+}
+
 // TestUpdateTableReplacesTheColumnsWhole is spike T Q3b: one column sent
 // alone, named, replaces the whole list. The columns left out keep their
 // headers' text as their names and lose their types, a dropdown its list

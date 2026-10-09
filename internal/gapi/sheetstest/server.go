@@ -48,6 +48,9 @@ type Failure struct {
 	// after: a write that landed though its reply said it failed, which
 	// is what an HTTP 500 cannot rule out.
 	Applied bool
+	// Pass answers the call as if nothing were injected, so a queue can
+	// fail a later call to an op and not an earlier one.
+	Pass bool
 }
 
 // Server is a fake Sheets and Drive behind httptest.
@@ -199,7 +202,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	}
 	s.record(Call{Method: r.Method, Op: op, Query: r.URL.Query(), Body: body})
 
-	if f, ok := s.failure(op); ok {
+	if f, ok := s.failure(op); ok && !f.Pass {
 		if f.Delay > 0 {
 			time.Sleep(f.Delay)
 		}

@@ -499,6 +499,14 @@ func addTable(d *Doc, req *gsheets.AddTableRequest) (*gsheets.Reply, bool, error
 	if err := checkColumns("addTable", t.ColumnProperties, rect.Cols()); err != nil {
 		return nil, true, err
 	}
+	// Spike T Q10, 2026-10-09: a formula in a header cell of a column the
+	// add did not type was refused in these words, and kept.
+	for col := rect.FirstCol; col <= rect.LastCol; col++ {
+		if c := sh.At(rect.FirstRow, col); c != nil && c.UserEnteredValue != nil && c.UserEnteredValue.FormulaValue != nil {
+			//nolint:staticcheck // Google's own wording, kept verbatim
+			return nil, true, errors.New("Invalid requests[0].addTable: Formulas are not supported in a table header row.")
+		}
+	}
 	copied := *t
 	copied.TableID = "tbl" + strconv.Itoa(len(sh.Tables)+1)
 	sent := map[int]*gsheets.TableColumn{}

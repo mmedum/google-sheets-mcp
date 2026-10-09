@@ -367,13 +367,16 @@ func (s *Service) tableOp(ctx context.Context, req RangeRequest, action string, 
 			return nil, nil, Errorf("invalid", "a table needs name")
 		}
 		added := render.Applied{Kind: "table added", Value: name}
-		if len(req.ColumnTypes) == 0 {
-			return plan.TableAdd(name, props.SheetID, rect, nil), []render.Applied{added}, nil
-		}
 		table := rect.Clamp(extent(props))
 		_, header, err := s.readHeader(ctx, ref, props, table)
 		if err != nil {
 			return nil, nil, err
+		}
+		if err := formulaHeader(header, table); err != nil {
+			return nil, nil, err
+		}
+		if len(req.ColumnTypes) == 0 {
+			return plan.TableAdd(name, props.SheetID, rect, nil), []render.Applied{added}, nil
 		}
 		columns, typed, err := s.typedColumns(ctx, ref, props, rect, req.ColumnTypes, header)
 		if err != nil {
@@ -503,6 +506,27 @@ func (s *Service) checkBooleanColumns(ctx context.Context, ref Reference, props 
 	return nil
 }
 
+// formulaHeader refuses a table add over a formula anywhere in its header
+// row, in a column the add types or not. Google refuses one: "Formulas
+// are not supported in a table header row." (spike T Q10). Refused here,
+// the cells are named and a dry run says so too.
+func formulaHeader(header *grid.Grid, table a1.Rect) error {
+	var formulas plan.Cells
+	for j, cell := range header.Cells[0] {
+		if cell.HasFormula() {
+			formulas.AddCell(header, 0, j)
+		}
+	}
+	if !formulas.Any() {
+		return nil
+	}
+	return Errorf("invalid",
+		"%s in the header row of %s %s a formula, and Google takes no table over one: \"Formulas are not "+
+			"supported in a table header row.\" Replace %s with the text %s first",
+		formulas, a1.FormatRect(table), formulas.Verb("holds", "hold"), formulas.Verb("it", "them"),
+		formulas.Verb("it shows", "they show"))
+}
+
 // tableNow is a table's columns and its header row, from one read.
 type tableNow struct {
 	columns []*gsheets.TableColumn
@@ -538,12 +562,11 @@ func (s *Service) readHeader(ctx context.Context, ref Reference, props *gsheets.
 // The refusal is there because the update sends every column's name
 // (merge says why), and Google writes a name sent into its header cell
 // as plain text (spike T Q4), which erases a chip (Q9) and drops rich
-// text's runs (Q7). A formula is
-// checked too, though Google does not keep one written into an existing
-// table's header (Q7), and write_values refuses to write one there. A
-// table added over a formula in a column the add did not type may still
-// hold one, which nothing has answered yet, and the check costs no
-// request: it reads the cells the chip check reads.
+// text's runs (Q7). A formula is checked too, though no header written
+// through the API holds one: Google replaces one written into a header
+// (Q7), write_values refuses to write one there, and Google takes no
+// table added over one (Q10). A header made some other way might, and the
+// check costs no request: it reads the cells the chip check reads.
 func (s *Service) readTable(ctx context.Context, ref Reference, props *gsheets.SheetProperties, tableID string,
 	rect a1.Rect) (*tableNow, error) {
 
