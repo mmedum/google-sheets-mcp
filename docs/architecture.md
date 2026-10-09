@@ -8,7 +8,7 @@ code of v3.1.0, republished so its Go module and its release binaries are one
 commit. v3.1.0's tag stays as it is: its Go module is an earlier commit than
 its binaries, the two differing only in this status line. v3.1.0
 (2026-10-09): the 2026-10-08 gap analysis (cell comments, typed table columns,
-pivot rules, color scales), built, reviewed and run live: 297 steps, none
+pivot rules, color scales), built, reviewed and run live: 300 steps, none
 failed. v3.0.2 (2026-10-01): a write that may have landed is reported as
 `[ambiguous_outcome]` and never repeated. v3.0.0 (2026-09-30) was released and
 verified from outside: checksums, the cosign signature and the provenance
@@ -30,9 +30,9 @@ fifth table add with column types HTTP 500 and took a plain add after it.
 `manage_range` now says so when such an add fails and nothing was added.
 Google refuses a data validation rule on a cell in a typed column, so
 `manage_range` refuses one on a dropdown column's cells before sending
-it. Owed: a live run of the dropdown refusal of v3.1.0 and of the new
-validation step (§16), spike T Q13b (§15), and a person reading the
-comma-locale color scale.
+it. Owed: a live run of the new validation step (§16), spike T Q13b
+(§15), and a person reading the comma-locale color scale. The dropdown
+refusal of v3.1.0 passed live in the 300-step run before the release.
 
 **§17a.31 is closed, and closing it found a destructive hole in a
 shipped tool.** It was written as a cosmetic gap: `format_cells merge`
@@ -2445,7 +2445,7 @@ extra read.
 
 **Cell comments, color scales, typed table columns and pivot rules
 (v3.1.0, republished as v3.1.1, both 2026-10-09). Live run 2026-10-09
-evening: 297 steps, 0 failed, 1 undetermined**, the content search,
+evening: 300 steps, 0 failed, 1 undetermined**, the content search,
 undetermined in earlier phases too.
 The transcript was read. The typed-table steps ran in
 a spreadsheet of their own, so no earlier table add could draw Google's
