@@ -311,6 +311,15 @@ func spikeT(ctx context.Context) {
 // as Q1's add did? And does an update that sends a dropdown column back
 // unchanged drop a list a cell in it was given since?
 //
+// The run of 2026-10-09 answered both (§18). The update dropped the
+// lists, and Google refused the list on a dropdown column's cell, "This
+// operation is not allowed on cells in typed columns.", so no such list
+// can be there to drop. manage_range now refuses a rule on a dropdown
+// column's cells first. So:
+//
+// Q13b. Is a rule's removal refused there too? A rule over a range only
+// half in the column? A rule on a cell of a column typed text?
+//
 // It is a selector of its own, -only T13, with one add, because spike T's
 // adds have drawn a 500 on every add after about five, and a 429 on the
 // per-minute write quota.
@@ -372,6 +381,22 @@ func spikeT13(ctx context.Context) {
 	columns = readColumns(ctx, sheetID)
 	update("every column as read, names included", columns)
 	cellsAt(ctx, "  B4 after: own list kept?", a1.QuoteSheet(sheet)+"!B4")
+
+	line("")
+	line("  Q13b: which validation calls a typed column refuses")
+	pace()
+	status, body = batchOne(ctx, map[string]any{"setDataValidation": map[string]any{
+		"range": a1.Rect{FirstCol: 2, FirstRow: 2, LastCol: 2, LastRow: 2}.GridRange(sheetID),
+	}})
+	line("    %-52s -> HTTP %d  %s", "no rule on B2, inside the dropdown column", status, whole(body))
+	rule("a list x, y on A3:B3, half in the dropdown column", a1.Rect{FirstCol: 1, FirstRow: 3, LastCol: 2, LastRow: 3},
+		"x", "y")
+	cellsAt(ctx, "  A3 after: a rule of its own?", a1.QuoteSheet(sheet)+"!A3")
+	columns = readColumns(ctx, sheetID)
+	update("TEXT on A, named as read, the rest as read", setColumn(columns, named(columns, 0, "TEXT")))
+	rule("a list x, y on A2, inside a column typed text", a1.Rect{FirstCol: 1, FirstRow: 2, LastCol: 1, LastRow: 2},
+		"x", "y")
+	cellsAt(ctx, "  A2 after: a rule of its own?", a1.QuoteSheet(sheet)+"!A2")
 }
 
 // spikeT11 bisects the live driver's 500. The driver typed three of four

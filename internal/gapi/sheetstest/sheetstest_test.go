@@ -669,6 +669,56 @@ func TestADropdownColumnDropsTheCellsOwnRules(t *testing.T) {
 	}
 }
 
+// TestARuleInADropdownColumnIsRefused is spike T Q13: a list set on a cell
+// under a dropdown column's header is refused in Google's words, and the
+// cell gets no rule. A cell under the table and a rule's removal are let
+// through.
+func TestARuleInADropdownColumnIsRefused(t *testing.T) {
+	srv := Standard(t)
+	seeded := srv.Doc(FixtureID).Find(SecondSheet)
+	seeded.Set(1, 3, Str("Status")).Set(2, 3, WithValidation(Str("x"), "x", "y"))
+	seeded.Tables = []*gsheets.Table{{
+		TableID: "AAAAtable1", Name: "Trennow",
+		Range:            a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 3, LastRow: 3}.GridRange(1837),
+		ColumnProperties: []*gsheets.TableColumn{{ColumnIndex: 2, ColumnName: "Status", ColumnType: gsheets.ColumnDropdown}},
+	}}
+	list := &gsheets.DataValidationRule{Condition: &gsheets.BooleanCondition{
+		Type: "ONE_OF_LIST", Values: []*gsheets.ConditionValue{{UserEnteredValue: "x"}},
+	}}
+	set := func(rect a1.Rect, rule *gsheets.DataValidationRule) error {
+		_, err := srv.Client().BatchUpdate(context.Background(), FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+			Requests: []*gsheets.Request{{SetDataValidation: &gsheets.SetDataValidationRequest{
+				Range: rect.GridRange(1837), Rule: rule,
+			}}},
+		})
+		return err
+	}
+	at := func(row, col int) *gsheets.DataValidationRule {
+		if cell := srv.Doc(FixtureID).Find(SecondSheet).At(row, col); cell != nil {
+			return cell.DataValidation
+		}
+		return nil
+	}
+
+	const want = "Invalid requests[0].setDataValidation: This operation is not allowed on cells in typed columns."
+	err := set(a1.Rect{FirstCol: 3, FirstRow: 3, LastCol: 4, LastRow: 4}, list)
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("a list over C3:D4 gave %v, want it to say %q", err, want)
+	}
+	if got := at(3, 3); got != nil {
+		t.Errorf("C3 carries a rule after the refusal: %+v", got)
+	}
+	if err := set(a1.Rect{FirstCol: 3, FirstRow: 4, LastCol: 3, LastRow: 4}, list); err != nil {
+		t.Errorf("a list on C4, under the table, gave %v", err)
+	}
+	if err := set(a1.Rect{FirstCol: 3, FirstRow: 2, LastCol: 3, LastRow: 2}, nil); err != nil {
+		t.Errorf("removing C2's rule gave %v", err)
+	}
+	if got := at(2, 3); got != nil {
+		t.Errorf("C2 still carries its rule after its removal: %+v", got)
+	}
+}
+
 // TestANameWrittenIntoAHeaderDropsItsRichText is spike T Q7: an update
 // sending "Flag" back as read left the cell holding "Flag" with no runs,
 // where two of its letters had been bold. Its whole-cell format stayed

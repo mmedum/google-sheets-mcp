@@ -177,11 +177,11 @@ func (s *Service) ManageRange(ctx context.Context, req RangeRequest) (*RangeResu
 // not. Any other request, and a read that fails too, keep the error the
 // send returned.
 //
-// Spike T Q11, 2026-10-09: in one spreadsheet, every add after the
-// seventh table was a 500 and made no table, the same requests Google had
-// just taken included. The live run's add was a 500 after one table, added
-// and deleted. Why is not known (§18). [ambiguous_outcome] alone left the
-// caller to read the card and compare.
+// Spike T Q12, 2026-10-09: in a fresh spreadsheet, four adds with column
+// types were taken and the fifth was a 500 that made no table. Deleting a
+// table did not let it in, nor did waiting a minute, and an add with no
+// column types was then taken. What Google counts is not known (§18).
+// [ambiguous_outcome] alone left the caller to read the card and compare.
 func (s *Service) settleTableAdd(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
 	op *gsheets.Request, sendErr error) (string, error) {
 
@@ -205,10 +205,16 @@ func (s *Service) settleTableAdd(ctx context.Context, ref Reference, props *gshe
 			return answered, nil
 		}
 	}
+	if ae == nil || len(want.ColumnProperties) == 0 {
+		return "", Errorf("unavailable",
+			"%s. A read afterwards finds no table called %q on %s, so nothing was added and the call can be repeated",
+			answered, want.Name, a1.FormatRect(rect))
+	}
 	return "", Errorf("unavailable",
-		"%s. A read afterwards finds no table called %q on %s, so nothing was added and the call can be repeated. "+
-			"Once Google has failed a table add this way, it has been seen to fail every later one in the same "+
-			"spreadsheet, for a reason not known", answered, want.Name, a1.FormatRect(rect))
+		"%s. A read afterwards finds no table called %q on %s, so nothing was added. Google has refused table "+
+			"adds with column types in a spreadsheet after about four of them, and deleting a table or waiting "+
+			"did not let another in. An add without column_types was still taken; whether its columns can be "+
+			"typed after that is not known", answered, want.Name, a1.FormatRect(rect))
 }
 
 // rangeOp compiles one kind and action into one union member.
@@ -244,7 +250,7 @@ func (s *Service) rangeOp(ctx context.Context, req RangeRequest, action string, 
 	case RangeProtected:
 		return protectedOp(req, action, card, props, rect)
 	case RangeValidation:
-		return validationOp(req, action, props, rect)
+		return validationOp(req, action, card, props, rect)
 	case RangeTable:
 		return s.tableOp(ctx, req, action, ref, card, props, rect)
 	case RangeBanding:
@@ -338,8 +344,8 @@ func protectedOp(req RangeRequest, action string, card *gsheets.Spreadsheet,
 		[]render.Applied{{Kind: "protection updated on", Value: a1.FormatRect(rect)}}, nil
 }
 
-func validationOp(req RangeRequest, action string, props *gsheets.SheetProperties, rect a1.Rect,
-) (*gsheets.Request, []render.Applied, error) {
+func validationOp(req RangeRequest, action string, card *gsheets.Spreadsheet, props *gsheets.SheetProperties,
+	rect a1.Rect) (*gsheets.Request, []render.Applied, error) {
 	if action == RangeDelete {
 		return plan.Validation(props.SheetID, rect, nil),
 			[]render.Applied{{Kind: "validation removed from", Value: a1.FormatRect(rect)}}, nil
@@ -348,6 +354,9 @@ func validationOp(req RangeRequest, action string, props *gsheets.SheetPropertie
 	if err != nil {
 		return nil, nil, Errorf("invalid", "%s", err)
 	}
+	if err := dropdownColumnRule(card, props, rect); err != nil {
+		return nil, nil, err
+	}
 	// Strict by default: a rule that only warns is a rule a paste walks
 	// straight through, and the caller who wanted the softer one can say
 	// so.
@@ -355,6 +364,42 @@ func validationOp(req RangeRequest, action string, props *gsheets.SheetPropertie
 	rule := plan.ValidationRule(cond, strict, req.Message)
 	return plan.Validation(props.SheetID, rect, rule),
 		[]render.Applied{{Kind: "validation set on", Value: a1.FormatRect(rect) + ": " + render.ConditionText(cond)}}, nil
+}
+
+// dropdownColumnRule refuses a data validation rule on the cells under a
+// dropdown column's header. Google refuses one: "This operation is not
+// allowed on cells in typed columns." (spike T Q13). The tables come from
+// the card, so the check costs no request.
+//
+// Only a dropdown column is refused, the type Q13 asked. A column of
+// another type, a header cell and a rule's removal go to Google as sent;
+// nothing has asked what it does with them.
+func dropdownColumnRule(card *gsheets.Spreadsheet, props *gsheets.SheetProperties, rect a1.Rect) error {
+	for _, t := range sheetOf(card, props.SheetID).Tables {
+		if t == nil || t.Range == nil {
+			continue
+		}
+		table := a1.FromGridRange(t.Range).Clamp(extent(props))
+		for _, c := range t.ColumnProperties {
+			if c == nil || c.ColumnType != gsheets.ColumnDropdown || table.Rows() < 2 {
+				continue
+			}
+			cells, inside := columnBody(table, c.ColumnIndex).Intersect(rect)
+			if !inside {
+				continue
+			}
+			column := c.ColumnName
+			if column == "" {
+				column, _ = a1.ColumnName(table.FirstCol + c.ColumnIndex)
+			}
+			return Errorf("invalid",
+				"%s is in the column %q of the table %q, which is typed dropdown, and Google sets no data "+
+					"validation rule on a cell in a typed column: \"This operation is not allowed on cells in typed "+
+					"columns.\" To change the column's list, use kind table, action update and column_types",
+				a1.FormatRect(cells), column, t.Name)
+		}
+	}
+	return nil
 }
 
 func (s *Service) tableOp(ctx context.Context, req RangeRequest, action string, ref Reference,
@@ -480,8 +525,9 @@ func (s *Service) typedColumns(ctx context.Context, ref Reference, props *gsheet
 // with nothing said. So a dropdown is refused while a cell under its
 // header has a rule of its own. The table's list is not on its cells (Q1
 // read none there), so retyping a dropdown column is not refused over it.
-// An update is believed to drop the rule as the add did; spike T Q13
-// asks.
+// An update drops the rule as the add did (spike T Q13). A dropdown
+// column's cells cannot gain a rule after it is typed, since Google
+// refuses one there (Q13), so a column sent back unchanged is not read.
 func (s *Service) checkColumnCells(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
 	table a1.Rect, columns []*gsheets.TableColumn) error {
 
