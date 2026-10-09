@@ -1701,9 +1701,22 @@ itself, through MCP form elicitation, before seven writes:
 - **Coverage floor** 80% per package, with the list **derived** from
   `go list ./internal/...` and exemptions named with reasons. A
   hand-written list silently stops covering new packages.
-- **Schema dump and diff** in CI against the last tag; a removed tool or
-  field, or a new required field, is breaking. A break fails the gate
-  unless the module path's major version is above the last tag's.
+- **Schema dump and diff** in CI against `testdata/schema-baseline.json`,
+  the surface of the CHANGELOG's newest release, recorded in that
+  release's commit by `make schema-baseline VERSION=vX.Y.Z`. A removed
+  tool or resource, an input or output field removed or retyped at any
+  depth (`threads[].cell` as much as `threads`), or an input newly
+  required is breaking. A break fails the gate unless the module path's
+  major version is above the baseline's. The gate also fails when the
+  baseline is not the newest release's, and, with nothing under
+  `[Unreleased]`, when the build differs from it at all, which proves a
+  release commit recorded the baseline rather than relabeling it.
+  `schema-baseline` refuses a build stamped as another version, a
+  CHANGELOG with entries still unreleased, and a break unless the
+  release is a new major version. It used to build the last tag in a
+  worktree and compare top-level fields, so a lost nested output field
+  passed. The baseline was recorded from the v3.0.2 tag, whose dump
+  already carried output schemas and its version.
 - **Stdio smoke** without credentials, closing stdin the moment the last
   message is written, asserting a clean exit code — the SDK reports a
   closed session as JSON-RPC -32004 with the EOF only in the message
@@ -3440,6 +3453,7 @@ verdict comes from a sibling server's evidence log.
 | A destructive tool should carry both `requiresUserInteraction` and the server's own question | **Refuted, tier 2**, 2026-10-09, after the owner was asked twice for one delete in another server built the same way. No source recommends two hard gates for one call: the spec puts confirmation on the client, GitHub's `delete_repository` and Supabase confirm with `destructiveHint` plus a form elicitation and set no mark, and Claude Code's documentation scopes the mark to "tools whose permission prompt is itself the point" | The mark is sent per client, present only when the request declares no form elicitation, on the destructive tools, which always ask. A typed confirmation, which would stop Codex accepting an empty form unseen, was offered and not chosen. A Claude Code `Elicitation` hook that accepts now confirms these deletes by itself, `claude -p` included, where the mark used to refuse the call before it reached the server |
 | golangci-lint v2.13.2 lints this module on Go 1.27.2 | **Refuted, tier 1**, 2026-10-09: Go 1.27.2 writes export data version 5 (`internal/pkgbits/version.go`, go.dev/issue/81188). v2.13.2 is built on `golang.org/x/tools` v0.49.0, which reads up to version 4, so the typecheck fails. v2.14.0, a final release of 2026-09-24, is built on x/tools v0.50.0, which reads version 5 | Go 1.27.2, and golangci-lint v2.14.0 in the Makefile and CI |
 | A package's coverage reads the same on Go 1.27.1 and 1.27.2 | **Refuted, tier 1**, 2026-10-09: 1.27.1's `cmd/cover` gave each piece of a block that a comment splits the statement count of the whole block, and 1.27.2 counts each piece's own (`mergeRangesWithinStatements`). The same tests read lower: the fake from 82.4% to 79.9%, and `cmd/` from 56.9% to 53.1% | No floor moved. A test of `format_cells` `unmerge`, which no test ran against the fake, puts the fake at 80.3% |
+| The schema diff holds every output field (53026dc, "schema-diff fails on a lost output field") | **Refuted in review, tier 1**, 2026-10-09: it compared each tool's top-level output properties with the last tag's, so dropping `threads[].cell` from `read_cell_comments` passed, and a retyped field passed at any depth | The diff walks every input and output field, `properties` and `items` alike, with its type, against a committed baseline of the newest release's surface, as a sibling server's gate does. The dump carries no `$ref`, `anyOf` or `oneOf` for the walk to miss; a boolean `items: true` reads as a type of its own |
 
 **Spike R, run live 2026-10-09**, before the comment tools were built.
 `scripts/spikes/comments.go` against a scratch spreadsheet; the one

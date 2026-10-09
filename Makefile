@@ -141,8 +141,12 @@ schemas: build ## Dump the tool schemas
 	$(BIN) --dump-schemas > schemas.json
 
 .PHONY: schema-diff
-schema-diff: build gates ## Diff the tool schemas against the last tag
+schema-diff: build gates ## Diff the tool schemas against the newest release's recorded baseline
 	@$(GATES) schema-diff $(BIN)
+
+.PHONY: schema-baseline
+schema-baseline: build gates ## Record the release being cut as the baseline: VERSION=vX.Y.Z, in its release commit
+	@$(GATES) schema-baseline $(BIN)
 
 .PHONY: smoke
 smoke: build gates ## Drive the binary over stdio

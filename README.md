@@ -41,7 +41,7 @@ Reading, writing, formatting, the objects attached to a range,
 pivot tables, Connected Sheets data sources and cell comments all work.
 The twenty-four tools, their
 arguments and the fields they return are stable: a breaking change needs a
-major version, and a gate compares every commit against the last tag. It has been driven by one MCP
+major version, and a gate compares every commit against the newest release's recorded surface. It has been driven by one MCP
 client, which is what to know before trusting it in a second. The history
 is §16 of [`docs/architecture.md`](docs/architecture.md).
 
