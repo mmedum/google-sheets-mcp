@@ -364,10 +364,11 @@ var pointTypes = map[string]string{
 //
 // min and max take no value: they are the range's own lowest and
 // highest. number, percent and percentile need one, which is kept as
-// written, since the API takes it as text and it may be a formula. min
-// is only for the first point and max only for the last, the way the
-// Sheets interface offers them; whether the API takes either as a
-// midpoint is unverified (§18), so neither is sent there.
+// written, since the API takes it as text, it may be a formula, and a
+// number is read in the spreadsheet's locale: under de_DE, 1.5 is
+// refused and 1,5 taken (spike S, §18). Google takes min and max as a
+// midpoint too, so a scale read back from a sheet can be sent again; min
+// cannot be the last point, nor max the first.
 func ParseGradient(points []string) (*gsheets.GradientRule, error) {
 	if len(points) < 2 || len(points) > 3 {
 		return nil, fmt.Errorf("gradient takes two or three points, lowest first, such as "+
@@ -380,10 +381,12 @@ func ParseGradient(points []string) (*gsheets.GradientRule, error) {
 			return nil, err
 		}
 		switch {
-		case point.Type == gsheets.PointMax && i < len(points)-1:
-			return nil, fmt.Errorf("gradient point %q uses max, which is only for the last point", strings.TrimSpace(text))
-		case point.Type == gsheets.PointMin && i > 0:
-			return nil, fmt.Errorf("gradient point %q uses min, which is only for the first point", strings.TrimSpace(text))
+		case point.Type == gsheets.PointMax && i == 0:
+			return nil, fmt.Errorf("gradient point %q puts max first; max is the highest value in the range, so it "+
+				"goes in the middle or last", strings.TrimSpace(text))
+		case point.Type == gsheets.PointMin && i == len(points)-1:
+			return nil, fmt.Errorf("gradient point %q puts min last; min is the lowest value in the range, so it "+
+				"goes first or in the middle", strings.TrimSpace(text))
 		}
 		built[i] = point
 	}

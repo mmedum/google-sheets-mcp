@@ -436,10 +436,9 @@ func (d *driver) rangeSteps() []step {
 	}, d.colorScaleSteps()...)
 }
 
-// colorScaleSteps write a color scale with each midpoint type and read
-// it back. Which midpoint types Google takes is unverified (§18): the
-// Sheets interface offers number, percent and percentile there, and these
-// are the three manage_range sends.
+// colorScaleSteps write a color scale with each of the midpoint types
+// the Sheets interface offers, number, percent and percentile, and read
+// it back. Spike S found Google takes min and max there too (§18).
 func (d *driver) colorScaleSteps() []step {
 	const percentile = "color scale: min #ffffff -> percentile 50 #ffd666 -> max #57bb8a"
 	const percent = "color scale: number 0 #ffffff -> percent 50 #ffd666 -> max #57bb8a"
@@ -747,10 +746,10 @@ func (d *driver) typedColumnSteps() []step {
 	}
 }
 
-// commaLocaleAll asks what a number point means under a locale that
-// writes a decimal with a comma, which is unverified (§18): manage_range
-// sends the value as written, and the API takes it as text. It needs a
-// spreadsheet in that locale, so it makes one.
+// commaLocaleAll writes a number point under a locale that writes a
+// decimal with a comma. Spike S found Google refuses 1.5 there and takes
+// 1,5 (§18); which value 1,5 colors from, only a person looking can say.
+// It needs a spreadsheet in that locale, so it makes one.
 func (d *driver) commaLocaleAll() {
 	d.run(step{
 		name: "a spreadsheet in a comma-decimal locale",
@@ -776,27 +775,34 @@ func (d *driver) commaLocaleAll() {
 		return
 	}
 	d.run(d.commaLocaleSteps()...)
-	line("     LOOK: no reply says how de_DE read either value. In the comma-locale spreadsheet, column A")
-	line("     scales from 1.5 and column B from 1,5, both over 1 to 5. The column whose color first")
-	line("     changes between 1 and 2 is the spelling de_DE reads as one and a half; record it in §18.")
+	line("     LOOK: no reply says what de_DE read 1,5 as. In the comma-locale spreadsheet, column B scales")
+	line("     from 1,5 over 1 to 5. If its color first changes between 1 and 2, de_DE read it as one and")
+	line("     a half; record it in §18.")
 }
 
 func (d *driver) commaLocaleSteps() []step {
 	return []step{
 		{
-			name: "a number point written with a decimal point, under de_DE",
-			why:  "manage_range sends the value as written, and de_DE writes one and a half as 1,5",
+			name: "a number point written with a decimal point, under de_DE, is refused",
+			why: "manage_range sends the value as written, and spike S found Google refuses 1.5 where the " +
+				"locale writes one and a half as 1,5",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.commaLocale, "sheet": "Grivet", "range": "A1:A5",
 				"kind": "conditional_format", "action": "add", "index": 0,
 				"gradient": []any{"number 1.5 #ffffff", "max #57bb8a"},
 			},
+			expectError: "invalid",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "Invalid InterpolationPoint.value: 1.5") {
+					return fmt.Errorf("the refusal is not Google's for the value: %s", text)
+				}
+				return nil
+			},
 		},
-		d.readsBackFrom(d.commaLocale, "Grivet", "A1:A5", "color scale: number 1.5 #ffffff -> max #57bb8a"),
 		{
 			name: "the same point written with a decimal comma",
-			why:  "the spelling a person in that locale types; the two are compared by eye afterwards",
+			why:  "the spelling a person in that locale types, which spike S found Google takes",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.commaLocale, "sheet": "Grivet", "range": "B1:B5",

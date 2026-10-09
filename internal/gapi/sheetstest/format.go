@@ -772,35 +772,41 @@ func deleteBanding(d *Doc, id int) error {
 	return errors.New("No banded range with id: " + strconv.Itoa(id))
 }
 
-// checkRule makes the refusals a conditional format rule is believed to
-// meet. Each is a belief rather than a recording, and §18 says so: the
-// reference documents the shape and none of the refusals, and the wording
-// here is this fake's own. Spike S asks Google each one.
+// checkRule makes the refusals spike S saw Google make of a color scale,
+// in Google's words. op is the request's name, which they carry.
 //
-// Exactly one of the two kinds. A color scale needs both end points, and
-// every point a type, since the type's default is documented as "do not
-// use". A number, percent or percentile point needs a value, which the
-// reference calls unused only for min and max.
-func checkRule(rule *gsheets.ConditionalFormatRule) error {
-	if (rule.BooleanRule == nil) == (rule.GradientRule == nil) {
+// Spike S, 2026-10-09: a number, percent or percentile point with no
+// value is refused (Q3), and so are a scale with no maxpoint and a point
+// with no type, both as a point with no type. A rule with both kinds is
+// refused by the request's parser. Under de_DE, a number written with a
+// decimal point is refused and one with a decimal comma taken (Q4). A
+// rule of neither kind, an unknown type, and the other comma locales
+// are refused or not in wording of this fake's own: nothing asked Google.
+func checkRule(op, locale string, rule *gsheets.ConditionalFormatRule) error {
+	invalid := func(why string) error { return errors.New("Invalid requests[0]." + op + ": " + why) }
+	switch {
+	case rule.BooleanRule == nil && rule.GradientRule == nil:
 		return errors.New("invalid ConditionalFormatRule: exactly one of booleanRule and gradientRule is required")
-	}
-	scale := rule.GradientRule
-	if scale == nil {
+	case rule.BooleanRule != nil && rule.GradientRule != nil:
+		return errors.New("Invalid value at 'requests[0]." + snakeOps[op] + ".rule' (oneof), oneof field 'rule' " +
+			"is already set. Cannot set 'gradientRule'")
+	case rule.GradientRule == nil:
 		return nil
 	}
-	if scale.Minpoint == nil || scale.Maxpoint == nil {
-		return errors.New("invalid GradientRule: minpoint and maxpoint are required")
-	}
-	for _, p := range []*gsheets.InterpolationPoint{scale.Minpoint, scale.Midpoint, scale.Maxpoint} {
-		if p == nil {
-			continue
-		}
-		switch p.Type {
-		case gsheets.PointMin, gsheets.PointMax:
-		case gsheets.PointNumber, gsheets.PointPercent, gsheets.PointPercentile:
+	scale := rule.GradientRule
+	for i, p := range []*gsheets.InterpolationPoint{scale.Minpoint, scale.Midpoint, scale.Maxpoint} {
+		switch {
+		case i == 1 && p == nil:
+			// The midpoint is optional.
+		case p == nil || p.Type == "":
+			return invalid("No interpolationPointType specified.")
+		case p.Type == gsheets.PointMin || p.Type == gsheets.PointMax:
+		case p.Type == gsheets.PointNumber || p.Type == gsheets.PointPercent || p.Type == gsheets.PointPercentile:
 			if p.Value == "" {
-				return errors.New("invalid InterpolationPoint: type " + p.Type + " requires a value")
+				return invalid("InterpolationPoint.value is required.")
+			}
+			if _, err := strconv.ParseFloat(p.Value, 64); err == nil && commaLocales[locale] && strings.Contains(p.Value, ".") {
+				return invalid("Invalid InterpolationPoint.value: " + p.Value)
 			}
 		default:
 			return errors.New("invalid InterpolationPoint: unknown type " + strconv.Quote(p.Type))
@@ -809,11 +815,39 @@ func checkRule(rule *gsheets.ConditionalFormatRule) error {
 	return nil
 }
 
+// snakeOps are the requests' names as the request parser spells them.
+var snakeOps = map[string]string{
+	"addConditionalFormatRule":    "add_conditional_format_rule",
+	"updateConditionalFormatRule": "update_conditional_format_rule",
+}
+
+// commaLocales write a decimal with a comma. Only de_DE was asked
+// (spike S Q4); the others are not modeled.
+var commaLocales = map[string]bool{"de_DE": true}
+
+// stored is a rule as Google keeps it: a min or max point loses the
+// value it was sent with, which the reference calls unused (spike S Q3).
+func stored(rule *gsheets.ConditionalFormatRule) *gsheets.ConditionalFormatRule {
+	if rule.GradientRule == nil {
+		return rule
+	}
+	copied, scale := *rule, *rule.GradientRule
+	for _, p := range []**gsheets.InterpolationPoint{&scale.Minpoint, &scale.Midpoint, &scale.Maxpoint} {
+		if *p != nil && ((*p).Type == gsheets.PointMin || (*p).Type == gsheets.PointMax) {
+			kept := **p
+			kept.Value = ""
+			*p = &kept
+		}
+	}
+	copied.GradientRule = &scale
+	return &copied
+}
+
 func addRule(d *Doc, req *gsheets.AddConditionalFormatRuleRequest) error {
 	if req.Rule == nil || len(req.Rule.Ranges) == 0 {
 		return errors.New("addConditionalFormatRule needs a rule with a range")
 	}
-	if err := checkRule(req.Rule); err != nil {
+	if err := checkRule("addConditionalFormatRule", d.Locale, req.Rule); err != nil {
 		return err
 	}
 	sh, _, err := sheetForRange(d, req.Rule.Ranges[0])
@@ -825,7 +859,7 @@ func addRule(d *Doc, req *gsheets.AddConditionalFormatRuleRequest) error {
 	}
 	sh.Conditional = append(sh.Conditional, nil)
 	copy(sh.Conditional[req.Index+1:], sh.Conditional[req.Index:])
-	sh.Conditional[req.Index] = req.Rule
+	sh.Conditional[req.Index] = stored(req.Rule)
 	return nil
 }
 
@@ -837,12 +871,14 @@ func updateRule(d *Doc, req *gsheets.UpdateConditionalFormatRuleRequest) error {
 	if req.Index < 0 || req.Index >= len(sh.Conditional) {
 		return errors.New("index " + strconv.Itoa(req.Index) + " is out of range")
 	}
-	if req.Rule != nil {
-		if err := checkRule(req.Rule); err != nil {
-			return err
-		}
+	if req.Rule == nil {
+		sh.Conditional[req.Index] = nil
+		return nil
 	}
-	sh.Conditional[req.Index] = req.Rule
+	if err := checkRule("updateConditionalFormatRule", d.Locale, req.Rule); err != nil {
+		return err
+	}
+	sh.Conditional[req.Index] = stored(req.Rule)
 	return nil
 }
 

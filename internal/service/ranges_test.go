@@ -383,7 +383,7 @@ func TestColorScaleRefusals(t *testing.T) {
 		{"on another kind", func(r *service.RangeRequest) { r.Kind = service.RangeBanding; r.Color = "#d9ead3" },
 			"[invalid] gradient is a color scale, which only kind conditional_format takes"},
 		{"a point the parser refuses", func(r *service.RangeRequest) { r.Gradient = []string{"max #ffffff", "min #57bb8a"} },
-			`[invalid] gradient point "max #ffffff" uses max, which is only for the last point`},
+			`[invalid] gradient point "max #ffffff" puts max first`},
 		{"neither a condition nor a scale", func(r *service.RangeRequest) { r.Gradient = nil },
 			"[invalid] a conditional format rule needs condition and a format to apply, or gradient for a color scale"},
 	} {

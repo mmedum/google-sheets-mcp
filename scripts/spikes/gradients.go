@@ -146,9 +146,9 @@ func spikeS(ctx context.Context) {
 			firstScale(ctx, sheetID, "minpoint")
 		}
 	}
-	line("    no reply says how de_DE read either value. Open %q: column A has the scale from 1.5", sheet)
-	line("    and column B from 1,5, both over 1 to 5. The column whose color first changes between")
-	line("    1 and 2 is the spelling de_DE reads as one and a half.")
+	line("    no reply says how de_DE read a value it took. The run of 2026-10-09 refused 1.5 and took")
+	line("    1,5. Open %q: column B has the scale from 1,5 over 1 to 5; if its color first changes", sheet)
+	line("    between 1 and 2, de_DE read it as one and a half.")
 	if locale != "" {
 		status, body = setLocale(ctx, locale)
 		line("    %-48s -> HTTP %d  %s", "set the locale back", status, first120(body))

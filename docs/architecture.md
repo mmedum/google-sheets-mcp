@@ -881,10 +881,14 @@ value.
   **A color scale is a conditional format rule too.** `gradient` takes
   two or three points, lowest first, each
   `<min|max|number|percent|percentile> [value] #hex`, in place of a
-  condition and a format, and is refused beside either. min and max take no value, being the range's
-  own lowest and highest, and sit only at the ends, as the Sheets
-  interface offers them. A value is sent as written, since the API takes
-  it as text and it may be a formula. A point is sent with `colorStyle`
+  condition and a format, and is refused beside either. min and max
+  take no value, being the range's own lowest and highest. Google takes
+  either as the middle point too, so a scale read back from a sheet can
+  be sent again; min is never last, nor max first. A value is sent as
+  written, since the API takes it as text and it may be a formula. A
+  number is read in the spreadsheet's locale: under `de_DE` Google
+  refuses `1.5` and takes `1,5` (spike S, §18), and the tool description
+  says so. A point is sent with `colorStyle`
   alone and read from either it or the deprecated `color`.
   `read_formatting` reads a scale back in the spelling it was written in,
   `color scale: min #ffffff -> percentile 50 #ffd666 -> max #57bb8a`,
@@ -1997,12 +2001,11 @@ forgotten. Results go into §18.
   anchor goes when rows move, how an assignee reads back, what a bad id
   answers, and whether a failed comment write is a 400 or a 200 that only
   `commentUpdateState` admits. Results in §18.
-- **S. Color scales** (written 2026-10-09, **not yet run**): what a
-  scale sent with `colorStyle` alone reads back as, which midpoint types
-  are taken, whether the refusals the fake makes are Google's, what a
-  number value means under a comma-decimal locale, and what a percent or
-  percentile value outside 0 to 100 does. §18 has the beliefs it
-  settles.
+- **S. Color scales** (**run 2026-10-09**): what a scale sent with
+  `colorStyle` alone reads back as, which midpoint types are taken,
+  whether the refusals the fake makes are Google's, what a number value
+  means under a comma-decimal locale, and what a percent or percentile
+  value outside 0 to 100 does. Results in §18.
 - **T. Typed table columns** (**run 2026-10-09**): whether a sparse
   `columnProperties` is taken on add, whether a dropdown with no rule is
   refused, whether an update with `fields=columnProperties` replaces the
@@ -3544,16 +3547,16 @@ Sheets API's filters guide.
 
 **Color scales on `manage_range`, 2026-10-09**, read against the Sheets
 discovery document (revision 20261005) and the conditional formatting
-guide and samples. Four of the five rows are beliefs, and spike S and
-the live driver are what settle them.
+guide and samples, then put to Google by spike S on 2026-10-09. The
+verdicts quote what came back.
 
 | Convention | Verdict | Effect |
 |---|---|---|
-| A color scale's point carries its color in `color`, as the samples page writes it | **Refined**: `InterpolationPoint.color` is deprecated, "Use color_style", and `colorStyle` "takes precedence" where both are set | A point is sent with `colorStyle` alone and read from either, `colorStyle` first. A unit test reads each |
-| Google refuses a malformed color scale | **Unverified**: the discovery document gives the shape and no refusal. It calls the midpoint optional, the value "Unused if type is MIN or MAX", and the type's default "do not use" | The fake refuses a scale with no minpoint or maxpoint, a point with no type, a number, percent or percentile point with no value, and a rule with both kinds or neither, in wording of its own. `manage_range` refuses each before the request. Spike S sends each to Google |
-| Any point type may be a midpoint | **Unverified**: the enum allows `MIN` and `MAX` at any point; the Sheets interface offers number, percent and percentile for a midpoint | `manage_range` puts min first and max last only. The live driver writes each of the three midpoint types and reads it back; spike S also sends `MIN` and `MAX` as a midpoint |
-| A percent or percentile value lies between 0 and 100 | **Unverified, and not refused**: the discovery document states no bound. It defines `PERCENT` as `NUMBER` at `=(MAX(FLATTEN(range)) * (value / 100)) + (MIN(FLATTEN(range)) * (1 - (value / 100)))`, which any value satisfies, and `PERCENTILE` as `NUMBER` at `=PERCENTILE(FLATTEN(range), value / 100)`, which a value past 100 turns into an error rather than a refusal. The value may also be a formula, which no parser here can bound | `manage_range` sends the value as written. Spike S sends percent 150, percentile 150 and percentile -10, and reads back what is stored |
-| A number value means the same in every locale | **Unverified**: the value is text and "May be a formula", so a locale that writes a decimal with a comma may read `1.5` as something else | The value is sent as written, never rewritten. The live driver writes `1.5` and `1,5` under `de_DE` and reads both back; which one the sheet takes as one and a half only a person can see, and the transcript says where to look. Spike S asks the same |
+| A color scale's point carries its color in `color`, as the samples page writes it | **Refined**: `InterpolationPoint.color` is deprecated, "Use color_style", and `colorStyle` "takes precedence" where both are set. Spike S Q1: a scale sent with `colorStyle` alone reads back with both, `color` filled in from it | A point is sent with `colorStyle` alone and read from either, `colorStyle` first. A unit test reads each |
+| Google refuses a malformed color scale | **Verified, spike S Q3**: a number or percentile point with no value is `400 Invalid requests[0].addConditionalFormatRule: InterpolationPoint.value is required.` A scale with no maxpoint, and a point with no type, are both `400 ...: No interpolationPointType specified.` A rule with a `booleanRule` too is `400 Invalid value at 'requests[0].add_conditional_format_rule.rule' (oneof), oneof field 'rule' is already set. Cannot set 'gradientRule'`. A value on a min point is a 200, and reads back gone | `manage_range` refuses each before the request, and a value on min or max as well, since Google would drop it. The fake refuses each in Google's words and drops a min or max point's value. A rule of neither kind is still the fake's own refusal |
+| Any point type may be a midpoint | **Verified, spike S Q2**: number 3, percent 50, percentile 50, min and max are each taken as a midpoint, and read back as sent; min and max with no value | The parser takes min and max in the middle, so a scale read back from a sheet can be sent again. min is never last, nor max first, which nothing asked Google |
+| A percent or percentile value lies between 0 and 100 | **Refuted, spike S Q5**: percent 150, percentile 150 and percentile -10 are each a 200, and read back as written. The discovery document states no bound; it defines `PERCENT` as `NUMBER` at `=(MAX(FLATTEN(range)) * (value / 100)) + (MIN(FLATTEN(range)) * (1 - (value / 100)))` and `PERCENTILE` as `NUMBER` at `=PERCENTILE(FLATTEN(range), value / 100)` | `manage_range` sends the value as written and checks no range. The value may be a formula, which no parser here could bound |
+| A number value means the same in every locale | **Refuted, spike S Q4**: under `de_DE`, a number point of `1.5` is `400 Invalid requests[0].addConditionalFormatRule: Invalid InterpolationPoint.value: 1.5`, and `1,5` is a 200, stored as written. Which value `1,5` colors from no reply says | The value is sent as written, never rewritten, and the `gradient` description says a number is written the way the spreadsheet's locale writes it. The fake refuses a decimal point under `de_DE`, the one comma locale asked. The live driver expects the refusal of `1.5`, then writes `1,5`, and a person reads the colors |
 
 **Typed table columns on `manage_range`, 2026-10-09**, read against the
 Sheets discovery document (revision 20261005), the tables guide and the

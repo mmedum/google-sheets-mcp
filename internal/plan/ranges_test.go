@@ -251,6 +251,16 @@ func TestParseGradientBuildsThePoints(t *testing.T) {
 		{"two points with values", []string{"NUMBER  0  #fff", "percent =MAX(B2:B9, 1) #000"},
 			`{"minpoint":{"colorStyle":{"rgbColor":{"red":1,"green":1,"blue":1,"alpha":1}},"type":"NUMBER","value":"0"},` +
 				`"maxpoint":{"colorStyle":{"rgbColor":{"alpha":1}},"type":"PERCENT","value":"=MAX(B2:B9, 1)"}}`},
+		// Google takes min and max as a midpoint (spike S Q2), and a scale
+		// read back from a sheet may carry either there.
+		{"min as the midpoint", []string{"number 1 #fff", "min #000", "max #fff"},
+			`{"minpoint":{"colorStyle":{"rgbColor":{"red":1,"green":1,"blue":1,"alpha":1}},"type":"NUMBER","value":"1"},` +
+				`"midpoint":{"colorStyle":{"rgbColor":{"alpha":1}},"type":"MIN"},` +
+				`"maxpoint":{"colorStyle":{"rgbColor":{"red":1,"green":1,"blue":1,"alpha":1}},"type":"MAX"}}`},
+		{"max as the midpoint", []string{"min #fff", "max #000", "number 9 #fff"},
+			`{"minpoint":{"colorStyle":{"rgbColor":{"red":1,"green":1,"blue":1,"alpha":1}},"type":"MIN"},` +
+				`"midpoint":{"colorStyle":{"rgbColor":{"alpha":1}},"type":"MAX"},` +
+				`"maxpoint":{"colorStyle":{"rgbColor":{"red":1,"green":1,"blue":1,"alpha":1}},"type":"NUMBER","value":"9"}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			scale, err := plan.ParseGradient(tc.points)
@@ -287,10 +297,11 @@ func TestParseGradientRefusals(t *testing.T) {
 		{"no value on number", []string{"number #ffffff", "max #57bb8a"},
 			`"number #ffffff" needs a value between number and the color, such as "number 50 #ffffff"`},
 		{"no value on percent", []string{"min #ffffff", "percent #57bb8a"}, `"percent #57bb8a" needs a value`},
-		{"max first", []string{"max #ffffff", "number 9 #57bb8a"}, "only for the last point"},
-		{"min last", []string{"number 1 #ffffff", "min #57bb8a"}, "only for the first point"},
-		{"min in the middle", []string{"number 1 #ffffff", "min #ffd666", "max #57bb8a"}, "only for the first point"},
-		{"max in the middle", []string{"min #ffffff", "max #ffd666", "number 9 #57bb8a"}, "only for the last point"},
+		{"max first", []string{"max #ffffff", "number 9 #57bb8a"},
+			`gradient point "max #ffffff" puts max first; max is the highest value in the range, so it goes in the middle or last`},
+		{"min last", []string{"number 1 #ffffff", "min #57bb8a"},
+			`gradient point "min #57bb8a" puts min last; min is the lowest value in the range, so it goes first or in the middle`},
+		{"max first of three", []string{"max #ffffff", "min #ffd666", "number 9 #57bb8a"}, "puts max first"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := plan.ParseGradient(tc.points)

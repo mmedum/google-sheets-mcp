@@ -311,9 +311,10 @@ func TestBatchUpdateAppliesNothingWhenOneRequestFails(t *testing.T) {
 	}
 }
 
-// TestConditionalRulesAreChecked holds the fake to the refusals §18
-// records as beliefs for a conditional format rule, so no test passes on
-// a color scale Google is expected to refuse.
+// TestConditionalRulesAreChecked holds the fake to the refusals spike S
+// saw Google make of a color scale, in Google's words, so no test passes
+// on a color scale Google refuses. A rule of neither kind is refused in
+// the fake's own words, since nothing asked Google.
 func TestConditionalRulesAreChecked(t *testing.T) {
 	point := func(kind, value string) *gsheets.InterpolationPoint {
 		return &gsheets.InterpolationPoint{
@@ -339,22 +340,26 @@ func TestConditionalRulesAreChecked(t *testing.T) {
 		{"both kinds",
 			gsheets.ConditionalFormatRule{BooleanRule: condition, GradientRule: &gsheets.GradientRule{
 				Minpoint: point("MIN", ""), Maxpoint: point("MAX", ""),
-			}}, "exactly one of booleanRule and gradientRule is required"},
+			}}, "Invalid value at 'requests[0].add_conditional_format_rule.rule' (oneof), oneof field 'rule' is " +
+				"already set. Cannot set 'gradientRule'"},
 		{"no maxpoint",
 			gsheets.ConditionalFormatRule{GradientRule: &gsheets.GradientRule{Minpoint: point("MIN", "")}},
-			"minpoint and maxpoint are required"},
+			"Invalid requests[0].addConditionalFormatRule: No interpolationPointType specified."},
+		{"no minpoint",
+			gsheets.ConditionalFormatRule{GradientRule: &gsheets.GradientRule{Maxpoint: point("MAX", "")}},
+			"Invalid requests[0].addConditionalFormatRule: No interpolationPointType specified."},
 		{"a number with no value",
 			gsheets.ConditionalFormatRule{GradientRule: &gsheets.GradientRule{
 				Minpoint: point("NUMBER", ""), Maxpoint: point("MAX", ""),
-			}}, "type NUMBER requires a value"},
+			}}, "Invalid requests[0].addConditionalFormatRule: InterpolationPoint.value is required."},
 		{"a percentile midpoint with no value",
 			gsheets.ConditionalFormatRule{GradientRule: &gsheets.GradientRule{
 				Minpoint: point("MIN", ""), Midpoint: point("PERCENTILE", ""), Maxpoint: point("MAX", ""),
-			}}, "type PERCENTILE requires a value"},
+			}}, "Invalid requests[0].addConditionalFormatRule: InterpolationPoint.value is required."},
 		{"a point with no type",
 			gsheets.ConditionalFormatRule{GradientRule: &gsheets.GradientRule{
 				Minpoint: point("", "1"), Maxpoint: point("MAX", ""),
-			}}, `unknown type ""`},
+			}}, "Invalid requests[0].addConditionalFormatRule: No interpolationPointType specified."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := Standard(t)
@@ -382,6 +387,48 @@ func TestConditionalRulesAreChecked(t *testing.T) {
 				t.Errorf("a refused rule was stored: %d rules", len(stored))
 			}
 		})
+	}
+}
+
+// TestAColorScaleIsStoredAsGoogleStoresIt is spike S: a value sent on a
+// min point is dropped (Q3), and under de_DE a number with a decimal
+// point is refused while one with a decimal comma is kept as written
+// (Q4).
+func TestAColorScaleIsStoredAsGoogleStoresIt(t *testing.T) {
+	white := &gsheets.ColorStyle{RGBColor: &gsheets.Color{Red: 1, Green: 1, Blue: 1, Alpha: 1}}
+	add := func(srv *Server, minpoint *gsheets.InterpolationPoint) error {
+		minpoint.ColorStyle = white
+		_, err := srv.Client().BatchUpdate(context.Background(), FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+			Requests: []*gsheets.Request{{AddConditionalFormatRule: &gsheets.AddConditionalFormatRuleRequest{
+				Rule: &gsheets.ConditionalFormatRule{
+					Ranges: []*gsheets.GridRange{{SheetID: 0}},
+					GradientRule: &gsheets.GradientRule{
+						Minpoint: minpoint, Maxpoint: &gsheets.InterpolationPoint{Type: "MAX", ColorStyle: white},
+					},
+				},
+			}}},
+		})
+		return err
+	}
+	srv := Standard(t)
+	if err := add(srv, &gsheets.InterpolationPoint{Type: "MIN", Value: "2"}); err != nil {
+		t.Fatalf("a min point with a value was refused: %v", err)
+	}
+	if got := srv.Doc(FixtureID).Find(FirstSheet).Conditional[0].GradientRule.Minpoint.Value; got != "" {
+		t.Errorf("the min point kept the value %q", got)
+	}
+
+	srv = Standard(t)
+	srv.Doc(FixtureID).Locale = "de_DE"
+	const want = "Invalid requests[0].addConditionalFormatRule: Invalid InterpolationPoint.value: 1.5"
+	if err := add(srv, &gsheets.InterpolationPoint{Type: "NUMBER", Value: "1.5"}); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("1.5 under de_DE: error = %v, want it to say %q", err, want)
+	}
+	if err := add(srv, &gsheets.InterpolationPoint{Type: "NUMBER", Value: "1,5"}); err != nil {
+		t.Fatalf("1,5 under de_DE was refused: %v", err)
+	}
+	if got := srv.Doc(FixtureID).Find(FirstSheet).Conditional[0].GradientRule.Minpoint.Value; got != "1,5" {
+		t.Errorf("1,5 was stored as %q", got)
 	}
 }
 
