@@ -5,6 +5,8 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [3.1.2] - 2026-10-10
+
 ### Changed
 
 - `manage_range` `table` `add` with `column_types` says why when Google answers with an internal error (HTTP 500) and nothing was added: Google has refused table adds with column types after about four in one spreadsheet, and an add without `column_types` was still taken. Whether the columns can be typed after that is not known, and the result says so. It used to say only that Google had been seen to fail every later table add, for a reason not known.
@@ -1344,7 +1346,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.1...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.2...HEAD
+[3.1.2]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.1...v3.1.2
 [3.1.1]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.2...v3.1.0
 [3.0.2]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.1...v3.0.2
