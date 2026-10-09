@@ -1291,7 +1291,8 @@ itself, through MCP form elicitation, before six writes:
    the person answers once, to the question that says what the write
    destroys. `destructiveHint` stays, as the client's allow-listable
    prompt. `claude -p` declares elicitation and answers `cancel`, so an
-   unattended delete is still `[blocked]`.
+   unattended delete is still `[blocked]`, unless an `Elicitation` hook
+   accepts for it.
 4. **A dry run never asks**, and needs no `confirm`.
 5. **What the question says.** The tool, the target and the consequence,
    in the server's words: the sheet, band or range and the spreadsheet,
@@ -2681,6 +2682,15 @@ cannot be verified again yet.
    a wide sheet can find an anchor the lookback reaches and then have
    its extent cut off above the write, and the refusal falls back to
    "not empty". §17a.27's stated give-up covers the first bound only.
+33. **On protocol 2026-07-28 a client can get neither the mark nor a
+   question.** Capabilities travel with each request there, so a client
+   can declare form elicitation to `tools/list` and none to
+   `tools/call`. The list then drops the mark from the four tools that
+   always ask (§9a.3), and the call asks nothing. Found by review on
+   2026-10-09. **Left open**, because it gives a misbehaving client
+   nothing it lacked: such a client answers the server's question itself
+   and can accept without a person. `GSHEETS_REQUIRE_PROMPT=true` refuses
+   the call instead, since it reads the call's own capabilities.
 
 ### 17c. Where the profile and the guards follow the sibling servers
 
@@ -3277,6 +3287,6 @@ verdict comes from a sibling server's evidence log.
 | A client that declares elicitation has a person to answer it | **Refuted, tier 2**: `claude -p` declares it and answers `cancel`; Codex under approval policy `never` with full access accepts a fieldless form | A refusal never says the person declined, and an unattended client cannot make these writes |
 | A client draws a question as plain text | **Refuted, tier 2**: VS Code builds the message as a `MarkdownString` | Spreadsheet text stands in a code span, and the server's own lines hold no Markdown |
 | A 503 proves an unrepeatable write never began, so it may be retried | **Refuted, tier 1**: Google's `google/rpc/code.proto` says of `UNAVAILABLE` that it is "not always safe to retry non-idempotent operations". Checked 2026-10-01 | An append, `batchUpdate`, `create` or `copyTo` retries only on 429. Any 5xx is `[ambiguous_outcome]`, and the class wins over the wrapped 429 |
-| A destructive tool should carry both `requiresUserInteraction` and the server's own question | **Refuted, tier 2**, 2026-10-09, after the owner was asked twice for one delete in google-docs-mcp. No source recommends two hard gates for one call: the spec puts confirmation on the client, GitHub's `delete_repository` and Supabase confirm with `destructiveHint` plus a form elicitation and set no mark, and Claude Code's documentation scopes the mark to "tools whose permission prompt is itself the point" | The mark is sent per client, present only when the request declares no form elicitation, on the four tools that always ask. A typed confirmation, which would stop Codex accepting an empty form unseen, was offered and not chosen |
+| A destructive tool should carry both `requiresUserInteraction` and the server's own question | **Refuted, tier 2**, 2026-10-09, after the owner was asked twice for one delete in google-docs-mcp. No source recommends two hard gates for one call: the spec puts confirmation on the client, GitHub's `delete_repository` and Supabase confirm with `destructiveHint` plus a form elicitation and set no mark, and Claude Code's documentation scopes the mark to "tools whose permission prompt is itself the point" | The mark is sent per client, present only when the request declares no form elicitation, on the four tools that always ask. A typed confirmation, which would stop Codex accepting an empty form unseen, was offered and not chosen. A Claude Code `Elicitation` hook that accepts now confirms these deletes by itself, `claude -p` included, where the mark used to refuse the call before it reached the server |
 | golangci-lint v2.13.2 lints this module on Go 1.27.2 | **Refuted, tier 1**, 2026-10-09: Go 1.27.2 writes export data version 5 (`internal/pkgbits/version.go`, go.dev/issue/81188). v2.13.2 is built on `golang.org/x/tools` v0.49.0, which reads up to version 4, so the typecheck fails. v2.14.0, a final release of 2026-09-24, is built on x/tools v0.50.0, which reads version 5 | Go 1.27.2, and golangci-lint v2.14.0 in the Makefile and CI |
 | A package's coverage reads the same on Go 1.27.1 and 1.27.2 | **Refuted, tier 1**, 2026-10-09: 1.27.1's `cmd/cover` gave each piece of a block that a comment splits the statement count of the whole block, and 1.27.2 counts each piece's own (`mergeRangesWithinStatements`). The same tests read lower: the fake from 82.4% to 79.9%, and `cmd/` from 56.9% to 53.1% | No floor moved. A test of `format_cells` `unmerge`, which no test ran against the fake, puts the fake at 80.3% |
