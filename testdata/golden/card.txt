@@ -12,7 +12,7 @@ named ranges:
   Vandel -> 'Ürväl'!A1:B2 (shares its name with a sheet; this server always quotes a sheet title, so the two stay apart)
 
 tables:
-  Oblisk -> 'Vandel'!A1:D21 (Plimth TEXT and Nardle DOUBLE)
+  Oblisk -> 'Vandel'!A1:F21 (Plimth text, Nardle number, Grivet dropdown (Open, In progress), Oblisk date_time, Skerry people_chip and column 6 currency)
 
 protected ranges:
   heading row -> 'Vandel'!A1:D1 (you may not edit it)

@@ -134,7 +134,7 @@ func TestFieldMasksAreBalanced(t *testing.T) {
 		"CardFields": CardFields, "GridFields": GridFields, "ReadFields": ReadFields, "FormatFields": FormatFields,
 		"FormatTargetFields": FormatTargetFields, "RuleFields": RuleFields, "ChartFields": ChartFields,
 		"CommentFields": CommentFields, "PivotFields": PivotFields, "PivotExtentFields": PivotExtentFields,
-		"SearchFields": SearchFields, "FileFields": FileFields,
+		"SearchFields": SearchFields, "FileFields": FileFields, "TableFields": TableFields,
 	} {
 		depth := 0
 		for _, r := range mask {

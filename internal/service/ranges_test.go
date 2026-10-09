@@ -2,9 +2,11 @@ package service_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
@@ -451,7 +453,7 @@ func TestUpdatingNeedsSomethingToChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = svc.ManageRange(ctx, rangeReq(service.RangeTable, service.RangeUpdate, "A1:B3"))
-	if err == nil || !strings.Contains(err.Error(), "the new name") {
+	if err == nil || !strings.Contains(err.Error(), "needs name, column_types, or both") {
 		t.Errorf("a table update with no name gave %v", err)
 	}
 }
@@ -571,5 +573,253 @@ func TestDeletingAPlainTableIsNotHeldBack(t *testing.T) {
 	}
 	if _, err := svc.ManageRange(ctx, rangeReq(service.RangeTable, service.RangeDelete, "A1:B3")); err != nil {
 		t.Errorf("deleting a table with no rules over it was refused: %v", err)
+	}
+}
+
+// typedSheet gives the second sheet a four-column header row, A1:D1, for
+// a table over A1:D3. "ID" is a heading that also reads as a column
+// letter, far outside the table.
+func typedSheet(srv *sheetstest.Server) *sheetstest.Sheet {
+	sh := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet)
+	sh.Set(1, 3, sheetstest.Str("Status"))
+	sh.Set(1, 4, sheetstest.Str("ID"))
+	return sh
+}
+
+// sentColumns is the column array the last batchUpdate carried, as JSON,
+// and the mask it went under.
+func sentColumns(t *testing.T, srv *sheetstest.Server) (string, string) {
+	t.Helper()
+	var body string
+	for _, c := range srv.Calls() {
+		if c.Op == "spreadsheets.batchUpdate" {
+			body = c.Body
+		}
+	}
+	if strings.Contains(body, "columnName") {
+		t.Errorf("the request sent a column name, which may rewrite the header cell: %s", body)
+	}
+	var req gsheets.BatchUpdateSpreadsheetRequest
+	if err := json.Unmarshal([]byte(body), &req); err != nil || len(req.Requests) != 1 {
+		t.Fatalf("no single request was sent: %s", body)
+	}
+	var table *gsheets.Table
+	var fields string
+	switch r := req.Requests[0]; {
+	case r.AddTable != nil:
+		table = r.AddTable.Table
+	case r.UpdateTable != nil:
+		table, fields = r.UpdateTable.Table, r.UpdateTable.Fields
+	default:
+		t.Fatalf("the request is not a table request: %s", body)
+	}
+	columns, _ := json.Marshal(table.ColumnProperties)
+	return string(columns), fields
+}
+
+// TestTableAddTypesTheNamedColumns is column_types on add: a column by
+// letter or by heading, counted from the table's first column, and only
+// the columns named.
+func TestTableAddTypesTheNamedColumns(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	typedSheet(srv)
+	svc := newService(t, srv)
+	ctx := context.Background()
+
+	add := rangeReq(service.RangeTable, service.RangeAdd, "A1:D3")
+	add.Name = "Trennow"
+	add.ColumnTypes = []string{"Bractal currency", "C dropdown: Open, In progress, Done", "ID number"}
+	res, err := svc.ManageRange(ctx, add)
+	if err != nil {
+		t.Fatalf("adding a typed table: %v", err)
+	}
+	columns, _ := sentColumns(t, srv)
+	const want = `[{"columnIndex":1,"columnType":"CURRENCY"},` +
+		`{"columnIndex":2,"columnType":"DROPDOWN","dataValidationRule":{"condition":{"type":"ONE_OF_LIST",` +
+		`"values":[{"userEnteredValue":"Open"},{"userEnteredValue":"In progress"},{"userEnteredValue":"Done"}]}}},` +
+		`{"columnIndex":3,"columnType":"DOUBLE"}]`
+	if columns != want {
+		t.Errorf("columnProperties =\n%s\nwant\n%s", columns, want)
+	}
+	wantApplied := []string{
+		"table added Trennow",
+		"column typed Bractal currency",
+		"column typed C dropdown (Open, In progress, Done)",
+		"column typed ID number",
+	}
+	if strings.Join(res.Applied, "\n") != strings.Join(wantApplied, "\n") {
+		t.Errorf("applied = %q", res.Applied)
+	}
+	card, err := svc.Card(ctx, sheetstest.FixtureID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const line = "Trennow -> 'Ürväl'!A1:D3 (Bractal currency, Status dropdown (Open, In progress, Done) and ID number)"
+	if !strings.Contains(card.Card, line) {
+		t.Errorf("the card does not say %q:\n%s", line, card.Card)
+	}
+}
+
+// TestTableColumnsCountFromTheTablesFirstColumn is the index the API
+// takes: "relative to its position in the table and is not necessarily
+// the same as the column index in the sheet".
+func TestTableColumnsCountFromTheTablesFirstColumn(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	typedSheet(srv)
+	add := rangeReq(service.RangeTable, service.RangeAdd, "B1:D3")
+	add.Name = "Trennow"
+	add.ColumnTypes = []string{"C date", "D boolean"}
+	if _, err := newService(t, srv).ManageRange(context.Background(), add); err != nil {
+		t.Fatalf("adding a typed table: %v", err)
+	}
+	columns, _ := sentColumns(t, srv)
+	const want = `[{"columnIndex":1,"columnType":"DATE"},{"columnIndex":2,"columnType":"BOOLEAN"}]`
+	if columns != want {
+		t.Errorf("columnProperties = %s, want %s", columns, want)
+	}
+}
+
+// seedTypedTable puts a table over A1:D3 on the second sheet with a type
+// on every column, a dropdown's list and a chip among them.
+func seedTypedTable(srv *sheetstest.Server) {
+	sh := typedSheet(srv)
+	sh.Tables = []*gsheets.Table{{
+		TableID: "AAAAtable1", Name: "Trennow",
+		Range: a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 4, LastRow: 3}.GridRange(1837),
+		ColumnProperties: []*gsheets.TableColumn{
+			{ColumnIndex: 0, ColumnName: "Trennow", ColumnType: gsheets.ColumnText},
+			{ColumnIndex: 1, ColumnName: "Bractal", ColumnType: gsheets.ColumnDouble},
+			{ColumnIndex: 2, ColumnName: "Status", ColumnType: gsheets.ColumnDropdown,
+				DataValidationRule: &gsheets.TableColumnDataValidationRule{Condition: &gsheets.BooleanCondition{
+					Type: "ONE_OF_LIST", Values: []*gsheets.ConditionValue{{UserEnteredValue: "Open"}, {UserEnteredValue: "Done"}},
+				}}},
+			{ColumnIndex: 3, ColumnName: "ID", ColumnType: gsheets.ColumnPeople},
+		},
+	}}
+}
+
+// TestTableUpdateRetypesOneColumnAndKeepsTheRest is the round trip. The
+// mask names a list, which may be replaced whole (§18), so every column
+// goes back as it was — the dropdown with its list, the chip as a chip —
+// and none with its name.
+func TestTableUpdateRetypesOneColumnAndKeepsTheRest(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	seedTypedTable(srv)
+	svc := newService(t, srv)
+	ctx := context.Background()
+
+	update := rangeReq(service.RangeTable, service.RangeUpdate, "A1:D3")
+	update.ColumnTypes = []string{"B currency"}
+	res, err := svc.ManageRange(ctx, update)
+	if err != nil {
+		t.Fatalf("retyping a column: %v", err)
+	}
+	columns, fields := sentColumns(t, srv)
+	const want = `[{"columnType":"TEXT"},{"columnIndex":1,"columnType":"CURRENCY"},` +
+		`{"columnIndex":2,"columnType":"DROPDOWN","dataValidationRule":{"condition":{"type":"ONE_OF_LIST",` +
+		`"values":[{"userEnteredValue":"Open"},{"userEnteredValue":"Done"}]}}},` +
+		`{"columnIndex":3,"columnType":"PEOPLE_CHIP"}]`
+	if columns != want || fields != "columnProperties" {
+		t.Errorf("sent %s under %q\nwant %s under \"columnProperties\"", columns, fields, want)
+	}
+	if strings.Join(res.Applied, "\n") != "column typed B currency" {
+		t.Errorf("applied = %q", res.Applied)
+	}
+	card, err := svc.Card(ctx, sheetstest.FixtureID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const line = "(Trennow text, Bractal currency, Status dropdown (Open, Done) and ID people_chip)"
+	if !strings.Contains(card.Card, line) {
+		t.Errorf("the card does not say %q:\n%s", line, card.Card)
+	}
+}
+
+// TestTableUpdateReadsTheColumnsFresh is why the update does not take
+// the array from the cached card: a dropdown somebody added since the
+// card was read would be sent back without it, and lost.
+func TestTableUpdateReadsTheColumnsFresh(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	seedTypedTable(srv)
+	svc := newService(t, srv)
+	ctx := context.Background()
+	if _, err := svc.Card(ctx, sheetstest.FixtureID); err != nil {
+		t.Fatal(err)
+	}
+	// Somebody else, inside the card's cache window, retypes column A.
+	table := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Tables[0]
+	table.ColumnProperties[0].ColumnType = gsheets.ColumnDate
+
+	update := rangeReq(service.RangeTable, service.RangeUpdate, "A1:D3")
+	update.ColumnTypes = []string{"Bractal percent"}
+	if _, err := svc.ManageRange(ctx, update); err != nil {
+		t.Fatalf("retyping a column: %v", err)
+	}
+	columns, _ := sentColumns(t, srv)
+	if !strings.HasPrefix(columns, `[{"columnType":"DATE"},{"columnIndex":1,"columnType":"PERCENT"}`) {
+		t.Errorf("the update sent the cached columns: %s", columns)
+	}
+}
+
+// TestTableUpdateRenamesAndRetypesInOneRequest is both at once: one
+// request, one mask naming both.
+func TestTableUpdateRenamesAndRetypesInOneRequest(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	seedTypedTable(srv)
+	svc := newService(t, srv)
+	update := rangeReq(service.RangeTable, service.RangeUpdate, "A1:D3")
+	update.Name = "Bractal"
+	update.ColumnTypes = []string{"Trennow date_time"}
+	if _, err := svc.ManageRange(context.Background(), update); err != nil {
+		t.Fatalf("renaming and retyping: %v", err)
+	}
+	columns, fields := sentColumns(t, srv)
+	if fields != "name,columnProperties" || !strings.HasPrefix(columns, `[{"columnType":"DATE_TIME"},`) {
+		t.Errorf("sent %s under %q", columns, fields)
+	}
+	if got := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Tables[0].Name; got != "Bractal" {
+		t.Errorf("the table is called %q", got)
+	}
+}
+
+func TestTableColumnTypeRefusals(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		kind   string
+		action string
+		types  []string
+		want   string
+	}{
+		{"another kind", service.RangeBanding, service.RangeAdd, []string{"B date"},
+			"[invalid] column_types types a table's columns, which only kind table takes, on add or update"},
+		{"a delete", service.RangeTable, service.RangeDelete, []string{"B date"},
+			"[invalid] column_types types a table's columns, which only kind table takes, on add or update"},
+		{"a letter outside the table", service.RangeTable, service.RangeUpdate, []string{"F date"},
+			"[invalid] column F is outside the table A1:D3"},
+		{"a heading the table does not have", service.RangeTable, service.RangeUpdate, []string{"Owner date"},
+			`[not_found] no column "Owner" in the table; its first row holds "bractal", "id", "status" and "trennow"`},
+		{"one column twice", service.RangeTable, service.RangeUpdate, []string{"B date", "Bractal number"},
+			`[invalid] column_types names one column twice, as "B" and "Bractal"`},
+		{"a chip", service.RangeTable, service.RangeUpdate, []string{"ID people_chip"},
+			`[invalid] column type "ID people_chip" asks for people_chip, a smart chip column, which this server ` +
+				`shows and does not set`},
+		{"a dropdown with no options", service.RangeTable, service.RangeUpdate, []string{"Status dropdown"},
+			`[invalid] column type "Status dropdown" needs its options after a colon, such as ` +
+				`"Status dropdown: Open, In progress, Done"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := sheetstest.Standard(t)
+			seedTypedTable(srv)
+			req := rangeReq(tc.kind, tc.action, "A1:D3")
+			req.ColumnTypes = tc.types
+			req.Color = "#d9e2f3"
+			_, err := newService(t, srv).ManageRange(context.Background(), req)
+			if err == nil || err.Error() != tc.want {
+				t.Errorf("error =\n%v\nwant\n%s", err, tc.want)
+			}
+			if batched(srv) {
+				t.Error("a refused request reached the wire")
+			}
+		})
 	}
 }

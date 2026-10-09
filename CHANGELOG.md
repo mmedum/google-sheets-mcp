@@ -11,6 +11,7 @@ and this project follows [semantic versioning](https://semver.org).
 - `read_cell_comments` lists the comment threads on a spreadsheet's cells, each on the cell it is on now, with its status, assignee and posts.
 - `manage_cell_comment` adds a comment to a cell, replies, edits a post, resolves and reopens. Google emails an assignee, without checking the address, and may notify an address the text names.
 - `manage_range` `conditional_format` takes `gradient`, a color scale of two or three points such as `["min #ffffff", "percentile 50 #ffd666", "max #57bb8a"]`. `read_formatting` reads a color scale back in the same spelling, where it used to say only "color gradient".
+- `manage_range` `table` takes `column_types` on add and update, such as `["B date", "Amount currency", "Status dropdown: Open, In progress, Done"]`, naming each column by letter or by its header. An update changes only the columns named and keeps every other column's type and dropdown list. `get_spreadsheet` shows a table's column types in the same spelling, a dropdown with its options, where it used to show Google's names for them, such as `DOUBLE`.
 - `delete_cell_comment` deletes a comment thread or one reply. Like the other deletes it is registered only with `GSHEETS_ENABLE_DESTRUCTIVE=true`, needs `confirm`, and asks the person first.
 
 ### Changed

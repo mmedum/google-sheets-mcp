@@ -243,7 +243,6 @@ sheets	AddDimensionGroupRequest	*	alias	DimensionGroupRequest
 sheets	DeleteDimensionGroupRequest	*	alias	DimensionGroupRequest
 #
 sheets	TableColumnProperties	*	alias	TableColumn
-sheets	TableColumnProperties	dataValidationRule	out	no tool sets a validation rule on a table column; manage_range does validation by range
 #
 # The request-side types that exist to leave an id out. Aliasing one to
 # the schema it resembles would claim it models that schema and then ask

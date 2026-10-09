@@ -284,11 +284,42 @@ type Table struct {
 }
 
 // TableColumn is one column of a table.
+//
+// ColumnIndex counts from the table's first column, not the sheet's.
+// ColumnName is the header text; this server reads it and never sends
+// it, since whether sending one rewrites the header cell is unverified
+// (§18). DataValidationRule is set on a dropdown column only.
 type TableColumn struct {
-	ColumnIndex int    `json:"columnIndex,omitempty"`
-	ColumnName  string `json:"columnName,omitempty"`
-	ColumnType  string `json:"columnType,omitempty"`
+	ColumnIndex        int                            `json:"columnIndex,omitempty"`
+	ColumnName         string                         `json:"columnName,omitempty"`
+	ColumnType         string                         `json:"columnType,omitempty"`
+	DataValidationRule *TableColumnDataValidationRule `json:"dataValidationRule,omitempty"`
 }
+
+// TableColumnDataValidationRule is a dropdown column's list. The
+// condition is ONE_OF_LIST, the only type the reference allows here.
+type TableColumnDataValidationRule struct {
+	Condition *BooleanCondition `json:"condition,omitempty"`
+}
+
+// Column types, as the API spells them. The five chip types are read
+// and shown; this server writes none of them.
+const (
+	ColumnText     = "TEXT"
+	ColumnDouble   = "DOUBLE"
+	ColumnCurrency = "CURRENCY"
+	ColumnPercent  = "PERCENT"
+	ColumnDate     = "DATE"
+	ColumnTime     = "TIME"
+	ColumnDateTime = "DATE_TIME"
+	ColumnBoolean  = "BOOLEAN"
+	ColumnDropdown = "DROPDOWN"
+	ColumnFiles    = "FILES_CHIP"
+	ColumnPeople   = "PEOPLE_CHIP"
+	ColumnFinance  = "FINANCE_CHIP"
+	ColumnPlace    = "PLACE_CHIP"
+	ColumnRatings  = "RATINGS_CHIP"
+)
 
 // BandedRange is alternating-color banding over a range. Exactly one
 // of the two property sets is used: banding runs down rows or across

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
@@ -59,6 +60,9 @@ type RangeRequest struct {
 	// instead of a condition and a format: two or three points, lowest
 	// first, each "<type> [value] #hex".
 	Gradient []string
+	// ColumnTypes types a table's columns, each "<column> <type>", with
+	// a dropdown's options after a colon.
+	ColumnTypes []string
 	// Header gives a banding a heading row in a darker shade.
 	Header bool
 	// Index names a conditional format rule, which is the only one of
@@ -185,6 +189,9 @@ func (s *Service) rangeOp(ctx context.Context, req RangeRequest, action string, 
 	if len(req.Gradient) > 0 && kind != RangeRule {
 		return nil, nil, Errorf("invalid", "gradient is a color scale, which only kind conditional_format takes")
 	}
+	if len(req.ColumnTypes) > 0 && (kind != RangeTable || action == RangeDelete) {
+		return nil, nil, Errorf("invalid", "column_types types a table's columns, which only kind table takes, on add or update")
+	}
 	switch kind {
 	case RangeNamed:
 		return namedRangeOp(req, action, card, props, rect)
@@ -193,7 +200,7 @@ func (s *Service) rangeOp(ctx context.Context, req RangeRequest, action string, 
 	case RangeValidation:
 		return validationOp(req, action, props, rect)
 	case RangeTable:
-		return tableOp(req, action, card, props, rect)
+		return s.tableOp(ctx, req, action, ref, card, props, rect)
 	case RangeBanding:
 		return bandingOp(req, action, card, props, rect)
 	case RangeRule:
@@ -304,8 +311,8 @@ func validationOp(req RangeRequest, action string, props *gsheets.SheetPropertie
 		[]render.Applied{{Kind: "validation set on", Value: a1.FormatRect(rect) + ": " + render.ConditionText(cond)}}, nil
 }
 
-func tableOp(req RangeRequest, action string, card *gsheets.Spreadsheet,
-	props *gsheets.SheetProperties, rect a1.Rect,
+func (s *Service) tableOp(ctx context.Context, req RangeRequest, action string, ref Reference,
+	card *gsheets.Spreadsheet, props *gsheets.SheetProperties, rect a1.Rect,
 ) (*gsheets.Request, []render.Applied, error) {
 	sheet := sheetOf(card, props.SheetID)
 	name := strings.TrimSpace(req.Name)
@@ -313,8 +320,12 @@ func tableOp(req RangeRequest, action string, card *gsheets.Spreadsheet,
 		if name == "" {
 			return nil, nil, Errorf("invalid", "a table needs name")
 		}
-		return plan.TableAdd(name, props.SheetID, rect),
-			[]render.Applied{{Kind: "table added", Value: name}}, nil
+		columns, typed, err := s.typedColumns(ctx, ref, props, rect, req.ColumnTypes)
+		if err != nil {
+			return nil, nil, err
+		}
+		return plan.TableAdd(name, props.SheetID, rect, columns),
+			append([]render.Applied{{Kind: "table added", Value: name}}, typed...), nil
 	}
 	found, err := matchOne("table", rect, rectsOf(sheet.Tables, func(t *gsheets.Table) *gsheets.GridRange { return t.Range }, props))
 	if err != nil {
@@ -325,11 +336,128 @@ func tableOp(req RangeRequest, action string, card *gsheets.Spreadsheet,
 		return plan.TableDelete(target.TableID),
 			[]render.Applied{{Kind: "table removed from", Value: a1.FormatRect(rect)}}, nil
 	}
-	if name == "" {
-		return nil, nil, Errorf("invalid", "updating a table needs name, the new name for it")
+	if name == "" && len(req.ColumnTypes) == 0 {
+		return nil, nil, Errorf("invalid", "updating a table needs name, column_types, or both")
 	}
-	return plan.TableRename(target.TableID, name),
-		[]render.Applied{{Kind: "table renamed to", Value: name}}, nil
+	var applied []render.Applied
+	if name != "" {
+		applied = append(applied, render.Applied{Kind: "table renamed to", Value: name})
+	}
+	var columns []*gsheets.TableColumn
+	if len(req.ColumnTypes) > 0 {
+		current, err := s.tableColumns(ctx, ref, props.SheetID, target.TableID, rect)
+		if err != nil {
+			return nil, nil, err
+		}
+		changed, typed, err := s.typedColumns(ctx, ref, props, rect, req.ColumnTypes)
+		if err != nil {
+			return nil, nil, err
+		}
+		columns = mergeColumns(current, changed)
+		applied = append(applied, typed...)
+	}
+	return plan.TableUpdate(target.TableID, name, columns), applied, nil
+}
+
+// typedColumns resolves column_types against a table's range: each
+// column, by letter or by header, to its place in the table, counted
+// from the table's first column.
+//
+// The header row is read only when a name is not a letter inside the
+// table, so typing columns by letter costs no read.
+func (s *Service) typedColumns(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
+	rect a1.Rect, entries []string) ([]*gsheets.TableColumn, []render.Applied, error) {
+
+	if len(entries) == 0 {
+		return nil, nil, nil
+	}
+	specs := make([]plan.ColumnSpec, 0, len(entries))
+	needHeaders := false
+	table := rect.Clamp(extent(props))
+	for _, entry := range entries {
+		spec, err := plan.ParseColumnType(entry)
+		if err != nil {
+			return nil, nil, Errorf("invalid", "%s", err)
+		}
+		if _, ok := columnOffset(spec.Column, table); !ok {
+			needHeaders = true
+		}
+		specs = append(specs, spec)
+	}
+	var headers map[string]int
+	if needHeaders {
+		var err error
+		if headers, err = s.headerRow(ctx, ref, SheetRef{Props: props, Rect: table}); err != nil {
+			return nil, nil, err
+		}
+	}
+	at := columnPlace{arg: "column_types", what: "the table"}
+	named := map[int]string{}
+	columns := make([]*gsheets.TableColumn, 0, len(specs))
+	applied := make([]render.Applied, 0, len(specs))
+	for _, spec := range specs {
+		index, err := headedColumn(spec.Column, table, headers, at)
+		if err != nil {
+			return nil, nil, err
+		}
+		if earlier, twice := named[index]; twice {
+			return nil, nil, Errorf("invalid", "column_types names one column twice, as %q and %q", earlier, spec.Column)
+		}
+		named[index] = spec.Column
+		column := &gsheets.TableColumn{ColumnIndex: index, ColumnType: spec.Type, DataValidationRule: spec.Rule}
+		columns = append(columns, column)
+		applied = append(applied, render.Applied{Kind: "column typed", Value: render.ColumnText(spec.Column, column)})
+	}
+	sort.Slice(columns, func(i, j int) bool { return columns[i].ColumnIndex < columns[j].ColumnIndex })
+	return columns, applied, nil
+}
+
+// tableColumns reads a table's columns as they are now.
+//
+// Fresh rather than from the card. The update sends the whole array
+// back, so a cached one would undo a change somebody made in between.
+func (s *Service) tableColumns(ctx context.Context, ref Reference, sheetID int, tableID string,
+	rect a1.Rect) ([]*gsheets.TableColumn, error) {
+
+	sp, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{Fields: gapi.TableFields})
+	if err != nil {
+		return nil, wrap(err)
+	}
+	for _, t := range sheetOf(sp, sheetID).Tables {
+		if t != nil && t.TableID == tableID {
+			return t.ColumnProperties, nil
+		}
+	}
+	return nil, Errorf("not_found", "the table on %s is gone since this call began; get_spreadsheet lists the tables there are",
+		a1.FormatRect(rect))
+}
+
+// mergeColumns is the whole array an update sends: every column as it
+// is, with the named ones replaced.
+//
+// A column keeps its type and, for a dropdown, its list. Its name is
+// left out of every entry, the ones kept included: whether a name sent
+// here rewrites the header cell is unverified (§18), and a header is
+// data somebody typed.
+func mergeColumns(current, changed []*gsheets.TableColumn) []*gsheets.TableColumn {
+	byIndex := map[int]*gsheets.TableColumn{}
+	for _, c := range current {
+		if c == nil {
+			continue
+		}
+		kept := *c
+		kept.ColumnName = ""
+		byIndex[c.ColumnIndex] = &kept
+	}
+	for _, c := range changed {
+		byIndex[c.ColumnIndex] = c
+	}
+	out := make([]*gsheets.TableColumn, 0, len(byIndex))
+	for _, c := range byIndex {
+		out = append(out, c)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ColumnIndex < out[j].ColumnIndex })
+	return out
 }
 
 func bandingOp(req RangeRequest, action string, card *gsheets.Spreadsheet,

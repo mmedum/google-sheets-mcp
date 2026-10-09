@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
 )
@@ -380,5 +381,87 @@ func TestConditionalRulesAreChecked(t *testing.T) {
 				t.Errorf("a refused rule was stored: %d rules", len(stored))
 			}
 		})
+	}
+}
+
+// TestTableColumnsAreChecked holds the fake to what §18 records about a
+// table's columns: the refusals the tables guide implies, which are
+// beliefs, and an update that replaces the whole array but keeps each
+// column's name.
+func TestTableColumnsAreChecked(t *testing.T) {
+	list := &gsheets.TableColumnDataValidationRule{Condition: &gsheets.BooleanCondition{
+		Type: "ONE_OF_LIST", Values: []*gsheets.ConditionValue{{UserEnteredValue: "Open"}},
+	}}
+	for _, tc := range []struct {
+		name    string
+		columns []*gsheets.TableColumn
+		want    string // "" for accepted
+	}{
+		{"a dropdown with its list",
+			[]*gsheets.TableColumn{{ColumnIndex: 1, ColumnType: gsheets.ColumnDropdown, DataValidationRule: list}}, ""},
+		{"a dropdown with no list",
+			[]*gsheets.TableColumn{{ColumnIndex: 1, ColumnType: gsheets.ColumnDropdown}},
+			"a DROPDOWN column needs a data validation rule"},
+		{"a list on a number column",
+			[]*gsheets.TableColumn{{ColumnIndex: 1, ColumnType: gsheets.ColumnDouble, DataValidationRule: list}},
+			"only a DROPDOWN column takes a data validation rule"},
+		{"a list that is not one of a list",
+			[]*gsheets.TableColumn{{ColumnIndex: 1, ColumnType: gsheets.ColumnDropdown,
+				DataValidationRule: &gsheets.TableColumnDataValidationRule{Condition: &gsheets.BooleanCondition{Type: "NOT_BLANK"}}}},
+			"the condition must be ONE_OF_LIST with values"},
+		{"a type the enum lacks",
+			[]*gsheets.TableColumn{{ColumnIndex: 1, ColumnType: "MONEY"}}, `Invalid value at 'column_type': "MONEY"`},
+		{"a column past the table",
+			[]*gsheets.TableColumn{{ColumnIndex: 2, ColumnType: gsheets.ColumnDate}}, "column index 2 is outside the table"},
+		{"a column twice",
+			[]*gsheets.TableColumn{{ColumnIndex: 1, ColumnType: gsheets.ColumnDate}, {ColumnIndex: 1, ColumnType: gsheets.ColumnTime}},
+			"column index 1 is given twice"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := Standard(t)
+			_, err := srv.Client().BatchUpdate(context.Background(), FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+				Requests: []*gsheets.Request{{AddTable: &gsheets.AddTableRequest{Table: &gsheets.Table{
+					Name: "Trennow", Range: a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 2, LastRow: 3}.GridRange(1837),
+					ColumnProperties: tc.columns,
+				}}}},
+			})
+			stored := srv.Doc(FixtureID).Find(SecondSheet).Tables
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("refused: %v", err)
+				}
+				// Named from the header cell, since the request named none.
+				if len(stored) != 1 || stored[0].ColumnProperties[0].ColumnName != "Bractal" {
+					t.Errorf("the table was not stored with its column named: %+v", stored)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want it to say %q", err, tc.want)
+			}
+			if len(stored) != 0 {
+				t.Error("a refused table was stored")
+			}
+		})
+	}
+}
+
+func TestUpdateTableReplacesTheColumnsWhole(t *testing.T) {
+	srv := Standard(t)
+	// The fixture's table: Plimth TEXT and Nardle DOUBLE.
+	_, err := srv.Client().BatchUpdate(context.Background(), FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*gsheets.Request{{UpdateTable: &gsheets.UpdateTableRequest{
+			Table: &gsheets.Table{TableID: "tbl-fixture-1", ColumnProperties: []*gsheets.TableColumn{
+				{ColumnIndex: 1, ColumnType: gsheets.ColumnCurrency},
+			}},
+			Fields: "columnProperties",
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("updateTable: %v", err)
+	}
+	got := srv.Doc(FixtureID).Find(FirstSheet).Tables[0].ColumnProperties
+	if len(got) != 1 || got[0].ColumnIndex != 1 || got[0].ColumnType != gsheets.ColumnCurrency || got[0].ColumnName != "Nardle" {
+		t.Errorf("columns after the update = %+v; want Nardle CURRENCY alone", got)
 	}
 }

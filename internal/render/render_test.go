@@ -195,7 +195,19 @@ func TestCardGolden(t *testing.T) {
 			Name: sheetstest.FirstSheet, Range: "'Ürväl'!A1:B2",
 			Detail: "shares its name with a sheet; this server always quotes a sheet title, so the two stay apart",
 		}},
-		Tables:      []render.NamedItem{{Name: "Oblisk", Range: "'Vandel'!A1:D21", Detail: "Plimth TEXT and Nardle DOUBLE"}},
+		// Column types in the spelling manage_range takes, a dropdown's
+		// list and a chip included, and a column Google left unnamed.
+		Tables: []render.NamedItem{{Name: "Oblisk", Range: "'Vandel'!A1:F21", Detail: render.TableColumns([]*gsheets.TableColumn{
+			{ColumnIndex: 0, ColumnName: "Plimth", ColumnType: gsheets.ColumnText},
+			{ColumnIndex: 1, ColumnName: "Nardle", ColumnType: gsheets.ColumnDouble},
+			{ColumnIndex: 2, ColumnName: "Grivet", ColumnType: gsheets.ColumnDropdown,
+				DataValidationRule: &gsheets.TableColumnDataValidationRule{Condition: &gsheets.BooleanCondition{
+					Type: "ONE_OF_LIST", Values: []*gsheets.ConditionValue{{UserEnteredValue: "Open"}, {UserEnteredValue: "In progress"}},
+				}}},
+			{ColumnIndex: 3, ColumnName: "Oblisk", ColumnType: gsheets.ColumnDateTime},
+			{ColumnIndex: 4, ColumnName: "Skerry", ColumnType: gsheets.ColumnPeople},
+			{ColumnIndex: 5, ColumnType: gsheets.ColumnCurrency},
+		})}},
 		Protected:   []render.NamedItem{{Name: "heading row", Range: "'Vandel'!A1:D1", Detail: "you may not edit it"}},
 		FilterViews: []render.NamedItem{{Name: "Grivet over 500", Range: "'Vandel'!A1:D21"}},
 	}))

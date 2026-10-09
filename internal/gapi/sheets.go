@@ -29,6 +29,12 @@ const CardFields = "spreadsheetId," +
 	"dataSources(dataSourceId,sheetId,spec(bigQuery(projectId)))," +
 	"namedRanges"
 
+// TableFields is the field mask behind a table's columns, read fresh
+// before an update sends them back whole. The card has them too, but it
+// is cached, and a cached array sent back would undo a change somebody
+// made since.
+const TableFields = "sheets(properties(sheetId),tables(tableId,range,columnProperties))"
+
 // GridFields is the field mask behind a read of cells. It asks for what
 // a values read cannot show: the entered value under a formatted one,
 // the note, the validation rule, the smart chips.

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
 )
 
 // Card is the spreadsheet card: what get_spreadsheet knows before any
@@ -174,4 +176,68 @@ func section(b *strings.Builder, label string, items []NamedItem) {
 		}
 		b.WriteByte('\n')
 	}
+}
+
+// columnTypeNames are a table's column types in the spelling
+// manage_range takes, so a type read back can be written again as it
+// reads. The chip types are shown and never written.
+var columnTypeNames = map[string]string{
+	gsheets.ColumnText:     "text",
+	gsheets.ColumnDouble:   "number",
+	gsheets.ColumnCurrency: "currency",
+	gsheets.ColumnPercent:  "percent",
+	gsheets.ColumnDate:     "date",
+	gsheets.ColumnTime:     "time",
+	gsheets.ColumnDateTime: "date_time",
+	gsheets.ColumnBoolean:  "boolean",
+	gsheets.ColumnDropdown: "dropdown",
+	gsheets.ColumnFiles:    "files_chip",
+	gsheets.ColumnPeople:   "people_chip",
+	gsheets.ColumnFinance:  "finance_chip",
+	gsheets.ColumnPlace:    "place_chip",
+	gsheets.ColumnRatings:  "ratings_chip",
+}
+
+// ColumnText is one table column and its type, as manage_range spells
+// it: "Amount currency", "Status dropdown (Open, In progress, Done)". A
+// column with no type is its name alone.
+func ColumnText(name string, c *gsheets.TableColumn) string {
+	if c == nil || c.ColumnType == "" || c.ColumnType == "COLUMN_TYPE_UNSPECIFIED" {
+		return name
+	}
+	kind, ok := columnTypeNames[c.ColumnType]
+	if !ok {
+		kind = strings.ToLower(c.ColumnType)
+	}
+	text := name + " " + kind
+	if c.DataValidationRule != nil && c.DataValidationRule.Condition != nil {
+		var options []string
+		for _, v := range c.DataValidationRule.Condition.Values {
+			if v != nil && v.UserEnteredValue != "" {
+				options = append(options, v.UserEnteredValue)
+			}
+		}
+		if len(options) > 0 {
+			text += " (" + strings.Join(options, ", ") + ")"
+		}
+	}
+	return text
+}
+
+// TableColumns is a table's columns and their types, for the card. A
+// column Google returned with no name is named by its place in the
+// table.
+func TableColumns(columns []*gsheets.TableColumn) string {
+	parts := make([]string, 0, len(columns))
+	for _, c := range columns {
+		if c == nil {
+			continue
+		}
+		name := c.ColumnName
+		if name == "" {
+			name = fmt.Sprintf("column %d", c.ColumnIndex+1)
+		}
+		parts = append(parts, ColumnText(name, c))
+	}
+	return JoinAnd(parts)
 }

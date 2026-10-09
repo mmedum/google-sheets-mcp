@@ -795,8 +795,32 @@ value.
   it bold" costs one request and not two.
 - `manage_range`: things attached to a range — `named_range`,
   `protected_range`, `data_validation`, `table`, `banding` and
-  `conditional_format`, each with `add`, `update` and `delete`. A table's
-  dropdown column carries its `ONE_OF_LIST` rule, which the API requires.
+  `conditional_format`, each with `add`, `update` and `delete`.
+
+  **A table's columns are typed with `column_types`**, on add and on
+  update: one entry per column, `<column> <type>`, such as `B date`,
+  `Amount currency` or `Status dropdown: Open, In progress, Done`. The
+  column is a letter or its header's text; a letter outside the table
+  that a header spells, such as `ID`, means the header. The index sent
+  counts from the table's first column, as the API defines it. The types
+  are text, number (`DOUBLE`), currency, percent, date, time, date_time,
+  boolean and dropdown. A dropdown column carries its `ONE_OF_LIST` rule,
+  built by the same condition parser `data_validation` uses, with its
+  options split on commas; a list whose options hold commas is
+  `data_validation`'s job. The five smart chip types are shown on a read
+  and never written.
+
+  An add sends only the columns named. An update sends `updateTable`
+  with `fields=columnProperties`. That field is a list, which may be
+  replaced whole (§18 says why it is not settled). So the update reads
+  the table's columns fresh, changes the ones named, and sends every
+  column back. Fresh, because the card is cached, and a cached array
+  sent back would undo a change somebody made in between. This round
+  trip is why `dataValidationRule` is modeled: without it, every other
+  dropdown would lose its list. No entry carries `columnName`, the kept
+  ones included, since whether a name sent there rewrites the header
+  cell is unverified. `get_spreadsheet` shows the types in the spelling
+  `column_types` takes, `Status dropdown (Open, In progress, Done)`.
 
   **The conditional-format ops are here rather than on `format_cells`,
   which is a change from an earlier draft of this section.** A rule is
@@ -1880,6 +1904,13 @@ forgotten. Results go into §18.
   number value means under a comma-decimal locale, and what a percent or
   percentile value outside 0 to 100 does. §18 has the beliefs it
   settles.
+- **T. Typed table columns** (written 2026-10-09, **not yet run**):
+  whether a sparse `columnProperties` is taken on add, whether a
+  dropdown with no rule is refused, whether an update with
+  `fields=columnProperties` replaces the whole array, whether a column
+  name sent, or left out, rewrites the header cell, and what a type
+  change does to a number format, a per-cell validation and the cells of
+  a boolean column. §18 has the beliefs it settles.
 
 ## 16. Delivery phases
 
@@ -2381,7 +2412,7 @@ cannot be verified again yet.
    `rowProperties` onto one and leaving it carrying both sets, which the
    API rejects — but there is no way to create one here. It wants a
    `columns` argument, which is a fifth thing for a caller to get right
-   on a tool that already takes eighteen, and it is worth deciding
+   on a tool that already takes twenty-one, and it is worth deciding
    alongside entry 12 rather than before it. **Still open.**
 14. **`dry_run` is answered by three tools and refused by two.**
    `write_values` and phase 2's three previews come before the guard, for
@@ -3390,7 +3421,7 @@ Sheets API's filters guide.
 
 **Color scales on `manage_range`, 2026-10-09**, read against the Sheets
 discovery document (revision 20261005) and the conditional formatting
-guide and samples. Three of the four rows are beliefs, and spike S and
+guide and samples. Four of the five rows are beliefs, and spike S and
 the live driver are what settle them.
 
 | Convention | Verdict | Effect |
@@ -3400,3 +3431,18 @@ the live driver are what settle them.
 | Any point type may be a midpoint | **Unverified**: the enum allows `MIN` and `MAX` at any point; the Sheets interface offers number, percent and percentile for a midpoint | `manage_range` puts min first and max last only. The live driver writes each of the three midpoint types and reads it back; spike S also sends `MIN` and `MAX` as a midpoint |
 | A percent or percentile value lies between 0 and 100 | **Unverified, and not refused**: the discovery document states no bound. It defines `PERCENT` as `NUMBER` at `=(MAX(FLATTEN(range)) * (value / 100)) + (MIN(FLATTEN(range)) * (1 - (value / 100)))`, which any value satisfies, and `PERCENTILE` as `NUMBER` at `=PERCENTILE(FLATTEN(range), value / 100)`, which a value past 100 turns into an error rather than a refusal. The value may also be a formula, which no parser here can bound | `manage_range` sends the value as written. Spike S sends percent 150, percentile 150 and percentile -10, and reads back what is stored |
 | A number value means the same in every locale | **Unverified**: the value is text and "May be a formula", so a locale that writes a decimal with a comma may read `1.5` as something else | The value is sent as written, never rewritten. The live driver writes `1.5` and `1,5` under `de_DE` and reads both back; which one the sheet takes as one and a half only a person can see, and the transcript says where to look. Spike S asks the same |
+
+**Typed table columns on `manage_range`, 2026-10-09**, read against the
+Sheets discovery document (revision 20261005) and the tables guide. One
+row is the reference's own definition; the rest are beliefs, and spike T
+and the live driver are what settle them.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| A table column's index is the sheet's column index | **Refuted**: `columnIndex` is "relative to its position in the table and is not necessarily the same as the column index in the sheet" | `column_types` resolves a letter or a header against the table's range and sends the offset from its first column. A unit test over a table starting at B |
+| A dropdown column needs a `ONE_OF_LIST` rule, and no other type takes one | **Unverified**: the guide says the rule "must be set" on a dropdown and that "Other column types shouldn't set" it; the discovery document says "Only set for dropdown column type" and the condition is "Valid only if" it is `ONE_OF_LIST`. That is prose, and none of it says what Google answers otherwise | A dropdown always carries its list. The fake refuses a dropdown with no rule, a rule on another type, and a rule that is not a list, in wording of its own. Spike T sends the first two |
+| A sparse `columnProperties` is taken on add | **Unverified, half supported**: the guide's example types two of a five-column table's columns, the first two. A gap, such as columns 1 and 3, is not shown | `manage_range` sends only the columns named. The live driver adds a table typing three of four columns, and spike T one typing columns 1 and 3 |
+| An update with `fields=columnProperties` replaces the whole array | **Unverified, and a primary source says otherwise**: `field_mask.proto` says "If a repeated field is specified for an update operation, new values will be appended to the existing repeated field". AIP-134 and AIP-161 say neither, and the guide says nothing about updating columns | The update reads the columns fresh, changes the ones named, and sends every column back, a dropdown's list and a chip's type included. Replaced, that is the table wanted. Appended, every column arrives twice, and a refusal or the later copy winning loses nothing; the earlier copy winning drops the change, which the live driver's card check after the update catches. Sending only the named columns would lose every other type if the array is replaced. The fake replaces it. Spike T sends one column alone, then the whole array as read, and counts what reads back |
+| A column name sent, or left out, leaves the header cell alone | **Unverified**: `columnName` is "The column name", and a table's header row is its column names; the guide's example sends "Column 1". Whether sending one rewrites the header, and whether leaving one out of an update clears it, is not said | No request sends `columnName`, a kept column's included. The fake keeps a column's name when an update leaves it out, which is the belief this rests on. The live driver reads the header row after the add and after the update; spike T sends a name and leaves one out |
+| A type changes how a column is shown, not what its cells hold | **Unverified, and doubted by the guide**: "The rating and checkbox column types populate with default values of 0 and FALSE respectively". Nothing says whether a type rewrites a number format set before or replaces a per-cell validation | Nothing is refused. The live driver prints the formatting under a typed column for a person to read; spike T watches a number format, a per-cell list, and a boolean column over a text value and an empty cell |
+| A chip column read back is taken back unchanged | **Unverified**: the chip types are in the enum, and nothing says whether a request may carry one | `manage_range` never sets a chip type, and an update sends a chip column back as it read. Spike T sends the whole array back as read |

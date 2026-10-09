@@ -120,6 +120,12 @@ var toolCalls = map[string][]map[string]any{
 			"values": []any{searchTerm}, "message": searchTerm},
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
 			"kind": "named_range", "action": "delete", "name": searchTerm},
+		// A dropdown's options are cell content in a request body, and a
+		// heading the table lacks comes back in a refusal.
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
+			"kind": "table", "action": "add", "name": "Trennow", "column_types": []any{"B dropdown: " + searchTerm}},
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
+			"kind": "table", "action": "add", "name": "Trennow", "column_types": []any{searchTerm + " text"}},
 	},
 	"manage_anchor": {
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "2:2",

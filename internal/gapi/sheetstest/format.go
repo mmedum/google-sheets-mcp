@@ -495,10 +495,76 @@ func addTable(d *Doc, req *gsheets.AddTableRequest) (*gsheets.Reply, bool, error
 	if err != nil {
 		return nil, true, err
 	}
+	rect := clamp(sh, a1.FromGridRange(t.Range))
+	if err := checkColumns(t.ColumnProperties, rect.Cols()); err != nil {
+		return nil, true, err
+	}
 	copied := *t
 	copied.TableID = "tbl" + strconv.Itoa(len(sh.Tables)+1)
+	// A column is named by its header cell where the request names none.
+	// A belief (§18): the reference's own example sends a name for every
+	// column it types.
+	copied.ColumnProperties = nil
+	for _, c := range t.ColumnProperties {
+		column := *c
+		if column.ColumnName == "" {
+			if header := sh.At(rect.FirstRow, rect.FirstCol+c.ColumnIndex); header != nil {
+				column.ColumnName = header.FormattedValue
+			}
+		}
+		copied.ColumnProperties = append(copied.ColumnProperties, &column)
+	}
 	sh.Tables = append(sh.Tables, &copied)
 	return &gsheets.Reply{AddTable: &gsheets.AddTableReply{Table: &copied}}, true, nil
+}
+
+// columnTypes is the API's column type enum, chips included.
+var columnTypes = map[string]bool{
+	gsheets.ColumnText: true, gsheets.ColumnDouble: true, gsheets.ColumnCurrency: true,
+	gsheets.ColumnPercent: true, gsheets.ColumnDate: true, gsheets.ColumnTime: true,
+	gsheets.ColumnDateTime: true, gsheets.ColumnBoolean: true, gsheets.ColumnDropdown: true,
+	gsheets.ColumnFiles: true, gsheets.ColumnPeople: true, gsheets.ColumnFinance: true,
+	gsheets.ColumnPlace: true, gsheets.ColumnRatings: true,
+}
+
+// checkColumns makes the refusals a table's columns are believed to
+// meet. The type has to be one the enum has; the rest are beliefs, in
+// wording of this fake's own, and §18 says which the live run settles.
+//
+// The tables guide says a dropdown column "must" carry a ONE_OF_LIST
+// rule and that other types "shouldn't" carry one, and the discovery
+// document calls the rule valid only for ONE_OF_LIST. That a column
+// index past the table's width, or one given twice, is refused is this
+// fake's guess.
+func checkColumns(columns []*gsheets.TableColumn, width int) error {
+	seen := map[int]bool{}
+	for _, c := range columns {
+		if c == nil {
+			return errors.New("invalid TableColumnProperties: an empty entry")
+		}
+		if !columnTypes[c.ColumnType] {
+			return errors.New("Invalid value at 'column_type': " + strconv.Quote(c.ColumnType))
+		}
+		if c.ColumnIndex < 0 || c.ColumnIndex >= width {
+			return errors.New("invalid TableColumnProperties: column index " + strconv.Itoa(c.ColumnIndex) +
+				" is outside the table")
+		}
+		if seen[c.ColumnIndex] {
+			return errors.New("invalid TableColumnProperties: column index " + strconv.Itoa(c.ColumnIndex) +
+				" is given twice")
+		}
+		seen[c.ColumnIndex] = true
+		rule := c.DataValidationRule
+		switch {
+		case c.ColumnType == gsheets.ColumnDropdown && (rule == nil || rule.Condition == nil):
+			return errors.New("invalid TableColumnProperties: a DROPDOWN column needs a data validation rule")
+		case c.ColumnType != gsheets.ColumnDropdown && rule != nil:
+			return errors.New("invalid TableColumnProperties: only a DROPDOWN column takes a data validation rule")
+		case rule != nil && (rule.Condition.Type != "ONE_OF_LIST" || len(rule.Condition.Values) == 0):
+			return errors.New("invalid TableColumnDataValidationRule: the condition must be ONE_OF_LIST with values")
+		}
+	}
+	return nil
 }
 
 func updateTable(d *Doc, req *gsheets.UpdateTableRequest) error {
@@ -517,6 +583,12 @@ func updateTable(d *Doc, req *gsheets.UpdateTableRequest) error {
 					other.Name = t.Name
 				case "range":
 					other.Range = t.Range
+				case "columnProperties":
+					columns, err := replaceColumns(sh, other, t.ColumnProperties)
+					if err != nil {
+						return err
+					}
+					other.ColumnProperties = columns
 				default:
 					return errors.New("this fake does not know the field " + field)
 				}
@@ -525,6 +597,32 @@ func updateTable(d *Doc, req *gsheets.UpdateTableRequest) error {
 		}
 	}
 	return errors.New("No table with id: " + t.TableID)
+}
+
+// replaceColumns is columnProperties under a mask: the whole array is
+// replaced, and a column the request leaves out loses its type.
+//
+// Two beliefs, both settled by the live run (§18): that the array is
+// replaced, where field_mask.proto says a repeated field is appended to,
+// and that an entry with no name keeps the name its column had rather
+// than clearing the header.
+func replaceColumns(sh *Sheet, table *gsheets.Table, columns []*gsheets.TableColumn) ([]*gsheets.TableColumn, error) {
+	if err := checkColumns(columns, clamp(sh, a1.FromGridRange(table.Range)).Cols()); err != nil {
+		return nil, err
+	}
+	names := map[int]string{}
+	for _, c := range table.ColumnProperties {
+		names[c.ColumnIndex] = c.ColumnName
+	}
+	out := make([]*gsheets.TableColumn, 0, len(columns))
+	for _, c := range columns {
+		column := *c
+		if column.ColumnName == "" {
+			column.ColumnName = names[c.ColumnIndex]
+		}
+		out = append(out, &column)
+	}
+	return out, nil
 }
 
 func deleteTable(d *Doc, id string) error {

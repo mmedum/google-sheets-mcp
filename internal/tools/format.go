@@ -61,9 +61,10 @@ type ManageRangeInput struct {
 	Kind        string `json:"kind" jsonschema:"named_range, protected_range, data_validation, table, banding or conditional_format"`
 	Action      string `json:"action" jsonschema:"add, update or delete"`
 
-	Name        string `json:"name,omitempty" jsonschema:"the name, for a named range or a table"`
-	Description string `json:"description,omitempty" jsonschema:"what a protected range is for, which is shown to anyone who tries to edit it"`
-	WarningOnly *bool  `json:"warning_only,omitempty" jsonschema:"for a protected range: true warns in the interface and refuses nothing over the API, false refuses edits from anyone but the owner. Leaving it out on an update leaves it as it is"`
+	Name        string   `json:"name,omitempty" jsonschema:"the name, for a named range or a table"`
+	ColumnTypes []string `json:"column_types,omitempty" jsonschema:"for table, on add or update: a type for each column named, as \"<column> <type>\", such as \"B date\", \"Amount currency\" or \"Status dropdown: Open, In progress, Done\". The column is a letter or the text of its header. The types are text, number, currency, percent, date, time, date_time, boolean and dropdown, whose options follow a colon, separated by commas; for options with commas in them use kind data_validation with one_of_list instead. A boolean column shows checkboxes. An update changes only the columns named and keeps the rest. The smart chip types a read shows (people_chip and the like) cannot be set here"`
+	Description string   `json:"description,omitempty" jsonschema:"what a protected range is for, which is shown to anyone who tries to edit it"`
+	WarningOnly *bool    `json:"warning_only,omitempty" jsonschema:"for a protected range: true warns in the interface and refuses nothing over the API, false refuses edits from anyone but the owner. Leaving it out on an update leaves it as it is"`
 
 	Condition string   `json:"condition,omitempty" jsonschema:"the test, for data_validation and conditional_format: number_greater, number_between, text_contains, text_eq, one_of_list, date_after, blank, not_blank, custom_formula and the rest of that family"`
 	Values    []string `json:"values,omitempty" jsonschema:"what the condition tests against: one value for number_greater, two for number_between, the whole list for one_of_list, the formula for custom_formula"`
@@ -161,8 +162,8 @@ func registerFormat(s *mcp.Server, d Deps) {
 	add(s, d, Def[ManageRangeInput, *service.RangeResult]{
 		Name: "manage_range",
 		Description: "Add, update or delete the things attached to a range rather than written into it: a named range, " +
-			"a protected range, a data validation rule, a table, banding, or a conditional format rule, which is a " +
-			"condition and a format or a color scale. " +
+			"a protected range, a data validation rule, a table and its column types, banding, or a conditional format " +
+			"rule, which is a condition and a format or a color scale. " +
 			"An existing one is named by the range it covers, which has to match exactly — so you never need to fetch " +
 			"an id first, and a range matching several is refused with the list rather than picked from. A conditional " +
 			"format rule is the exception: the API identifies those by position, so they take index, which " +
@@ -174,7 +175,7 @@ func registerFormat(s *mcp.Server, d Deps) {
 			return d.Service.ManageRange(ctx, service.RangeRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range,
 				Kind: in.Kind, Action: in.Action,
-				Name: in.Name, Description: in.Description, WarningOnly: in.WarningOnly,
+				Name: in.Name, ColumnTypes: in.ColumnTypes, Description: in.Description, WarningOnly: in.WarningOnly,
 				Condition: in.Condition, Values: in.Values, Strict: in.Strict, Message: in.Message,
 				Color: in.Color, TextColor: in.TextColor, Bold: in.Bold, Gradient: in.Gradient, Header: in.Header,
 				Index: in.Index, Overwrite: in.Overwrite, DryRun: in.DryRun,

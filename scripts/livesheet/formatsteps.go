@@ -33,6 +33,7 @@ func (d *driver) formatAll() {
 	sec("manage_range")
 	d.run(d.rangeSteps()...)
 	d.run(d.tableSteps()...)
+	d.run(d.typedColumnSteps()...)
 	d.commaLocaleAll()
 	sec("transform_range")
 	d.run(d.transformSteps()...)
@@ -583,6 +584,127 @@ func (d *driver) tableSteps() []step {
 					return fmt.Errorf("%d conditional rule(s) survived the table delete: %s", len(rules), text)
 				}
 				return nil
+			},
+		},
+	}
+}
+
+// typedBand is the block the typed-column steps make a table over, with
+// a header row, clear of every other step's cells.
+const typedBand = "A50:D53"
+
+// typedColumnSteps type a table's columns on add, retype one on update,
+// and check that the rest, a dropdown's list included, survive the
+// whole-array round trip. Four things here are unverified (§18), and
+// each step says which it settles: whether a sparse columnProperties is
+// taken on add, whether the header cells survive both writes, whether an
+// update replaces the whole array, and what a type does to the cells.
+func (d *driver) typedColumnSteps() []step {
+	headers := func(when string) step {
+		return step{
+			name: "the header cells read as written, " + when,
+			why: "manage_range never sends a column name, and whether a table write rewrites the header " +
+				"row anyway is unverified (§18)",
+			tool: "read_range",
+			args: map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A50:D50", "show": "values"},
+			check: func(text string, _ map[string]any) error {
+				for _, want := range []string{"Item", "Amount", "Due", "Status"} {
+					if !strings.Contains(text, want) {
+						return fmt.Errorf("the header %q is gone %s: %s", want, when, text)
+					}
+				}
+				return nil
+			},
+		}
+	}
+	card := func(when string, want ...string) step {
+		return step{
+			name: "the card shows the column types " + when,
+			why:  "the card reads the types back in the spelling column_types takes",
+			tool: "get_spreadsheet",
+			args: map[string]any{"spreadsheet": d.spreadsheet},
+			check: func(text string, _ map[string]any) error {
+				for _, l := range strings.Split(text, "\n") {
+					if !strings.Contains(l, "LivesheetTyped") {
+						continue
+					}
+					line("     LOOK: %s", strings.TrimSpace(l))
+					for _, w := range want {
+						if !strings.Contains(l, w) {
+							return fmt.Errorf("the card's table line does not say %q: %s", w, l)
+						}
+					}
+					return nil
+				}
+				return fmt.Errorf("the card lists no table called LivesheetTyped:\n%s", text)
+			},
+		}
+	}
+	return []step{
+		{
+			name: "a block with a header row, for a typed table",
+			why:  "a header is how a column is named by text, and what a table write must leave alone",
+			tool: "write_values",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": typedBand, "input": "typed",
+				"values": [][]any{
+					{"Item", "Amount", "Due", "Status"},
+					{"Quorbin", "12.5", "2026-10-01", "Open"},
+					{"Skerry", "3", "2026-10-02", "Done"},
+					{"Nardle", "40", "2026-10-03", ""},
+				},
+			},
+		},
+		{
+			name: "a table typing three of its four columns, by heading and by letter",
+			why: "column_types sends only the columns named, with no names; whether Google takes a sparse " +
+				"columnProperties on add is unverified (§18), and this step fails if it does not",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": typedBand,
+				"kind": "table", "action": "add", "name": "LivesheetTyped",
+				"column_types": []any{"Amount number", "C date", "Status dropdown: Open, In progress, Done"},
+			},
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "Status dropdown (Open, In progress, Done)") {
+					return fmt.Errorf("the result does not describe the dropdown: %s", text)
+				}
+				return nil
+			},
+		},
+		card("after the add", "number", "date", "dropdown (Open, In progress, Done)"),
+		headers("after the add"),
+		{
+			name: "what a number type did to the cells under it",
+			why: "whether a type change rewrites a column's number format is unverified (§18); the " +
+				"transcript shows what the cells carry now",
+			tool: "read_formatting",
+			args: map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "B51:D53"},
+			check: func(text string, _ map[string]any) error {
+				line("     LOOK: %s", strings.Join(strings.Fields(text), " "))
+				return nil
+			},
+		},
+		{
+			name: "one column retyped, and the others sent back as they were",
+			why: "the mask names a list, which may be replaced whole or appended to (§18), so the update " +
+				"reads the array and sends every column back; the card after it must show the change and the " +
+				"dropdown's list both",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": typedBand,
+				"kind": "table", "action": "update", "column_types": []any{"Amount currency"},
+			},
+		},
+		card("after the update", "currency", "date", "dropdown (Open, In progress, Done)"),
+		headers("after the update"),
+		{
+			name: "the typed table goes",
+			why:  "the band is left as the steps found it, values aside",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": typedBand,
+				"kind": "table", "action": "delete",
 			},
 		},
 	}

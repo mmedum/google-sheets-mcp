@@ -1009,9 +1009,17 @@ func (s *Service) pivotHeaders(ctx context.Context, ref Reference, source SheetR
 	if !needed {
 		return nil, nil
 	}
-	head := source.Rect
+	return s.headerRow(ctx, ref, source)
+}
+
+// headerRow reads a rectangle's first row, so a column can be named by
+// its heading rather than by a letter: each heading, lower-cased, to its
+// offset from the rectangle's first column. The first of two equal
+// headings wins.
+func (s *Service) headerRow(ctx context.Context, ref Reference, within SheetRef) (map[string]int, error) {
+	head := within.Rect
 	head.LastRow = head.FirstRow
-	values, err := s.api.GetValues(ctx, ref.ID, a1.Format(source.Props.Title, head), gapi.ValueOptions{})
+	values, err := s.api.GetValues(ctx, ref.ID, a1.Format(within.Props.Title, head), gapi.ValueOptions{})
 	if err != nil {
 		return nil, wrap(err)
 	}
@@ -1038,9 +1046,28 @@ func (s *Service) pivotHeaders(ctx context.Context, ref Reference, source SheetR
 // is accepted by the API with a 200, and produces a pivot that reads
 // nothing (spike M).
 func pivotOffset(name string, source a1.Rect, headers map[string]int, arg string) (int, error) {
+	return headedColumn(name, source, headers, columnPlace{
+		arg: arg, what: "the source", outside: ", so it is not a column this pivot table can group or summarize",
+	})
+}
+
+// columnPlace is where headedColumn looks, in a refusal's words: the
+// argument the name came from, what the rectangle is, and why a column
+// outside it is refused.
+type columnPlace struct {
+	arg, what, outside string
+}
+
+// headedColumn turns a column letter or a heading in a rectangle's first
+// row into an offset from its first column, and refuses one outside it.
+//
+// A letter wins over a heading, except where the letter is outside the
+// rectangle and a heading says the same: ID and QTY are column letters
+// too, and a table with an "ID" column means the heading.
+func headedColumn(name string, rect a1.Rect, headers map[string]int, at columnPlace) (int, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return 0, Errorf("invalid", "%s has an empty column in it", arg)
+		return 0, Errorf("invalid", "%s has an empty column in it", at.arg)
 	}
 	if _, err := a1.ParseColumn(name); err == nil {
 		// columnOffset treats a rectangle with no left edge as starting
@@ -1049,25 +1076,27 @@ func pivotOffset(name string, source a1.Rect, headers map[string]int, arg string
 		// this refusal exists for; it reaches here through an update
 		// whose pivot was built over a whole-sheet range in the Sheets
 		// interface.
-		offset, ok := columnOffset(name, source)
-		if !ok {
-			return 0, Errorf("invalid",
-				"column %s is outside the source %s, so it is not a column this pivot table can group or summarize",
-				strings.ToUpper(name), a1.FormatRect(source))
+		if offset, ok := columnOffset(name, rect); ok {
+			return offset, nil
 		}
-		return offset, nil
+		if offset, ok := headers[strings.ToLower(name)]; ok {
+			return offset, nil
+		}
+		return 0, Errorf("invalid", "column %s is outside %s %s%s",
+			strings.ToUpper(name), at.what, a1.FormatRect(rect), at.outside)
 	}
 	if offset, ok := headers[strings.ToLower(name)]; ok {
 		return offset, nil
 	}
 	if len(headers) == 0 {
-		return 0, Errorf("invalid", "%q is neither a column letter nor a heading in the source's first row", name)
+		return 0, Errorf("invalid", "%q is neither a column letter nor a heading in %s's first row", name, at.what)
 	}
 	var names []string
 	for k := range headers {
 		names = append(names, fmt.Sprintf("%q", k))
 	}
-	return 0, Errorf("not_found", "no column %q in the source; its first row holds %s", name, join(names))
+	sort.Strings(names)
+	return 0, Errorf("not_found", "no column %q in %s; its first row holds %s", name, at.what, join(names))
 }
 
 // pivotValue parses "B sum" or "B sum as Units sold".

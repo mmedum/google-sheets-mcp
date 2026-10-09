@@ -3,6 +3,7 @@ package plan
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -115,22 +116,146 @@ func Validation(sheetID int, rect a1.Rect, rule *gsheets.DataValidationRule) *gs
 	}}
 }
 
-// TableAdd makes a native table over a rectangle.
-func TableAdd(name string, sheetID int, rect a1.Rect) *gsheets.Request {
+// TableAdd makes a native table over a rectangle, with the column
+// types it was given. A column left out is Google's to type.
+func TableAdd(name string, sheetID int, rect a1.Rect, columns []*gsheets.TableColumn) *gsheets.Request {
 	return &gsheets.Request{AddTable: &gsheets.AddTableRequest{
-		Table: &gsheets.Table{Name: name, Range: rect.GridRange(sheetID)},
+		Table: &gsheets.Table{Name: name, Range: rect.GridRange(sheetID), ColumnProperties: columns},
 	}}
 }
 
-// TableRename gives a table a different name and leaves it where it is.
+// TableUpdate renames a table, retypes its columns, or both, and leaves
+// it where it is. An empty name keeps the name, and nil columns keep the
+// columns.
+//
+// columns is the whole array. The mask names columnProperties, a list,
+// which may be replaced whole (§18), and then a column left out of it
+// would lose its type and its dropdown.
 //
 // Moving a table through the same request was written and never
 // reachable: manage_range names a table by the range it covers, so a
 // move would be a call whose own identifier is what it is changing.
-func TableRename(id, name string) *gsheets.Request {
+func TableUpdate(id, name string, columns []*gsheets.TableColumn) *gsheets.Request {
+	var fields []string
+	if name != "" {
+		fields = append(fields, "name")
+	}
+	if columns != nil {
+		fields = append(fields, "columnProperties")
+	}
 	return &gsheets.Request{UpdateTable: &gsheets.UpdateTableRequest{
-		Table: &gsheets.Table{TableID: id, Name: name}, Fields: "name",
+		Table:  &gsheets.Table{TableID: id, Name: name, ColumnProperties: columns},
+		Fields: strings.Join(fields, ","),
 	}}
+}
+
+// ColumnSpec is one entry of column_types, parsed: the column as the
+// caller named it, and the type it gets.
+type ColumnSpec struct {
+	// Column is a letter or a header, as written. Which column of the
+	// table it is takes a read, so the service resolves it.
+	Column string
+	Type   string
+	// Rule is a dropdown's list, and nil for every other type.
+	Rule *gsheets.TableColumnDataValidationRule
+}
+
+// columnTypes are the column types a caller writes, in the API's
+// spelling.
+var columnTypes = map[string]string{
+	"text":      gsheets.ColumnText,
+	"number":    gsheets.ColumnDouble,
+	"currency":  gsheets.ColumnCurrency,
+	"percent":   gsheets.ColumnPercent,
+	"date":      gsheets.ColumnDate,
+	"time":      gsheets.ColumnTime,
+	"date_time": gsheets.ColumnDateTime,
+	"boolean":   gsheets.ColumnBoolean,
+	"dropdown":  gsheets.ColumnDropdown,
+}
+
+// chipTypes are the smart chip column types. A read shows them; nothing
+// here writes one, so each is refused by name rather than as unknown.
+var chipTypes = []string{"files_chip", "people_chip", "finance_chip", "place_chip", "ratings_chip"}
+
+// columnEntry splits "<column> <type>" with an optional ": <options>".
+// The column is the shortest run of text the type can follow, so a
+// header with spaces in it, or with a type's name in it, still works:
+// "Due date date" is the column "Due date" typed as a date.
+var columnEntry = regexp.MustCompile(`(?i)^(.+?)\s+(` + columnTypeWords() + `)\s*(?::(.*))?$`)
+
+func columnTypeWords() string {
+	words := append([]string{}, chipTypes...)
+	for name := range columnTypes {
+		words = append(words, name)
+	}
+	sort.Strings(words)
+	return strings.Join(words, "|")
+}
+
+// ColumnTypeNames lists the types a caller may write, for a message.
+func ColumnTypeNames() []string {
+	out := make([]string, 0, len(columnTypes))
+	for name := range columnTypes {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ParseColumnType reads one entry of column_types: "B date", "Amount
+// currency", "Status dropdown: Open, In progress, Done".
+//
+// A dropdown's options are separated by commas, so an option with a
+// comma in it cannot be written here; data_validation with one_of_list
+// takes each option as its own value.
+func ParseColumnType(text string) (ColumnSpec, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ColumnSpec{}, fmt.Errorf("column_types has an empty entry")
+	}
+	m := columnEntry.FindStringSubmatchIndex(text)
+	if m == nil {
+		last := strings.LastIndexFunc(text, unicode.IsSpace)
+		if last < 0 {
+			return ColumnSpec{}, fmt.Errorf("column type %q needs a column and a type, such as \"B date\" or "+
+				"\"Amount currency\"", text)
+		}
+		return ColumnSpec{}, fmt.Errorf("column type %q ends in %q, which is not one of %s", text,
+			text[last+1:], strings.Join(ColumnTypeNames(), ", "))
+	}
+	column := strings.TrimSpace(text[m[2]:m[3]])
+	name := strings.ToLower(text[m[4]:m[5]])
+	hasOptions := m[6] >= 0
+	if slices.Contains(chipTypes, name) {
+		return ColumnSpec{}, fmt.Errorf("column type %q asks for %s, a smart chip column, which this server "+
+			"shows and does not set", text, name)
+	}
+	spec := ColumnSpec{Column: column, Type: columnTypes[name]}
+	if spec.Type != gsheets.ColumnDropdown {
+		if hasOptions {
+			return ColumnSpec{}, fmt.Errorf("column type %q gives %s options, and only a dropdown takes them", text, name)
+		}
+		return spec, nil
+	}
+	if !hasOptions {
+		return ColumnSpec{}, fmt.Errorf("column type %q needs its options after a colon, such as "+
+			"\"%s dropdown: Open, In progress, Done\"", text, column)
+	}
+	var options []string
+	for _, option := range strings.Split(text[m[6]:m[7]], ",") {
+		option = strings.TrimSpace(option)
+		if option == "" {
+			return ColumnSpec{}, fmt.Errorf("column type %q has an empty option; options are separated by commas", text)
+		}
+		options = append(options, option)
+	}
+	cond, err := ParseCondition("one_of_list", options)
+	if err != nil {
+		return ColumnSpec{}, err
+	}
+	spec.Rule = &gsheets.TableColumnDataValidationRule{Condition: cond}
+	return spec, nil
 }
 
 // TableDelete removes the table and leaves the cells on the sheet.
@@ -142,7 +267,7 @@ func TableDelete(id string) *gsheets.Request {
 //
 // Rows, because that is what manage_range offers; §17a carries the
 // column form, which wants an argument on a tool that already takes
-// eighteen. BandingUpdate does take the axis, because a column banding
+// twenty-one. BandingUpdate does take the axis, because a column banding
 // made elsewhere can be recolored here and writing rowProperties onto
 // one leaves it carrying both sets, which the API rejects.
 func BandingAdd(sheetID int, rect a1.Rect, props *gsheets.BandingProperties) *gsheets.Request {
