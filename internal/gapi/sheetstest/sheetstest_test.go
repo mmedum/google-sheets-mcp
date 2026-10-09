@@ -571,6 +571,46 @@ func TestUpdateTableReplacesTheColumnsWhole(t *testing.T) {
 	}
 }
 
+// TestABooleanColumnTurnsTextAndEmptyCellsFalse is spike T Q5: typing a
+// column boolean turned a word, the text "TRUE" and an empty cell into
+// FALSE. A cell already TRUE is believed kept, which spike T still asks.
+func TestABooleanColumnTurnsTextAndEmptyCellsFalse(t *testing.T) {
+	srv := Standard(t)
+	sh := srv.Doc(FixtureID).Find(SecondSheet)
+	sh.Set(1, 3, Str("Flag")).Set(2, 3, Str("maybe")).Set(3, 3, Str("TRUE")).Set(5, 3, Bool(true))
+	ctx := context.Background()
+	c := srv.Client()
+	if _, err := c.BatchUpdate(ctx, FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*gsheets.Request{{AddTable: &gsheets.AddTableRequest{Table: &gsheets.Table{
+			Name: "Trennow", Range: a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 3, LastRow: 5}.GridRange(1837),
+		}}}},
+	}); err != nil {
+		t.Fatalf("addTable: %v", err)
+	}
+	if _, err := c.BatchUpdate(ctx, FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*gsheets.Request{{UpdateTable: &gsheets.UpdateTableRequest{
+			Table: &gsheets.Table{TableID: "tbl1", ColumnProperties: []*gsheets.TableColumn{
+				{ColumnIndex: 0, ColumnName: "Trennow"}, {ColumnIndex: 1, ColumnName: "Bractal"},
+				{ColumnIndex: 2, ColumnName: "Flag", ColumnType: gsheets.ColumnBoolean},
+			}},
+			Fields: "columnProperties",
+		}}},
+	}); err != nil {
+		t.Fatalf("updateTable: %v", err)
+	}
+	sh = srv.Doc(FixtureID).Find(SecondSheet)
+	var got []string
+	for row := 2; row <= 5; row++ {
+		got = append(got, sh.At(row, 3).FormattedValue)
+	}
+	if strings.Join(got, ", ") != "FALSE, FALSE, FALSE, TRUE" {
+		t.Errorf("C2:C5 read %q, want FALSE, FALSE, FALSE, TRUE", got)
+	}
+	if v := sh.At(3, 3).UserEnteredValue; v.BoolValue == nil || v.StringValue != nil {
+		t.Errorf("C3 holds %+v, want the value FALSE rather than text", v)
+	}
+}
+
 // TestUpdateTableRefusesAnEntryWithNoName is spike T Q3 and Q5: Google
 // refuses an update entry that carries no name, in these words.
 func TestUpdateTableRefusesAnEntryWithNoName(t *testing.T) {

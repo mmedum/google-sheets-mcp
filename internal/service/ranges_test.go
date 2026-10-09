@@ -1037,30 +1037,40 @@ func TestTableUpdateIsRefusedOverAChipInTheHeader(t *testing.T) {
 }
 
 // TestABooleanColumnIsRefusedOverOtherValues is a checkbox column over
-// cells that are not TRUE or FALSE. The tables guide says only that a
-// checkbox column fills with FALSE, so a value already there could
-// become an unchecked box, on add and on update alike. TRUE, FALSE and
-// an empty cell are what a checkbox holds, and are not held back.
+// cells that are not TRUE or FALSE values, on add and on update alike.
+// Google turned a word, the text "TRUE" and an empty cell into FALSE
+// (spike T Q5). A number is refused too, since nothing says it is kept.
+// A TRUE or FALSE value and an empty cell are not held back.
 func TestABooleanColumnIsRefusedOverOtherValues(t *testing.T) {
-	const want = "[blocked] B2, B3 hold something other than TRUE or FALSE, and a boolean column shows checkboxes. " +
-		"What Google does to a value that is not one is unverified, so it could be lost. Make them TRUE or FALSE, " +
-		"or clear them, first; an empty cell fills with FALSE"
-	for _, action := range []string{service.RangeAdd, service.RangeUpdate} {
-		srv := sheetstest.Standard(t)
-		if action == service.RangeAdd {
-			typedSheet(srv)
-		} else {
-			seedTypedTable(srv)
-		}
-		req := rangeReq(service.RangeTable, action, "A1:D3")
-		req.Name = "Trennow"
-		req.ColumnTypes = []string{"Bractal boolean"}
-		_, err := newService(t, srv).ManageRange(context.Background(), req)
-		if err == nil || err.Error() != want {
-			t.Errorf("%s: error =\n%v\nwant\n%s", action, err, want)
-		}
-		if batched(srv) {
-			t.Fatalf("%s: a refused boolean column reached the wire", action)
+	const refusal = " something other than a TRUE or FALSE value, and Google turns such a cell into FALSE when " +
+		"its column is typed boolean, text reading TRUE included, so what is there would be lost. Write TRUE or " +
+		"FALSE with input typed, which stores a true or false value rather than text, or clear them, first; an " +
+		"empty cell becomes FALSE"
+	for _, tc := range []struct {
+		name, column, want string
+	}{
+		{"numbers", "Bractal boolean", "[blocked] B2, B3 hold" + refusal},
+		{"a word and the text TRUE", "Status boolean", "[blocked] C2, C3 hold" + refusal},
+	} {
+		for _, action := range []string{service.RangeAdd, service.RangeUpdate} {
+			srv := sheetstest.Standard(t)
+			if action == service.RangeAdd {
+				typedSheet(srv)
+			} else {
+				seedTypedTable(srv)
+			}
+			srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).
+				Set(2, 3, sheetstest.Str("maybe")).Set(3, 3, sheetstest.Str("TRUE"))
+			req := rangeReq(service.RangeTable, action, "A1:D3")
+			req.Name = "Trennow"
+			req.ColumnTypes = []string{tc.column}
+			_, err := newService(t, srv).ManageRange(context.Background(), req)
+			if err == nil || err.Error() != tc.want {
+				t.Errorf("%s, %s: error =\n%v\nwant\n%s", tc.name, action, err, tc.want)
+			}
+			if batched(srv) {
+				t.Fatalf("%s, %s: a refused boolean column reached the wire", tc.name, action)
+			}
 		}
 	}
 

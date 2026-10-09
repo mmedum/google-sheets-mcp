@@ -61,7 +61,12 @@ import (
 //
 // The second run answered Q11: no part of the request. The driver's add
 // was taken first, and every add after the seventh table in the
-// spreadsheet was a 500, the requests just taken included. So:
+// spreadsheet was a 500, the requests just taken included. Q5 answered
+// that a word, the text TRUE and an empty cell all become FALSE. So:
+//
+// Q5b. Is a TRUE or FALSE value kept under a boolean typing, on update
+// and on add? manage_range lets one through. The add's column holds a
+// word and an empty cell too, which only an update has answered.
 //
 // Q12. Is it a count? In a fresh spreadsheet, the driver's add, a few
 // seconds apart, until one fails or twelve are taken; then one table
@@ -106,23 +111,7 @@ func spikeT(ctx context.Context) {
 			"name": "SpikeTyped", "range": tableRange, "columnProperties": columns,
 		}}})
 		line("    %-52s -> HTTP %d  %s", what, status, whole(body))
-		if status != 200 {
-			return ""
-		}
-		var reply struct {
-			Replies []struct {
-				AddTable struct {
-					Table struct {
-						TableID string `json:"tableId"`
-					} `json:"table"`
-				} `json:"addTable"`
-			} `json:"replies"`
-		}
-		_ = json.Unmarshal([]byte(body), &reply)
-		if len(reply.Replies) == 0 {
-			return ""
-		}
-		return reply.Replies[0].AddTable.Table.TableID
+		return addedTableID(status, body)
 	}
 	update := func(what, id string, columns []any) {
 		status, body := batchOne(ctx, map[string]any{"updateTable": map[string]any{
@@ -177,6 +166,37 @@ func spikeT(ctx context.Context) {
 	readColumns(ctx, sheetID)
 	probe(ctx, "  C2:C4 now (maybe, empty, TRUE before)", a1.QuoteSheet(sheet)+"!C2:C4")
 	cellsAt(ctx, "  B2 and D2 after the retypes", a1.QuoteSheet(sheet)+"!B2:D2")
+
+	line("")
+	line("  Q5b: TRUE and FALSE values under a boolean typing, on update and on add: kept or reset?")
+	status, body = putMode(ctx, a1.QuoteSheet(sheet)+"!I1:M4", [][]any{
+		{"Name", "Done", "", "Name", "Done"},
+		{"Quorbin", "TRUE", "", "Quorbin", "TRUE"},
+		{"Skerry", "FALSE", "", "Skerry", "maybe"},
+		{"Nardle", "TRUE", "", "Nardle", ""},
+	}, "USER_ENTERED")
+	line("    %-52s -> HTTP %d  %s", "J2:J4 TRUE, FALSE, TRUE; M2:M4 TRUE, maybe, empty", status, first120(body))
+	cellsWhole(ctx, "  J2:J4 and M2:M4 before: values, not text?", a1.QuoteSheet(sheet)+"!J2:M4")
+	pace()
+	status, body = batchOne(ctx, map[string]any{"addTable": map[string]any{"table": map[string]any{
+		"name": "SpikeBoolean", "range": a1.Rect{FirstCol: 9, FirstRow: 1, LastCol: 10, LastRow: 4}.GridRange(sheetID),
+	}}})
+	line("    %-52s -> HTTP %d  %s", "a plain table over I1:J4", status, first120(body))
+	if boolID := addedTableID(status, body); boolID != "" {
+		pace()
+		update("BOOLEAN on J, both named", boolID, []any{
+			map[string]any{"columnIndex": 0, "columnName": "Name"},
+			map[string]any{"columnIndex": 1, "columnName": "Done", "columnType": "BOOLEAN"},
+		})
+		cellsWhole(ctx, "  J2:J4 after: TRUE, FALSE, TRUE kept?", a1.QuoteSheet(sheet)+"!J2:J4")
+	}
+	pace()
+	status, body = batchOne(ctx, map[string]any{"addTable": map[string]any{"table": map[string]any{
+		"name": "SpikeBooleanAdd", "range": a1.Rect{FirstCol: 12, FirstRow: 1, LastCol: 13, LastRow: 4}.GridRange(sheetID),
+		"columnProperties": []any{map[string]any{"columnIndex": 1, "columnName": "Done", "columnType": "BOOLEAN"}},
+	}}})
+	line("    %-52s -> HTTP %d  %s", "a table over L1:M4, BOOLEAN on M named Done", status, whole(body))
+	cellsWhole(ctx, "  M2:M4 after: TRUE kept, maybe and empty FALSE?", a1.QuoteSheet(sheet)+"!M2:M4")
 
 	line("")
 	line("  Q6: the array sent back exactly as it read, names included")
@@ -381,6 +401,24 @@ func spikeT11(ctx context.Context) {
 	try(frozen, frozenID, 56, "the driver's request, every column named", build(driver, true))
 }
 
+// addedTableID is the id an addTable reply gives its table, or "" for a
+// refusal.
+func addedTableID(status int, body string) string {
+	var reply struct {
+		Replies []struct {
+			AddTable struct {
+				Table struct {
+					TableID string `json:"tableId"`
+				} `json:"table"`
+			} `json:"addTable"`
+		} `json:"replies"`
+	}
+	if status != 200 || json.Unmarshal([]byte(body), &reply) != nil || len(reply.Replies) == 0 {
+		return ""
+	}
+	return reply.Replies[0].AddTable.Table.TableID
+}
+
 // typedSeed is the live driver's block: a header row, then numbers, dates
 // and words, written as a person types them.
 var typedSeed = [][]any{
@@ -455,20 +493,8 @@ func spikeT12(ctx context.Context) {
 			shown = whole(body)
 		}
 		line("    %-56s -> HTTP %d  %s", fmt.Sprintf("%s, at %ds", what, int(time.Since(start).Seconds())), status, shown)
-		var reply struct {
-			Replies []struct {
-				AddTable struct {
-					Table struct {
-						TableID string `json:"tableId"`
-					} `json:"table"`
-				} `json:"addTable"`
-			} `json:"replies"`
-		}
-		_ = json.Unmarshal([]byte(body), &reply)
-		if status != 200 || len(reply.Replies) == 0 {
-			return "", false
-		}
-		return reply.Replies[0].AddTable.Table.TableID, true
+		id := addedTableID(status, body)
+		return id, id != ""
 	}
 
 	var firstID string

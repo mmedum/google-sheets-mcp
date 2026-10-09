@@ -748,8 +748,8 @@ func (d *driver) typedColumnSteps() []step {
 		},
 		{
 			name: "a boolean type over text is refused",
-			why: "a boolean column shows checkboxes, and what Google does to a word already in one is " +
-				"unverified (§18), so the update stops and names the cells",
+			why: "a boolean column shows checkboxes, and Google turns a word already in one into FALSE " +
+				"(§18), so the update stops and names the cells",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": typedBand,

@@ -532,8 +532,36 @@ func addTable(d *Doc, req *gsheets.AddTableRequest) (*gsheets.Reply, bool, error
 		}
 		copied.ColumnProperties = append(copied.ColumnProperties, &column)
 	}
+	checkboxes(sh, rect, copied.ColumnProperties)
 	sh.Tables = append(sh.Tables, &copied)
 	return &gsheets.Reply{AddTable: &gsheets.AddTableReply{Table: &copied}}, true, nil
+}
+
+// checkboxes is what typing a column boolean does to the cells under its
+// header: text and empty cells become FALSE.
+//
+// Spike T Q5, 2026-10-09: an update typing a column BOOLEAN turned
+// "maybe", the text "TRUE" and an empty cell into FALSE. What it does to
+// a number, a formula or a cell already TRUE is not known, so those are
+// left as they are. An add is believed to do the same; nothing has
+// answered it, since Q11's boolean add was a 500.
+func checkboxes(sh *Sheet, rect a1.Rect, columns []*gsheets.TableColumn) {
+	for _, c := range columns {
+		if c.ColumnType != gsheets.ColumnBoolean {
+			continue
+		}
+		col := rect.FirstCol + c.ColumnIndex
+		for row := rect.FirstRow + 1; row <= rect.LastRow; row++ {
+			cell, unchecked := sh.At(row, col), Bool(false)
+			switch {
+			case cell == nil:
+				sh.Set(row, col, unchecked)
+			case cell.UserEnteredValue == nil || cell.UserEnteredValue.StringValue != nil:
+				cell.UserEnteredValue, cell.EffectiveValue = unchecked.UserEnteredValue, unchecked.EffectiveValue
+				cell.FormattedValue = unchecked.FormattedValue
+			}
+		}
+	}
 }
 
 // writeHeader writes a column's name into its header cell as plain
@@ -708,6 +736,7 @@ func replaceColumns(sh *Sheet, table *gsheets.Table, columns []*gsheets.TableCol
 		}
 		out = append(out, &column)
 	}
+	checkboxes(sh, rect, out)
 	return out, nil
 }
 

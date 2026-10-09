@@ -461,13 +461,14 @@ func (s *Service) typedColumns(ctx context.Context, ref Reference, props *gsheet
 }
 
 // checkBooleanColumns refuses typing a column boolean while a cell under
-// its header holds something other than TRUE or FALSE.
+// its header holds anything but a true or false value.
 //
-// A boolean column shows checkboxes, and the tables guide says only that
-// it fills with FALSE: "The rating and checkbox column types populate
-// with default values of 0 and FALSE respectively". What it does to a
-// word or a number already there is unverified (§18), and a value that
-// turns into an unchecked box is a value lost with nothing said.
+// A boolean column shows checkboxes. Spike T Q5 typed one over "maybe",
+// the text "TRUE" and an empty cell, and all three became FALSE: a word
+// is lost with nothing said, and text that reads TRUE is not a true
+// value. What it does to a number or a formula is not known, so they are
+// refused too. A cell already TRUE or FALSE is believed kept (§18); spike
+// T asks.
 func (s *Service) checkBooleanColumns(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
 	table a1.Rect, columns []*gsheets.TableColumn) error {
 
@@ -492,10 +493,11 @@ func (s *Service) checkBooleanColumns(ctx context.Context, ref Reference, props 
 		}
 		if other.Any() {
 			return Errorf("blocked",
-				"%s %s something other than TRUE or FALSE, and a boolean column shows checkboxes. What Google does "+
-					"to a value that is not one is unverified, so it could be lost. Make %s TRUE or FALSE, or clear %s, "+
-					"first; an empty cell fills with FALSE",
-				other, other.Verb("holds", "hold"), other.Verb("it", "them"), other.Verb("it", "them"))
+				"%s %s something other than a TRUE or FALSE value, and Google turns such a cell into FALSE when its "+
+					"column is typed boolean, text reading TRUE included, so what is there would be lost. Write TRUE or "+
+					"FALSE with input typed, which stores a true or false value rather than text, or clear %s, first; "+
+					"an empty cell becomes FALSE",
+				other, other.Verb("holds", "hold"), other.Verb("it", "them"))
 		}
 	}
 	return nil

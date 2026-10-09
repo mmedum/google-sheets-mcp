@@ -842,13 +842,14 @@ value.
   no columns and is not refused.
 
   Typing a column boolean, on add or update, reads the cells under its
-  header first and is refused while one holds anything other than TRUE
-  or FALSE. The tables guide says only that "The rating and checkbox
-  column types populate with default values of 0 and FALSE
-  respectively"; what a checkbox does to a word already there is not
-  said, and an unchecked box in its place would lose it with nothing
-  said. An empty cell fills with FALSE, and the tool description says
-  so.
+  header first and is refused while one holds anything but a TRUE or
+  FALSE value. Google turned a word, the text "TRUE" and an empty cell
+  into FALSE (spike T, §18), so a word is lost with nothing said, and
+  text that reads TRUE is not a true value. A number and a formula are
+  refused too, since nothing says they are kept. The refusal names the
+  cells and says to write TRUE or FALSE with `input` typed, which stores
+  a value rather than text. An empty cell becomes FALSE, and the tool
+  description says so.
 
   An add names every column it types after its header cell's text,
   read first with the same mask. A typed column sent with no name has
@@ -2038,7 +2039,9 @@ forgotten. Results go into §18.
   with names and without. Q11 spaces its calls a second apart, since
   Sheets allows 60 writes a minute per user; run it with `-only T`.
   The second run answered Q3b: Google replaces the whole list. It
-  answered Q11 without explaining it: the live run's add was taken, and
+  answered Q5: a boolean typing turns a word, the text TRUE and an empty
+  cell into FALSE; Q5b asks what it does to a TRUE or FALSE value, on
+  update and on add. It answered Q11 without explaining it: the live run's add was taken, and
   every add after the seventh table in the spreadsheet was a 500,
   requests just taken included. So Q12 makes a fresh
   spreadsheet and adds tables three seconds apart until one fails or
@@ -3597,7 +3600,8 @@ still owed.
 | Google returns an entry for every column of a table | **Verified, spike T Q1**: after an add that sent two of four columns, four entries read back, each column left out named by its header cell, with no type. The first entry has no `columnIndex`, being 0 | The update's entry for a column the read left out stays, though it is not expected. The fake reads back an entry for every column |
 | An entry with a name and no type is taken | **Verified, spike T Q8**: column 0 sent as "Item" with no type, the rest as read, is a 200, and the header is unchanged | The update sends one only for a column a read gave no entry |
 | A name sent as read leaves a smart chip in a header cell | **Refuted, spike T Q9**: a person chip written into D1 renamed its column to the chip's text. An update sending every name as read then left D1 holding that text, with no `chipRuns`: the chip was erased | An update is refused while any header cell holds a chip, and an add while the header of a column it types does |
-| A type changes how a column is shown, not what its cells hold | **Refuted for number formats, open for the rest, spike T Q1 and Q5**: after the add typed column B `CURRENCY`, B2 kept its value, 1.5, and its number format `0.000`, set before, read back as `CURRENCY`. What a dropdown did to D's per-cell list is not known: the transcript cut the read short. Q5's boolean update over a word and an empty cell sent no names and was refused, so it answered nothing | A boolean column is still refused over anything other than TRUE or FALSE. Owed: the cells, now printed whole, Q5 sent with names, and Q11's boolean column over two words and an empty cell |
+| A type changes how a column is shown, not what its cells hold | **Refuted, spike T Q1 and Q5, both runs**: after the add typed column B `CURRENCY`, B2 kept its value, 1.5, and its number format `0.000`, set before, read back as `CURRENCY`. After the add typed column D a dropdown, D2 read back with no `dataValidation`: the per-cell list of x, y and z set before was gone. An update typing column C `BOOLEAN`, names sent, turned C2:C4, which held "maybe", nothing and the text "TRUE" written raw, into FALSE, FALSE and FALSE | A boolean column is refused over anything but a TRUE or FALSE value, text reading TRUE included, and the refusal says what Google does. The fake turns text and empty cells under a boolean typing into FALSE. A dropdown typing over a per-cell rule is not refused, though the rule goes |
+| A TRUE or FALSE value is kept under a boolean typing | **Unverified**: Q5's column held no true or false value, and Q11's boolean add was a 500. Whether an add does to a word what an update does is not known either | `manage_range` lets a TRUE or FALSE value through, and the fake keeps it, on add and on update. Owed: spike T Q5b types a column of TRUE, FALSE and TRUE on update, and one of TRUE, a word and an empty cell on add |
 | A chip column read back is taken back unchanged | **Unverified, not asked**: the chip types are in the enum, and nothing says whether a request may carry one. Spike T made no chip column, so the array Q6 sent back carried none | `manage_range` never sets a chip type, and an update sends a chip column back as it read |
 
 **Pivot grouping rules, filters and calculated values on
