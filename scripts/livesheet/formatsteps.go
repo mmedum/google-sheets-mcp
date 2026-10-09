@@ -688,10 +688,10 @@ func (d *driver) typedColumnSteps() []step {
 		},
 		{
 			name: "one column retyped, and the others sent back as they were",
-			why: "the mask names a list, which may be replaced whole or appended to (§18), so the update " +
-				"reads the array and sends an entry for every column, one the read left out with its header's " +
-				"name and no type, which Google may refuse (§18); the dropdown goes in the card's own spelling, " +
-				"and the card after it must show the change and the dropdown's list both",
+			why: "whether one column alone would replace the array is open (§18), so the update reads the " +
+				"array and sends every column back, each with its name, since Google refuses an entry with " +
+				"none; the dropdown goes in the card's own spelling, and the card after it must show the change " +
+				"and the dropdown's list both",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": typedBand,

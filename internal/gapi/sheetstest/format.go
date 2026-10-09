@@ -496,7 +496,7 @@ func addTable(d *Doc, req *gsheets.AddTableRequest) (*gsheets.Reply, bool, error
 		return nil, true, err
 	}
 	rect := clamp(sh, a1.FromGridRange(t.Range))
-	if err := checkColumns(t.ColumnProperties, rect.Cols()); err != nil {
+	if err := checkColumns("addTable", t.ColumnProperties, rect.Cols()); err != nil {
 		return nil, true, err
 	}
 	copied := *t
@@ -603,25 +603,20 @@ var columnTypes = map[string]bool{
 	gsheets.ColumnPlace: true, gsheets.ColumnRatings: true,
 }
 
-// checkColumns makes the refusals a table's columns are believed to
-// meet. The type has to be one the enum has, or none; the rest are
-// beliefs, in wording of this fake's own, and §18 says which the live
-// run settles.
+// checkColumns makes the refusals a table's columns meet. op is the
+// request's name, which Google's messages carry.
 //
-// The tables guide says a dropdown column "must" carry a ONE_OF_LIST
-// rule and that other types "shouldn't" carry one, and the discovery
-// document calls the rule valid only for ONE_OF_LIST. That a column
-// index past the table's width, or one given twice, is refused is this
-// fake's guess.
-func checkColumns(columns []*gsheets.TableColumn, width int) error {
+// Spike T Q2, 2026-10-09: a dropdown with no rule and a rule on a
+// number column are refused in the words below. An entry with a name
+// and no type is taken (Q8). A rule that is not a list, a column index
+// past the table's width and one given twice are refused in wording of
+// this fake's own: nothing has asked Google.
+func checkColumns(op string, columns []*gsheets.TableColumn, width int) error {
 	seen := map[int]bool{}
 	for _, c := range columns {
 		if c == nil {
 			return errors.New("invalid TableColumnProperties: an empty entry")
 		}
-		// No type is the enum's unspecified member. manage_range sends one
-		// for a column a read gave no entry, with its header's name; that
-		// Google takes it is a belief (§18).
 		if c.ColumnType != "" && !columnTypes[c.ColumnType] {
 			return errors.New("Invalid value at 'column_type': " + strconv.Quote(c.ColumnType))
 		}
@@ -637,9 +632,9 @@ func checkColumns(columns []*gsheets.TableColumn, width int) error {
 		rule := c.DataValidationRule
 		switch {
 		case c.ColumnType == gsheets.ColumnDropdown && (rule == nil || rule.Condition == nil):
-			return errors.New("invalid TableColumnProperties: a DROPDOWN column needs a data validation rule")
+			return errors.New("Invalid requests[0]." + op + ": Condition must be set for dropdown column type.")
 		case c.ColumnType != gsheets.ColumnDropdown && rule != nil:
-			return errors.New("invalid TableColumnProperties: only a DROPDOWN column takes a data validation rule")
+			return errors.New("Invalid requests[0]." + op + ": Cannot set condition for non-dropdown column type.")
 		case rule != nil && (rule.Condition.Type != "ONE_OF_LIST" || len(rule.Condition.Values) == 0):
 			return errors.New("invalid TableColumnDataValidationRule: the condition must be ONE_OF_LIST with values")
 		}
@@ -682,25 +677,28 @@ func updateTable(d *Doc, req *gsheets.UpdateTableRequest) error {
 // replaceColumns is columnProperties under a mask: the whole array is
 // replaced, and a column the request leaves out loses its type.
 //
-// Two beliefs, both settled by the live run (§18): that the array is
-// replaced, where field_mask.proto says a repeated field is appended to,
-// and that an entry with no name keeps the name its column had rather
-// than clearing the header.
+// Spike T, 2026-10-09: an entry with no name is refused, in the words
+// below (Q3, Q5), and a name sent is written into its header cell (Q4).
+// That a partial array replaces the whole one, where field_mask.proto
+// says a repeated field is appended to, is a belief: every update Google
+// took sent every column, and read back one entry a column, so it is
+// not appended to (§18).
 func replaceColumns(sh *Sheet, table *gsheets.Table, columns []*gsheets.TableColumn) ([]*gsheets.TableColumn, error) {
-	if err := checkColumns(columns, clamp(sh, a1.FromGridRange(table.Range)).Cols()); err != nil {
+	rect := clamp(sh, a1.FromGridRange(table.Range))
+	if err := checkColumns("updateTable", columns, rect.Cols()); err != nil {
 		return nil, err
-	}
-	names := map[int]string{}
-	for _, c := range table.ColumnProperties {
-		names[c.ColumnIndex] = c.ColumnName
 	}
 	out := make([]*gsheets.TableColumn, 0, len(columns))
 	for _, c := range columns {
-		column := *c
-		if column.ColumnName == "" {
-			column.ColumnName = names[c.ColumnIndex]
+		if c.ColumnName == "" {
+			//nolint:staticcheck // Google's own wording, kept verbatim
+			return nil, errors.New("Invalid requests[0].updateTable: Table header row cell must have a value.")
 		}
+		column := *c
 		out = append(out, &column)
+	}
+	for _, c := range out {
+		writeHeader(sh, rect.FirstRow, rect.FirstCol+c.ColumnIndex, c.ColumnName)
 	}
 	return out, nil
 }

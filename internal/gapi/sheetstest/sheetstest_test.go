@@ -386,9 +386,9 @@ func TestConditionalRulesAreChecked(t *testing.T) {
 }
 
 // TestTableColumnsAreChecked holds the fake to what §18 records about a
-// table's columns: the refusals the tables guide implies, which are
-// beliefs, and an update that replaces the whole array but keeps each
-// column's name.
+// table's columns on add: Google's refusals of a dropdown with no list
+// and a list on another type (spike T Q2), and the fake's own of the
+// rest.
 func TestTableColumnsAreChecked(t *testing.T) {
 	list := &gsheets.TableColumnDataValidationRule{Condition: &gsheets.BooleanCondition{
 		Type: "ONE_OF_LIST", Values: []*gsheets.ConditionValue{{UserEnteredValue: "Open"}},
@@ -402,10 +402,10 @@ func TestTableColumnsAreChecked(t *testing.T) {
 			[]*gsheets.TableColumn{{ColumnIndex: 1, ColumnType: gsheets.ColumnDropdown, DataValidationRule: list}}, ""},
 		{"a dropdown with no list",
 			[]*gsheets.TableColumn{{ColumnIndex: 1, ColumnType: gsheets.ColumnDropdown}},
-			"a DROPDOWN column needs a data validation rule"},
+			"Invalid requests[0].addTable: Condition must be set for dropdown column type."},
 		{"a list on a number column",
 			[]*gsheets.TableColumn{{ColumnIndex: 1, ColumnType: gsheets.ColumnDouble, DataValidationRule: list}},
-			"only a DROPDOWN column takes a data validation rule"},
+			"Invalid requests[0].addTable: Cannot set condition for non-dropdown column type."},
 		{"a list that is not one of a list",
 			[]*gsheets.TableColumn{{ColumnIndex: 1, ColumnType: gsheets.ColumnDropdown,
 				DataValidationRule: &gsheets.TableColumnDataValidationRule{Condition: &gsheets.BooleanCondition{Type: "NOT_BLANK"}}}},
@@ -487,13 +487,16 @@ func TestATableHeaderTakesWhatIsWrittenIntoIt(t *testing.T) {
 	}
 }
 
+// TestUpdateTableReplacesTheColumnsWhole is the belief §18 keeps: a
+// partial array replaces the whole one. The name sent is written into
+// its header cell, as spike T Q4 saw.
 func TestUpdateTableReplacesTheColumnsWhole(t *testing.T) {
 	srv := Standard(t)
 	// The fixture's table: Plimth TEXT and Nardle DOUBLE.
 	_, err := srv.Client().BatchUpdate(context.Background(), FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{{UpdateTable: &gsheets.UpdateTableRequest{
 			Table: &gsheets.Table{TableID: "tbl-fixture-1", ColumnProperties: []*gsheets.TableColumn{
-				{ColumnIndex: 1, ColumnType: gsheets.ColumnCurrency},
+				{ColumnIndex: 1, ColumnName: "Quorbin", ColumnType: gsheets.ColumnCurrency},
 			}},
 			Fields: "columnProperties",
 		}}},
@@ -501,9 +504,35 @@ func TestUpdateTableReplacesTheColumnsWhole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("updateTable: %v", err)
 	}
-	got := srv.Doc(FixtureID).Find(FirstSheet).Tables[0].ColumnProperties
-	if len(got) != 1 || got[0].ColumnIndex != 1 || got[0].ColumnType != gsheets.ColumnCurrency || got[0].ColumnName != "Nardle" {
-		t.Errorf("columns after the update = %+v; want Nardle CURRENCY alone", got)
+	sh := srv.Doc(FixtureID).Find(FirstSheet)
+	got := sh.Tables[0].ColumnProperties
+	if len(got) != 1 || got[0].ColumnIndex != 1 || got[0].ColumnType != gsheets.ColumnCurrency || got[0].ColumnName != "Quorbin" {
+		t.Errorf("columns after the update = %+v; want Quorbin CURRENCY alone", got)
+	}
+	if header := sh.At(1, 2).FormattedValue; header != "Quorbin" {
+		t.Errorf("the header cell B1 reads %q, want Quorbin", header)
+	}
+}
+
+// TestUpdateTableRefusesAnEntryWithNoName is spike T Q3 and Q5: Google
+// refuses an update entry that carries no name, in these words.
+func TestUpdateTableRefusesAnEntryWithNoName(t *testing.T) {
+	srv := Standard(t)
+	_, err := srv.Client().BatchUpdate(context.Background(), FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*gsheets.Request{{UpdateTable: &gsheets.UpdateTableRequest{
+			Table: &gsheets.Table{TableID: "tbl-fixture-1", ColumnProperties: []*gsheets.TableColumn{
+				{ColumnIndex: 0, ColumnName: "Plimth", ColumnType: gsheets.ColumnText},
+				{ColumnIndex: 1, ColumnType: gsheets.ColumnDate},
+			}},
+			Fields: "columnProperties",
+		}}},
+	})
+	const want = "Invalid requests[0].updateTable: Table header row cell must have a value."
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %v, want it to say %q", err, want)
+	}
+	if got := srv.Doc(FixtureID).Find(FirstSheet).Tables[0].ColumnProperties[1].ColumnType; got != gsheets.ColumnDouble {
+		t.Errorf("a refused update changed the columns: Nardle is %s", got)
 	}
 }
 
