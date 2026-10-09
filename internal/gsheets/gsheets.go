@@ -44,6 +44,9 @@ type Spreadsheet struct {
 	// reporting that a spreadsheet has one costs no scope and no consent
 	// (§17.6a).
 	DataSources []*DataSource `json:"dataSources,omitempty"`
+	// Comments are the cell comment threads. Google returns them only
+	// when the read asks for them with a comments view mode.
+	Comments []*CommentThread `json:"comments,omitempty"`
 }
 
 // SpreadsheetProperties are the file-wide settings.
@@ -66,6 +69,7 @@ type Sheet struct {
 	Slicers            []*Slicer                `json:"slicers,omitempty"`
 	BandedRanges       []*BandedRange           `json:"bandedRanges,omitempty"`
 	ConditionalFormats []*ConditionalFormatRule `json:"conditionalFormats,omitempty"`
+	CommentAnchors     []*CommentAnchor         `json:"commentAnchors,omitempty"`
 }
 
 // SheetProperties describe one tab.
@@ -390,6 +394,9 @@ type BatchUpdateSpreadsheetRequest struct {
 type BatchUpdateSpreadsheetResponse struct {
 	SpreadsheetID string   `json:"spreadsheetId,omitempty"`
 	Replies       []*Reply `json:"replies,omitempty"`
+	// CommentUpdateState says whether the batch's comment requests were
+	// saved: ALL_SAVED, ALL_FAILED_UNKNOWN_REASON, or NO_UPDATES_REQUESTED.
+	CommentUpdateState string `json:"commentUpdateState,omitempty"`
 }
 
 // Request is one member of the batchUpdate union. It holds the members
@@ -464,6 +471,13 @@ type Request struct {
 	RefreshDataSource       *RefreshDataSourceRequest       `json:"refreshDataSource,omitempty"`
 	CancelDataSourceRefresh *CancelDataSourceRefreshRequest `json:"cancelDataSourceRefresh,omitempty"`
 	DeleteDataSource        *DeleteDataSourceRequest        `json:"deleteDataSource,omitempty"`
+
+	// Cell comments (spike R).
+	InsertComment      *InsertCommentRequest      `json:"insertComment,omitempty"`
+	AddCommentReply    *AddCommentReplyRequest    `json:"addCommentReply,omitempty"`
+	UpdateCommentPost  *UpdateCommentPostRequest  `json:"updateCommentPost,omitempty"`
+	DeleteComment      *DeleteCommentRequest      `json:"deleteComment,omitempty"`
+	DeleteCommentReply *DeleteCommentReplyRequest `json:"deleteCommentReply,omitempty"`
 }
 
 // Reply is one member of the reply union, in the same order as the
@@ -491,6 +505,9 @@ type Reply struct {
 
 	AddDataSource     *AddDataSourceReply     `json:"addDataSource,omitempty"`
 	RefreshDataSource *RefreshDataSourceReply `json:"refreshDataSource,omitempty"`
+
+	InsertComment   *InsertCommentReply   `json:"insertComment,omitempty"`
+	AddCommentReply *AddCommentReplyReply `json:"addCommentReply,omitempty"`
 }
 
 // NewSheetProperties is a sheet that does not exist yet.

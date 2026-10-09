@@ -8,10 +8,13 @@ and this project follows [semantic versioning](https://semver.org).
 ### Added
 
 - `edit_dimensions` hides and unhides rows and columns, and `read_range` names the hidden rows and columns inside the range it read.
+- `read_cell_comments` lists the comment threads on a spreadsheet's cells, each on the cell it is on now, with its status, assignee and posts.
+- `manage_cell_comment` adds a comment to a cell, replies, edits a post, resolves and reopens. Google emails an assignee, without checking the address, and may notify an address the text names.
+- `delete_cell_comment` deletes a comment thread or one reply. Like the other deletes it is registered only with `GSHEETS_ENABLE_DESTRUCTIVE=true`, needs `confirm`, and asks the person first.
 
 ### Changed
 
-- A delete asks once in Claude Code, not twice. In a client that can ask the person, `delete_sheet`, `delete_dimensions`, `clear_values` and `delete_data_source` no longer carry the `requiresUserInteraction` mark; the server's own question, which shows what the write destroys, is the confirmation. To see only that question, add the four tools to Claude Code's allow list. A Claude Code `Elicitation` hook that accepts now confirms these deletes by itself, `claude -p` included, where the mark used to refuse the call before it reached the server.
+- A delete asks once in Claude Code, not twice. In a client that can ask the person, `delete_sheet`, `delete_dimensions`, `clear_values` and `delete_data_source` no longer carry the `requiresUserInteraction` mark; the server's own question, which shows what the write destroys, is the confirmation. To see only that question, add these four and the new `delete_cell_comment` to Claude Code's allow list. A Claude Code `Elicitation` hook that accepts now confirms these deletes by itself, `claude -p` included, where the mark used to refuse the call before it reached the server.
 
 ### Fixed
 

@@ -37,7 +37,7 @@
 # replies against Drive's comment threads and reports every field of each
 # as missing from the other.
 sheets	Response	*	alias	Reply
-drive	Reply	*	unrelated	this server has no comment tools; its Reply is the Sheets batchUpdate response above
+drive	Reply	*	unrelated	Drive's comment reply; this server's comment tools use the Sheets API, and its Reply is the Sheets batchUpdate response above
 #
 # Data-source-backed cells and Looker.
 sheets	AutoResizeDimensionsRequest	dataSourceSheetDimensions	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
@@ -221,6 +221,7 @@ sheets	TextFormat	link	out	read_formatting reports the formatting this server ca
 # so the alias costs nothing and keeps them compared.
 sheets	AddBandingResponse	*	alias	AddBandingReply
 sheets	AddChartResponse	*	alias	AddChartReply
+sheets	AddCommentReplyResponse	*	alias	AddCommentReplyReply
 sheets	AddDataSourceResponse	*	alias	AddDataSourceReply
 sheets	AddNamedRangeResponse	*	alias	AddNamedRangeReply
 sheets	AddProtectedRangeResponse	*	alias	AddProtectedRangeReply
@@ -233,6 +234,7 @@ sheets	DeleteDeveloperMetadataResponse	*	alias	DeleteDeveloperMetadataReply
 sheets	DeleteDuplicatesResponse	*	alias	DeleteDuplicatesReply
 sheets	DuplicateSheetResponse	*	alias	DuplicateSheetReply
 sheets	FindReplaceResponse	*	alias	FindReplaceReply
+sheets	InsertCommentResponse	*	alias	InsertCommentReply
 sheets	RefreshDataSourceResponse	*	alias	RefreshDataSourceReply
 sheets	TrimWhitespaceResponse	*	alias	TrimWhitespaceReply
 sheets	UpdateDeveloperMetadataResponse	*	alias	UpdateDeveloperMetadataReply
@@ -257,16 +259,12 @@ sheets	TableColumnProperties	dataValidationRule	out	no tool sets a validation ru
 -	NewChart	*	local	EmbeddedChart without chartId, for addChart
 -	NewSlicer	*	local	Slicer without slicerId, for addSlicer
 #
-# Comments, published by Sheets in 2026-09.
-sheets	BatchUpdateSpreadsheetRequest	commentsViewMode	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	BatchUpdateSpreadsheetResponse	commentUpdateState	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Request	addCommentReply	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Request	deleteComment	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Request	deleteCommentReply	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Request	insertComment	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Request	updateCommentPost	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Response	addCommentReply	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Response	insertComment	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Sheet	commentAnchors	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Spreadsheet	comments	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Spreadsheet	commentsViewMode	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+#
+# Cell comments (spike R). The comment tools model what they show and act
+# on; these say what they leave.
+sheets	BatchUpdateSpreadsheetRequest	commentsViewMode	out	applies only with includeSpreadsheetInResponse, which this server never sets; a comment write reports Google's reply instead
+sheets	Spreadsheet	commentsViewMode	out	output only: it repeats the view the read asked for
+sheets	Post	contentHtml	out	the same words as content, as HTML; content is what the tools show and send
+sheets	Post	fromCopiedSpreadsheet	out	output only, and nothing a caller acts on: Google lets the author edit or delete a copied post as any other
+sheets	Post	fromImportedSpreadsheet	out	output only, and nothing a caller acts on: Google lets the author edit or delete an imported post as any other
+sheets	PostAuthor	user	out	a People API resource name; the display name and whether the post is the caller's are what the tools show

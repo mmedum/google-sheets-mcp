@@ -38,6 +38,9 @@ func (d *driver) writeAll() {
 	// Phase 4, also on a sheet of its own: it deletes a charted column
 	// to watch what the API does not say about it.
 	d.chartAll()
+	// Comments, on a sheet of their own: they insert and delete rows to
+	// watch where a thread goes.
+	d.commentAll()
 	sec("clear_values")
 	d.run(d.clearSteps()...)
 	sec("delete_sheet")

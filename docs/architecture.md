@@ -139,9 +139,9 @@ protected ranges, data validation, tables, conditional formatting,
 sorting, and later charts, pivot tables and data sources. Out
 (**decided**): file management — folders, moving, sharing, trashing,
 copying files, revisions — which belongs to a server built on the Drive
-API, and comment threads, which live in that API and belong there too.
-A cell **note** is a Sheets field and is in scope; a **comment** is not
-(§17.5).
+API. Cell **comments** have been in scope since 2026-10-09: Sheets publishes them,
+anchored to cells, which Drive's comment API cannot do (§17.5). A cell
+**note** is a Sheets field and is in scope too.
 
 Tool names are chosen so a client can run this server beside the Drive
 and Docs ones without a collision: `search_spreadsheets` and `read_range`
@@ -245,9 +245,8 @@ Sheets guides on 2026-09-05.
 
 Undo anything — there is no trash for a deleted sheet, cleared cells or a
 dropped column, and version history is a UI feature the API cannot
-restore from; guard a write against a concurrent edit; anchor a comment
-to a cell (comments are Drive's, and a cell **note** is the Sheets
-equivalent); read or set a cell's *displayed* value without also reading
+restore from; guard a write against a concurrent edit; read or set a
+cell's *displayed* value without also reading
 its format; tell you why a formula produced an error beyond its error
 type; search a spreadsheet server-side (there is no query endpoint —
 `find_in_spreadsheet` reads and matches here); watch for changes.
@@ -1058,6 +1057,9 @@ registers only the readOnly rows and requests read-only scopes.
 | `manage_pivot_table` | Pivot tables on a range | — | 4 |
 | `manage_data_source` | Connected Sheets data sources: add, refresh, cancel a refresh, list | — | 4 |
 | `delete_data_source` | Gated: remove a data source, its sheet and everything on it | destructive | 4 |
+| `read_cell_comments` | Comment threads on cells: the cell each is on now, status, assignee, posts | readOnly | 2026-10 |
+| `manage_cell_comment` | add, reply, edit, resolve, reopen a comment thread; an assignee is emailed | openWorld | 2026-10 |
+| `delete_cell_comment` | Gated: delete a comment thread, or one reply | destructive | 2026-10 |
 
 There is deliberately no bulk tool that spans spreadsheets: one
 spreadsheet per call, so a wrong id costs one refusal rather than a
@@ -1078,7 +1080,7 @@ or a hash, and `net/url` would read each of those as structure and hand
 back a title with the end missing.
 
 **Registration.** One `Kind` per tool — read, write, idempotent write,
-destructive, connected — decides the annotations, whether read-only mode leaves the
+destructive, connected, notifying — decides the annotations, whether read-only mode leaves the
 tool registered, whether the client is asked to involve a person, and
 that the reply is rendered. Four rules kept by hand at twenty call sites
 is four ways to be quietly wrong. `Kind` is an enum over *which world a
@@ -1263,10 +1265,10 @@ a task is scored against a spreadsheet the harness built.
 
 `confirm: true` is an argument the model writes, and a persuaded model
 writes it too. So when the client can ask, the server asks the person
-itself, through MCP form elicitation, before six writes:
+itself, through MCP form elicitation, before seven writes:
 
-- `delete_sheet`, `delete_dimensions`, `clear_values` and
-  `delete_data_source`, always;
+- `delete_sheet`, `delete_dimensions`, `clear_values`,
+  `delete_data_source` and `delete_cell_comment`, always;
 - `manage_data_source` `add`, which runs a BigQuery query billed to the
   named Cloud project, now and on every refresh;
 - `manage_data_source` `refresh` with no `id`, which runs every source's
@@ -1286,7 +1288,7 @@ itself, through MCP form elicitation, before six writes:
    gets no question, and the arguments are the guard, as before.
    `GSHEETS_REQUIRE_PROMPT=true` refuses those writes as `[blocked]`
    instead. Only such a client sees Claude Code's
-   `requiresUserInteraction` mark on the four tools that always ask:
+   `requiresUserInteraction` mark on the destructive tools, which always ask:
    `tools/list` drops it when the request declares form elicitation, so
    the person answers once, to the question that says what the write
    destroys. `destructiveHint` stays, as the client's allow-listable
@@ -1699,7 +1701,7 @@ itself, through MCP form elicitation, before six writes:
 | Decision | Consequence in the design |
 |---|---|
 | Deployer-owned Cloud project and OAuth client; nothing internal in the repository | §9, §10, §12 |
-| Inside the spreadsheet only; files, sharing, revisions and comments are the Drive server's | §1, §7.4, §17.5 |
+| Inside the spreadsheet only; files, sharing and revisions are the Drive server's, and cell comments are here | §1, §7.4, §17.5 |
 | A1 is the contract; GridRange math is server-side | §4.1, §6.2, `internal/a1` |
 | Every read shows addresses | §4.2; the grid renderer, and no handle memory to go stale |
 | A write never destroys what it cannot see | §4.3; the guard, its acknowledgments, and the dry run |
@@ -1843,6 +1845,11 @@ forgotten. Results go into §18.
   written until this runs. The wording §17a.27 uses is spike M's finding
   about `values.update`, and nothing says a merge or a clear behaves the
   same way. Results in §18.
+- **R. Cell comments** (**run 2026-10-09**, before the comment tools
+  were built): what a read returns under a field mask, where a thread's
+  anchor goes when rows move, how an assignee reads back, what a bad id
+  answers, and whether a failed comment write is a 400 or a 200 that only
+  `commentUpdateState` admits. Results in §18.
 
 ## 16. Delivery phases
 
@@ -2162,6 +2169,13 @@ they are not reopened.
    comment thread is a Drive resource, reachable for any file through a
    server built on the Drive API. Revisit in phase 4 only if
    cell-anchored comments turn out to be reachable and useful.
+   **Amended 2026-10-09: comments are in.** Sheets published them in
+   2026-09 as five batchUpdate requests and a comments view on
+   `spreadsheets.get`, each thread anchored to a cell that it follows as
+   the sheet changes. Drive's comment API sees the same threads without
+   their cells (spike R, §18). The owner chose three tools:
+   `read_cell_comments`, `manage_cell_comment`, open-world because an
+   assignee is emailed, and `delete_cell_comment`, gated and asking.
 6. **No `drive.file`, no full `drive`.** `spreadsheets` plus
    `drive.readonly`; file management belongs to the Drive server.
    **Amended 2026-09-07 by §17.6a**, which adds a third scope for one
@@ -2685,8 +2699,8 @@ cannot be verified again yet.
 33. **On protocol 2026-07-28 a client can get neither the mark nor a
    question.** Capabilities travel with each request there, so a client
    can declare form elicitation to `tools/list` and none to
-   `tools/call`. The list then drops the mark from the four tools that
-   always ask (§9a.3), and the call asks nothing. Found by review on
+   `tools/call`. The list then drops the mark from the destructive
+   tools, which always ask (§9a.3), and the call asks nothing. Found by review on
    2026-10-09. **Left open**, because it gives a misbehaving client
    nothing it lacked: such a client answers the server's question itself
    and can accept without a person. `GSHEETS_REQUIRE_PROMPT=true` refuses
@@ -3287,6 +3301,50 @@ verdict comes from a sibling server's evidence log.
 | A client that declares elicitation has a person to answer it | **Refuted, tier 2**: `claude -p` declares it and answers `cancel`; Codex under approval policy `never` with full access accepts a fieldless form | A refusal never says the person declined, and an unattended client cannot make these writes |
 | A client draws a question as plain text | **Refuted, tier 2**: VS Code builds the message as a `MarkdownString` | Spreadsheet text stands in a code span, and the server's own lines hold no Markdown |
 | A 503 proves an unrepeatable write never began, so it may be retried | **Refuted, tier 1**: Google's `google/rpc/code.proto` says of `UNAVAILABLE` that it is "not always safe to retry non-idempotent operations". Checked 2026-10-01 | An append, `batchUpdate`, `create` or `copyTo` retries only on 429. Any 5xx is `[ambiguous_outcome]`, and the class wins over the wrapped 429 |
-| A destructive tool should carry both `requiresUserInteraction` and the server's own question | **Refuted, tier 2**, 2026-10-09, after the owner was asked twice for one delete in google-docs-mcp. No source recommends two hard gates for one call: the spec puts confirmation on the client, GitHub's `delete_repository` and Supabase confirm with `destructiveHint` plus a form elicitation and set no mark, and Claude Code's documentation scopes the mark to "tools whose permission prompt is itself the point" | The mark is sent per client, present only when the request declares no form elicitation, on the four tools that always ask. A typed confirmation, which would stop Codex accepting an empty form unseen, was offered and not chosen. A Claude Code `Elicitation` hook that accepts now confirms these deletes by itself, `claude -p` included, where the mark used to refuse the call before it reached the server |
+| A destructive tool should carry both `requiresUserInteraction` and the server's own question | **Refuted, tier 2**, 2026-10-09, after the owner was asked twice for one delete in another server built the same way. No source recommends two hard gates for one call: the spec puts confirmation on the client, GitHub's `delete_repository` and Supabase confirm with `destructiveHint` plus a form elicitation and set no mark, and Claude Code's documentation scopes the mark to "tools whose permission prompt is itself the point" | The mark is sent per client, present only when the request declares no form elicitation, on the destructive tools, which always ask. A typed confirmation, which would stop Codex accepting an empty form unseen, was offered and not chosen. A Claude Code `Elicitation` hook that accepts now confirms these deletes by itself, `claude -p` included, where the mark used to refuse the call before it reached the server |
 | golangci-lint v2.13.2 lints this module on Go 1.27.2 | **Refuted, tier 1**, 2026-10-09: Go 1.27.2 writes export data version 5 (`internal/pkgbits/version.go`, go.dev/issue/81188). v2.13.2 is built on `golang.org/x/tools` v0.49.0, which reads up to version 4, so the typecheck fails. v2.14.0, a final release of 2026-09-24, is built on x/tools v0.50.0, which reads version 5 | Go 1.27.2, and golangci-lint v2.14.0 in the Makefile and CI |
 | A package's coverage reads the same on Go 1.27.1 and 1.27.2 | **Refuted, tier 1**, 2026-10-09: 1.27.1's `cmd/cover` gave each piece of a block that a comment splits the statement count of the whole block, and 1.27.2 counts each piece's own (`mergeRangesWithinStatements`). The same tests read lower: the fake from 82.4% to 79.9%, and `cmd/` from 56.9% to 53.1% | No floor moved. A test of `format_cells` `unmerge`, which no test ran against the fake, puts the fake at 80.3% |
+
+**Spike R, run live 2026-10-09**, before the comment tools were built.
+`scripts/spikes/comments.go` against a scratch spreadsheet; the one
+assignee was the signed-in account. Tier 1.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| A read can name comments in its field mask | **Refuted without the comments view**: `400 Field mask may not contain comment-specific fields if comments are not requested`, with no `commentsViewMode` or with `OMITTED`. `INCLUDED` and, for the owner, `DEFAULT_FOR_CURRENT_ACCESS` work, nested masks included | `CommentFields` travels with `GetOptions.Comments`, and the client refuses the mask without it |
+| A thread says which cell it is on | **Partly**: it names an `anchorId`, and the sheet's `commentAnchors` map that to a one-cell range, which follows inserted rows | `threadRecords` joins the two and reports the cell as it is now; Google's order of threads is not positional, so they are sorted |
+| A thread goes with its row | **Refuted**: deleting the row collapses the anchor to an empty range, start equal to end, and the thread stays open | `cell_deleted`; a ranged read leaves such a thread out and says so. Google leaves zero indices out of its JSON, so a missing end reads as zero |
+| Resolving is idempotent | **Refuted**: resolving a resolved thread returns 200 and adds another `RESOLVE` post | resolve and reopen read the status first and send nothing when it is already there |
+| Google checks an assignee's address | **Refuted**: `nobody@example.invalid` was accepted with 200. Reassigning in a reply is a 400 on a thread whose first post has no assignee | `checkAssignee` refuses what is not one plain address, the description says a typo assigns the thread to nobody, and a reassignment on an unassigned thread is refused before it is sent |
+| A failed comment write is a 200 that only `commentUpdateState` admits | **Not seen**: a bad comment or post id was 404, a cell off the grid, an unknown sheet or empty text 400 with a clear message, and a batch holding one bad comment edit failed whole. Every success said `ALL_SAVED` | `ALL_FAILED_UNKNOWN_REASON` is still `[unavailable]` rather than a success |
+| A second delete answers 404 | **Confirmed**, for a thread and for a reply | `delete_cell_comment` reports it gone, which is what was asked for |
+| Drive's comment API sees these threads | **Confirmed**: the same ids, Drive's `anchor` is the Sheets `anchorId`, and Drive shows no cell | Only this server can say where a thread is |
+
+Read from the discovery document (revision 20261005) and not probed,
+since the spike ran as one account: only a post's author may edit or
+delete it, and Google does not delete a reply that resolved, reopened or
+assigned the thread. The tools refuse those first, before anyone is
+asked. The same document says a post's text is handled as the Sheets
+editor handles it, "notifications" included, and the editor notifies an
+address a comment names; `manage_cell_comment` reports such addresses as
+ones Google may notify.
+
+Not probed: an account that may view but not comment (taken to be a
+403), the comments view under `spreadsheets.readonly`, comments on merged
+or hidden cells, whether a named address is notified, the 2048-unit
+limit, and what deleting a sheet does to its threads.
+
+**The comment tools' first live run, 2026-10-09.** The driver failed
+widely, and not at the comments: every read of cells was refused.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| The in-memory fake checks a field mask | **Refuted**: it read none. Writing the cell fields once for `GridFields` and `ReadFields`, earlier on this branch, left both masks one closing parenthesis over, and Google answered every read with a bare `400 Request contains an invalid argument.` while every unit test passed | The fake refuses an unbalanced mask as Google does, which fails a hundred tests on the old masks, and `TestFieldMasksAreBalanced` names the mask |
+| A thread's first post has an id of its own | **Refuted**: the head post's `postId` is the thread's `commentId` | Nothing relies on them differing; the first post is found by its position |
+| A post's `updateTime` moves only when its text is edited | **Refuted**: a reply that reassigned the thread moved the first post's `updateTime` | The field is `updated`, not `edited`, and the text says "updated" |
+
+The third run, after these fixes and a driver step that had carried an
+empty `post_id`, passed all 246 steps, and its transcript was read: an
+edit by `post_id` changed the reply and left the first comment, a
+thread whose row was deleted kept its posts and its assignee, and a
+deleted thread's replies went with it.

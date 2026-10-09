@@ -13,6 +13,7 @@ import (
 
 	"github.com/mmedum/google-sheets-mcp/v3/internal/config"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/tools"
 )
 
@@ -149,6 +150,21 @@ var toolCalls = map[string][]map[string]any{
 		{"spreadsheet": sheetstest.FixtureID, "action": "add",
 			"project": "example-project", "query": "SELECT " + searchTerm},
 		{"spreadsheet": sheetstest.FixtureID, "action": "list"},
+	},
+	// A comment's text and its assignee are caller text in a request
+	// body, and a read hands back what collaborators wrote.
+	"read_cell_comments": {
+		{"spreadsheet": sheetstest.FixtureID, "include_resolved": true},
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.FirstSheet, "range": "A1:D6"},
+	},
+	"manage_cell_comment": {
+		{"spreadsheet": sheetstest.FixtureID, "action": "add", "sheet": sheetstest.SecondSheet, "cell": "B2",
+			"text": searchTerm, "assignee": searchTerm + "@example.com"},
+		{"spreadsheet": sheetstest.FixtureID, "action": "reply", "comment_id": sheetstest.FixtureCommentID, "text": searchTerm},
+	},
+	"delete_cell_comment": {
+		{"spreadsheet": sheetstest.FixtureID, "comment_id": sheetstest.FixtureCommentID, "dry_run": true},
+		{"spreadsheet": sheetstest.FixtureID, "comment_id": searchTerm, "confirm": true},
 	},
 	"delete_data_source": {
 		{"spreadsheet": sheetstest.FixtureID, "id": searchTerm, "confirm": true},
@@ -343,6 +359,15 @@ func forbiddenStrings(t *testing.T) []string {
 	}
 	for _, n := range doc.NamedRanges {
 		add(n.Name)
+	}
+	for _, c := range doc.Comments {
+		add(c.CommentID, c.PlainTextQuote)
+		for _, p := range append([]*gsheets.Post{c.HeadPost}, c.Replies...) {
+			add(p.Content, p.AssigneeEmail)
+			if p.Author != nil {
+				add(p.Author.DisplayName)
+			}
+		}
 	}
 	// A1 ranges are addresses, and an address says which part of
 	// somebody's spreadsheet was touched.

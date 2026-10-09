@@ -19,6 +19,13 @@ const (
 	ApostropheName = "Yalmic's Bractal"
 )
 
+// The fixture's comment threads, and the reply on the first.
+const (
+	FixtureCommentID      = "AAAAcommentMine"
+	FixtureReplyID        = "AAAApostReply"
+	FixtureOtherCommentID = "AAAAcommentTheirs"
+)
+
 // Fixture builds the standard spreadsheet: one sheet with headings,
 // numbers, a formula, an error cell, a note, a validation rule, a merge
 // and a protected range; a second sheet whose title is not ASCII; and a
@@ -141,6 +148,14 @@ func Fixture() (*Doc, *gapi.File) {
 			Range: a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 2, LastRow: 2}.GridRange(1837),
 		}},
 	}
+	// Two comment threads: one the signed-in account started, with a
+	// reply from somebody else, and a resolved one somebody else wrote.
+	mine := doc.AddComment(first, 2, 1, "Is this the unit cost or the total?", true)
+	mine.CommentID = FixtureCommentID
+	doc.Reply(mine, "Unit cost.", false).PostID = FixtureReplyID
+	theirs := doc.AddComment(first, 4, 2, "Grivet looks high.", false)
+	theirs.CommentID, theirs.Status = FixtureOtherCommentID, gsheets.CommentResolved
+	doc.Reply(theirs, "", false).CommentAction = gsheets.CommentResolve
 	file := &gapi.File{
 		ID: FixtureID, Name: doc.Title, MimeType: gapi.SpreadsheetMimeType,
 		CreatedTime: "2026-01-04T09:00:00.000Z", ModifiedTime: "2026-03-11T14:25:00.000Z",

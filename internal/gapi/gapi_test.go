@@ -133,7 +133,7 @@ func TestFieldMasksAreBalanced(t *testing.T) {
 	for name, mask := range map[string]string{
 		"CardFields": CardFields, "GridFields": GridFields, "ReadFields": ReadFields, "FormatFields": FormatFields,
 		"FormatTargetFields": FormatTargetFields, "RuleFields": RuleFields, "ChartFields": ChartFields,
-		"PivotFields": PivotFields, "PivotExtentFields": PivotExtentFields,
+		"CommentFields": CommentFields, "PivotFields": PivotFields, "PivotExtentFields": PivotExtentFields,
 		"SearchFields": SearchFields, "FileFields": FileFields,
 	} {
 		depth := 0
@@ -151,6 +151,41 @@ func TestFieldMasksAreBalanced(t *testing.T) {
 		if depth != 0 {
 			t.Errorf("%s is unbalanced by %d: %s", name, depth, mask)
 		}
+	}
+}
+
+// Comments come only with the comments view, and the view goes with the
+// mask that names them: without it Google refuses the mask (spike R).
+func TestGetSpreadsheetAsksForTheCommentsView(t *testing.T) {
+	var got url.Values
+	c, _ := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Query()
+		_, _ = w.Write([]byte(`{"spreadsheetId":"id","comments":[{"commentId":"AAAAc1","anchorId":"AAAAa1","status":"OPEN",` +
+			`"headPost":{"postId":"AAAAp1","content":"Unit cost?","author":{"displayName":"Jane Doe","me":true}}}],` +
+			`"sheets":[{"properties":{"sheetId":7,"title":"Vandel"},"commentAnchors":[{"anchorId":"AAAAa1",` +
+			`"range":{"sheetId":7,"startRowIndex":1,"endRowIndex":2,"startColumnIndex":1,"endColumnIndex":2}}]}]}`))
+	})
+	s, err := c.GetSpreadsheet(context.Background(), "id", GetOptions{Fields: CommentFields, Comments: true})
+	if err != nil {
+		t.Fatalf("GetSpreadsheet: %v", err)
+	}
+	if got.Get("commentsViewMode") != "COMMENTS_VIEW_MODE_INCLUDED" || got.Get("fields") != CommentFields {
+		t.Errorf("query = %v", got)
+	}
+	if len(s.Comments) != 1 || s.Comments[0].HeadPost.Content != "Unit cost?" || !s.Comments[0].HeadPost.Author.Me ||
+		len(s.Sheets[0].CommentAnchors) != 1 || *s.Sheets[0].CommentAnchors[0].Range.EndRowIndex != 2 {
+		t.Errorf("decoded %+v", s)
+	}
+
+	got = nil
+	if _, err := c.GetSpreadsheet(context.Background(), "id", GetOptions{Fields: CommentFields}); !errors.Is(err, ErrInvalid) {
+		t.Errorf("a comments mask without the comments view = %v", err)
+	}
+	if got != nil {
+		t.Error("the refused read was sent")
+	}
+	if _, err := c.GetSpreadsheet(context.Background(), "id", GetOptions{Fields: CardFields}); err != nil || got.Has("commentsViewMode") {
+		t.Errorf("the card asked for the comments view: %v %v", err, got)
 	}
 }
 

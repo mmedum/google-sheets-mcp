@@ -59,6 +59,18 @@ const sheetHead = "spreadsheetId," +
 	"sheets(properties(sheetId,title,index,gridProperties),merges," +
 	"protectedRanges(protectedRangeId,range,description,warningOnly,requestingUserCanEdit),"
 
+// CommentFields is the field mask behind the comment tools: every
+// thread, and every sheet's anchors, which say which cell each thread is
+// on now. Google refuses it unless GetOptions.Comments asks for the
+// comments view (spike R). contentHtml is left out; content is the same
+// words as plain text.
+const CommentFields = "spreadsheetId,properties(title)," +
+	"sheets(properties(sheetId,title,index,gridProperties),commentAnchors(anchorId,range))," +
+	"comments(commentId,anchorId,status,plainTextQuote,headPost(" + postFields + "),replies(" + postFields + "))"
+
+// postFields is what CommentFields reads of each post, head and reply.
+const postFields = "postId,content,commentAction,assigneeEmail,author(displayName,me,anonymous),createTime,updateTime,deleted"
+
 // ChartFields is the field mask behind manage_chart.
 //
 // The whole spec, because an update replaces it whole and has to send
@@ -141,6 +153,9 @@ type GetOptions struct {
 	// IncludeGridData asks for cells. Without Ranges it would ask for
 	// every cell in the spreadsheet, so the two travel together.
 	IncludeGridData bool
+	// Comments asks for the comments view. Google omits comments without
+	// it, and refuses a mask that names them (spike R).
+	Comments bool
 }
 
 // GetSpreadsheet reads a spreadsheet's metadata, and its cells when the
@@ -160,6 +175,10 @@ func (c *Client) GetSpreadsheet(ctx context.Context, id string, o GetOptions) (*
 	if len(o.Ranges) == 0 && strings.Contains(o.Fields, "data(") {
 		return nil, fmt.Errorf("%w: the field mask asks for cell data and no range was given, which is the whole spreadsheet", ErrInvalid)
 	}
+	// Google answers this with a 400 (spike R); refusing it here says why.
+	if strings.Contains(o.Fields, "comment") && !o.Comments {
+		return nil, fmt.Errorf("%w: the field mask names comments and the read does not ask for the comments view", ErrInvalid)
+	}
 	v := url.Values{}
 	v.Set("fields", o.Fields)
 	for _, r := range o.Ranges {
@@ -167,6 +186,9 @@ func (c *Client) GetSpreadsheet(ctx context.Context, id string, o GetOptions) (*
 	}
 	if o.IncludeGridData {
 		v.Set("includeGridData", "true")
+	}
+	if o.Comments {
+		v.Set("commentsViewMode", "COMMENTS_VIEW_MODE_INCLUDED")
 	}
 	body, err := c.do(ctx, request{
 		op:          "spreadsheets.get",

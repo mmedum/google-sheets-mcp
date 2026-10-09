@@ -53,9 +53,14 @@ const (
 	// is registered only with GSHEETS_ENABLE_DATA_SOURCES, which is also
 	// what puts that scope in front of the person at login (§17.6a).
 	//
-	// It is the one Kind whose OpenWorldHint is true, and that is the
-	// point of the distinction rather than a detail of it.
+	// Its OpenWorldHint is true, and that is the point of the
+	// distinction rather than a detail of it.
 	Connected
+	// Notifying changes the spreadsheet and can reach a person: Google
+	// emails a cell comment's assignee, and may notify an address its
+	// text names. Registered as a Write is, and open-world, because its
+	// effect reaches somebody outside the spreadsheet.
+	Notifying
 )
 
 // Deps are what the tools need.
@@ -83,6 +88,7 @@ func Register(s *mcp.Server, d Deps) {
 	registerPivot(s, d)
 	registerDataSource(s, d)
 	registerDeleteDataSource(s, d)
+	registerComments(s, d)
 	registerResources(s, d)
 }
 
@@ -213,7 +219,7 @@ func annotationsFor(k Kind) *mcp.ToolAnnotations {
 		return &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: no, OpenWorldHint: no}
 	case Destructive:
 		return &mcp.ToolAnnotations{DestructiveHint: yes, OpenWorldHint: no}
-	case Connected:
+	case Connected, Notifying:
 		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: yes}
 	default:
 		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: no}

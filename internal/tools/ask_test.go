@@ -154,6 +154,12 @@ var askCases = map[string]askCase{
 		op:    "values.clear",
 		shows: []string{"clear the values in `'" + sheetstest.SecondSheet + "'!A1:B3` of `Quorbin Skerry`", "Formatting"},
 	},
+	"delete_cell_comment": {
+		args: map[string]any{"spreadsheet": sheetstest.FixtureID, "comment_id": sheetstest.FixtureCommentID, "confirm": true},
+		op:   "spreadsheets.batchUpdate",
+		shows: []string{"delete_cell_comment: delete the comment thread on `'" + sheetstest.FirstSheet + "'!B3` of `Quorbin Skerry`?",
+			"It says: `Is this the unit cost or the total?`", "Its reply goes with it."},
+	},
 	"delete_data_source": {
 		args:  map[string]any{"spreadsheet": sheetstest.FixtureID, "confirm": true},
 		op:    "spreadsheets.batchUpdate",
@@ -473,6 +479,23 @@ func TestAChangeAfterTheQuestionIsRefused(t *testing.T) {
 	}
 }
 
+// A comment edited between the question and the answer is another
+// question: the person confirmed what it said then.
+func TestACommentEditedAfterTheQuestionIsRefused(t *testing.T) {
+	cs, fake, _ := mrtr(t)
+	c := askCases["delete_cell_comment"]
+	first := callTool(t, cs, &mcp.CallToolParams{Name: "delete_cell_comment", Arguments: c.args})
+	if !first.NeedsInput() {
+		t.Fatalf("the first round did not ask: %s", text(first))
+	}
+	fake.Doc(sheetstest.FixtureID).Thread(sheetstest.FixtureCommentID).HeadPost.Content = "Changed meanwhile."
+	res := callTool(t, cs, &mcp.CallToolParams{Name: "delete_cell_comment", Arguments: c.args,
+		InputResponses: accepted, RequestState: first.RequestState})
+	if out := text(res); !res.IsError || !strings.Contains(out, "changed after the person was asked") || writes(fake, c.op) != 0 {
+		t.Errorf("%s; %d writes", out, writes(fake, c.op))
+	}
+}
+
 // A state that travels through the client expires; one that stays in
 // the process, before 2026-07-28, waits as long as the request does.
 func TestALateAnswerIsRefusedOnlyWhenTheStateTravels(t *testing.T) {
@@ -524,7 +547,7 @@ func TestTheMarkIsForAClientThatCannotAsk(t *testing.T) {
 			Elicitation: &mcp.ElicitationCapabilities{URL: &mcp.URLElicitationCapabilities{}},
 		}
 	}
-	all := "clear_values delete_data_source delete_dimensions delete_sheet"
+	all := "clear_values delete_cell_comment delete_data_source delete_dimensions delete_sheet"
 	for _, protocol := range protocols {
 		srv, _, _ := serve(t, everything(t))
 		if got := marked(join(t, srv, protocol, &person{action: "accept"})); len(got) != 0 {

@@ -52,6 +52,17 @@ type Doc struct {
 	// document, like the metadata, because the card reports them at the
 	// spreadsheet level rather than per sheet.
 	DataSources []*gsheets.DataSource
+	// Comments are the cell comment threads, each tied to a cell by an
+	// anchor on its sheet.
+	Comments []*gsheets.CommentThread
+	// CommentsDenied answers the comments view with a 403, as for an
+	// account that may not see comments.
+	CommentsDenied bool
+	// CommentsFail answers a batch with comment requests with a 200 and
+	// commentUpdateState ALL_FAILED_UNKNOWN_REASON, saving none of them.
+	CommentsFail bool
+	// commentSeq numbers posts and threads, and times them.
+	commentSeq int
 }
 
 // Sheet is one tab of a Doc. Cells are keyed by zero-based row and
@@ -71,6 +82,8 @@ type Sheet struct {
 	// they are evaluated. The order is the API's identifier for them, so
 	// the fake keeps a slice rather than a map.
 	Conditional []*gsheets.ConditionalFormatRule
+	// CommentAnchors say which cell each comment thread is on now.
+	CommentAnchors []*gsheets.CommentAnchor
 }
 
 // Find returns the sheet with this title.

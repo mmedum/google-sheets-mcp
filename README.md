@@ -14,8 +14,8 @@ create a Google OAuth client, log in once, and the refresh token stays in
 your OS keyring.
 
 It works **inside** a spreadsheet. Finding, sharing, moving and trashing
-files, and their comment threads and revisions, belong to a server built
-on the Drive API. A cell **note** is a Sheets field and is here.
+files, and their revisions, belong to a server built on the Drive API.
+Comments on cells are here, and so are cell **notes**.
 
 ## Why google-sheets-mcp
 
@@ -33,12 +33,13 @@ language, so it is often not an English word — and the one place A1 turns
 into a `GridRange` is a single package.
 
 It works **inside** a spreadsheet. Finding, sharing, moving and trashing
-files, and their comment threads and revisions, belong to a server built
-on the Drive API. A cell **note** is a Sheets field and is here.
+files, and their revisions, belong to a server built on the Drive API.
+Comments on cells are here, and so are cell **notes**.
 
 Reading, writing, formatting, the objects attached to a range,
 `gsheets://` resources, durable anchors, charts, pivot tables and
-Connected Sheets data sources all work. The twenty-one tools, their
+pivot tables, Connected Sheets data sources and cell comments all work.
+The twenty-four tools, their
 arguments and the fields they return are stable: a breaking change needs a
 major version, and a gate compares every commit against the last tag. It has been driven by one MCP
 client, which is what to know before trusting it in a second. The history
@@ -205,7 +206,7 @@ personal one.
 
 ## Tools
 
-Seventeen tools. Everything but `search_spreadsheets` needs only the
+Twenty-four tools. Everything but `search_spreadsheets` needs only the
 Sheets scope; in read-only mode the read tools ask for
 `spreadsheets.readonly` instead.
 
@@ -226,19 +227,22 @@ Sheets scope; in read-only mode the read tools ask for
 | `manage_chart` | Add, update, move, delete or list charts and slicers. A chart floats above the grid, so adding one overwrites nothing, and its data is named in A1, one range per series. A listing reports which charts have lost their series — what deleting a charted column does, and what nothing in Sheets tells you | `spreadsheets` |
 | `manage_pivot_table` | Add, update, delete or list pivot tables. Columns are named in A1 or by their heading, never by counting, and every result reports the rectangle the table covers right now: the size is computed from the data rather than chosen | `spreadsheets` |
 | `manage_data_source` | Off by default: connect a BigQuery data source through Connected Sheets, refresh it, cancel a refresh, or list what is connected. `get_spreadsheet` already says whether a spreadsheet has one, with no extra scope | `spreadsheets`, `bigquery.readonly` |
+| `read_cell_comments` | The comment threads on a spreadsheet's cells: the cell each is on now, open or resolved, who it is assigned to, and every post. A thread follows its cell as rows move, and one whose row was deleted is still listed, without a cell | `spreadsheets` |
+| `manage_cell_comment` | Comment on a cell, reply, edit a post, resolve or reopen. Google emails an assignee, and may notify an address the text names, which is how this server reaches someone outside the spreadsheet | `spreadsheets` |
 | `manage_sheet` | Add, rename, duplicate, copy to another spreadsheet, hide, unhide, reorder, resize, freeze or color a sheet | `spreadsheets` |
 | `edit_dimensions` | Insert, move, resize, auto-size, group, ungroup, hide or unhide rows and columns | `spreadsheets` |
 | `delete_dimensions` | Destructive, off by default: remove rows or columns and the data on them, having counted what that is | `spreadsheets` |
 | `clear_values` | Destructive, off by default: clear a range's values and keep its formatting, notes and validation rules | `spreadsheets` |
 | `delete_sheet` | Destructive, off by default: delete a sheet and everything on it, having counted what that is | `spreadsheets` |
+| `delete_cell_comment` | Destructive, off by default: delete a comment thread with its replies, or one reply. Resolving keeps it, and is usually what is wanted | `spreadsheets` |
 | `delete_data_source` | Destructive, off by default: delete a Connected Sheets data source, the sheet Google made for it, and everything on that sheet. Needs no BigQuery scope, so it reaches a source somebody else connected | `spreadsheets` |
 
-The four destructive tools are **not registered at all** unless
+The five destructive tools are **not registered at all** unless
 `GSHEETS_ENABLE_DESTRUCTIVE=true`, and each still needs `confirm: true`
 on the call.
 
 When your client supports MCP elicitation, the server also asks you
-itself before those four, before connecting a BigQuery data source, and
+itself before those five, before connecting a BigQuery data source, and
 before refreshing every data source at once. Only your Accept lets the
 write go ahead; anything else is `[blocked]`. A client that cannot ask
 gets no question, unless `GSHEETS_REQUIRE_PROMPT=true`, which refuses

@@ -92,17 +92,17 @@ func TestRegistrationGatesAreServerSide(t *testing.T) {
 		cfg  config.Config
 		want map[Kind]bool
 	}{
-		{"default", config.Config{}, map[Kind]bool{Read: true, Write: true, IdempotentWrite: true, Destructive: false, Connected: false}},
+		{"default", config.Config{}, map[Kind]bool{Read: true, Write: true, IdempotentWrite: true, Destructive: false, Connected: false, Notifying: true}},
 		{"destructive enabled", config.Config{EnableDestructive: true},
-			map[Kind]bool{Read: true, Write: true, IdempotentWrite: true, Destructive: true, Connected: false}},
+			map[Kind]bool{Read: true, Write: true, IdempotentWrite: true, Destructive: true, Connected: false, Notifying: true}},
 		{"data sources enabled", config.Config{EnableDataSources: true},
-			map[Kind]bool{Read: true, Write: true, IdempotentWrite: true, Destructive: false, Connected: true}},
+			map[Kind]bool{Read: true, Write: true, IdempotentWrite: true, Destructive: false, Connected: true, Notifying: true}},
 		{"read only", config.Config{ReadOnly: true},
-			map[Kind]bool{Read: true, Write: false, IdempotentWrite: false, Destructive: false, Connected: false}},
+			map[Kind]bool{Read: true, Write: false, IdempotentWrite: false, Destructive: false, Connected: false, Notifying: false}},
 		{"read only wins over destructive", config.Config{ReadOnly: true, EnableDestructive: true},
-			map[Kind]bool{Read: true, Write: false, IdempotentWrite: false, Destructive: false, Connected: false}},
+			map[Kind]bool{Read: true, Write: false, IdempotentWrite: false, Destructive: false, Connected: false, Notifying: false}},
 		{"read only wins over data sources", config.Config{ReadOnly: true, EnableDataSources: true},
-			map[Kind]bool{Read: true, Write: false, IdempotentWrite: false, Destructive: false, Connected: false}},
+			map[Kind]bool{Read: true, Write: false, IdempotentWrite: false, Destructive: false, Connected: false, Notifying: false}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for kind, want := range tc.want {
@@ -131,16 +131,23 @@ func TestAnnotationsFollowTheKind(t *testing.T) {
 	if destructive.DestructiveHint == nil || !*destructive.DestructiveHint {
 		t.Errorf("destructive annotations = %+v", destructive)
 	}
-	// The one Kind that reaches outside the spreadsheet, and the only
-	// one whose open-world hint is true. That distinction is the reason
-	// it is a Kind rather than a flag on an existing one.
+	// A Kind that reaches outside the spreadsheet, whose open-world hint
+	// is true. That distinction is the reason it is a Kind rather than a
+	// flag on an existing one, and Notifying below is the other.
 	connected := annotationsFor(Connected)
 	if connected.OpenWorldHint == nil || !*connected.OpenWorldHint {
 		t.Errorf("connected annotations = %+v", connected)
 	}
+	// A comment can email its assignee, which reaches a person outside
+	// the spreadsheet; it destroys nothing.
+	notifying := annotationsFor(Notifying)
+	if notifying.OpenWorldHint == nil || !*notifying.OpenWorldHint || notifying.DestructiveHint == nil ||
+		*notifying.DestructiveHint || notifying.ReadOnlyHint {
+		t.Errorf("notifying annotations = %+v", notifying)
+	}
 	for _, k := range []Kind{Read, Write, IdempotentWrite, Destructive} {
 		if a := annotationsFor(k); a.OpenWorldHint == nil || *a.OpenWorldHint {
-			t.Errorf("kind %v claims an open world; only Connected reaches one", k)
+			t.Errorf("kind %v claims an open world; only Connected and Notifying reach one", k)
 		}
 	}
 }

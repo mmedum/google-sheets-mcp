@@ -304,6 +304,25 @@ func (s *Server) spreadsheetsGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := docCard(d)
+	if strings.Contains(q.Get("fields"), "comment") {
+		switch q.Get("commentsViewMode") {
+		case "COMMENTS_VIEW_MODE_INCLUDED", "COMMENTS_VIEW_MODE_DEFAULT_FOR_CURRENT_ACCESS":
+		default:
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT",
+				"Field mask may not contain comment-specific fields if comments are not requested")
+			return
+		}
+		if d.CommentsDenied {
+			writeError(w, http.StatusForbidden, "PERMISSION_DENIED", "The caller does not have permission")
+			return
+		}
+		for _, t := range d.Comments {
+			out.Comments = append(out.Comments, cloneThread(t))
+		}
+		for i, sh := range d.Sheets {
+			out.Sheets[i].CommentAnchors = wireAnchors(sh.CommentAnchors)
+		}
+	}
 	grid := q.Get("includeGridData") == "true"
 	ranges := q["ranges"]
 	if grid {

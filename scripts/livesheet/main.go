@@ -341,8 +341,12 @@ type driver struct {
 	chartID       int
 	ownSheetChart int
 	slicerID      int
-	steps         int
-	failed        int
+	// The comment threads and the reply the comment steps made.
+	commentID  string
+	assignedID string
+	replyID    string
+	steps      int
+	failed     int
 	// undetermined counts steps the world would not let this run
 	// settle — Drive's full-text index has not caught up, say. They are
 	// neither passes nor failures: reporting one as a pass hides a

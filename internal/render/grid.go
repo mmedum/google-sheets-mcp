@@ -280,12 +280,17 @@ func anyNonEmpty(xs []string) bool {
 func clip(s string) (string, bool) {
 	// A newline inside a cell would break the grid's alignment, and the
 	// alignment is what makes the addresses trustworthy.
-	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "⏎"), "\n", "⏎")
+	s = showNewlines(s)
 	if utf8.RuneCountInString(s) <= MaxCellWidth {
 		return s, false
 	}
 	r := []rune(s)
 	return string(r[:MaxCellWidth-1]) + "…", true
+}
+
+// showNewlines draws each line break as ⏎, so text keeps to its line.
+func showNewlines(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "⏎"), "\n", "⏎")
 }
 
 // spaces is sliced for padding, so drawing a grid does not call
