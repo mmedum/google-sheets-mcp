@@ -954,10 +954,44 @@ the whole output with it.
   source that starts anywhere else is refused, naming what each kept
   column would read instead. One that starts in the same place and is
   too narrow is refused too, named in the old source's letters. The
-  caller passes the groups and values again, or picks a source that fits.
-  A filter cannot be passed here, so only the source can keep one. A
-  source is read on the anchor's sheet, so a pivot made in the Sheets
-  interface over another sheet keeps nothing across a new source.
+  caller passes the groups, values and filters again, or picks a source
+  that fits. A source is read on the anchor's sheet, so a pivot made in
+  the Sheets interface over another sheet keeps nothing across a new
+  source.
+- **Groups take a rule, in the same flat strings.** `Date by
+  year_month` is a `dateTimeRule`, its type the enum lower-cased, and
+  `Age every 10 from 20 to 70` a `histogramRule`, start and end
+  optional. The rule starts at the last ` by ` or ` every ` with
+  something after it, and an entry that is a heading whole is the
+  column, so a heading with either word in it can still be named. Google
+  allows one group with a rule per source column, so the pivot as it
+  will be sent is checked, kept groups included, and two rules on one
+  column are refused with the reason. A grouping made by hand in Sheets
+  is kept by an update that leaves the groups out, and never written.
+- **Filters are `filters`, written as `filterSpecs`.** `Region show
+  East, West` is a list of values to show, and `Amount number_greater
+  100` a condition, with `manage_range`'s names for the ones the
+  discovery document says filters support. A column takes one of each,
+  and then a value must be listed and meet the condition. `filters`
+  replaces every filter and `clear_filters` removes them. Both take the
+  deprecated `criteria` map out too: a response carries it beside
+  `filterSpecs`, and a pivot sent back with it alone would be filtered by
+  it again. `visibleByDefault` is not an argument. It is set on a
+  condition alone, because the reference says that with it false a value
+  must also be listed, and nothing is.
+- **A value starting with `=` is a calculated value.** It needs `as
+  <name>`. It is used as written (`CUSTOM`) unless it ends in `sum`, which
+  works it out per row and sums it; Google takes no other summary for a
+  formula. It is sent with no `sourceColumnOffset`, since the two are a
+  union. "Show as" (`calculatedDisplayType`) is not offered.
+- **`list` reads every rule back in the spelling the tool takes**:
+  `rows`, `columns`, `values` and `filters`, each column as its letter.
+  Sent back as they read, they make the same pivot. A grouping made by
+  hand reads as `<column> by hand`, which the tool refuses rather than
+  dropping, and a summary this server has no word for reads as Google's
+  word lower-cased. What the spelling cannot carry — a group's sort order
+  and label, a value's "show as" — is not in it, and passing that
+  argument again replaces it.
 - **An anchor inside the source is refused** before the request is
   built. The API accepts it and evaluates to `Circular dependency
   detected`.
@@ -1924,6 +1958,14 @@ forgotten. Results go into §18.
   boolean column, and whether a header cell can hold a formula and what
   an update sending the names as read does to it and to a header in
   rich text. §18 has the beliefs it settles.
+- **U. Pivot grouping rules, filters and calculated values** (written
+  2026-10-09, **not yet run**): what Google answers for each refusal
+  `manage_pivot_table` makes first — a value with an offset and a
+  formula, a formula averaged, two rules on one column, a histogram's
+  interval and bounds, a condition only data validation takes — what
+  labels a date and a histogram rule draw, what a condition alone shows
+  with `visibleByDefault` false and true, and which filter forms a pivot
+  reads back with. §18 has the beliefs it settles.
 
 ## 16. Delivery phases
 
@@ -3461,3 +3503,21 @@ rest are beliefs, and spike T and the live driver are what settle them.
 | Google returns an entry for every column of a table | **Unverified**: the guide's add example types two of five columns and shows no read | Where the fresh read has no entry for a column, the update adds one named by its header cell's text from the same read. Spike T's reads after a sparse add say which it is |
 | A type changes how a column is shown, not what its cells hold | **Unverified, and doubted by the guide**: "The rating and checkbox column types populate with default values of 0 and FALSE respectively". Nothing says whether a type rewrites a number format set before or replaces a per-cell validation | Nothing is refused. The live driver prints the formatting under a typed column for a person to read; spike T watches a number format, a per-cell list, and a boolean column over a text value and an empty cell |
 | A chip column read back is taken back unchanged | **Unverified**: the chip types are in the enum, and nothing says whether a request may carry one | `manage_range` never sets a chip type, and an update sends a chip column back as it read. Spike T sends the whole array back as read |
+
+**Pivot grouping rules, filters and calculated values on
+`manage_pivot_table`, 2026-10-09**, read against the Sheets discovery
+document (revision 20261005) and the pivot table reference page. Three
+rows are the reference's own definitions; the rest are beliefs, and
+spike U and the live driver are what settle them.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| A pivot value may carry a column and a formula | **Refuted by the reference**: `PivotValue` has "Union field `value` ... Exactly one value must be set", of `sourceColumnOffset`, `formula` and `dataSourceColumnReference` | `sourceColumnOffset` is a pointer, so a calculated value is sent without it and a column's offset of 0 is still sent. The fake refuses both and neither. Spike U sends both |
+| A formula value takes any summary | **Refuted by the reference**: "If formula is set, the only supported values are SUM and CUSTOM. If sourceColumnOffset is set, then `CUSTOM` is not supported" | A calculated value is `CUSTOM` unless it ends in `sum`; another summary word, and `custom` on a column, are refused before the request. The fake refuses both, in wording of its own. Spike U sends both |
+| Two groups may carry a rule on one column | **Unverified, and the reference says not**: `PivotGroupRule` says "Only one PivotGroup with a group rule may be added for each column in the source data, though on any given column you may add both a PivotGroup that has a rule and a PivotGroup that does not". What Google answers is not said | Refused before the request, kept groups and a grouping made by hand included. The fake refuses it in the reference's words. Spike U sends two rules, and a rule beside a plain group |
+| A histogram takes any interval and bounds | **Unverified**: the interval "Must be positive"; start and end are optional, and "if ... both provided, HistogramRule.start must be less than HistogramRule.end". Whether a start of 0 is kept or read as unset is not said | `manage_pivot_table` refuses an interval of 0 or less and a start at or past the end, and sends a start of 0. Spike U sends each and reads back the start |
+| A date or histogram rule draws the labels the reference shows | **Unverified**: the enum descriptions show "2008-Nov" for `YEAR_MONTH`, "Q1", "Sunday"; the histogram example shows "< 25", "25-45", "45-65" and "> 65". Month and day names follow the locale. Where a value equal to the end goes, and where buckets start with no start, is not said | Nothing here depends on a label. The fake draws the documented ones, a value at the end above it, and buckets from 0 with no start. The live driver prints what it draws; spike U sends a value at the end and a rule with no bounds |
+| A filter by condition alone shows what meets it | **Unverified, and the reference says not without `visibleByDefault`**: with it false, "values that are both in visible_values and meet condition are shown", and `visibleValues` says "Values not listed here are excluded" | A condition alone is sent with `visibleByDefault` true; a list, alone or with a condition, without it. The fake reads the reference literally, so there a condition alone without it shows nothing. The live driver filters by a condition alone and checks the total; spike U sends it both ways |
+| A pivot filter takes every condition | **Unverified**: the discovery document marks some conditions "Supported by data validation" alone, `ONE_OF_LIST` among them, and others "and filters" | `filters` takes only the ones marked for filters, and refuses the rest naming them. The fake refuses the rest too. Spike U sends `ONE_OF_LIST` |
+| A pivot's filters are in `filterSpecs` | **Refined by the reference**: `criteria` is "deprecated in favor of filter_specs"; "Both criteria and filter_specs are populated in responses. If both fields are specified in an update request, this field takes precedence". A request with `criteria` alone is filtered by it | `filters` and `clear_filters` write `filterSpecs` and take `criteria` out, so a cleared filter cannot come back from the map a read carried. `list` reads `filterSpecs`, and `criteria` only where a pivot has none. The fake stores both, as a response carries them. Spike U sends each form alone and then neither |
+| A calculated value names its columns by heading | **Unverified for this API**: `PivotFilterCriteria.condition` says "The source data of the pivot table can be referenced by column header name"; `PivotValue.formula` says only that it "must start with an `=` character" | The formula is sent as written, and Google resolves its names. The fake evaluates headings, quoted where they hold a space, arithmetic and five functions, and refuses the rest by name. The live driver checks the SUM formula's total and prints the CUSTOM one |

@@ -465,3 +465,222 @@ func TestUpdateTableReplacesTheColumnsWhole(t *testing.T) {
 		t.Errorf("columns after the update = %+v; want Nardle CURRENCY alone", got)
 	}
 }
+
+// salesSource is the pivot source over the sales block at A10:E16 of
+// the second sheet, which salesSheet writes.
+const salesSource = `"source":{"sheetId":1837,"startRowIndex":9,"endRowIndex":16,"startColumnIndex":0,"endColumnIndex":5}`
+
+// salesSheet puts the sales block on the second sheet, at A10, and
+// widens the sheet so a pivot anchored at H10 has room.
+func salesSheet(t *testing.T) *Server {
+	t.Helper()
+	srv := Standard(t)
+	sh := srv.Doc(FixtureID).Find(SecondSheet)
+	sh.Props.GridProperties.ColumnCount = 20
+	SalesBlock(sh, 10)
+	return srv
+}
+
+// writePivotAt anchors a pivot at H10 of the second sheet through the
+// client, as manage_pivot_table sends one.
+func writePivotAt(srv *Server, pivot string) error {
+	_, err := srv.Client().BatchUpdate(context.Background(), FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*gsheets.Request{{UpdateCells: &gsheets.UpdateCellsRequest{
+			Start:  &gsheets.GridCoordinate{SheetID: 1837, RowIndex: 9, ColumnIndex: 7},
+			Rows:   []*gsheets.RowData{{Values: []*gsheets.CellData{{PivotTable: []byte(pivot)}}}},
+			Fields: "pivotTable",
+		}}},
+	})
+	return err
+}
+
+// drawnFrom is what the pivot at H10 drew, one line a row, cells
+// separated by " | ", down to its first empty row.
+func drawnFrom(srv *Server) string {
+	sh := srv.Doc(FixtureID).Find(SecondSheet)
+	var lines []string
+	for r := 10; ; r++ {
+		var cells []string
+		for c := 8; c <= 12; c++ {
+			if cell := sh.At(r, c); cell != nil && cell.FormattedValue != "" {
+				cells = append(cells, cell.FormattedValue)
+			}
+		}
+		if len(cells) == 0 {
+			return strings.Join(lines, "\n")
+		}
+		lines = append(lines, strings.Join(cells, " | "))
+	}
+}
+
+// TestPivotDrawsFiltersRulesAndCalculatedValues is the fake's model of
+// what the reference documents: the filter keeps East and West before
+// anything is summed, YEAR_MONTH labels as the enum's description shows,
+// a SUM formula is worked out per row and summed, and a CUSTOM one once
+// per group.
+func TestPivotDrawsFiltersRulesAndCalculatedValues(t *testing.T) {
+	srv := salesSheet(t)
+	err := writePivotAt(srv, `{`+salesSource+`,`+
+		`"rows":[{"sourceColumnOffset":1,"showTotals":true,"sortOrder":"ASCENDING","groupRule":{"dateTimeRule":{"type":"YEAR_MONTH"}}}],`+
+		`"values":[{"sourceColumnOffset":3,"summarizeFunction":"SUM"},`+
+		`{"formula":"=Revenue-Cost","summarizeFunction":"SUM","name":"Margin"},`+
+		`{"formula":"=SUM(Revenue)/SUM(Cost)","summarizeFunction":"CUSTOM","name":"Ratio"}],`+
+		`"filterSpecs":[{"columnOffsetIndex":0,"filterCriteria":{"visibleValues":["East","West"]}}]}`)
+	if err != nil {
+		t.Fatalf("the pivot was refused: %v", err)
+	}
+	const want = "Day | SUM of Revenue | Margin | Ratio\n" +
+		"2026-Jan | 100 | 40 | 1.6666666666666667\n" +
+		"2026-Feb | 250 | 90 | 1.5625\n" +
+		"2026-Apr | 100 | 30 | 1.4285714285714286\n" +
+		"Grand Total | 450 | 160 | 1.5517241379310345"
+	if got := drawnFrom(srv); got != want {
+		t.Errorf("drawn:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// TestPivotDrawsAHistogramAsTheReferenceDoes is the reference's own
+// example: start 25, interval 20 and end 65 make "< 25", "25-45",
+// "45-65" and "> 65".
+func TestPivotDrawsAHistogramAsTheReferenceDoes(t *testing.T) {
+	srv := salesSheet(t)
+	err := writePivotAt(srv, `{`+salesSource+`,`+
+		`"rows":[{"sourceColumnOffset":2,"showTotals":true,"sortOrder":"ASCENDING",`+
+		`"groupRule":{"histogramRule":{"interval":20,"start":25,"end":65}}}],`+
+		`"values":[{"sourceColumnOffset":3,"summarizeFunction":"SUM"}]}`)
+	if err != nil {
+		t.Fatalf("the pivot was refused: %v", err)
+	}
+	const want = "Age | SUM of Revenue\n< 25 | 100\n25-45 | 270\n45-65 | 80\n> 65 | 300\nGrand Total | 750"
+	if got := drawnFrom(srv); got != want {
+		t.Errorf("drawn:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// TestPivotFiltersFollowTheReference is visibleByDefault as the
+// reference defines it, and the criteria map a request may still carry.
+func TestPivotFiltersFollowTheReference(t *testing.T) {
+	rows := `"rows":[{"sourceColumnOffset":0,"showTotals":true,"sortOrder":"ASCENDING"}],` +
+		`"values":[{"sourceColumnOffset":3,"summarizeFunction":"SUM"}]`
+	greater := `"condition":{"type":"NUMBER_GREATER","values":[{"userEnteredValue":"60"}]}`
+	for _, tc := range []struct {
+		name, filters, want string
+	}{
+		{"a condition, the list ignored",
+			`"filterSpecs":[{"columnOffsetIndex":3,"filterCriteria":{` + greater + `,"visibleValues":["West"],"visibleByDefault":true}}]`,
+			"Region | SUM of Revenue\nEast | 100\nNorth | 300\nWest | 280\nGrand Total | 680"},
+		{"a list and a condition, both holding",
+			`"filterSpecs":[{"columnOffsetIndex":3,"filterCriteria":{` + greater + `,"visibleValues":["200","80"]}}]`,
+			"Region | SUM of Revenue\nWest | 280\nGrand Total | 280"},
+		// With visibleByDefault false, a value must be listed as well, and
+		// none is: which is why manage_pivot_table sets it on a condition
+		// alone.
+		{"a condition alone, not visible by default",
+			`"filterSpecs":[{"columnOffsetIndex":3,"filterCriteria":{` + greater + `}}]`,
+			"Region | SUM of Revenue\nGrand Total | 0"},
+		{"the older criteria map",
+			`"criteria":{"0":{"visibleValues":["North"]}}`,
+			"Region | SUM of Revenue\nNorth | 300\nGrand Total | 300"},
+		{"filterSpecs over criteria",
+			`"criteria":{"0":{"visibleValues":["North"]}},"filterSpecs":[{"columnOffsetIndex":0,"filterCriteria":{"visibleValues":["East"]}}]`,
+			"Region | SUM of Revenue\nEast | 170\nGrand Total | 170"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := salesSheet(t)
+			if err := writePivotAt(srv, `{`+salesSource+`,`+rows+`,`+tc.filters+`}`); err != nil {
+				t.Fatalf("the pivot was refused: %v", err)
+			}
+			if got := drawnFrom(srv); got != tc.want {
+				t.Errorf("drawn:\n%s\nwant:\n%s", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAStoredPivotCarriesBothFilterForms is a response as the reference
+// describes it: filterSpecs and criteria both populated, whichever the
+// request sent.
+func TestAStoredPivotCarriesBothFilterForms(t *testing.T) {
+	srv := salesSheet(t)
+	err := writePivotAt(srv, `{`+salesSource+`,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],`+
+		`"values":[{"sourceColumnOffset":3,"summarizeFunction":"SUM"}],"criteria":{"0":{"visibleValues":["North"]}}}`)
+	if err != nil {
+		t.Fatalf("the pivot was refused: %v", err)
+	}
+	stored := string(srv.Doc(FixtureID).Find(SecondSheet).At(10, 8).PivotTable)
+	for _, want := range []string{
+		`"criteria":{"0":{"visibleValues":["North"]}}`,
+		`"filterSpecs":[{"columnOffsetIndex":0,"filterCriteria":{"visibleValues":["North"]}}]`,
+	} {
+		if !strings.Contains(stored, want) {
+			t.Errorf("the stored pivot does not carry %s: %s", want, stored)
+		}
+	}
+}
+
+// TestPivotRulesAreChecked holds the fake to the reference's rules for
+// values, group rules and filters, in wording of its own (§18), and to
+// what it refuses because it cannot evaluate it.
+func TestPivotRulesAreChecked(t *testing.T) {
+	group := func(offset, rule string) string {
+		return `{"sourceColumnOffset":` + offset + `,"sortOrder":"ASCENDING","groupRule":` + rule + `}`
+	}
+	sum := `{"sourceColumnOffset":3,"summarizeFunction":"SUM"}`
+	for _, tc := range []struct {
+		name, rows, values, filters, want string
+	}{
+		{"an offset and a formula", group("0", "null"),
+			`{"sourceColumnOffset":3,"formula":"=Revenue","summarizeFunction":"SUM"}`, "",
+			"set exactly one of sourceColumnOffset and formula"},
+		{"neither an offset nor a formula", group("0", "null"), `{"summarizeFunction":"SUM"}`, "",
+			"set exactly one of sourceColumnOffset and formula"},
+		{"a formula without =", group("0", "null"), `{"formula":"Revenue","summarizeFunction":"SUM"}`, "",
+			"a formula starts with ="},
+		{"a formula averaged", group("0", "null"), `{"formula":"=Revenue","summarizeFunction":"AVERAGE"}`, "",
+			"a formula is summarized by SUM or CUSTOM, not AVERAGE"},
+		{"CUSTOM on a column", group("0", "null"), `{"sourceColumnOffset":3,"summarizeFunction":"CUSTOM"}`, "",
+			"CUSTOM is only valid with a formula"},
+		{"a rule of both kinds",
+			group("1", `{"dateTimeRule":{"type":"YEAR"},"histogramRule":{"interval":1}}`), sum, "",
+			"set exactly one rule"},
+		{"a rule of no kind", group("1", `{}`), sum, "", "set exactly one rule"},
+		{"an interval of 0", group("2", `{"histogramRule":{"interval":0}}`), sum, "",
+			"the interval must be positive"},
+		{"a start past the end", group("2", `{"histogramRule":{"interval":5,"start":50,"end":20}}`), sum, "",
+			"start must be less than end"},
+		{"a date type the enum lacks", group("1", `{"dateTimeRule":{"type":"FORTNIGHT"}}`), sum, "",
+			`Invalid value at 'date_time_rule.type': "FORTNIGHT"`},
+		{"two rules on one column",
+			group("1", `{"dateTimeRule":{"type":"YEAR"}}`) + `,` + group("1", `{"dateTimeRule":{"type":"MONTH"}}`), sum, "",
+			"only one PivotGroup with a group rule may be added for each column"},
+		{"a filter condition only data validation takes", group("0", "null"), sum,
+			`,"filterSpecs":[{"columnOffsetIndex":0,"filterCriteria":{"condition":{"type":"ONE_OF_LIST","values":[{"userEnteredValue":"East"}]}}}]`,
+			"ONE_OF_LIST is not a filter condition"},
+		{"a date filter this fake does not evaluate", group("0", "null"), sum,
+			`,"filterSpecs":[{"columnOffsetIndex":1,"filterCriteria":{"visibleByDefault":true,"condition":{"type":"DATE_AFTER","values":[{"userEnteredValue":"2026-01-15"}]}}}]`,
+			"this fake does not evaluate a DATE_AFTER filter"},
+		{"a heading alone in a CUSTOM formula", group("0", "null"),
+			`{"formula":"=Revenue/2","summarizeFunction":"CUSTOM","name":"Half"}`, "",
+			"this fake evaluates a heading in a CUSTOM formula only inside SUM, COUNT, AVERAGE, MIN or MAX: Revenue"},
+		// One of each kind that is taken, so the table proves the checks
+		// refuse what they name and nothing beside it.
+		{"a plain group beside a rule on one column",
+			group("1", "null") + `,` + group("1", `{"dateTimeRule":{"type":"YEAR"}}`), sum, "", ""},
+		{"a calculated value", group("0", "null"),
+			`{"formula":"=SUM(Revenue)/COUNT(Cost)","summarizeFunction":"CUSTOM","name":"Mean"}`, "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := salesSheet(t)
+			err := writePivotAt(srv, `{`+salesSource+`,"rows":[`+tc.rows+`],"values":[`+tc.values+`]`+tc.filters+`}`)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("refused: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want it to say %q", err, tc.want)
+			}
+		})
+	}
+}

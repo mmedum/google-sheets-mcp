@@ -35,6 +35,7 @@ func (d *driver) chartAll() {
 	d.run(d.slicerEditSteps()...)
 	sec("manage_pivot_table")
 	d.run(d.pivotSteps()...)
+	d.run(d.pivotRuleSteps()...)
 	// Last, because it destroys a column the steps above are built on.
 	d.run(d.chartLossSteps()...)
 }
@@ -675,6 +676,170 @@ func (d *driver) pivotSteps() []step {
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "delete", "anchor": "J20",
 			},
 			expectError: "not_found",
+		},
+	}
+}
+
+// pivotBlock is where the pivot rule steps keep their data and their
+// pivot table, clear of the other steps' cells.
+const (
+	pivotBlock  = "A30:E36"
+	pivotAnchor = "G30"
+	pivotOutput = "G30:J40"
+)
+
+// pivotRuleSteps drive grouping rules, filters and calculated values,
+// and settle what §18 records as unverified about them: the labels a
+// date and a histogram rule draw, that a condition alone shows what
+// meets it once visibleByDefault is set, that a list and a condition on
+// one column must both hold, and that a cleared pivot keeps no filter.
+// Each total is worked out from the block below by hand.
+func (d *driver) pivotRuleSteps() []step {
+	output := func(name, why string, want ...string) step {
+		return step{
+			name: name, why: why, tool: "read_range",
+			args: map[string]any{"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": pivotOutput},
+			check: func(text string, _ map[string]any) error {
+				line("     LOOK: %s", strings.Join(strings.Fields(text), " "))
+				for _, w := range want {
+					if !strings.Contains(text, w) {
+						return fmt.Errorf("the pivot does not show %q: %s", w, text)
+					}
+				}
+				return nil
+			},
+		}
+	}
+	listed := func(name string, field string, want ...string) step {
+		return step{
+			name: name,
+			why:  "list reads the rules back in the spelling the tool takes, so a caller can send them again",
+			tool: "manage_pivot_table",
+			args: map[string]any{"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "list", "range": pivotOutput},
+			check: func(_ string, s map[string]any) error {
+				pivots, _ := s["pivot_tables"].([]any)
+				if len(pivots) != 1 {
+					return fmt.Errorf("the listing found %d pivot tables at %s", len(pivots), pivotAnchor)
+				}
+				p, _ := pivots[0].(map[string]any)
+				got, _ := p[field].([]any)
+				if fmt.Sprint(got) != fmt.Sprint(want) {
+					return fmt.Errorf("%s reads back as %v, want %v", field, got, want)
+				}
+				return nil
+			},
+		}
+	}
+	update := func(name, why string, args map[string]any) step {
+		base := map[string]any{"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "update", "anchor": pivotAnchor}
+		for k, v := range args {
+			base[k] = v
+		}
+		return step{name: name, why: why, tool: "manage_pivot_table", args: base}
+	}
+	return []step{
+		{
+			name: "a block with dates, ages and money, for the pivot rules",
+			why:  "a date rule needs dates Sheets parsed as dates, which is what typed input makes",
+			tool: "write_values",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": pivotBlock, "input": "typed",
+				"values": [][]any{
+					{"Region", "Day", "Age", "Revenue", "Cost"},
+					{"East", "2026-01-01", 23, 100, 60},
+					{"West", "2026-02-01", 37, 200, 150},
+					{"East", "2026-02-02", 41, 50, 10},
+					{"North", "2026-01-01", 68, 300, 100},
+					{"West", "2026-04-01", 55, 80, 40},
+					{"East", "2026-04-02", 29, 20, 30},
+				},
+			},
+		},
+		{
+			name: "a pivot grouped by month, filtered to two regions, with two calculated values",
+			why: "a date rule, a list of values to show, and both kinds of calculated value, in one add; a " +
+				"calculated value is sent with no column offset, since Google takes one or the other",
+			tool: "manage_pivot_table",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "add", "anchor": pivotAnchor,
+				"source": pivotBlock, "group_rows": []any{"Day by year_month"},
+				"values":  []any{"Revenue sum", "=Revenue-Cost sum as Margin", "=SUM(Revenue)/SUM(Cost) as Ratio"},
+				"filters": []any{"Region show East, West"},
+			},
+		},
+		output("the month buckets, North left out",
+			"East and West take in 450, Margin 160; how Google labels a month bucket is unverified (§18)",
+			"Margin", "Ratio", "450", "160", "Grand Total"),
+		listed("list reads the month rule back", "rows", "B by year_month"),
+		listed("list reads the filter back", "filters", "A show East, West"),
+		listed("list reads the calculated values back", "values",
+			"D sum", "=Revenue-Cost sum as Margin", "=SUM(Revenue)/SUM(Cost) as Ratio"),
+		update("group by age, ten years at a time", "a histogram rule; how Google labels its buckets is unverified (§18)",
+			map[string]any{"group_rows": []any{"Age every 10 from 20 to 70"}}),
+		output("the age buckets", "the transcript shows Google's bucket labels, and the total is unchanged",
+			"450", "Grand Total"),
+		update("a condition alone",
+			"with visibleByDefault set, a condition shows every value that meets it; without, the reference "+
+				"reads as showing nothing (§18)",
+			map[string]any{"filters": []any{"Revenue number_greater 60"}}),
+		output("the rows over 60, North back in", "100 + 200 + 300 + 80 is 680", "680"),
+		update("a list and a condition on one column",
+			"a value must be listed and meet the condition, so only East is left",
+			map[string]any{"filters": []any{"Region show East, West", "Region text_contains Ea"}}),
+		output("East alone", "100 + 50 + 20 is 170", "170"),
+		listed("list reads both back", "filters", "A show East, West", "A text_contains Ea"),
+		{
+			name: "a second rule on one column is refused here",
+			why:  "Google allows one grouping rule per source column, and this says so before the request",
+			tool: "manage_pivot_table",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "update", "anchor": pivotAnchor,
+				"group_rows": []any{"Day by year", "Day by month"},
+			},
+			expectError: "invalid",
+		},
+		{
+			name: "a calculated value with no name is refused here",
+			why:  "a calculated value needs a name, so its column says what it works out",
+			tool: "manage_pivot_table",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "update", "anchor": pivotAnchor,
+				"values": []any{"=Revenue-Cost"},
+			},
+			expectError: "invalid",
+		},
+		{
+			name: "clear the filters",
+			why: "clear_filters removes filterSpecs and the older criteria both, or the criteria a response " +
+				"carries would bring the filters back",
+			tool: "manage_pivot_table",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "update", "anchor": pivotAnchor,
+				"clear_filters": true,
+			},
+		},
+		output("every row again", "all six rows take in 750", "750"),
+		{
+			name: "list shows no filter",
+			why:  "the clear is about what Google kept, read back",
+			tool: "manage_pivot_table",
+			args: map[string]any{"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "list", "range": pivotOutput},
+			check: func(_ string, s map[string]any) error {
+				pivots, _ := s["pivot_tables"].([]any)
+				if len(pivots) != 1 {
+					return fmt.Errorf("the listing found %d pivot tables", len(pivots))
+				}
+				if p, _ := pivots[0].(map[string]any); p["filters"] != nil {
+					return fmt.Errorf("a filter survived the clear: %v", p["filters"])
+				}
+				return nil
+			},
+		},
+		{
+			name: "the rules pivot goes",
+			why:  "the block is left for the steps after, without a pivot over it",
+			tool: "manage_pivot_table",
+			args: map[string]any{"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "delete", "anchor": pivotAnchor},
 		},
 	}
 }

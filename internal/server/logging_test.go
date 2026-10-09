@@ -148,6 +148,12 @@ var toolCalls = map[string][]map[string]any{
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.FirstSheet, "action": "add",
 			"anchor": "F1", "source": "A1:C6", "group_rows": []any{"A"},
 			"values": []any{"B sum as " + searchTerm}},
+		// A filter's values and a formula are cell content in a request
+		// body, and come back in a listing.
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.FirstSheet, "action": "add",
+			"anchor": "H1", "source": "A1:C6", "group_rows": []any{"A"},
+			"values":  []any{"=SUM(Nardle) as " + searchTerm},
+			"filters": []any{"A show " + searchTerm, "B text_contains " + searchTerm}},
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.FirstSheet, "action": "list"},
 	},
 	// A query is the most sensitive thing this server ever sends: it is

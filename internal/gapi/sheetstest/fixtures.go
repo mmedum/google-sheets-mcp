@@ -239,3 +239,44 @@ func Standard(t *testing.T) *Server {
 	s.AddFile(NotASpreadsheet())
 	return s
 }
+
+// SalesBlock writes the block the pivot rules are tested on, A<row> to
+// E<row+6>: a region, a date, an age, a revenue and a cost, with six
+// rows under the headings. The dates are serials shown as dates, which
+// is what a typed date is on the wire. "Age" is a heading that is also
+// a column letter, far outside the block.
+//
+//	Region  Day         Age  Revenue  Cost
+//	East    2026-01-01  23   100      60
+//	West    2026-02-01  37   200      150
+//	East    2026-02-02  41   50       10
+//	North   2026-01-01  68   300      100
+//	West    2026-04-01  55   80       40
+//	East    2026-04-02  29   20       30
+func SalesBlock(sh *Sheet, row int) {
+	for i, h := range []string{"Region", "Day", "Age", "Revenue", "Cost"} {
+		sh.Set(row, i+1, Str(h))
+	}
+	for i, r := range []struct {
+		region string
+		day    float64
+		date   string
+		age    float64
+		rev    float64
+		cost   float64
+	}{
+		{"East", 46023, "2026-01-01", 23, 100, 60},
+		{"West", 46054, "2026-02-01", 37, 200, 150},
+		{"East", 46055, "2026-02-02", 41, 50, 10},
+		{"North", 46023, "2026-01-01", 68, 300, 100},
+		{"West", 46113, "2026-04-01", 55, 80, 40},
+		{"East", 46114, "2026-04-02", 29, 20, 30},
+	} {
+		at := row + 1 + i
+		sh.Set(at, 1, Str(r.region))
+		sh.Set(at, 2, Num(r.day, r.date))
+		sh.Set(at, 3, Num(r.age, ""))
+		sh.Set(at, 4, Num(r.rev, ""))
+		sh.Set(at, 5, Num(r.cost, ""))
+	}
+}
