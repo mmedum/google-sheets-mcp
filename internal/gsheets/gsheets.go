@@ -286,9 +286,10 @@ type Table struct {
 // TableColumn is one column of a table.
 //
 // ColumnIndex counts from the table's first column, not the sheet's.
-// ColumnName is the header text; this server reads it and never sends
-// it, since whether sending one rewrites the header cell is unverified
-// (§18). DataValidationRule is set on a dropdown column only.
+// ColumnName is the header text. An add sends none, and an update sends
+// each one back as it read it, since whether a name left out clears the
+// header is unverified (§18). DataValidationRule is set on a dropdown
+// column only.
 type TableColumn struct {
 	ColumnIndex        int                            `json:"columnIndex,omitempty"`
 	ColumnName         string                         `json:"columnName,omitempty"`

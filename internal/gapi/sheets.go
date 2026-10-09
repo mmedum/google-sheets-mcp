@@ -33,7 +33,12 @@ const CardFields = "spreadsheetId," +
 // before an update sends them back whole. The card has them too, but it
 // is cached, and a cached array sent back would undo a change somebody
 // made since.
-const TableFields = "sheets(properties(sheetId),tables(tableId,range,columnProperties))"
+//
+// The header row comes in the same read, scoped by a range. The update
+// sends each column's name back, and refuses a header cell that holds a
+// formula, which a name written into it would replace.
+const TableFields = "sheets(properties(sheetId),tables(tableId,range,columnProperties)," +
+	"data(startRow,startColumn,rowData(values(userEnteredValue,formattedValue))))"
 
 // GridFields is the field mask behind a read of cells. It asks for what
 // a values read cannot show: the entered value under a formatted one,

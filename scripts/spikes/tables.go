@@ -31,7 +31,12 @@ import (
 // Q5. What does a type change do to the cells: a number format set
 // before, a per-cell validation set before, and a boolean column over a
 // text value and an empty cell, which the guide says fill with FALSE.
-// Q6. Is the array taken back exactly as it read, names included?
+// Q6. Is the array taken back exactly as it read, names included? This
+// is what manage_range sends on update.
+// Q7. Can a table's header cell hold a formula, and what does an update
+// sending the names as read do to it, and to a header in rich text?
+// manage_range refuses the update over a formula header; this says
+// whether that refusal can ever fire, and whether rich text needs one.
 func spikeT(ctx context.Context) {
 	sec("Spike T: typed table columns, and what an update does to them")
 	const sheet = "SpikeTables"
@@ -151,6 +156,33 @@ func spikeT(ctx context.Context) {
 	update("column 0 named SPIKE-RENAMED", id, renamed)
 	readColumns(ctx, sheetID)
 	headers()
+
+	line("")
+	line("  Q7: a formula and rich text in the header, under an update sending the names as read")
+	status, body = putMode(ctx, a1.QuoteSheet(sheet)+"!B1", [][]any{{`="Amo"&"unt"`}}, "USER_ENTERED")
+	line("    %-52s -> HTTP %d  %s", "a formula showing Amount, into B1", status, first120(body))
+	status, body = batchOne(ctx, map[string]any{"updateCells": map[string]any{
+		"range": a1.Rect{FirstCol: 3, FirstRow: 1, LastCol: 3, LastRow: 1}.GridRange(sheetID),
+		"rows": []any{map[string]any{"values": []any{map[string]any{
+			"userEnteredValue": map[string]any{"stringValue": "Flag"},
+			"textFormatRuns": []any{
+				map[string]any{"startIndex": 0, "format": map[string]any{"bold": true}},
+				map[string]any{"startIndex": 2, "format": map[string]any{}},
+			},
+		}}}},
+		"fields": "userEnteredValue,textFormatRuns",
+	}})
+	line("    %-52s -> HTTP %d  %s", "Flag in C1, its first two letters bold", status, first120(body))
+	headerCells := func(what string) {
+		status, body := call(ctx, http.MethodGet, sheetsBase+"/spreadsheets/"+scratchID+
+			"?ranges="+url.QueryEscape(a1.QuoteSheet(sheet)+"!B1:C1")+
+			"&fields="+url.QueryEscape("sheets(data(rowData(values(userEnteredValue,formattedValue,textFormatRuns))))"), nil)
+		line("  %-50s -> HTTP %d  %s", what, status, first120(body))
+	}
+	headerCells("  B1 and C1 before the update")
+	columns = readColumns(ctx, sheetID)
+	update("every column as read, names included", id, columns)
+	headerCells("  B1 and C1 after it: formula and runs kept?")
 }
 
 // column is one columnProperties entry with no name.
@@ -213,7 +245,7 @@ func readColumns(ctx context.Context, sheetID int) []any {
 }
 
 // withoutNames is a read-back array with every columnName taken out,
-// which is how manage_range sends one.
+// which asks whether a name left out clears its header.
 func withoutNames(columns []any) []any {
 	out := make([]any, 0, len(columns))
 	for _, c := range columns {

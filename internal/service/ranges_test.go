@@ -587,7 +587,8 @@ func typedSheet(srv *sheetstest.Server) *sheetstest.Sheet {
 }
 
 // sentColumns is the column array the last batchUpdate carried, as JSON,
-// and the mask it went under.
+// and the mask it went under. An add's array carries no names, which
+// each add test's expected JSON states.
 func sentColumns(t *testing.T, srv *sheetstest.Server) (string, string) {
 	t.Helper()
 	var body string
@@ -595,9 +596,6 @@ func sentColumns(t *testing.T, srv *sheetstest.Server) (string, string) {
 		if c.Op == "spreadsheets.batchUpdate" {
 			body = c.Body
 		}
-	}
-	if strings.Contains(body, "columnName") {
-		t.Errorf("the request sent a column name, which may rewrite the header cell: %s", body)
 	}
 	var req gsheets.BatchUpdateSpreadsheetRequest
 	if err := json.Unmarshal([]byte(body), &req); err != nil || len(req.Requests) != 1 {
@@ -701,7 +699,7 @@ func seedTypedTable(srv *sheetstest.Server) {
 // TestTableUpdateRetypesOneColumnAndKeepsTheRest is the round trip. The
 // mask names a list, which may be replaced whole (§18), so every column
 // goes back as it was — the dropdown with its list, the chip as a chip —
-// and none with its name.
+// and each with the name it was read with, so no header is left blank.
 func TestTableUpdateRetypesOneColumnAndKeepsTheRest(t *testing.T) {
 	srv := sheetstest.Standard(t)
 	seedTypedTable(srv)
@@ -715,10 +713,11 @@ func TestTableUpdateRetypesOneColumnAndKeepsTheRest(t *testing.T) {
 		t.Fatalf("retyping a column: %v", err)
 	}
 	columns, fields := sentColumns(t, srv)
-	const want = `[{"columnType":"TEXT"},{"columnIndex":1,"columnType":"CURRENCY"},` +
-		`{"columnIndex":2,"columnType":"DROPDOWN","dataValidationRule":{"condition":{"type":"ONE_OF_LIST",` +
+	const want = `[{"columnName":"Trennow","columnType":"TEXT"},` +
+		`{"columnIndex":1,"columnName":"Bractal","columnType":"CURRENCY"},` +
+		`{"columnIndex":2,"columnName":"Status","columnType":"DROPDOWN","dataValidationRule":{"condition":{"type":"ONE_OF_LIST",` +
 		`"values":[{"userEnteredValue":"Open"},{"userEnteredValue":"Done"}]}}},` +
-		`{"columnIndex":3,"columnType":"PEOPLE_CHIP"}]`
+		`{"columnIndex":3,"columnName":"ID","columnType":"PEOPLE_CHIP"}]`
 	if columns != want || fields != "columnProperties" {
 		t.Errorf("sent %s under %q\nwant %s under \"columnProperties\"", columns, fields, want)
 	}
@@ -737,7 +736,9 @@ func TestTableUpdateRetypesOneColumnAndKeepsTheRest(t *testing.T) {
 
 // TestTableUpdateReadsTheColumnsFresh is why the update does not take
 // the array from the cached card: a dropdown somebody added since the
-// card was read would be sent back without it, and lost.
+// card was read would be sent back without it, and lost. The name a
+// retyped column goes back with is the one this read gave it, which is
+// the name Google holds, even where its header cell reads otherwise.
 func TestTableUpdateReadsTheColumnsFresh(t *testing.T) {
 	srv := sheetstest.Standard(t)
 	seedTypedTable(srv)
@@ -746,17 +747,20 @@ func TestTableUpdateReadsTheColumnsFresh(t *testing.T) {
 	if _, err := svc.Card(ctx, sheetstest.FixtureID); err != nil {
 		t.Fatal(err)
 	}
-	// Somebody else, inside the card's cache window, retypes column A.
+	// Somebody else, inside the card's cache window, retypes column A
+	// and renames column B.
 	table := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Tables[0]
 	table.ColumnProperties[0].ColumnType = gsheets.ColumnDate
+	table.ColumnProperties[1].ColumnName = "Quorbin"
 
 	update := rangeReq(service.RangeTable, service.RangeUpdate, "A1:D3")
-	update.ColumnTypes = []string{"Bractal percent"}
+	update.ColumnTypes = []string{"B percent"}
 	if _, err := svc.ManageRange(ctx, update); err != nil {
 		t.Fatalf("retyping a column: %v", err)
 	}
 	columns, _ := sentColumns(t, srv)
-	if !strings.HasPrefix(columns, `[{"columnType":"DATE"},{"columnIndex":1,"columnType":"PERCENT"}`) {
+	if !strings.HasPrefix(columns, `[{"columnName":"Trennow","columnType":"DATE"},`+
+		`{"columnIndex":1,"columnName":"Quorbin","columnType":"PERCENT"}`) {
 		t.Errorf("the update sent the cached columns: %s", columns)
 	}
 }
@@ -774,11 +778,95 @@ func TestTableUpdateRenamesAndRetypesInOneRequest(t *testing.T) {
 		t.Fatalf("renaming and retyping: %v", err)
 	}
 	columns, fields := sentColumns(t, srv)
-	if fields != "name,columnProperties" || !strings.HasPrefix(columns, `[{"columnType":"DATE_TIME"},`) {
+	if fields != "name,columnProperties" || !strings.HasPrefix(columns, `[{"columnName":"Trennow","columnType":"DATE_TIME"},`) {
 		t.Errorf("sent %s under %q", columns, fields)
 	}
 	if got := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Tables[0].Name; got != "Bractal" {
 		t.Errorf("the table is called %q", got)
+	}
+}
+
+// TestTableUpdateNamesAColumnTheReadLeftOutByItsHeader is a column the
+// read has no entry for. Whether Google ever returns such an array is
+// unverified (§18); if it does, the entry the update adds carries the
+// header cell's text from the same read, so it cannot blank the header.
+func TestTableUpdateNamesAColumnTheReadLeftOutByItsHeader(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	seedTypedTable(srv)
+	table := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Tables[0]
+	table.ColumnProperties = table.ColumnProperties[2:3]
+
+	update := rangeReq(service.RangeTable, service.RangeUpdate, "A1:D3")
+	update.ColumnTypes = []string{"D date"}
+	if _, err := newService(t, srv).ManageRange(context.Background(), update); err != nil {
+		t.Fatalf("retyping a column: %v", err)
+	}
+	columns, _ := sentColumns(t, srv)
+	const want = `[{"columnIndex":2,"columnName":"Status","columnType":"DROPDOWN","dataValidationRule":{"condition":` +
+		`{"type":"ONE_OF_LIST","values":[{"userEnteredValue":"Open"},{"userEnteredValue":"Done"}]}}},` +
+		`{"columnIndex":3,"columnName":"ID","columnType":"DATE"}]`
+	if columns != want {
+		t.Errorf("columnProperties =\n%s\nwant\n%s", columns, want)
+	}
+}
+
+// TestTableUpdateIsRefusedOverAFormulaInTheHeader is the one header a
+// name sent back could change: written into the cell, the name would
+// replace the formula with the text it shows. A rename alone sends no
+// column, so it is not held back.
+func TestTableUpdateIsRefusedOverAFormulaInTheHeader(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	seedTypedTable(srv)
+	srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Set(1, 3, sheetstest.Formula(`="Sta"&"tus"`, 0, "Status"))
+	svc := newService(t, srv)
+	ctx := context.Background()
+
+	for _, dryRun := range []bool{false, true} {
+		update := rangeReq(service.RangeTable, service.RangeUpdate, "A1:D3")
+		update.ColumnTypes = []string{"B currency"}
+		update.DryRun = dryRun
+		_, err := svc.ManageRange(ctx, update)
+		const want = "[blocked] the header cell C1 of the table on A1:D3 holds a formula. Changing a column type sends " +
+			"every column's name back, and whether Google writes a name into its header cell is unverified, so the " +
+			"formula could be replaced by the text it shows. Replace the formula with text first, or set the type in Sheets"
+		if err == nil || err.Error() != want {
+			t.Errorf("dry_run=%v: error =\n%v\nwant\n%s", dryRun, err, want)
+		}
+	}
+	if batched(srv) {
+		t.Fatal("a refused update reached the wire")
+	}
+	rename := rangeReq(service.RangeTable, service.RangeUpdate, "A1:D3")
+	rename.Name = "Bractal"
+	if _, err := svc.ManageRange(ctx, rename); err != nil {
+		t.Errorf("a rename over a formula header was refused: %v", err)
+	}
+}
+
+// TestTableUpdateIsRefusedWhenTheTableMoved is the header row the
+// formula check reads: the caller's first row. A table moved since the
+// card was read has another, so the update stops and says where it is.
+func TestTableUpdateIsRefusedWhenTheTableMoved(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	seedTypedTable(srv)
+	svc := newService(t, srv)
+	ctx := context.Background()
+	if _, err := svc.Card(ctx, sheetstest.FixtureID); err != nil {
+		t.Fatal(err)
+	}
+	// Somebody moves it down a row inside the card's cache window.
+	srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Tables[0].Range =
+		a1.Rect{FirstCol: 1, FirstRow: 2, LastCol: 4, LastRow: 4}.GridRange(1837)
+
+	update := rangeReq(service.RangeTable, service.RangeUpdate, "A1:D3")
+	update.ColumnTypes = []string{"B currency"}
+	_, err := svc.ManageRange(ctx, update)
+	const want = "[not_found] the table on A1:D3 covers A2:D4 since this call began; name it by that range"
+	if err == nil || err.Error() != want {
+		t.Errorf("error =\n%v\nwant\n%s", err, want)
+	}
+	if batched(srv) {
+		t.Error("an update of a moved table reached the wire")
 	}
 }
 

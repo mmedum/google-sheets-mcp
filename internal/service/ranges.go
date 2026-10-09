@@ -320,7 +320,7 @@ func (s *Service) tableOp(ctx context.Context, req RangeRequest, action string, 
 		if name == "" {
 			return nil, nil, Errorf("invalid", "a table needs name")
 		}
-		columns, typed, err := s.typedColumns(ctx, ref, props, rect, req.ColumnTypes)
+		columns, typed, err := s.typedColumns(ctx, ref, props, rect, req.ColumnTypes, nil)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -345,15 +345,15 @@ func (s *Service) tableOp(ctx context.Context, req RangeRequest, action string, 
 	}
 	var columns []*gsheets.TableColumn
 	if len(req.ColumnTypes) > 0 {
-		current, err := s.tableColumns(ctx, ref, props.SheetID, target.TableID, rect)
+		now, err := s.readTable(ctx, ref, props, target.TableID, rect)
 		if err != nil {
 			return nil, nil, err
 		}
-		changed, typed, err := s.typedColumns(ctx, ref, props, rect, req.ColumnTypes)
+		changed, typed, err := s.typedColumns(ctx, ref, props, rect, req.ColumnTypes, now.headings())
 		if err != nil {
 			return nil, nil, err
 		}
-		columns = mergeColumns(current, changed)
+		columns = now.merge(changed)
 		applied = append(applied, typed...)
 	}
 	return plan.TableUpdate(target.TableID, name, columns), applied, nil
@@ -364,9 +364,10 @@ func (s *Service) tableOp(ctx context.Context, req RangeRequest, action string, 
 // from the table's first column.
 //
 // The header row is read only when a name is not a letter inside the
-// table, so typing columns by letter costs no read.
+// table and the caller has not read it already, so typing columns by
+// letter costs no read.
 func (s *Service) typedColumns(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
-	rect a1.Rect, entries []string) ([]*gsheets.TableColumn, []render.Applied, error) {
+	rect a1.Rect, entries []string, headers map[string]int) ([]*gsheets.TableColumn, []render.Applied, error) {
 
 	if len(entries) == 0 {
 		return nil, nil, nil
@@ -384,8 +385,7 @@ func (s *Service) typedColumns(ctx context.Context, ref Reference, props *gsheet
 		}
 		specs = append(specs, spec)
 	}
-	var headers map[string]int
-	if needHeaders {
+	if needHeaders && headers == nil {
 		var err error
 		if headers, err = s.headerRow(ctx, ref, SheetRef{Props: props, Rect: table}); err != nil {
 			return nil, nil, err
@@ -412,48 +412,107 @@ func (s *Service) typedColumns(ctx context.Context, ref Reference, props *gsheet
 	return columns, applied, nil
 }
 
-// tableColumns reads a table's columns as they are now.
+// tableNow is a table's columns and its header row, from one read.
+type tableNow struct {
+	columns []*gsheets.TableColumn
+	header  *grid.Grid
+}
+
+// readTable reads a table's columns and its header row as they are now,
+// and refuses a header cell that holds a formula.
 //
 // Fresh rather than from the card. The update sends the whole array
 // back, so a cached one would undo a change somebody made in between.
-func (s *Service) tableColumns(ctx context.Context, ref Reference, sheetID int, tableID string,
-	rect a1.Rect) ([]*gsheets.TableColumn, error) {
+//
+// The refusal is there because the update sends every column's name
+// (merge says why), and nothing Google publishes says whether a name
+// sent is written into the header cell. If it is, a formula there would
+// be replaced by the text it shows.
+func (s *Service) readTable(ctx context.Context, ref Reference, props *gsheets.SheetProperties, tableID string,
+	rect a1.Rect) (*tableNow, error) {
 
-	sp, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{Fields: gapi.TableFields})
+	head := rect
+	head.LastRow = head.FirstRow
+	sp, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{
+		Fields: gapi.TableFields, Ranges: []string{a1.Format(props.Title, head)}, IncludeGridData: true,
+	})
 	if err != nil {
 		return nil, wrap(err)
 	}
-	for _, t := range sheetOf(sp, sheetID).Tables {
+	var table *gsheets.Table
+	for _, t := range sheetOf(sp, props.SheetID).Tables {
 		if t != nil && t.TableID == tableID {
-			return t.ColumnProperties, nil
+			table = t
 		}
 	}
-	return nil, Errorf("not_found", "the table on %s is gone since this call began; get_spreadsheet lists the tables there are",
-		a1.FormatRect(rect))
+	if table == nil {
+		return nil, Errorf("not_found", "the table on %s is gone since this call began; get_spreadsheet lists the tables there are",
+			a1.FormatRect(rect))
+	}
+	// The header read is the caller's first row. A table moved since the
+	// card was read has another one, which the formula check below would
+	// not have seen.
+	if now := rectsOf([]*gsheets.Table{table}, func(t *gsheets.Table) *gsheets.GridRange { return t.Range }, props)[0]; now != rect {
+		return nil, Errorf("not_found", "the table on %s covers %s since this call began; name it by that range",
+			a1.FormatRect(rect), a1.FormatRect(now))
+	}
+	data, _, _ := sheetData(sp, props.SheetID)
+	header := grid.Build(props.Title, props.SheetID, head, data, grid.AsFormatted)
+	for j, cell := range header.Cells[0] {
+		if cell.HasFormula() {
+			return nil, Errorf("blocked",
+				"the header cell %s of the table on %s holds a formula. Changing a column type sends every column's "+
+					"name back, and whether Google writes a name into its header cell is unverified, so the formula "+
+					"could be replaced by the text it shows. Replace the formula with text first, or set the type in Sheets",
+				header.Address(0, j), a1.FormatRect(rect))
+		}
+	}
+	return &tableNow{columns: table.ColumnProperties, header: header}, nil
 }
 
-// mergeColumns is the whole array an update sends: every column as it
-// is, with the named ones replaced.
-//
-// A column keeps its type and, for a dropdown, its list. Its name is
-// left out of every entry, the ones kept included: whether a name sent
-// here rewrites the header cell is unverified (§18), and a header is
-// data somebody typed.
-func mergeColumns(current, changed []*gsheets.TableColumn) []*gsheets.TableColumn {
-	byIndex := map[int]*gsheets.TableColumn{}
-	for _, c := range current {
-		if c == nil {
-			continue
+// headings is the header row as typedColumns resolves a column name
+// against it: each heading, lower-cased, to its offset in the table. The
+// first of two equal headings wins, as in headerRow.
+func (t *tableNow) headings() map[string]int {
+	out := map[string]int{}
+	for j, cell := range t.header.Cells[0] {
+		text := strings.ToLower(strings.TrimSpace(cell.Display))
+		if _, seen := out[text]; text != "" && !seen {
+			out[text] = j
 		}
-		kept := *c
-		kept.ColumnName = ""
-		byIndex[c.ColumnIndex] = &kept
+	}
+	return out
+}
+
+// merge is the whole array an update sends: every column as read, with
+// the named ones retyped, and each with its name.
+//
+// The name is the one this read gave the column, or its header cell's
+// text where the read gave none. The mask names a list, which may be
+// replaced whole (§18), and whether an entry with no name then clears
+// its header is unverified. A name sent as read leaves every header
+// showing the same text whichever way Google treats it. A formula would
+// lose what is under its text, so readTable refused one.
+func (t *tableNow) merge(changed []*gsheets.TableColumn) []*gsheets.TableColumn {
+	byIndex := map[int]*gsheets.TableColumn{}
+	for _, c := range t.columns {
+		if c != nil {
+			kept := *c
+			byIndex[c.ColumnIndex] = &kept
+		}
 	}
 	for _, c := range changed {
-		byIndex[c.ColumnIndex] = c
+		retyped := *c
+		if was, ok := byIndex[c.ColumnIndex]; ok {
+			retyped.ColumnName = was.ColumnName
+		}
+		byIndex[c.ColumnIndex] = &retyped
 	}
 	out := make([]*gsheets.TableColumn, 0, len(byIndex))
 	for _, c := range byIndex {
+		if c.ColumnName == "" && c.ColumnIndex >= 0 && c.ColumnIndex < len(t.header.Cells[0]) {
+			c.ColumnName = t.header.Cells[0][c.ColumnIndex].Display
+		}
 		out = append(out, c)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ColumnIndex < out[j].ColumnIndex })

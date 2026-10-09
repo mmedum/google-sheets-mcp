@@ -817,9 +817,20 @@ value.
   column back. Fresh, because the card is cached, and a cached array
   sent back would undo a change somebody made in between. This round
   trip is why `dataValidationRule` is modeled: without it, every other
-  dropdown would lose its list. No entry carries `columnName`, the kept
-  ones included, since whether a name sent there rewrites the header
-  cell is unverified. `get_spreadsheet` shows the types in the spelling
+  dropdown would lose its list.
+
+  Every entry the update sends carries its `columnName`, exactly as the
+  same fresh read gave it, or the header cell's text where the read gave
+  the column no entry. Replaced whole, a list whose entries had no name
+  might clear every header; a name sent as read leaves the header as it
+  is whichever way Google treats it. A header cell holding a formula is
+  the exception: the reference does not say whether a name sent is
+  written into the cell, and written, it would replace the formula with
+  the text it shows. So the fresh read takes the header row as well, and
+  the update is refused while a header cell holds a formula. A rename
+  alone sends no columns and is not refused. An add still sends no names:
+  it names only the columns it types, and the header text is already in
+  the cells. `get_spreadsheet` shows the types in the spelling
   `column_types` takes, `Status dropdown (Open, In progress, Done)`.
 
   **The conditional-format ops are here rather than on `format_cells`,
@@ -1908,9 +1919,11 @@ forgotten. Results go into §18.
   whether a sparse `columnProperties` is taken on add, whether a
   dropdown with no rule is refused, whether an update with
   `fields=columnProperties` replaces the whole array, whether a column
-  name sent, or left out, rewrites the header cell, and what a type
-  change does to a number format, a per-cell validation and the cells of
-  a boolean column. §18 has the beliefs it settles.
+  name sent, or left out, rewrites the header cell, what a type change
+  does to a number format, a per-cell validation and the cells of a
+  boolean column, and whether a header cell can hold a formula and what
+  an update sending the names as read does to it and to a header in
+  rich text. §18 has the beliefs it settles.
 
 ## 16. Delivery phases
 
@@ -3433,9 +3446,9 @@ the live driver are what settle them.
 | A number value means the same in every locale | **Unverified**: the value is text and "May be a formula", so a locale that writes a decimal with a comma may read `1.5` as something else | The value is sent as written, never rewritten. The live driver writes `1.5` and `1,5` under `de_DE` and reads both back; which one the sheet takes as one and a half only a person can see, and the transcript says where to look. Spike S asks the same |
 
 **Typed table columns on `manage_range`, 2026-10-09**, read against the
-Sheets discovery document (revision 20261005) and the tables guide. One
-row is the reference's own definition; the rest are beliefs, and spike T
-and the live driver are what settle them.
+Sheets discovery document (revision 20261005), the tables guide and the
+Sheets help on tables. One row is the reference's own definition; the
+rest are beliefs, and spike T and the live driver are what settle them.
 
 | Convention | Verdict | Effect |
 |---|---|---|
@@ -3443,6 +3456,8 @@ and the live driver are what settle them.
 | A dropdown column needs a `ONE_OF_LIST` rule, and no other type takes one | **Unverified**: the guide says the rule "must be set" on a dropdown and that "Other column types shouldn't set" it; the discovery document says "Only set for dropdown column type" and the condition is "Valid only if" it is `ONE_OF_LIST`. That is prose, and none of it says what Google answers otherwise | A dropdown always carries its list. The fake refuses a dropdown with no rule, a rule on another type, and a rule that is not a list, in wording of its own. Spike T sends the first two |
 | A sparse `columnProperties` is taken on add | **Unverified, half supported**: the guide's example types two of a five-column table's columns, the first two. A gap, such as columns 1 and 3, is not shown | `manage_range` sends only the columns named. The live driver adds a table typing three of four columns, and spike T one typing columns 1 and 3 |
 | An update with `fields=columnProperties` replaces the whole array | **Unverified, and a primary source says otherwise**: `field_mask.proto` says "If a repeated field is specified for an update operation, new values will be appended to the existing repeated field". AIP-134 and AIP-161 say neither, and the guide says nothing about updating columns | The update reads the columns fresh, changes the ones named, and sends every column back, a dropdown's list and a chip's type included. Replaced, that is the table wanted. Appended, every column arrives twice, and a refusal or the later copy winning loses nothing; the earlier copy winning drops the change, which the live driver's card check after the update catches. Sending only the named columns would lose every other type if the array is replaced. The fake replaces it. Spike T sends one column alone, then the whole array as read, and counts what reads back |
-| A column name sent, or left out, leaves the header cell alone | **Unverified**: `columnName` is "The column name", and a table's header row is its column names; the guide's example sends "Column 1". Whether sending one rewrites the header, and whether leaving one out of an update clears it, is not said | No request sends `columnName`, a kept column's included. The fake keeps a column's name when an update leaves it out, which is the belief this rests on. The live driver reads the header row after the add and after the update; spike T sends a name and leaves one out |
+| A column name sent, or left out, leaves the header cell alone | **Unverified**: `columnName` is "The column name", and a table's header row is its column names; the guide's example sends "Column 1", and the Sheets help says converting a range gives "each column header" a name. Whether sending one rewrites the header, and whether leaving one out of an update clears it, is not said | An update sends every column's name exactly as the same fresh read gave it, or the header cell's text where the read has no entry for the column, so the header survives either way. An add sends no names; the header text is already in the cells. The fake keeps a column's name when an update leaves it out and stores one sent. The live driver reads the header row after the add and after the update; spike T sends a name and leaves one out |
+| A name sent as read rewrites a header cell, if at all, with what it already shows | **Unverified, and only true of text**: nothing says what `columnName` is for a header cell holding a formula, a number or rich text. Read, it can only be the text the cell shows. Written back, it would turn a formula into that text, a number into text, and rich text into plain text | The update is refused while any header cell holds a formula, which the fresh read asks for; the refusal says why. A number or rich-text header is not refused: written back, it keeps what it shows. The live driver writes a formula into a typed table's header and expects the refusal. Spike T asks whether a header cell can hold a formula at all, and what the update does to it and to a header in rich text |
+| Google returns an entry for every column of a table | **Unverified**: the guide's add example types two of five columns and shows no read | Where the fresh read has no entry for a column, the update adds one named by its header cell's text from the same read. Spike T's reads after a sparse add say which it is |
 | A type changes how a column is shown, not what its cells hold | **Unverified, and doubted by the guide**: "The rating and checkbox column types populate with default values of 0 and FALSE respectively". Nothing says whether a type rewrites a number format set before or replaces a per-cell validation | Nothing is refused. The live driver prints the formatting under a typed column for a person to read; spike T watches a number format, a per-cell list, and a boolean column over a text value and an empty cell |
 | A chip column read back is taken back unchanged | **Unverified**: the chip types are in the enum, and nothing says whether a request may carry one | `manage_range` never sets a chip type, and an update sends a chip column back as it read. Spike T sends the whole array back as read |
