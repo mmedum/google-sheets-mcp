@@ -171,7 +171,7 @@ func (s *Service) writePivot(ctx context.Context, ref Reference, req PivotReques
 		return nil, Errorf("invalid", "the pivot table could not be built: %v", err)
 	}
 	if req.Action == PivotUpdate && strings.TrimSpace(req.Source) != "" {
-		if err := s.keptPastEdge(ctx, ref, body, oldSource, source); err != nil {
+		if err := s.checkKept(ctx, ref, body, req, oldSource, source); err != nil {
 			return nil, err
 		}
 	}
@@ -667,107 +667,255 @@ type pivotColumns struct {
 	Criteria map[string]json.RawMessage `json:"criteria"`
 }
 
-// keptPastEdge refuses a new source that is too narrow for a column the
-// update keeps, and names each one.
-//
-// A group, value or filter is an offset from the source's first column,
-// so one the update was not given reads whatever sits at the same
-// position in the new source. Past its right edge it reads nothing, and
-// Google accepts that with a 200 (spike M). What the request named again
-// was resolved against the new source and fits, so anything found here
-// is something the caller did not pass.
-func (s *Service) keptPastEdge(ctx context.Context, ref Reference, body json.RawMessage,
-	old *gsheets.GridRange, source SheetRef) error {
+// keptArgs is the order kept columns are named in, by the argument that
+// would pass each one again.
+var keptArgs = []string{"group_rows", "group_columns", "values", "filters"}
 
+// keptOffsets is every column an update keeps, by that argument.
+//
+// What the request named again was resolved against the new source, so
+// it is left out: only what the caller did not pass can read something
+// they did not choose. A filter cannot be passed here, so every filter
+// is kept.
+func keptOffsets(body json.RawMessage, req PivotRequest) (map[string][]int, error) {
 	var held pivotColumns
 	if err := json.Unmarshal(body, &held); err != nil {
-		return Errorf("unsupported",
+		return nil, Errorf("unsupported",
 			"the pivot table's columns could not be read, so the new source cannot be checked against them")
 	}
-	width := source.Rect.Cols()
-	past := map[string][]int{}
-	note := func(arg string, offset int) {
-		if offset >= width {
-			past[arg] = append(past[arg], offset)
+	kept := map[string][]int{}
+	for _, group := range []struct {
+		arg   string
+		given []string
+		held  []pivotColumn
+	}{
+		{"group_rows", req.Rows, held.Rows},
+		{"group_columns", req.Columns, held.Columns},
+		{"values", req.Values, held.Values},
+	} {
+		if len(group.given) > 0 {
+			continue
+		}
+		for _, c := range group.held {
+			kept[group.arg] = append(kept[group.arg], c.Offset)
 		}
 	}
-	for _, c := range held.Rows {
-		note("group_rows", c.Offset)
-	}
-	for _, c := range held.Columns {
-		note("group_columns", c.Offset)
-	}
-	for _, c := range held.Values {
-		note("values", c.Offset)
-	}
 	for _, c := range held.FilterSpecs {
-		note("filters", c.Offset)
+		kept["filters"] = append(kept["filters"], c.Offset)
 	}
 	for key := range held.Criteria {
 		if offset, err := strconv.Atoi(key); err == nil {
-			note("filters", offset)
+			kept["filters"] = append(kept["filters"], offset)
 		}
 	}
-	if len(past) == 0 {
-		return nil
+	for arg, offsets := range kept {
+		sort.Ints(offsets)
+		kept[arg] = uniqueInts(offsets)
 	}
+	return kept, nil
+}
 
-	// Named in the old source's letters, which is where the caller last
-	// saw them. A source with no left edge starts at column A.
-	first, oldName := 1, "the old source"
-	if old != nil {
-		rect := a1.FromGridRange(old)
-		first = max(rect.FirstCol, 1)
-		if sheet := s.sheetByID(ctx, ref.ID, old.SheetID); sheet != nil {
-			oldName = "the old source " + a1.Format(sheet.Title, rect)
+// uniqueInts drops repeats from a sorted list.
+func uniqueInts(xs []int) []int {
+	out := xs[:0]
+	for i, x := range xs {
+		if i == 0 || x != xs[i-1] {
+			out = append(out, x)
 		}
 	}
-	var kept, again []string
-	widest, widestGiven, filters := 0, 0, "it"
-	for _, arg := range []string{"group_rows", "group_columns", "values", "filters"} {
-		offsets := past[arg]
-		if len(offsets) == 0 {
+	return out
+}
+
+// checkKept refuses a new source that changes what a column the update
+// keeps reads, and names each one.
+//
+// A group, value or filter is an offset from the source's first column.
+// One the update was not given reads whatever sits at the same position
+// in the new source. So a new source that starts at the same column of
+// the same sheet keeps every meaning, and only its width can lose one:
+// past the right edge it reads nothing, and Google accepts that with a
+// 200 (spike M). A new source that starts anywhere else moves every kept
+// column, silently, onto other data.
+func (s *Service) checkKept(ctx context.Context, ref Reference, body json.RawMessage, req PivotRequest,
+	old *gsheets.GridRange, source SheetRef) error {
+
+	kept, err := keptOffsets(body, req)
+	if err != nil || len(kept) == 0 {
+		return err
+	}
+	newName := a1.Format(source.Props.Title, source.Rect)
+	if old == nil {
+		return Errorf("invalid",
+			"the pivot table's old source could not be read, so this server cannot tell what the %s it keeps "+
+				"would read in the new source %s.%s",
+			join(keptNames(kept)), newName, keptFix(kept, ""))
+	}
+	// A source with no left edge starts at column A.
+	oldRect := a1.FromGridRange(old)
+	oldFirst, newFirst := max(oldRect.FirstCol, 1), max(source.Rect.FirstCol, 1)
+	oldName, oldTitle := "the old source", ""
+	if sheet := s.sheetByID(ctx, ref.ID, old.SheetID); sheet != nil {
+		oldName, oldTitle = "the old source "+a1.Format(sheet.Title, oldRect), sheet.Title
+	}
+	if old.SheetID == source.Props.SheetID && oldFirst == newFirst {
+		return pastEdge(kept, oldFirst, oldName, newName, source.Rect.Cols())
+	}
+	return moved(kept, movedSources{
+		oldName: oldName, oldTitle: oldTitle, oldFirst: oldFirst,
+		newName: newName, newTitle: source.Props.Title, newFirst: newFirst,
+		sameSheet: old.SheetID == source.Props.SheetID, width: source.Rect.Cols(),
+	})
+}
+
+// pastEdge refuses a new source that starts where the old one did and is
+// too narrow for a column the update keeps. Named in the old source's
+// letters, which is where the caller last saw them.
+func pastEdge(kept map[string][]int, first int, oldName, newName string, width int) error {
+	var named, again []string
+	widest, widestGiven, filters := 0, 0, ""
+	for _, arg := range keptArgs {
+		var letters []string
+		for _, offset := range kept[arg] {
+			if offset >= width {
+				letters = append(letters, columnLetter(first+offset))
+				widest = max(widest, offset+1)
+			}
+		}
+		if len(letters) == 0 {
 			continue
 		}
-		sort.Ints(offsets)
-		var letters []string
-		for i, offset := range offsets {
-			if i > 0 && offset == offsets[i-1] {
-				continue
-			}
-			letter, err := a1.ColumnName(first + offset)
-			if err != nil {
-				letter = fmt.Sprintf("column %d", offset+1)
-			}
-			letters = append(letters, letter)
-		}
-		last := offsets[len(offsets)-1] + 1
-		widest = max(widest, last)
 		name := arg
 		if arg == "filters" {
-			name = "a filter"
+			name, filters = "a filter", "it"
 			if len(letters) > 1 {
 				name, filters = "filters", "them"
 			}
 		} else {
 			again = append(again, arg)
-			widestGiven = max(widestGiven, last)
+			widestGiven = widest
 		}
-		kept = append(kept, name+" on "+join(letters))
+		named = append(named, name+" on "+join(letters))
+	}
+	if len(named) == 0 {
+		return nil
 	}
 	var fix string
 	if len(again) > 0 {
 		fix = fmt.Sprintf(" Pass %s again, named against the new source, or choose a source at least %d columns wide.",
 			join(again), widestGiven)
 	}
-	if len(past["filters"]) > 0 {
+	if filters != "" {
 		fix += fmt.Sprintf(" This tool cannot set a filter, so only a source at least %d columns wide keeps %s.",
 			widest, filters)
 	}
 	return Errorf("invalid",
 		"the new source %s is %s wide, and the pivot table would keep %s from %s, past its right edge. "+
 			"Google accepts that and the pivot reads nothing there.%s",
-		a1.Format(source.Props.Title, source.Rect), render.Plural(width, "column"), join(kept), oldName, fix)
+		newName, render.Plural(width, "column"), join(named), oldName, fix)
+}
+
+// movedSources is where the old and the new source start, for the
+// refusal that names what a move would shift.
+type movedSources struct {
+	oldName, oldTitle string
+	oldFirst          int
+	newName, newTitle string
+	newFirst          int
+	sameSheet         bool
+	width             int
+}
+
+// moved refuses a new source that starts in another column or on another
+// sheet while the update keeps a column, and says what each would read
+// instead.
+func moved(kept map[string][]int, m movedSources) error {
+	at := func(title string, col int) string {
+		if m.sameSheet || title == "" {
+			return columnLetter(col)
+		}
+		return a1.QuoteSheet(title) + "!" + columnLetter(col)
+	}
+	var reads []string
+	for _, arg := range keptArgs {
+		name := arg
+		if arg == "filters" {
+			name = "a filter"
+		}
+		for _, offset := range kept[arg] {
+			to := "nothing, past its right edge"
+			if offset < m.width {
+				to = at(m.newTitle, m.newFirst+offset)
+			}
+			reads = append(reads, fmt.Sprintf("%s on %s would read %s", name, at(m.oldTitle, m.oldFirst+offset), to))
+		}
+	}
+	opening := fmt.Sprintf("the new source %s starts at column %s, and %s at column %s",
+		m.newName, columnLetter(m.newFirst), m.oldName, columnLetter(m.oldFirst))
+	where := "starts at column " + columnLetter(m.oldFirst)
+	// A source is read on the anchor's sheet, so an old one elsewhere — a
+	// pivot made in the Sheets interface, on a sheet of its own — is one
+	// this tool cannot point back at.
+	if !m.sameSheet {
+		opening = fmt.Sprintf("the new source %s is on another sheet than %s", m.newName, m.oldName)
+		where = ""
+	}
+	return Errorf("invalid",
+		"%s. Each column the pivot table keeps counts from the source's first column, so %s.%s",
+		opening, join(reads), keptFix(kept, where))
+}
+
+// keptFix says how to keep each kept column: pass it again, or choose a
+// source that starts where the old one did. A filter cannot be passed
+// here, so only the source keeps one. An empty where is a source this
+// tool cannot choose, and offers passing again alone.
+func keptFix(kept map[string][]int, where string) string {
+	var again []string
+	for _, arg := range keptArgs[:3] {
+		if len(kept[arg]) > 0 {
+			again = append(again, arg)
+		}
+	}
+	var fix string
+	if len(again) > 0 {
+		fix = fmt.Sprintf(" Pass %s again, named against the new source", join(again))
+		if where != "" {
+			fix += ", or choose a source that " + where
+		}
+		fix += "."
+	}
+	if n := len(kept["filters"]); n > 0 {
+		it := "it"
+		if n > 1 {
+			it = "them"
+		}
+		if where == "" {
+			fix += " This tool cannot set a filter, so it cannot keep " + it + "."
+		} else {
+			fix += " This tool cannot set a filter, so only a source that " + where + " keeps " + it + "."
+		}
+	}
+	return fix
+}
+
+// keptNames is the kept arguments, as a refusal names them.
+func keptNames(kept map[string][]int) []string {
+	var out []string
+	for _, arg := range keptArgs {
+		if len(kept[arg]) > 0 {
+			out = append(out, arg)
+		}
+	}
+	return out
+}
+
+// columnLetter is a one-based column's letter, or its number past the
+// last one A1 can name.
+func columnLetter(col int) string {
+	letter, err := a1.ColumnName(col)
+	if err != nil {
+		return fmt.Sprintf("column %d", col)
+	}
+	return letter
 }
 
 // editPivot applies the arguments, and says what it changed.

@@ -19,7 +19,7 @@ and this project follows [semantic versioning](https://semver.org).
 
 ### Fixed
 
-- `manage_pivot_table` `update` with a new `source` refuses one too narrow for the groups, values and filters it keeps, and names them. Each keeps its position in the source, and Google accepted one past the new edge, leaving a pivot that showed nothing for it.
+- `manage_pivot_table` `update` with a new `source` refuses one that would change what a kept group, value or filter reads, and names each. Each keeps its position counted from the source's first column. A source too narrow left a pivot that showed nothing for it, and Google accepted that. A source that starts in another column moved every kept one onto other data, with nothing said. Pass the groups and values again to change the source anyway.
 - A write over a smart chip (a person or a file link) says so before it erases it. A chip reads as its text, and the refusal called the cell only "not empty"; `overwrite` erased the chip with nothing said.
 
 ### Security

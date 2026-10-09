@@ -292,6 +292,78 @@ func TestPivotUpdateRefusesASourceTooNarrowForWhatItKeeps(t *testing.T) {
 	}
 }
 
+// TestPivotUpdateRefusesASourceThatMovesWhatItKeeps is the update whose
+// new source starts somewhere else. Every kept offset counts from the
+// source's first column, so each one would read other data, and Google
+// has no way to know that is not what was meant.
+func TestPivotUpdateRefusesASourceThatMovesWhatItKeeps(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		pivot string
+		req   service.PivotRequest
+		want  string
+	}{
+		{"one column to the right",
+			`{` + sourceAC + `,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":2,"summarizeFunction":"SUM"}]}`,
+			service.PivotRequest{Source: "B1:D6"},
+			`[invalid] the new source 'Vandel'!B1:D6 starts at column B, and the old source 'Vandel'!A1:C6 at ` +
+				`column A. Each column the pivot table keeps counts from the source's first column, so group_rows ` +
+				`on A would read B and values on C would read D. Pass group_rows and values again, named against ` +
+				`the new source, or choose a source that starts at column A.`},
+		// What the update names again is left out: only the filter is
+		// kept, and the move pushes it past the new edge.
+		{"a kept filter moved past the edge",
+			`{` + sourceAD + `,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}],` +
+				`"filterSpecs":[{"columnOffsetIndex":3,"filterCriteria":{"visibleValues":["Skerry"]}}]}`,
+			service.PivotRequest{Source: "B1:D6", Rows: []string{"B"}, Values: []string{"C sum"}},
+			`[invalid] the new source 'Vandel'!B1:D6 starts at column B, and the old source 'Vandel'!A1:D6 at ` +
+				`column A. Each column the pivot table keeps counts from the source's first column, so a filter ` +
+				`on D would read nothing, past its right edge. This tool cannot set a filter, so only a source ` +
+				`that starts at column A keeps it.`},
+		// A pivot made in the Sheets interface sits on a sheet of its own
+		// and reads another. This tool reads a source on the anchor's
+		// sheet, so it cannot offer the old one back.
+		{"a source on another sheet",
+			`{"source":{"sheetId":1837,"startRowIndex":0,"endRowIndex":6,"startColumnIndex":0,"endColumnIndex":3},` +
+				`"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":2,"summarizeFunction":"SUM"}]}`,
+			service.PivotRequest{Source: "A1:C6", Rows: []string{"A"}},
+			`[invalid] the new source 'Vandel'!A1:C6 is on another sheet than the old source 'Ürväl'!A1:C6. ` +
+				`Each column the pivot table keeps counts from the source's first column, so values on 'Ürväl'!C ` +
+				`would read 'Vandel'!C. Pass values again, named against the new source.`},
+		{"an old source that cannot be read",
+			`{"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}]}`,
+			service.PivotRequest{Source: "A1:C6"},
+			`[invalid] the pivot table's old source could not be read, so this server cannot tell what the ` +
+				`group_rows and values it keeps would read in the new source 'Vandel'!A1:C6. Pass group_rows and ` +
+				`values again, named against the new source.`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, svc := standard(t)
+			seedPivot(t, srv, tc.pivot)
+			tc.req.Spreadsheet = sheetstest.FixtureID
+			tc.req.Sheet = sheetstest.FirstSheet
+			tc.req.Action = service.PivotUpdate
+			tc.req.Anchor = "F1"
+			_, err := svc.ManagePivotTable(context.Background(), tc.req)
+			if err == nil {
+				t.Fatal("a source that moves the kept columns was accepted")
+			}
+			if err.Error() != tc.want {
+				t.Errorf("error =\n%v\nwant\n%s", err, tc.want)
+			}
+			for _, c := range srv.Calls() {
+				if c.Op == "spreadsheets.batchUpdate" {
+					t.Fatal("the request was sent")
+				}
+			}
+		})
+	}
+}
+
 // TestPivotUpdateTakesANewSourceThatFits is the other side of the same
 // check: what the update names again, and what still fits, goes through.
 func TestPivotUpdateTakesANewSourceThatFits(t *testing.T) {
@@ -307,6 +379,11 @@ func TestPivotUpdateTakesANewSourceThatFits(t *testing.T) {
 			`{"sheetId":0,"startRowIndex":0,"endRowIndex":20,"startColumnIndex":0,"endColumnIndex":3}`},
 		{"the value given again", service.PivotRequest{Source: "A1:B6", Values: []string{"B sum"}},
 			`{"sheetId":0,"startRowIndex":0,"endRowIndex":6,"startColumnIndex":0,"endColumnIndex":2}`},
+		// A move keeps nothing it was not given, so naming both again is
+		// the way to take one.
+		{"a moved source with everything given again",
+			service.PivotRequest{Source: "B1:D6", Rows: []string{"B"}, Values: []string{"D sum"}},
+			`{"sheetId":0,"startRowIndex":0,"endRowIndex":6,"startColumnIndex":1,"endColumnIndex":4}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, svc := standard(t)

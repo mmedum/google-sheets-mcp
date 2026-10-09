@@ -527,6 +527,25 @@ func (d *driver) pivotSteps() []step {
 			},
 		},
 		{
+			name: "a new source that starts one column along is refused here",
+			why: "every kept group and value counts from the source's first column, so a source that starts " +
+				"elsewhere moves each one onto other data, and nothing in Google's reply would say so",
+			tool: "manage_pivot_table",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "update",
+				"anchor": "H1", "source": "B1:D6",
+			},
+			expectError: "invalid",
+			check: func(text string, _ map[string]any) error {
+				for _, want := range []string{"starts at column B", "values on C would read D", "starts at column A"} {
+					if !strings.Contains(text, want) {
+						return fmt.Errorf("the refusal does not say %q: %q", want, text)
+					}
+				}
+				return nil
+			},
+		},
+		{
 			name: "a merge over the output is refused, with the reason Sheets gives",
 			why: "Sheets refuses a merge over any cell of a pivot table (400, spike Q), so this guard prevents " +
 				"nothing and fixes a sentence: it used to promise a discard that cannot happen and offer " +

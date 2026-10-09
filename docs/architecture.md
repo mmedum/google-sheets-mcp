@@ -914,10 +914,15 @@ the whole output with it.
   200 and produces a pivot that means nothing.
 - **An update that changes the source checks what it keeps.** A group,
   value or filter the update was not given keeps its offset, so it reads
-  the same position in the new source. One past the new source's edge is
-  refused, named in the old source's letters, and the caller passes it
-  again or picks a wider source. A filter cannot be passed here, so only
-  a wider source keeps it.
+  the same position in the new source. That keeps its meaning only when
+  the new source starts at the same column of the same sheet, so a new
+  source that starts anywhere else is refused, naming what each kept
+  column would read instead. One that starts in the same place and is
+  too narrow is refused too, named in the old source's letters. The
+  caller passes the groups and values again, or picks a source that fits.
+  A filter cannot be passed here, so only the source can keep one. A
+  source is read on the anchor's sheet, so a pivot made in the Sheets
+  interface over another sheet keeps nothing across a new source.
 - **An anchor inside the source is refused** before the request is
   built. The API accepts it and evaluates to `Circular dependency
   detected`.
@@ -1871,9 +1876,10 @@ forgotten. Results go into §18.
   `commentUpdateState` admits. Results in §18.
 - **S. Color scales** (written 2026-10-09, **not yet run**): what a
   scale sent with `colorStyle` alone reads back as, which midpoint types
-  are taken, whether the refusals the fake makes are Google's, and what a
-  number value means under a comma-decimal locale. §18 has the beliefs
-  it settles.
+  are taken, whether the refusals the fake makes are Google's, what a
+  number value means under a comma-decimal locale, and what a percent or
+  percentile value outside 0 to 100 does. §18 has the beliefs it
+  settles.
 
 ## 16. Delivery phases
 
@@ -3265,6 +3271,7 @@ none of them.
 | Writing into a pivot's output is refused, or destroys it | **Refuted both ways, and the truth is better**: `values.update` over one output cell returns 200 and collapses the whole pivot to `#REF!` at the anchor — "Array result was not expanded because it would overwrite data in F3" — and clearing that one cell brings the entire output back. The damage is total and completely reversible | The refusal says the pivot will stop drawing until the cell is cleared, which is true, rather than that the pivot will be destroyed, which is not. An `updateCells` over the **anchor** is a different act: it replaces the pivot outright and silently, and is the fourth silent destroy |
 | The API validates a pivot table it is given | **Refuted where it matters most**: a `sourceColumnOffset` of 9 against a three-column source is accepted with a 200. A missing `summarizeFunction`, a missing `sortOrder` and a missing source are each a clean 400 | `manage_pivot_table` checks every offset against the source's width before sending. An out-of-range offset is the one mistake a caller makes by counting from one |
 | An update's new source is checked the way an add's is (2026-10-09) | **Refuted in our own code**: only the columns an update was given were resolved against the new source. A group, value or filter it kept carried its old offset, and the row above says Google takes one past the edge with a 200 | An update with a new source refuses a kept offset past the new source's edge and names it in the old source's letters. A unit test per kind of kept column, and a live step that sends no write |
+| A kept offset means the same column in the new source (2026-10-09) | **Refuted by the discovery document's own definition**: `sourceColumnOffset` is "the column offset of the source range that this grouping is based on", where with a source of `C10:E15` "the offset `1` would refer to column `D`". A new source that starts one column along moves every kept offset one column along, onto other data, and nothing in the reply says so | An update whose new source starts in another column, or on another sheet, is refused while it keeps a column, naming what each would read instead. Passing the groups and values again resolves them against the new source. Unit tests, and a live step that sends no write |
 | A pivot may be anchored anywhere the caller likes | **Refuted**: anchored inside its own source it is accepted with a 200 and evaluates to `Circular dependency detected`. The API does not refuse it and the reply says nothing | Refused before the request is built, by the same rectangle arithmetic the guard already does |
 | A pivot follows its source the way an anchor follows its row | **Refined**: deleting four of five source rows left the pivot alive, its source range shrunk with the delete, and its output reduced to a header and `Grand Total`. Silent, like the chart | `delete_dimensions` names intersecting pivots beside the charts and the anchors |
 | The scopes in §17.6 are enough for everything in §8 | **Refuted by the one tool that was never probed**: `addDataSource` under `spreadsheets` + `drive.readonly` returns `403 The request scopes are not sufficient for performing this operation. Please include bigquery.readonly scope`, and the reference says refreshing a BigQuery source needs it too. `refreshDataSource` and `cancelDataSourceRefresh` returned 200 here only because there was nothing to refresh, which proves nothing about a real source | §17.6 is reopened and amended: `bigquery.readonly` is requested, behind `GSHEETS_ENABLE_DATA_SOURCES`, so a user who will never own a BigQuery project is not asked to consent to one. See §17.6a |
@@ -3391,4 +3398,5 @@ the live driver are what settle them.
 | A color scale's point carries its color in `color`, as the samples page writes it | **Refined**: `InterpolationPoint.color` is deprecated, "Use color_style", and `colorStyle` "takes precedence" where both are set | A point is sent with `colorStyle` alone and read from either, `colorStyle` first. A unit test reads each |
 | Google refuses a malformed color scale | **Unverified**: the discovery document gives the shape and no refusal. It calls the midpoint optional, the value "Unused if type is MIN or MAX", and the type's default "do not use" | The fake refuses a scale with no minpoint or maxpoint, a point with no type, a number, percent or percentile point with no value, and a rule with both kinds or neither, in wording of its own. `manage_range` refuses each before the request. Spike S sends each to Google |
 | Any point type may be a midpoint | **Unverified**: the enum allows `MIN` and `MAX` at any point; the Sheets interface offers number, percent and percentile for a midpoint | `manage_range` puts min first and max last only. The live driver writes each of the three midpoint types and reads it back; spike S also sends `MIN` and `MAX` as a midpoint |
+| A percent or percentile value lies between 0 and 100 | **Unverified, and not refused**: the discovery document states no bound. It defines `PERCENT` as `NUMBER` at `=(MAX(FLATTEN(range)) * (value / 100)) + (MIN(FLATTEN(range)) * (1 - (value / 100)))`, which any value satisfies, and `PERCENTILE` as `NUMBER` at `=PERCENTILE(FLATTEN(range), value / 100)`, which a value past 100 turns into an error rather than a refusal. The value may also be a formula, which no parser here can bound | `manage_range` sends the value as written. Spike S sends percent 150, percentile 150 and percentile -10, and reads back what is stored |
 | A number value means the same in every locale | **Unverified**: the value is text and "May be a formula", so a locale that writes a decimal with a comma may read `1.5` as something else | The value is sent as written, never rewritten. The live driver writes `1.5` and `1,5` under `de_DE` and reads both back; which one the sheet takes as one and a half only a person can see, and the transcript says where to look. Spike S asks the same |

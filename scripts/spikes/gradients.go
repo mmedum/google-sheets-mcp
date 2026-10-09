@@ -29,6 +29,9 @@ import (
 // Q4. A number value under a comma-decimal locale: is "1.5" taken, is
 // "1,5", and what reads back. What a locale does to the colors is not
 // in any reply; the transcript names the sheet for a person to look at.
+// Q5. A percent or percentile value outside 0 to 100. The reference
+// states no bound and manage_range refuses none; is one refused, and
+// what reads back.
 func spikeS(ctx context.Context) {
 	sec("Spike S: color scales, and what Google refuses in one")
 	const sheet = "SpikeScales"
@@ -113,6 +116,16 @@ func spikeS(ctx context.Context) {
 	add("booleanRule and gradientRule together", both)
 	if add("MIN minpoint with a value, which is unused", scale(point("MIN", "2"), nil, maxpoint)) == 200 {
 		firstScale(ctx, sheetID, "minpoint")
+	}
+
+	line("")
+	line("  Q5: a percent or percentile value outside 0 to 100")
+	for _, mid := range []struct{ kind, value string }{
+		{"PERCENT", "150"}, {"PERCENTILE", "150"}, {"PERCENTILE", "-10"},
+	} {
+		if add("midpoint "+mid.kind+" "+mid.value, scale(point("MIN", ""), point(mid.kind, mid.value), maxpoint)) == 200 {
+			firstScale(ctx, sheetID, "midpoint")
+		}
 	}
 
 	line("")
