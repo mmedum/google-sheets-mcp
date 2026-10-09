@@ -5,6 +5,12 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [3.1.1] - 2026-10-09
+
+### Fixed
+
+- The Go module and the release binaries are one commit again. The module for 3.1.0 was fetched from an earlier commit than the one its binaries were built from; the two differ only in a line of documentation. The code is the same as 3.1.0, so nothing needs doing beyond installing this version.
+
 ## [3.1.0] - 2026-10-09
 
 ### Added
@@ -1333,7 +1339,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.1...HEAD
+[3.1.1]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.2...v3.1.0
 [3.0.2]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.0...v3.0.1

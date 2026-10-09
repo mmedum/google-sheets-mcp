@@ -1,6 +1,7 @@
 # Architecture — google-sheets-mcp
 
-**Status: v3.1.0 (2026-10-09):** the 2026-10-08 gap analysis (cell comments,
+**Status: v3.1.1 (2026-10-09):** the code of v3.1.0, republished so its Go module
+and its release binaries are one commit. v3.1.0 (2026-10-09): the 2026-10-08 gap analysis (cell comments,
 typed table columns, pivot rules, color scales), built, reviewed and run live:
 300 steps, none failed. v3.0.2 (2026-10-01): a write that may have landed is reported as
 `[ambiguous_outcome]` and never repeated. v3.0.0 (2026-09-30) was released and
