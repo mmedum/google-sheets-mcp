@@ -37,9 +37,10 @@ import (
 // Q6. Is the array taken back exactly as it read, names included? This
 // is what manage_range sends on update.
 // Q7. Can a table's header cell hold a formula, and what does an update
-// sending the names as read do to it, and to a header in rich text?
-// manage_range refuses the update over a formula header; this says
-// whether that refusal can ever fire, and whether rich text needs one.
+// sending the names as read do to it, to a header in rich text, and to
+// one formatted as a whole cell? manage_range refuses the update over a
+// formula header; this says whether that refusal can ever fire, and
+// whether rich text and a whole-cell format need one.
 // Q8. Is an entry with a name and no type taken on update? manage_range
 // sends one for a column a read gave no entry.
 // Q9. What does an update sending the names as read do to a person chip
@@ -62,7 +63,9 @@ import (
 // The second run answered Q11: no part of the request. The driver's add
 // was taken first, and every add after the seventh table in the
 // spreadsheet was a 500, the requests just taken included. Q5 answered
-// that a word, the text TRUE and an empty cell all become FALSE. So:
+// that a word, the text TRUE and an empty cell all become FALSE, and Q7
+// that a name sent as read drops rich text's runs; Q7 now formats A1 as a
+// whole cell too, which the run did not ask. So:
 //
 // Q5b. Is a TRUE or FALSE value kept under a boolean typing, on update
 // and on add? manage_range lets one through. The add's column holds a
@@ -234,16 +237,25 @@ func spikeT(ctx context.Context) {
 		"fields": "userEnteredValue,textFormatRuns",
 	}})
 	line("    %-52s -> HTTP %d  %s", "Flag in C1, its first two letters bold", status, first120(body))
+	status, body = batchOne(ctx, map[string]any{"repeatCell": map[string]any{
+		"range": a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 1, LastRow: 1}.GridRange(sheetID),
+		"cell": map[string]any{"userEnteredFormat": map[string]any{
+			"textFormat": map[string]any{"bold": true, "italic": true}, "horizontalAlignment": "CENTER",
+		}},
+		"fields": "userEnteredFormat(textFormat,horizontalAlignment)",
+	}})
+	line("    %-52s -> HTTP %d  %s", "A1 bold, italic and centered as a whole cell", status, first120(body))
 	headerCells := func(what string) {
 		status, body := call(ctx, http.MethodGet, sheetsBase+"/spreadsheets/"+scratchID+
-			"?ranges="+url.QueryEscape(a1.QuoteSheet(sheet)+"!B1:C1")+
-			"&fields="+url.QueryEscape("sheets(data(rowData(values(userEnteredValue,formattedValue,textFormatRuns))))"), nil)
+			"?ranges="+url.QueryEscape(a1.QuoteSheet(sheet)+"!A1:C1")+
+			"&fields="+url.QueryEscape("sheets(data(rowData(values(userEnteredValue,formattedValue,"+
+			"userEnteredFormat(textFormat,horizontalAlignment),textFormatRuns))))"), nil)
 		line("  %-50s -> HTTP %d  %s", what, status, whole(body))
 	}
-	headerCells("  B1 and C1 before the update")
+	headerCells("  A1:C1 before the update")
 	columns = readColumns(ctx, sheetID)
 	update("every column as read, names included", id, columns)
-	headerCells("  B1 and C1 after it: formula and runs kept?")
+	headerCells("  A1:C1 after it: A1's format, C1's runs kept?")
 
 	line("")
 	line("  Q9: a person chip in the header, under an update sending the names as read")

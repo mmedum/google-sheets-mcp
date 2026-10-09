@@ -566,8 +566,9 @@ func checkboxes(sh *Sheet, rect a1.Rect, columns []*gsheets.TableColumn) {
 
 // writeHeader writes a column's name into its header cell as plain
 // text, which is what Google does with a name it is sent: the text
-// stays and a smart chip goes (spike T Q4 and Q9). The cell's format and
-// note stay.
+// stays, and a smart chip and rich text's runs go (spike T Q4, Q7 and
+// Q9). The cell's whole-cell format and its note are believed to stay;
+// nothing has asked.
 func writeHeader(sh *Sheet, row, col int, name string) {
 	cell := sh.At(row, col)
 	if cell == nil {
@@ -576,7 +577,7 @@ func writeHeader(sh *Sheet, row, col int, name string) {
 	}
 	text := Str(name)
 	cell.UserEnteredValue, cell.EffectiveValue, cell.FormattedValue = text.UserEnteredValue, text.EffectiveValue, name
-	cell.ChipRuns = nil
+	cell.ChipRuns, cell.TextFormatRuns = nil, nil
 }
 
 // headerWritten is what Google does with a value written into a table's

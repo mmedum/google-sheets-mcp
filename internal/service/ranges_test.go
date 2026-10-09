@@ -784,12 +784,22 @@ func TestTableAddOverAnEmptyHeaderSaysGoogleNamesIt(t *testing.T) {
 	}
 }
 
+// boldStart is "Status" with its first two letters bold, as Google reads
+// rich text back: a run with the bold, then one with an empty format.
+func boldStart() *gsheets.CellData {
+	c := sheetstest.Str("Status")
+	c.TextFormatRuns = []json.RawMessage{
+		json.RawMessage(`{"format":{"bold":true}}`), json.RawMessage(`{"startIndex":2,"format":{}}`),
+	}
+	return c
+}
+
 // TestTableAddIsRefusedOverAHeaderANameWouldReplace is a typed column
-// whose header cell holds a formula or a smart chip. The add sends the
-// text the cell shows as the column's name, and Google writes it into the
-// cell as plain text, which loses the formula or the chip. A column the
-// add does not type is sent no name, so what is in its header is not
-// held against it.
+// whose header cell holds a formula, a smart chip or rich text. The add
+// sends the text the cell shows as the column's name, and Google writes
+// it into the cell as plain text, which loses the formula, the chip or
+// the formatting. A column the add does not type is sent no name, so
+// what is in its header is not held against it.
 func TestTableAddIsRefusedOverAHeaderANameWouldReplace(t *testing.T) {
 	chip := func() *gsheets.CellData {
 		c := sheetstest.Str("Jane Doe")
@@ -807,13 +817,19 @@ func TestTableAddIsRefusedOverAHeaderANameWouldReplace(t *testing.T) {
 		{"a formula", sheetstest.Formula(`="Sta"&"tus"`, 0, "Status"), []string{"Status date"},
 			"[blocked] in the header row of the table on A1:D3, C1 holds a formula. Typing a column sends its " +
 				"header's text as the column's name, and Google writes each name into its header cell as plain " +
-				"text, so the formula would be lost. Replace it with text first, or set the type in Sheets"},
+				"text, so the formula would be lost. Make it plain text first, or set the type in Sheets"},
 		{"a chip", chip(), []string{"C date", "D number"},
 			"[blocked] in the header row of the table on A1:D3, C1 holds a smart chip (a person or a file link). " +
 				"Typing a column sends its header's text as the column's name, and Google writes each name into " +
-				"its header cell as plain text, so the chip would be lost. Replace it with text first, or set the " +
+				"its header cell as plain text, so the chip would be lost. Make it plain text first, or set the " +
 				"type in Sheets"},
 		{"a chip in a column not typed", chip(), []string{"B date"}, ""},
+		{"rich text", boldStart(), []string{"C date"},
+			"[blocked] in the header row of the table on A1:D3, C1 holds text with part of it formatted on its own, " +
+				"such as a bold word. Typing a column sends its header's text as the column's name, and Google writes " +
+				"each name into its header cell as plain text, so that formatting would be lost. Make it plain text " +
+				"first, or set the type in Sheets"},
+		{"rich text in a column not typed", boldStart(), []string{"B date"}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := sheetstest.Standard(t)
@@ -995,7 +1011,7 @@ func TestTableUpdateIsRefusedOverAFormulaInTheHeader(t *testing.T) {
 		_, err := svc.ManageRange(ctx, update)
 		const want = "[blocked] in the header row of the table on A1:D3, C1 holds a formula. Changing a column type " +
 			"sends every column's name back, and Google writes each name into its header cell as plain text, so " +
-			"the formula would be lost. Replace it with text first, or set the type in Sheets"
+			"the formula would be lost. Make it plain text first, or set the type in Sheets"
 		if err == nil || err.Error() != want {
 			t.Errorf("dry_run=%v: error =\n%v\nwant\n%s", dryRun, err, want)
 		}
@@ -1027,12 +1043,45 @@ func TestTableUpdateIsRefusedOverAChipInTheHeader(t *testing.T) {
 	_, err := newService(t, srv).ManageRange(context.Background(), update)
 	const want = "[blocked] in the header row of the table on A1:D3, D1 holds a smart chip (a person or a file " +
 		"link). Changing a column type sends every column's name back, and Google writes each name into its " +
-		"header cell as plain text, so the chip would be lost. Replace it with text first, or set the type in Sheets"
+		"header cell as plain text, so the chip would be lost. Make it plain text first, or set the type in Sheets"
 	if err == nil || err.Error() != want {
 		t.Errorf("error =\n%v\nwant\n%s", err, want)
 	}
 	if batched(srv) {
 		t.Fatal("a refused update reached the wire")
+	}
+}
+
+// TestTableUpdateIsRefusedOverRichTextInTheHeader is spike T Q7: an
+// update sending "Flag" back as read dropped the runs that made two of
+// its letters bold. Runs whose formats are all empty format nothing, and
+// are not held back.
+func TestTableUpdateIsRefusedOverRichTextInTheHeader(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	seedTypedTable(srv)
+	srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Set(1, 3, boldStart())
+	svc := newService(t, srv)
+	ctx := context.Background()
+
+	update := rangeReq(service.RangeTable, service.RangeUpdate, "A1:D3")
+	update.ColumnTypes = []string{"B currency"}
+	_, err := svc.ManageRange(ctx, update)
+	const want = "[blocked] in the header row of the table on A1:D3, C1 holds text with part of it formatted on its " +
+		"own, such as a bold word. Changing a column type sends every column's name back, and Google writes each " +
+		"name into its header cell as plain text, so that formatting would be lost. Make it plain text first, or " +
+		"set the type in Sheets"
+	if err == nil || err.Error() != want {
+		t.Errorf("error =\n%v\nwant\n%s", err, want)
+	}
+	if batched(srv) {
+		t.Fatal("a refused update reached the wire")
+	}
+
+	plain := sheetstest.Str("Status")
+	plain.TextFormatRuns = []json.RawMessage{json.RawMessage(`{"format":{}}`)}
+	srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Set(1, 3, plain)
+	if _, err := svc.ManageRange(ctx, update); err != nil {
+		t.Errorf("a header whose runs format nothing was refused: %v", err)
 	}
 }
 

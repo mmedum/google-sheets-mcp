@@ -11,6 +11,7 @@
 package grid
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -72,6 +73,10 @@ type Cell struct {
 	// Chip says the cell holds a smart chip, a person or a file link. A
 	// values read shows only its text, and a value write erases it.
 	Chip bool
+	// RichText says part of the cell's text is formatted on its own,
+	// such as one word in bold. A values read shows only the text, and
+	// the text written back as plain text drops that formatting.
+	RichText bool
 
 	// Format is what the cell was explicitly given, and nil unless the
 	// read asked for it: a write's pre-read does not, and
@@ -234,6 +239,7 @@ func cell(cd *gsheets.CellData, formatted Formatted) Cell {
 	}
 	c.Pivot = len(cd.PivotTable) > 0
 	c.Computed = Computed(cd)
+	c.RichText = richText(cd.TextFormatRuns)
 	for _, run := range cd.ChipRuns {
 		if ch := run.Chip; ch != nil && (ch.PersonProperties != nil || ch.RichLinkProperties != nil) {
 			c.Chip = true
@@ -275,6 +281,22 @@ func cell(cd *gsheets.CellData, formatted Formatted) Cell {
 		c.Display = cd.FormattedValue
 	}
 	return c
+}
+
+// richText reports whether a run of a cell's text carries a format. A run
+// with an empty one, which is how Google ends a bold word, changes
+// nothing on its own; a run that cannot be read counts, so a guard reading
+// this errs toward refusing.
+func richText(runs []json.RawMessage) bool {
+	for _, raw := range runs {
+		var run struct {
+			Format map[string]json.RawMessage `json:"format"`
+		}
+		if json.Unmarshal(raw, &run) != nil || len(run.Format) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // describeValidation summarizes a rule in a few words. The whole rule is

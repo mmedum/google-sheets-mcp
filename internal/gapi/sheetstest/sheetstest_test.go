@@ -611,6 +611,37 @@ func TestABooleanColumnTurnsTextAndEmptyCellsFalse(t *testing.T) {
 	}
 }
 
+// TestANameWrittenIntoAHeaderDropsItsRichText is spike T Q7: an update
+// sending "Flag" back as read left the cell holding "Flag" with no runs,
+// where two of its letters had been bold. Its whole-cell format is
+// believed to stay, which spike T still asks.
+func TestANameWrittenIntoAHeaderDropsItsRichText(t *testing.T) {
+	srv := Standard(t)
+	sh := srv.Doc(FixtureID).Find(FirstSheet)
+	sh.At(1, 2).TextFormatRuns = []json.RawMessage{
+		json.RawMessage(`{"format":{"bold":true}}`), json.RawMessage(`{"startIndex":2,"format":{}}`),
+	}
+	_, err := srv.Client().BatchUpdate(context.Background(), FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*gsheets.Request{{UpdateTable: &gsheets.UpdateTableRequest{
+			Table: &gsheets.Table{TableID: "tbl-fixture-1", ColumnProperties: []*gsheets.TableColumn{
+				{ColumnIndex: 0, ColumnName: "Plimth"}, {ColumnIndex: 1, ColumnName: "Nardle"},
+				{ColumnIndex: 2, ColumnName: "Grivet"}, {ColumnIndex: 3, ColumnName: "Oblisk"},
+			}},
+			Fields: "columnProperties",
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("updateTable: %v", err)
+	}
+	b1 := srv.Doc(FixtureID).Find(FirstSheet).At(1, 2)
+	if b1.FormattedValue != "Nardle" || b1.TextFormatRuns != nil {
+		t.Errorf("B1 reads %q with runs %s, want Nardle with none", b1.FormattedValue, b1.TextFormatRuns)
+	}
+	if f := b1.UserEnteredFormat; f == nil || f.TextFormat == nil || !f.TextFormat.Bold {
+		t.Errorf("B1 lost its whole-cell bold: %+v", f)
+	}
+}
+
 // TestUpdateTableRefusesAnEntryWithNoName is spike T Q3 and Q5: Google
 // refuses an update entry that carries no name, in these words.
 func TestUpdateTableRefusesAnEntryWithNoName(t *testing.T) {

@@ -510,7 +510,8 @@ type tableNow struct {
 }
 
 // readHeader reads the first row of a table's range as it is now: the
-// text each cell shows, and whether it holds a formula or a smart chip.
+// text each cell shows, and whether it holds a formula, a smart chip or
+// rich text.
 // The tables come in the same read, for an update to find its own.
 func (s *Service) readHeader(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
 	rect a1.Rect) (*gsheets.Spreadsheet, *grid.Grid, error) {
@@ -528,14 +529,16 @@ func (s *Service) readHeader(ctx context.Context, ref Reference, props *gsheets.
 }
 
 // readTable reads a table's columns and its header row as they are now,
-// and refuses a header cell that holds a formula or a smart chip.
+// and refuses a header cell that holds a formula, a smart chip or rich
+// text.
 //
 // Fresh rather than from the card. The update sends the whole array
 // back, so a cached one would undo a change somebody made in between.
 //
 // The refusal is there because the update sends every column's name
 // (merge says why), and Google writes a name sent into its header cell
-// as plain text (spike T Q4), which erases a chip (Q9). A formula is
+// as plain text (spike T Q4), which erases a chip (Q9) and drops rich
+// text's runs (Q7). A formula is
 // checked too, though Google does not keep one written into an existing
 // table's header (Q7), and write_values refuses to write one there. A
 // table added over a formula in a column the add did not type may still
@@ -574,8 +577,8 @@ func (s *Service) readTable(ctx context.Context, ref Reference, props *gsheets.S
 }
 
 // nameTyped names each typed column of an add after its header cell's
-// text, and refuses a header cell the name would replace a formula or a
-// smart chip in.
+// text, and refuses a header cell the name would replace a formula, a
+// smart chip or rich text in.
 //
 // A typed column sent with no name has Google write "Column 1", "Column
 // 2" and so on into its header cell, over what was there (spike T Q1).
@@ -605,11 +608,13 @@ func nameTyped(header *grid.Grid, table a1.Rect, columns []*gsheets.TableColumn)
 }
 
 // headerLoss refuses a header cell whose content a column name written
-// over it would lose: a formula, or a smart chip. Google writes a name
-// sent into its header cell as plain text (spike T Q4), and that erases
-// a person chip (Q9). named says which of the row's cells get a name.
+// over it would lose: a formula, a smart chip or rich text. Google writes
+// a name sent into its header cell as plain text (spike T Q4): that
+// erases a person chip (Q9), and drops the runs that made two letters of
+// "Flag" bold, though the name sent was "Flag" (Q7). named says which of
+// the row's cells get a name.
 func headerLoss(header *grid.Grid, table a1.Rect, named func(int) bool, sends string) error {
-	var formulas, chips plan.Cells
+	var formulas, chips, rich plan.Cells
 	for j, cell := range header.Cells[0] {
 		switch {
 		case !named(j):
@@ -617,6 +622,8 @@ func headerLoss(header *grid.Grid, table a1.Rect, named func(int) bool, sends st
 			formulas.AddCell(header, 0, j)
 		case cell.Chip:
 			chips.AddCell(header, 0, j)
+		case cell.RichText:
+			rich.AddCell(header, 0, j)
 		}
 	}
 	var held, lost []string
@@ -628,16 +635,21 @@ func headerLoss(header *grid.Grid, table a1.Rect, named func(int) bool, sends st
 		held = append(held, fmt.Sprintf("%s %s a smart chip (a person or a file link)", chips, chips.Verb("holds", "hold")))
 		lost = append(lost, chips.Verb("the chip", "the chips"))
 	}
+	if rich.Any() {
+		held = append(held, fmt.Sprintf("%s %s text with part of it formatted on its own, such as a bold word",
+			rich, rich.Verb("holds", "hold")))
+		lost = append(lost, "that formatting")
+	}
 	if len(held) == 0 {
 		return nil
 	}
 	them := "it"
-	if formulas.Total+chips.Total > 1 {
+	if formulas.Total+chips.Total+rich.Total > 1 {
 		them = "them"
 	}
 	return Errorf("blocked",
 		"in the header row of the table on %s, %s. %s, and Google writes each name into its header cell as "+
-			"plain text, so %s would be lost. Replace %s with text first, or set the type in Sheets",
+			"plain text, so %s would be lost. Make %s plain text first, or set the type in Sheets",
 		a1.FormatRect(table), strings.Join(held, " and "), sends, strings.Join(lost, " and "), them)
 }
 
@@ -663,8 +675,8 @@ func headings(header *grid.Grid) map[string]int {
 // column (Q1), so one the read left out is not expected; it is named by
 // its header all the same, with no type. Google replaces the whole list:
 // one column sent alone left the others with no type, and a dropdown
-// with no list (Q3b). So every column goes back. A formula or a chip
-// would lose what is under its text, so readTable refused one.
+// with no list (Q3b). So every column goes back. A formula, a chip or
+// rich text would lose what is under its text, so readTable refused one.
 func (t *tableNow) merge(changed []*gsheets.TableColumn) []*gsheets.TableColumn {
 	header := t.header.Cells[0]
 	byIndex := map[int]*gsheets.TableColumn{}

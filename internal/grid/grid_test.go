@@ -1,6 +1,7 @@
 package grid
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -180,6 +181,31 @@ func TestACellWithASmartChip(t *testing.T) {
 		c := cell(&gsheets.CellData{UserEnteredValue: &gsheets.ExtendedValue{StringValue: &text}, ChipRuns: tc.runs}, AsRaw)
 		if c.Chip != tc.want {
 			t.Errorf("%s: Chip = %t, want %t", tc.name, c.Chip, tc.want)
+		}
+	}
+}
+
+// A read returns a run for each stretch of a cell's text, and the stretch
+// after a bold word carries an empty format, so a cell is rich text only
+// where a run carries a format.
+func TestACellWithRichText(t *testing.T) {
+	text := "Flag"
+	for _, tc := range []struct {
+		name string
+		runs []string
+		want bool
+	}{
+		{"two letters bold", []string{`{"format":{"bold":true}}`, `{"startIndex":2,"format":{}}`}, true},
+		{"empty formats only", []string{`{"format":{}}`, `{"startIndex":2}`}, false},
+		{"no runs", nil, false},
+	} {
+		var runs []json.RawMessage
+		for _, r := range tc.runs {
+			runs = append(runs, json.RawMessage(r))
+		}
+		c := cell(&gsheets.CellData{UserEnteredValue: &gsheets.ExtendedValue{StringValue: &text}, TextFormatRuns: runs}, AsRaw)
+		if c.RichText != tc.want {
+			t.Errorf("%s: RichText = %t, want %t", tc.name, c.RichText, tc.want)
 		}
 	}
 }

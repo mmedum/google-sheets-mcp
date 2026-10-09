@@ -36,9 +36,10 @@ const CardFields = "spreadsheetId," +
 //
 // The header row comes in the same read, scoped by a range. The update
 // sends each column's name back, and refuses a header cell that holds a
-// formula or a smart chip, which a name written into it would replace.
+// formula, a smart chip or rich text, which a name written into it would
+// replace.
 const TableFields = "sheets(properties(sheetId),tables(tableId,range,columnProperties)," +
-	"data(startRow,startColumn,rowData(values(userEnteredValue,formattedValue,chipRuns))))"
+	"data(startRow,startColumn,rowData(values(userEnteredValue,formattedValue,chipRuns,textFormatRuns))))"
 
 // GridFields is the field mask behind a read of cells. It asks for what
 // a values read cannot show: the entered value under a formatted one,
