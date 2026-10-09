@@ -292,6 +292,9 @@ type Ops struct {
 	// cut left blank.
 	Shifted bool
 	Emptied string
+	// Answered is the error Google answered a write with, for a write a
+	// read afterwards found made all the same.
+	Answered string
 }
 
 // What a transform's reply counted. Three of the nine actions answer
@@ -351,6 +354,9 @@ func OpsDone(o Ops) string {
 	opLines(&b, o.Applied)
 	if sentence := o.Counted.Sentence(); sentence != "" {
 		fmt.Fprintf(&b, "%s\n", sentence)
+	}
+	if o.Answered != "" {
+		fmt.Fprintf(&b, "\n%s, and a read afterwards found the change made.\n", o.Answered)
 	}
 	opNotes(&b, o, "moved")
 	return b.String()

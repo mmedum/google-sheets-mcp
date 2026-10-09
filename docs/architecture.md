@@ -860,6 +860,16 @@ value.
   the spelling `column_types` takes, `Status dropdown (Open, In
   progress, Done)`.
 
+  An add Google answers with an HTTP 500, or with no reply at all, is
+  settled by a fresh read of the card, since a table has a name and a
+  range. Where a table of the name and range sent is there, the result
+  says Google answered with an error and the table was added. Where it
+  is not, the call is refused as `unavailable`, saying nothing was added
+  and the call can be repeated. Spike T saw Google fail every table add
+  in one spreadsheet after seven were taken, for a reason not known
+  (§18), so the refusal says a repeat may fail the same way. A read that
+  fails too leaves `ambiguous_outcome`.
+
   **The conditional-format ops are here rather than on `format_cells`,
   which is a change from an earlier draft of this section.** A rule is
   attached to a range and has add, update and delete, which is exactly
@@ -2026,6 +2036,13 @@ forgotten. Results go into §18.
   on one frozen as the driver's was, then each column type alone, all
   with names and without. Q11 spaces its calls a second apart, since
   Sheets allows 60 writes a minute per user; run it with `-only T`.
+  The second run answered Q11 without explaining it: the live run's add
+  was taken, and every add after the seventh table in the spreadsheet
+  was a 500, requests just taken included. So Q12 makes a fresh
+  spreadsheet and adds tables three seconds apart until one fails or
+  twelve are taken, then deletes one and tries the failed add again, at
+  once and a minute later, and a plain add last. It tells a count from
+  timing.
 - **U. Pivot grouping rules, filters and calculated values** (**run
   2026-10-09**, two answers owed): what Google answers for each refusal
   `manage_pivot_table` makes first — a value with an offset and a
@@ -3570,7 +3587,8 @@ says which.
 |---|---|---|
 | A table column's index is the sheet's column index | **Refuted**: `columnIndex` is "relative to its position in the table and is not necessarily the same as the column index in the sheet" | `column_types` resolves a letter or a header against the table's range and sends the offset from its first column. A unit test over a table starting at B |
 | A dropdown column needs a `ONE_OF_LIST` rule, and no other type takes one | **Verified, spike T Q2**: a dropdown with no rule is `400 Invalid requests[0].addTable: Condition must be set for dropdown column type.`, and a `ONE_OF_LIST` rule on a `DOUBLE` column is `400 Invalid requests[0].addTable: Cannot set condition for non-dropdown column type.` | A dropdown always carries its list. The fake refuses both in Google's words. A rule that is not a list it refuses in its own, since nothing asked Google |
-| A sparse `columnProperties` is taken on add | **Verified, at a cost, spike T Q1**: `CURRENCY` on column 1 and `DROPDOWN` on column 3 of four, sent with no names, is a 200. Google named the two typed columns "Column 1" and "Column 2", counting the typed entries sent with no name, and wrote those names into their header cells, so "Amount" and "Status" were gone. The live run's add of three typed columns, number, date and dropdown, was `500 INTERNAL: Internal error encountered.` and made no table; why is not known | An add sends each typed column with its header's text as its name (§7.5). The fake gives a typed entry with no name "Column N" and writes it into the header cell. Owed: spike T Q11 sends the live run's request, where it was sent, and each column type alone, with names and without |
+| A sparse `columnProperties` is taken on add | **Verified, at a cost, spike T Q1**: `CURRENCY` on column 1 and `DROPDOWN` on column 3 of four, sent with no names, is a 200. Google named the two typed columns "Column 1" and "Column 2", counting the typed entries sent with no name, and wrote those names into their header cells, so "Amount" and "Status" were gone. The live run's add of three typed columns, number, date and dropdown, was taken by spike T's second run (Q11) | An add sends each typed column with its header's text as its name (§7.5). The fake gives a typed entry with no name "Column N" and writes it into the header cell |
+| A table add Google has taken once is taken again | **Refuted, cause unknown, spike T Q11, second run**: on a new sheet of the spike's spreadsheet, the live run's add, number on B, date on C and a dropdown on D with no names, was a 200, and so were currency, number, date and text alone. Every add after those was `500 INTERNAL: Internal error encountered.` and made no table: percent, time, date-time, boolean and dropdown alone, all ten again with names, and the live run's add on a new sheet frozen as the driver's was. The spreadsheet held seven tables by then. The live run's add was a 500 after one table, added and deleted. Whether a count of tables, the time between adds or something else draws it is not known | On a 500, or a reply that never came, `manage_range` reads the card and says whether a table of the name and range sent is there: added, or nothing added and safe to repeat (§7.5). The live driver's typed-column steps make a spreadsheet of their own. Owed: spike T Q12 adds tables three seconds apart in a fresh spreadsheet until one fails, then deletes one and tries again |
 | An update with `fields=columnProperties` replaces the whole array | **Open, narrowed, spike T Q3, Q4, Q6, Q8**: the one-column update Q3 sent had no name and was refused, so it said nothing about replacing. Every update Google took sent every column, and each read back four entries, not eight: the array is not appended to. Whether one entry alone replaces the array or merges into it is not known | Unchanged: the update reads the columns fresh and sends every one back. The fake replaces the array. Owed: spike T Q3b sends one column with its name and reads what the other three keep |
 | A column name sent, or left out, leaves the header cell alone | **Refuted, spike T Q1, Q3, Q4, Q5**: a name sent is written into its header cell; column 0 sent as "SPIKE-RENAMED" and A1 read "SPIKE-RENAMED" after. An update entry with no name is refused, `400 Invalid requests[0].updateTable: Table header row cell must have a value.`, for one column (Q3) and for every column (Q5). On add, a typed entry with no name has "Column N" written over its header (Q1) | An update sends every column's name as the same fresh read gave it, which Q6 shows is taken and leaves the header as it was. An add sends names too. The fake refuses an update entry with no name in Google's words, and writes a name sent into its header cell |
 | A name sent as read rewrites a header cell, if at all, with what it already shows | **Answered for a formula, open for rich text, spike T Q7**: `values.update` wrote a formula into B1, the header of a typed column, and answered 200. Google had already replaced it with "Column 2", B's place in the table, before any update, and the column took that name. A table's header does not keep a formula written into it. What the update did to a header in rich text is not known: the transcript cut the read short. A number header was not asked | `write_values` refuses a formula into a table's header row (§7.3). The update's refusal over a formula header stays for a table added over a formula it did not type, which nothing has asked about. The fake replaces a formula written into a header with "Column" and the column's place. Owed: Q7's reads, now printed whole, and spike T Q10, an add over a formula header it does not type |

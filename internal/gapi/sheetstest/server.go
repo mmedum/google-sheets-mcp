@@ -44,6 +44,10 @@ type Failure struct {
 	Cut bool
 	// Delay holds the response back, for deadline tests.
 	Delay time.Duration
+	// Applied makes the request first and answers with the failure
+	// after: a write that landed though its reply said it failed, which
+	// is what an HTTP 500 cannot rule out.
+	Applied bool
 }
 
 // Server is a fake Sheets and Drive behind httptest.
@@ -210,6 +214,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			panic("sheetstest: cannot hijack to cut the connection")
+		}
+		if f.Applied && handler != nil {
+			handler(httptest.NewRecorder(), r)
 		}
 		for k, vs := range f.Header {
 			for _, v := range vs {

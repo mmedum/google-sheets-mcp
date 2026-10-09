@@ -5,9 +5,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
 )
@@ -56,6 +58,14 @@ import (
 // Q11. Which part of the live driver's add draws the 500: its exact
 // request, where it ran it, each column type alone, and each with the
 // column's name, which manage_range now sends.
+//
+// The second run answered Q11: no part of the request. The driver's add
+// was taken first, and every add after the seventh table in the
+// spreadsheet was a 500, the requests just taken included. So:
+//
+// Q12. Is it a count? In a fresh spreadsheet, the driver's add, a few
+// seconds apart, until one fails or twelve are taken; then one table
+// goes and the failed add is tried again.
 func spikeT(ctx context.Context) {
 	sec("Spike T: typed table columns, and what an update does to them")
 	const sheet = "SpikeTables"
@@ -252,6 +262,7 @@ func spikeT(ctx context.Context) {
 	cellsWhole(ctx, "  F1 after the add: formula kept?", a1.QuoteSheet(sheet)+"!F1")
 
 	spikeT11(ctx)
+	spikeT12(ctx)
 }
 
 // spikeT11 bisects the live driver's 500. The driver typed three of four
@@ -268,12 +279,7 @@ func spikeT11(ctx context.Context) {
 		line("    setup failed: %v", err)
 		return
 	}
-	seed := [][]any{
-		{"Item", "Amount", "Due", "Status"},
-		{"Quorbin", "12.5", "2026-10-01", "Open"},
-		{"Skerry", "3", "2026-10-02", "Done"},
-		{"Nardle", "40", "2026-10-03", ""},
-	}
+	seed := typedSeed
 	options := oneOf("Open", "In progress", "Done")
 	names := []string{"Item", "Amount", "Due", "Status"}
 	type typed struct {
@@ -373,6 +379,124 @@ func spikeT11(ctx context.Context) {
 	}
 	try(frozen, frozenID, 50, "the driver's request, no names", build(driver, false))
 	try(frozen, frozenID, 56, "the driver's request, every column named", build(driver, true))
+}
+
+// typedSeed is the live driver's block: a header row, then numbers, dates
+// and words, written as a person types them.
+var typedSeed = [][]any{
+	{"Item", "Amount", "Due", "Status"},
+	{"Quorbin", "12.5", "2026-10-01", "Open"},
+	{"Skerry", "3", "2026-10-02", "Done"},
+	{"Nardle", "40", "2026-10-03", ""},
+}
+
+// spikeT12 tells a count from timing. In Q11's spreadsheet every add
+// after the seventh table was a 500; the live run's add was a 500 after
+// one table, added and deleted. Here a fresh spreadsheet takes the
+// driver's add, each column named as manage_range sends it, three seconds
+// apart, until one fails or twelve are taken. Then the first table goes
+// and the failed add is tried again: taken means a count. If not, it is
+// tried once more a minute later, which is timing if taken. A plain add
+// with no types comes last, to say whether typing matters.
+func spikeT12(ctx context.Context) {
+	line("")
+	line("  Q12: how many adds a fresh spreadsheet takes, and whether one table fewer lets the next in")
+	title := "spike scratch tables " + time.Now().UTC().Format("2006-01-02 15:04:05")
+	status, body := call(ctx, http.MethodPost, sheetsBase+"/spreadsheets", map[string]any{
+		"properties": map[string]any{"title": title},
+		"sheets":     []any{map[string]any{"properties": map[string]any{"title": "SpikeCount"}}},
+	})
+	var created struct {
+		SpreadsheetID string `json:"spreadsheetId"`
+		Sheets        []struct {
+			Properties struct {
+				SheetID int `json:"sheetId"`
+			} `json:"properties"`
+		} `json:"sheets"`
+	}
+	if status != 200 || json.Unmarshal([]byte(body), &created) != nil || len(created.Sheets) == 0 {
+		line("    setup failed: HTTP %d  %s", status, first120(body))
+		return
+	}
+	line("    NOTE: a second spreadsheet, left behind; remove %q by hand.", title)
+	// Every helper writes to scratchID, so it points at the fresh
+	// spreadsheet for this question, and back after.
+	defer func(was string) { scratchID = was }(scratchID)
+	scratchID = created.SpreadsheetID
+	sheetID := created.Sheets[0].Properties.SheetID
+
+	const most = 12
+	var rows [][]any
+	for range most + 1 {
+		rows = append(rows, typedSeed...)
+		rows = append(rows, []any{"", "", "", ""}, []any{"", "", "", ""})
+	}
+	if status, body := putMode(ctx, "SpikeCount!A1:D"+strconv.Itoa(len(rows)), rows, "USER_ENTERED"); status != 200 {
+		line("    setup failed: HTTP %d  %s", status, first120(body))
+		return
+	}
+	driver := []any{
+		map[string]any{"columnIndex": 1, "columnName": "Amount", "columnType": "DOUBLE"},
+		map[string]any{"columnIndex": 2, "columnName": "Due", "columnType": "DATE"},
+		map[string]any{"columnIndex": 3, "columnName": "Status", "columnType": "DROPDOWN",
+			"dataValidationRule": map[string]any{"condition": oneOf("Open", "In progress", "Done")}},
+	}
+	start := time.Now()
+	add := func(block int, what string, columns []any) (string, bool) {
+		time.Sleep(3 * time.Second)
+		rect := a1.Rect{FirstCol: 1, FirstRow: 1 + 6*block, LastCol: 4, LastRow: 4 + 6*block}
+		table := map[string]any{"name": "SpikeCount" + strconv.Itoa(block+1), "range": rect.GridRange(sheetID)}
+		if columns != nil {
+			table["columnProperties"] = columns
+		}
+		status, body := batchOne(ctx, map[string]any{"addTable": map[string]any{"table": table}})
+		shown := first120(body)
+		if status != 200 {
+			shown = whole(body)
+		}
+		line("    %-56s -> HTTP %d  %s", fmt.Sprintf("%s, at %ds", what, int(time.Since(start).Seconds())), status, shown)
+		var reply struct {
+			Replies []struct {
+				AddTable struct {
+					Table struct {
+						TableID string `json:"tableId"`
+					} `json:"table"`
+				} `json:"addTable"`
+			} `json:"replies"`
+		}
+		_ = json.Unmarshal([]byte(body), &reply)
+		if status != 200 || len(reply.Replies) == 0 {
+			return "", false
+		}
+		return reply.Replies[0].AddTable.Table.TableID, true
+	}
+
+	var firstID string
+	failed := -1
+	for i := range most {
+		id, ok := add(i, fmt.Sprintf("add %d, with %d table(s) there", i+1, i), driver)
+		if !ok {
+			failed = i
+			break
+		}
+		if firstID == "" {
+			firstID = id
+		}
+	}
+	if failed < 0 {
+		line("    COUNT: all %d taken, three seconds apart; no limit at or under %d tables", most, most)
+		return
+	}
+	line("    COUNT: %d add(s) taken, then add %d failed", failed, failed+1)
+	if firstID != "" {
+		status, body := batchOne(ctx, map[string]any{"deleteTable": map[string]any{"tableId": firstID}})
+		line("    %-56s -> HTTP %d  %s", "the first table deleted", status, whole(body))
+		if _, ok := add(failed, fmt.Sprintf("add %d again, one table fewer", failed+1), driver); !ok {
+			time.Sleep(time.Minute)
+			add(failed, fmt.Sprintf("add %d again, a minute later", failed+1), driver)
+		}
+	}
+	add(most, "a plain add, no column types", nil)
 }
 
 // named is one entry of a read-back array with a new type, carrying the

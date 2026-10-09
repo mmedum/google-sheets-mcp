@@ -33,7 +33,7 @@ func (d *driver) formatAll() {
 	sec("manage_range")
 	d.run(d.rangeSteps()...)
 	d.run(d.tableSteps()...)
-	d.run(d.typedColumnSteps()...)
+	d.typedTablesAll()
 	d.commaLocaleAll()
 	sec("transform_range")
 	d.run(d.transformSteps()...)
@@ -588,9 +588,38 @@ func (d *driver) tableSteps() []step {
 	}
 }
 
-// typedBand is the block the typed-column steps make a table over, with
-// a header row, clear of every other step's cells.
-const typedBand = "A50:D53"
+// The typed-column steps' spreadsheet, sheet and block, with a header
+// row.
+const (
+	typedSheet = "Vandel"
+	typedBand  = "A1:D4"
+)
+
+// typedTablesAll makes a spreadsheet of its own for the typed-column
+// steps. Spike T Q11 saw every table add in one spreadsheet answered
+// HTTP 500 after earlier ones were taken, for a reason not known (§18),
+// so the table steps before these could fail them.
+func (d *driver) typedTablesAll() {
+	d.run(step{
+		name: "a spreadsheet of its own for the typed table",
+		why:  "earlier table adds in a spreadsheet may be what makes Google fail a later one with a 500 (§18)",
+		tool: "create_spreadsheet",
+		args: map[string]any{"title": scratchTitle + " typed tables", "sheets": []any{typedSheet}},
+		check: func(_ string, s map[string]any) error {
+			id, _ := s["spreadsheet"].(string)
+			if id == "" {
+				return fmt.Errorf("no spreadsheet id came back")
+			}
+			d.typedTables = id
+			reg(id, "<typed-tables-spreadsheet>")
+			return nil
+		},
+	})
+	if d.typedTables == "" {
+		return
+	}
+	d.run(d.typedColumnSteps()...)
+}
 
 // typedColumnSteps type a table's columns on add, retype one on update,
 // and check that the rest, a dropdown's list included, survive the
@@ -606,7 +635,7 @@ func (d *driver) typedColumnSteps() []step {
 			why: "Google writes a name sent into its header cell, and \"Column 1\" into a typed column's sent " +
 				"with none (§18); an add sends each typed column's header text and an update every column's",
 			tool: "read_range",
-			args: map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A50:D50", "show": "values"},
+			args: map[string]any{"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "A1:D1", "show": "values"},
 			check: func(text string, _ map[string]any) error {
 				for _, want := range []string{"Item", "Amount", "Due", "Status"} {
 					if !strings.Contains(text, want) {
@@ -622,7 +651,7 @@ func (d *driver) typedColumnSteps() []step {
 			name: "the card shows the column types " + when,
 			why:  "the card reads the types back in the spelling column_types takes",
 			tool: "get_spreadsheet",
-			args: map[string]any{"spreadsheet": d.spreadsheet},
+			args: map[string]any{"spreadsheet": d.typedTables},
 			check: func(text string, _ map[string]any) error {
 				for _, l := range strings.Split(text, "\n") {
 					if !strings.Contains(l, "LivesheetTyped") {
@@ -646,7 +675,7 @@ func (d *driver) typedColumnSteps() []step {
 			why:  "a header is how a column is named by text, and what a table write must leave alone",
 			tool: "write_values",
 			args: map[string]any{
-				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": typedBand, "input": "typed",
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": typedBand, "input": "typed",
 				"values": [][]any{
 					{"Item", "Amount", "Due", "Status"},
 					{"Quorbin", "12.5", "2026-10-01", "Open"},
@@ -661,7 +690,7 @@ func (d *driver) typedColumnSteps() []step {
 				"keeps Google from writing \"Column 1\" over the header (§18)",
 			tool: "manage_range",
 			args: map[string]any{
-				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": typedBand,
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": typedBand,
 				"kind": "table", "action": "add", "name": "LivesheetTyped",
 				"column_types": []any{"Amount number", "C date", "Status dropdown: Open, In progress, Done"},
 			},
@@ -679,7 +708,7 @@ func (d *driver) typedColumnSteps() []step {
 			why: "whether a type change rewrites a column's number format is unverified (§18); the " +
 				"transcript shows what the cells carry now",
 			tool: "read_formatting",
-			args: map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "B51:D53"},
+			args: map[string]any{"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "B2:D4"},
 			check: func(text string, _ map[string]any) error {
 				line("     LOOK: %s", strings.Join(strings.Fields(text), " "))
 				return nil
@@ -693,7 +722,7 @@ func (d *driver) typedColumnSteps() []step {
 				"and the dropdown's list both",
 			tool: "manage_range",
 			args: map[string]any{
-				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": typedBand,
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": typedBand,
 				"kind": "table", "action": "update",
 				"column_types": []any{"Amount currency", "Status dropdown (Open, In progress, Done)"},
 			},
@@ -706,12 +735,12 @@ func (d *driver) typedColumnSteps() []step {
 				"200, so the formula is lost with nothing said",
 			tool: "write_values",
 			args: map[string]any{
-				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "D50", "input": "typed",
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "D1", "input": "typed",
 				"values": [][]any{{`="Sta"&"tus"`}}, "overwrite": true,
 			},
 			expectError: "blocked",
 			check: func(text string, _ map[string]any) error {
-				if !strings.Contains(text, "D50") || !strings.Contains(text, "table's header row") {
+				if !strings.Contains(text, "D1") || !strings.Contains(text, "table's header row") {
 					return fmt.Errorf("the refusal does not name the header cell: %s", text)
 				}
 				return nil
@@ -723,12 +752,12 @@ func (d *driver) typedColumnSteps() []step {
 				"unverified (§18), so the update stops and names the cells",
 			tool: "manage_range",
 			args: map[string]any{
-				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": typedBand,
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": typedBand,
 				"kind": "table", "action": "update", "column_types": []any{"Item boolean"},
 			},
 			expectError: "blocked",
 			check: func(text string, _ map[string]any) error {
-				if !strings.Contains(text, "A51") || !strings.Contains(text, "TRUE or FALSE") {
+				if !strings.Contains(text, "A2") || !strings.Contains(text, "TRUE or FALSE") {
 					return fmt.Errorf("the refusal does not name the cells: %s", text)
 				}
 				return nil
@@ -739,7 +768,7 @@ func (d *driver) typedColumnSteps() []step {
 			why:  "the band is left as the steps found it, values aside",
 			tool: "manage_range",
 			args: map[string]any{
-				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": typedBand,
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": typedBand,
 				"kind": "table", "action": "delete",
 			},
 		},

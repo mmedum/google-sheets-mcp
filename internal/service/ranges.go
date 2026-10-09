@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -158,11 +159,56 @@ func (s *Service) ManageRange(ctx context.Context, req RangeRequest) (*RangeResu
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{op},
 	}); err != nil {
-		return nil, wrap(err)
+		answered, err := s.settleTableAdd(ctx, ref, props, op, err)
+		if err != nil {
+			return nil, err
+		}
+		view.Answered = answered
 	}
 	s.forget(ref.ID)
 	res.Summary = render.OpsDone(view)
 	return res, nil
+}
+
+// settleTableAdd decides a table add Google answered without saying
+// whether it ran: an HTTP 500, or a reply that never came. A table has a
+// name and a range, so one fresh read of the card settles it. It returns
+// what Google answered when the table is there, and an error when it is
+// not. Any other request, and a read that fails too, keep the error the
+// send returned.
+//
+// Spike T Q11, 2026-10-09: in one spreadsheet, every add after the
+// seventh table was a 500 and made no table, the same requests Google had
+// just taken included. The live run's add was a 500 after one table, added
+// and deleted. Why is not known (§18). [ambiguous_outcome] alone left the
+// caller to read the card and compare.
+func (s *Service) settleTableAdd(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
+	op *gsheets.Request, sendErr error) (string, error) {
+
+	if op.AddTable == nil || op.AddTable.Table == nil || !errors.Is(sendErr, gapi.ErrAmbiguousOutcome) {
+		return "", wrap(sendErr)
+	}
+	s.forget(ref.ID)
+	card, err := s.card(ctx, ref.ID)
+	if err != nil {
+		return "", wrap(sendErr)
+	}
+	want := op.AddTable.Table
+	rect := a1.FromGridRange(want.Range).Clamp(extent(props))
+	answered := "The call ended before Google answered"
+	var ae *gapi.APIError
+	if errors.As(sendErr, &ae) {
+		answered = fmt.Sprintf("Google answered HTTP %d %s (%s)", ae.Status, ae.RPC, strings.TrimSuffix(ae.Message, "."))
+	}
+	for _, t := range sheetOf(card, props.SheetID).Tables {
+		if t != nil && t.Name == want.Name && a1.FromGridRange(t.Range).Clamp(extent(props)) == rect {
+			return answered, nil
+		}
+	}
+	return "", Errorf("unavailable",
+		"%s. A read afterwards finds no table called %q on %s, so nothing was added and the call can be repeated. "+
+			"Once Google has failed a table add this way, it has been seen to fail every later one in the same "+
+			"spreadsheet, for a reason not known", answered, want.Name, a1.FormatRect(rect))
 }
 
 // rangeOp compiles one kind and action into one union member.

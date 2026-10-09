@@ -576,6 +576,67 @@ func TestDeletingAPlainTableIsNotHeldBack(t *testing.T) {
 	}
 }
 
+// TestATableAddGoogleFailedIsSettledByARead is an add answered HTTP 500,
+// which says nothing of whether it ran. Spike T Q11 saw a run of them make
+// no table. A table has a name and a range, so a read afterwards says
+// which: nothing added, or added after all. Anything else, and a read
+// that fails too, stay [ambiguous_outcome].
+func TestATableAddGoogleFailedIsSettledByARead(t *testing.T) {
+	const internal = `{"error":{"code":500,"message":"Internal error encountered.","status":"INTERNAL"}}`
+	const ambiguous = "[ambiguous_outcome] ambiguous outcome: spreadsheets.batchUpdate may have been applied; read " +
+		"the spreadsheet before repeating it, since a repeat could apply it twice (google api " +
+		"spreadsheets.batchUpdate: HTTP 500 INTERNAL: Internal error encountered.)"
+	for _, tc := range []struct {
+		name    string
+		action  string
+		applied bool
+		getFail bool
+		want    string
+	}{
+		{"nothing added", service.RangeAdd, false, false,
+			`[unavailable] Google answered HTTP 500 INTERNAL (Internal error encountered). A read afterwards finds ` +
+				`no table called "Trennow" on A1:B3, so nothing was added and the call can be repeated. Once Google ` +
+				`has failed a table add this way, it has been seen to fail every later one in the same spreadsheet, ` +
+				`for a reason not known`},
+		{"added after all", service.RangeAdd, true, false,
+			"Done: 1 change(s) to 'Ürväl'!A1:B3.\n  table added — Trennow\n\n" +
+				"Google answered HTTP 500 INTERNAL (Internal error encountered), and a read afterwards found the change made.\n"},
+		{"the read fails too", service.RangeAdd, false, true, ambiguous},
+		{"a rename", service.RangeUpdate, false, false, ambiguous},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := sheetstest.Standard(t)
+			if tc.action == service.RangeUpdate {
+				seedTypedTable(srv)
+			}
+			svc := newService(t, srv)
+			ctx := context.Background()
+			if _, err := svc.Card(ctx, sheetstest.FixtureID); err != nil {
+				t.Fatal(err)
+			}
+			srv.FailOnce("spreadsheets.batchUpdate", sheetstest.Failure{Status: 500, Body: internal, Applied: tc.applied})
+			if tc.getFail {
+				srv.Fail("spreadsheets.get", sheetstest.Failure{Status: 500})
+			}
+			req := rangeReq(service.RangeTable, tc.action, "A1:B3")
+			if tc.action == service.RangeUpdate {
+				req.Range = "A1:D3"
+			}
+			req.Name = "Trennow"
+			res, err := svc.ManageRange(ctx, req)
+			got := ""
+			if err != nil {
+				got = err.Error()
+			} else {
+				got = res.Summary
+			}
+			if got != tc.want {
+				t.Errorf("got\n%s\nwant\n%s", got, tc.want)
+			}
+		})
+	}
+}
+
 // typedSheet gives the second sheet a four-column header row, A1:D1, for
 // a table over A1:D3. "ID" is a heading that also reads as a column
 // letter, far outside the table.
