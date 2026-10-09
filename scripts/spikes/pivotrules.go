@@ -6,7 +6,6 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
 )
@@ -228,5 +227,5 @@ func definition(ctx context.Context, cell string) {
 	status, body := call(ctx, http.MethodGet, sheetsBase+"/spreadsheets/"+scratchID+
 		"?ranges="+url.QueryEscape(cell)+"&fields="+url.QueryEscape("sheets(data(rowData(values(pivotTable))))"), nil)
 	// Whole, not cut: the filter forms and the rule are what is asked.
-	line("      the definition -> HTTP %d  %s", status, strings.Join(strings.Fields(body), " "))
+	line("      the definition -> HTTP %d  %s", status, whole(body))
 }

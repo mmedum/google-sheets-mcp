@@ -305,6 +305,17 @@ func probe(ctx context.Context, what, rangeA1 string) {
 	line("  %-46s -> HTTP %d  %s", what, status, first120(body))
 }
 
+// whole is a reply on one line, uncut, for the questions whose answer
+// is in the part first120 would cut: a read-back's later fields, or the
+// end of a refusal. It reaches the terminal through line like every
+// other print, so it is redacted the same way.
+func whole(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// pace spaces out the calls of a question that makes many, so it stays
+// under Sheets' 60 reads and 60 writes a minute per user. Spike U's run
+// of 2026-10-09 lost two answers to a 429.
+func pace() { time.Sleep(1100 * time.Millisecond) }
+
 func first120(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if len(s) > 200 {

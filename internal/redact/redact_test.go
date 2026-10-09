@@ -122,6 +122,22 @@ func TestLineMasksWhatSomebodyElseAssembled(t *testing.T) {
 	}
 }
 
+// TestLineMasksAProjectNumber is the 429 a spike printed: Google names
+// the Cloud project behind the quota by its number, and a console link
+// does too. A quota's name and a row count are not numbers of that kind.
+func TestLineMasksAProjectNumber(t *testing.T) {
+	for in, want := range map[string]string{
+		"for consumer 'project_number:123456789012'.":                                           "for consumer 'project_number:<project>'.",
+		"enable it at /apis/api/sheets.googleapis.com/overview?project=123456789012 then retry": "enable it at /apis/api/sheets.googleapis.com/overview?project=<project> then retry",
+		"projects/123456789012/locations":                                                       "projects/<project>/locations",
+		"limit 'Write requests per minute per user' of 60":                                      "limit 'Write requests per minute per user' of 60",
+	} {
+		if got := Line(in); got != want {
+			t.Errorf("Line(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // TestAnAlreadyMaskedAddressIsStillRedacted: Accounts runs upstream in
 // gapi and rewrites an address to "…@domain"; Line runs downstream over
 // an artifact a person may paste, and its pattern needs a local part. So

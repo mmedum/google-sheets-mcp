@@ -90,8 +90,15 @@ var (
 	hexOnly  = regexp.MustCompile(`^[0-9a-f]+$`)
 )
 
+// projectNumber matches a Cloud project's number where Google's errors
+// carry one: "project_number:" in a quota refusal, "projects/" and
+// "project=" in a link to the console. The number names the project as
+// surely as its id does, and a spike's transcript printed part of one
+// inside a 429.
+var projectNumber = regexp.MustCompile(`(project_number:|projects/|project=)[0-9]{5,}`)
+
 // Line masks everything in one line of output that identifies a person,
-// an account or a document.
+// an account, a document or a Cloud project.
 //
 // This is for text assembled by somebody else — an API response, an
 // error, a rendered result — where the values are not known in advance
@@ -103,6 +110,7 @@ var (
 func Line(s string) string {
 	s = address.ReplaceAllStringFunc(s, Email)
 	s = ClientID(s)
+	s = projectNumber.ReplaceAllString(s, "${1}<project>")
 	return opaqueID.ReplaceAllStringFunc(s, func(id string) string {
 		if len(id) >= 40 && hexOnly.MatchString(id) {
 			return id // a commit SHA identifies a change, not a person

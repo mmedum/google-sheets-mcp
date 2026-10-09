@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
 )
@@ -41,6 +42,20 @@ import (
 // sends one for a column a read gave no entry.
 // Q9. What does an update sending the names as read do to a person chip
 // in a header cell? manage_range refuses the update over one.
+//
+// The run of 2026-10-09 answered most of these (§18) and left four
+// owed. Q3 sent no name and was refused, so Q3b sends one column with
+// its name. Q5 sent no names and was refused, so it sends them now. Q5's
+// and Q7's reads were cut short in the transcript, so every read here
+// prints whole. And the live driver's add of three typed columns was a
+// 500 where Q1's add of two was a 200, which Q11 bisects.
+//
+// Q10. What does an add do to a formula in a header cell of a column it
+// does not type? manage_range sends that column nothing, and still
+// refuses an update over a formula header in case one survives.
+// Q11. Which part of the live driver's add draws the 500: its exact
+// request, where it ran it, each column type alone, and each with the
+// column's name, which manage_range now sends.
 func spikeT(ctx context.Context) {
 	sec("Spike T: typed table columns, and what an update does to them")
 	const sheet = "SpikeTables"
@@ -80,7 +95,7 @@ func spikeT(ctx context.Context) {
 		status, body := batchOne(ctx, map[string]any{"addTable": map[string]any{"table": map[string]any{
 			"name": "SpikeTyped", "range": tableRange, "columnProperties": columns,
 		}}})
-		line("    %-52s -> HTTP %d  %s", what, status, first120(body))
+		line("    %-52s -> HTTP %d  %s", what, status, whole(body))
 		if status != 200 {
 			return ""
 		}
@@ -104,7 +119,7 @@ func spikeT(ctx context.Context) {
 			"table":  map[string]any{"tableId": id, "columnProperties": columns},
 			"fields": "columnProperties",
 		}})
-		line("    %-52s -> HTTP %d  %s", what, status, first120(body))
+		line("    %-52s -> HTTP %d  %s", what, status, whole(body))
 	}
 	drop := func(id string) {
 		status, body := batchOne(ctx, map[string]any{"deleteTable": map[string]any{"tableId": id}})
@@ -129,21 +144,26 @@ func spikeT(ctx context.Context) {
 	if id == "" {
 		return
 	}
-	columns := readColumns(ctx, sheetID)
+	readColumns(ctx, sheetID)
 	headers()
 	cellsAt(ctx, "  B2 and D2 after the add (Q5)", a1.QuoteSheet(sheet)+"!B2:D2")
 
 	line("")
 	line("  Q3: an update that sends one column, with no name")
 	update("DATE on B, alone", id, []any{column(1, "DATE", nil)})
+	readColumns(ctx, sheetID)
+	headers()
+
+	line("")
+	line("  Q3b: one column alone, with its name; do the other three keep their types?")
+	columns := readColumns(ctx, sheetID)
+	update("DATE on B, alone, named as read", id, []any{named(columns, 1, "DATE")})
 	columns = readColumns(ctx, sheetID)
 	headers()
 
 	line("")
 	line("  Q5: a boolean column over a text value and an empty cell")
-	retyped := withoutNames(columns)
-	retyped = setColumn(retyped, column(2, "BOOLEAN", nil))
-	update("BOOLEAN on C, the rest as read, no names", id, retyped)
+	update("BOOLEAN on C, the rest as read, names included", id, setColumn(columns, named(columns, 2, "BOOLEAN")))
 	readColumns(ctx, sheetID)
 	probe(ctx, "  C2:C4 now (maybe, empty, TRUE before)", a1.QuoteSheet(sheet)+"!C2:C4")
 	cellsAt(ctx, "  B2 and D2 after the retypes", a1.QuoteSheet(sheet)+"!B2:D2")
@@ -188,7 +208,7 @@ func spikeT(ctx context.Context) {
 		status, body := call(ctx, http.MethodGet, sheetsBase+"/spreadsheets/"+scratchID+
 			"?ranges="+url.QueryEscape(a1.QuoteSheet(sheet)+"!B1:C1")+
 			"&fields="+url.QueryEscape("sheets(data(rowData(values(userEnteredValue,formattedValue,textFormatRuns))))"), nil)
-		line("  %-50s -> HTTP %d  %s", what, status, first120(body))
+		line("  %-50s -> HTTP %d  %s", what, status, whole(body))
 	}
 	headerCells("  B1 and C1 before the update")
 	columns = readColumns(ctx, sheetID)
@@ -212,12 +232,169 @@ func spikeT(ctx context.Context) {
 		status, body := call(ctx, http.MethodGet, sheetsBase+"/spreadsheets/"+scratchID+
 			"?ranges="+url.QueryEscape(a1.QuoteSheet(sheet)+"!D1")+
 			"&fields="+url.QueryEscape("sheets(data(rowData(values(userEnteredValue,formattedValue,chipRuns))))"), nil)
-		line("  %-50s -> HTTP %d  %s", what, status, first120(body))
+		line("  %-50s -> HTTP %d  %s", what, status, whole(body))
 	}
 	chipCell("  D1 before the update")
 	columns = readColumns(ctx, sheetID)
 	update("every column as read, names included", id, columns)
 	chipCell("  D1 after it: chip kept?")
+
+	line("")
+	line("  Q10: an add over a formula in the header of a column it does not type")
+	status, body = putMode(ctx, a1.QuoteSheet(sheet)+"!F1:G3",
+		[][]any{{`="Ite"&"m"`, "Cost"}, {"Quorbin", 4}, {"Skerry", 5}}, "USER_ENTERED")
+	line("    %-52s -> HTTP %d  %s", "a formula showing Item in F1, Cost in G1", status, whole(body))
+	status, body = batchOne(ctx, map[string]any{"addTable": map[string]any{"table": map[string]any{
+		"name": "SpikeFormulaHead", "range": a1.Rect{FirstCol: 6, FirstRow: 1, LastCol: 7, LastRow: 3}.GridRange(sheetID),
+		"columnProperties": []any{map[string]any{"columnIndex": 1, "columnName": "Cost", "columnType": "DOUBLE"}},
+	}}})
+	line("    %-52s -> HTTP %d  %s", "a table over F1:G3, DOUBLE on G named Cost", status, whole(body))
+	cellsWhole(ctx, "  F1 after the add: formula kept?", a1.QuoteSheet(sheet)+"!F1")
+
+	spikeT11(ctx)
+}
+
+// spikeT11 bisects the live driver's 500. The driver typed three of four
+// columns of a block with a header row, numbers, dates and words, on a
+// sheet with one row and one column frozen; spike T Q1 typed two, on a
+// plain sheet, and was taken. Each add here is on a block of its own,
+// seeded the way the driver seeded it, so no add sees another's types.
+func spikeT11(ctx context.Context) {
+	line("")
+	line("  Q11: which part of the live driver's add draws its 500")
+	const sheet = "SpikeTypes"
+	sheetID, err := addSheet(ctx, sheet)
+	if err != nil {
+		line("    setup failed: %v", err)
+		return
+	}
+	seed := [][]any{
+		{"Item", "Amount", "Due", "Status"},
+		{"Quorbin", "12.5", "2026-10-01", "Open"},
+		{"Skerry", "3", "2026-10-02", "Done"},
+		{"Nardle", "40", "2026-10-03", ""},
+	}
+	options := oneOf("Open", "In progress", "Done")
+	names := []string{"Item", "Amount", "Due", "Status"}
+	type typed struct {
+		index int
+		kind  string
+	}
+	driver := []typed{{1, "DOUBLE"}, {2, "DATE"}, {3, "DROPDOWN"}}
+	cases := []struct {
+		what    string
+		columns []typed
+	}{
+		{"the driver's request: DOUBLE on B, DATE on C, DROPDOWN on D", driver},
+		{"CURRENCY on B alone, which Q1 took", []typed{{1, "CURRENCY"}}},
+		{"DOUBLE on B alone", []typed{{1, "DOUBLE"}}},
+		{"DATE on C alone, over date serials", []typed{{2, "DATE"}}},
+		{"TEXT on A alone", []typed{{0, "TEXT"}}},
+		{"PERCENT on B alone", []typed{{1, "PERCENT"}}},
+		{"TIME on C alone", []typed{{2, "TIME"}}},
+		{"DATE_TIME on C alone", []typed{{2, "DATE_TIME"}}},
+		{"BOOLEAN on D alone, over Open, Done and an empty cell", []typed{{3, "BOOLEAN"}}},
+		{"DROPDOWN Open, In progress, Done on D alone", []typed{{3, "DROPDOWN"}}},
+	}
+	build := func(columns []typed, withNames bool) []any {
+		out := make([]any, 0, len(columns))
+		for _, c := range columns {
+			var condition map[string]any
+			if c.kind == "DROPDOWN" {
+				condition = options
+			}
+			entry := column(c.index, c.kind, condition)
+			if withNames {
+				entry["columnName"] = names[c.index]
+			}
+			out = append(out, entry)
+		}
+		return out
+	}
+
+	// One block for every case twice, six rows apart, written at once.
+	var rows [][]any
+	for range 2 * len(cases) {
+		rows = append(rows, seed...)
+		rows = append(rows, []any{"", "", "", ""}, []any{"", "", "", ""})
+	}
+	if status, body := putMode(ctx, a1.QuoteSheet(sheet)+"!A1:D"+strconv.Itoa(len(rows)), rows, "USER_ENTERED"); status != 200 {
+		line("    setup failed: HTTP %d  %s", status, first120(body))
+		return
+	}
+	block := 0
+	try := func(on string, onID, firstRow int, what string, columns []any) {
+		block++
+		rect := a1.Rect{FirstCol: 1, FirstRow: firstRow, LastCol: 4, LastRow: firstRow + 3}
+		pace()
+		status, body := batchOne(ctx, map[string]any{"addTable": map[string]any{"table": map[string]any{
+			"name": "SpikeTypes" + strconv.Itoa(block), "range": rect.GridRange(onID), "columnProperties": columns,
+		}}})
+		line("    %-62s -> HTTP %d  %s", what, status, whole(body))
+		if status != 200 {
+			return
+		}
+		pace()
+		status, body = getValues(ctx, a1.Format(on, rect))
+		line("      the block after it -> HTTP %d  %s", status, whole(body))
+	}
+	for i, withNames := range []bool{false, true} {
+		line("")
+		if withNames {
+			line("    each again, every column named by its header, as manage_range now sends it")
+		} else {
+			line("    with no names, as manage_range sent it on the live run")
+		}
+		for j, c := range cases {
+			try(sheet, sheetID, 1+6*(i*len(cases)+j), c.what, build(c.columns, withNames))
+		}
+	}
+
+	line("")
+	line("    the driver's request where the driver sent it: A50:D53 of a sheet with a row and a column frozen")
+	const frozen = "SpikeFrozen"
+	frozenID, err := addSheet(ctx, frozen)
+	if err != nil {
+		line("    setup failed: %v", err)
+		return
+	}
+	status, body := batchOne(ctx, map[string]any{"updateSheetProperties": map[string]any{
+		"properties": map[string]any{"sheetId": frozenID, "gridProperties": map[string]any{
+			"frozenRowCount": 1, "frozenColumnCount": 1,
+		}},
+		"fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount",
+	}})
+	line("    %-62s -> HTTP %d  %s", "freeze one row and one column", status, whole(body))
+	pace()
+	if status, body := putMode(ctx, a1.QuoteSheet(frozen)+"!A50:D59", append(append(append([][]any{}, seed...),
+		[]any{"", "", "", ""}, []any{"", "", "", ""}), seed...), "USER_ENTERED"); status != 200 {
+		line("    setup failed: HTTP %d  %s", status, first120(body))
+		return
+	}
+	try(frozen, frozenID, 50, "the driver's request, no names", build(driver, false))
+	try(frozen, frozenID, 56, "the driver's request, every column named", build(driver, true))
+}
+
+// named is one entry of a read-back array with a new type, carrying the
+// name the read gave it, as manage_range sends an update.
+func named(columns []any, index int, kind string) map[string]any {
+	entry := map[string]any{"columnIndex": index, "columnType": kind}
+	for _, c := range columns {
+		m, _ := c.(map[string]any)
+		if i, _ := m["columnIndex"].(float64); int(i) == index {
+			entry["columnName"] = m["columnName"]
+		}
+	}
+	return entry
+}
+
+// cellsWhole prints what a range's cells hold and show, formulas
+// included, uncut.
+func cellsWhole(ctx context.Context, what, rangeA1 string) {
+	status, body := call(ctx, http.MethodGet, sheetsBase+"/spreadsheets/"+scratchID+
+		"?ranges="+url.QueryEscape(rangeA1)+
+		"&fields="+url.QueryEscape("sheets(data(rowData(values(userEnteredValue,formattedValue))))"), nil)
+	line("  %-50s -> HTTP %d  %s", what, status, whole(body))
 }
 
 // column is one columnProperties entry with no name.
@@ -268,7 +445,7 @@ func readColumns(ctx context.Context, sheetID int) []any {
 		var columns []any
 		line("      %d column(s) read back:", len(sh.Tables[0].ColumnProperties))
 		for _, raw := range sh.Tables[0].ColumnProperties {
-			line("        %s", first120(string(raw)))
+			line("        %s", whole(string(raw)))
 			var c map[string]any
 			_ = json.Unmarshal(raw, &c)
 			columns = append(columns, c)
@@ -277,23 +454,6 @@ func readColumns(ctx context.Context, sheetID int) []any {
 	}
 	line("      read back: no table on the sheet")
 	return nil
-}
-
-// withoutNames is a read-back array with every columnName taken out,
-// which asks whether a name left out clears its header.
-func withoutNames(columns []any) []any {
-	out := make([]any, 0, len(columns))
-	for _, c := range columns {
-		m, _ := c.(map[string]any)
-		copied := map[string]any{}
-		for k, v := range m {
-			if k != "columnName" {
-				copied[k] = v
-			}
-		}
-		out = append(out, copied)
-	}
-	return out
 }
 
 // setColumn replaces the entry with the same index, or adds it.
@@ -337,5 +497,5 @@ func cellsAt(ctx context.Context, what, rangeA1 string) {
 	status, body := call(ctx, http.MethodGet, sheetsBase+"/spreadsheets/"+scratchID+
 		"?ranges="+url.QueryEscape(rangeA1)+
 		"&fields="+url.QueryEscape("sheets(data(rowData(values(userEnteredValue,userEnteredFormat(numberFormat),dataValidation))))"), nil)
-	line("  %-50s -> HTTP %d  %s", what, status, first120(body))
+	line("  %-50s -> HTTP %d  %s", what, status, whole(body))
 }

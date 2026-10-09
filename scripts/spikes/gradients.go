@@ -69,7 +69,7 @@ func spikeS(ctx context.Context) {
 		status, body := batchOne(ctx, map[string]any{"addConditionalFormatRule": map[string]any{
 			"index": 0, "rule": rule,
 		}})
-		line("    %-48s -> HTTP %d  %s", what, status, first120(body))
+		line("    %-48s -> HTTP %d  %s", what, status, whole(body))
 		return status
 	}
 	scale := func(min, mid, max map[string]any) map[string]any {
@@ -182,7 +182,7 @@ func firstScale(ctx context.Context, sheetID int, which string) {
 		if sh.Properties.SheetID != sheetID || len(sh.ConditionalFormats) == 0 {
 			continue
 		}
-		line("      %s read back as %s", which, first120(string(sh.ConditionalFormats[0].GradientRule[which])))
+		line("      %s read back as %s", which, whole(string(sh.ConditionalFormats[0].GradientRule[which])))
 		return
 	}
 	line("      read back: no rule on the sheet")
