@@ -160,48 +160,39 @@ type ColumnSpec struct {
 	Rule *gsheets.TableColumnDataValidationRule
 }
 
-// columnTypes are the column types a caller writes, in the API's
-// spelling.
-var columnTypes = map[string]string{
-	"text":      gsheets.ColumnText,
-	"number":    gsheets.ColumnDouble,
-	"currency":  gsheets.ColumnCurrency,
-	"percent":   gsheets.ColumnPercent,
-	"date":      gsheets.ColumnDate,
-	"time":      gsheets.ColumnTime,
-	"date_time": gsheets.ColumnDateTime,
-	"boolean":   gsheets.ColumnBoolean,
-	"dropdown":  gsheets.ColumnDropdown,
-}
+// columnTypes are the column types a caller writes. Each is the API's
+// name lower-cased, except where columnTypeAPI says otherwise.
+var columnTypes = []string{"boolean", "currency", "date", "date_time", "dropdown", "number", "percent", "text", "time"}
+
+// columnTypeAPI are the API's spellings, where they differ from the
+// name a caller writes.
+var columnTypeAPI = map[string]string{"number": gsheets.ColumnDouble}
 
 // chipTypes are the smart chip column types. A read shows them; nothing
 // here writes one, so each is refused by name rather than as unknown.
 var chipTypes = []string{"files_chip", "people_chip", "finance_chip", "place_chip", "ratings_chip"}
 
-// columnEntry splits "<column> <type>" with an optional ": <options>".
+// ColumnTypeName is a column type in the spelling ParseColumnType takes,
+// so a type read back can be written again as it reads. A chip type
+// reads the same way, and is refused.
+func ColumnTypeName(apiType string) string {
+	for name, api := range columnTypeAPI {
+		if api == apiType {
+			return name
+		}
+	}
+	return strings.ToLower(apiType)
+}
+
+// columnEntry splits "<column> <type>" with optional options, after a
+// colon or in parentheses: "Status dropdown: Open, Done" as a caller
+// writes it, "Status dropdown (Open, Done)" as get_spreadsheet shows it.
 // The column is the shortest run of text the type can follow, so a
 // header with spaces in it, or with a type's name in it, still works:
 // "Due date date" is the column "Due date" typed as a date.
-var columnEntry = regexp.MustCompile(`(?i)^(.+?)\s+(` + columnTypeWords() + `)\s*(?::(.*))?$`)
-
-func columnTypeWords() string {
-	words := append([]string{}, chipTypes...)
-	for name := range columnTypes {
-		words = append(words, name)
-	}
-	sort.Strings(words)
-	return strings.Join(words, "|")
-}
-
-// ColumnTypeNames lists the types a caller may write, for a message.
-func ColumnTypeNames() []string {
-	out := make([]string, 0, len(columnTypes))
-	for name := range columnTypes {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
-}
+var columnEntry = regexp.MustCompile(`(?i)^(.+?)\s+(` +
+	strings.Join(slices.Sorted(slices.Values(append(slices.Clone(columnTypes), chipTypes...))), "|") +
+	`)\s*(?::(.*)|\((.*)\))?$`)
 
 // ParseColumnType reads one entry of column_types: "B date", "Amount
 // currency", "Status dropdown: Open, In progress, Done".
@@ -222,16 +213,26 @@ func ParseColumnType(text string) (ColumnSpec, error) {
 				"\"Amount currency\"", text)
 		}
 		return ColumnSpec{}, fmt.Errorf("column type %q ends in %q, which is not one of %s", text,
-			text[last+1:], strings.Join(ColumnTypeNames(), ", "))
+			text[last+1:], strings.Join(columnTypes, ", "))
 	}
 	column := strings.TrimSpace(text[m[2]:m[3]])
 	name := strings.ToLower(text[m[4]:m[5]])
-	hasOptions := m[6] >= 0
+	listed := ""
+	hasOptions := m[6] >= 0 || m[8] >= 0
+	switch {
+	case m[6] >= 0:
+		listed = text[m[6]:m[7]]
+	case m[8] >= 0:
+		listed = text[m[8]:m[9]]
+	}
 	if slices.Contains(chipTypes, name) {
 		return ColumnSpec{}, fmt.Errorf("column type %q asks for %s, a smart chip column, which this server "+
 			"shows and does not set", text, name)
 	}
-	spec := ColumnSpec{Column: column, Type: columnTypes[name]}
+	spec := ColumnSpec{Column: column, Type: strings.ToUpper(name)}
+	if api, ok := columnTypeAPI[name]; ok {
+		spec.Type = api
+	}
 	if spec.Type != gsheets.ColumnDropdown {
 		if hasOptions {
 			return ColumnSpec{}, fmt.Errorf("column type %q gives %s options, and only a dropdown takes them", text, name)
@@ -243,7 +244,7 @@ func ParseColumnType(text string) (ColumnSpec, error) {
 			"\"%s dropdown: Open, In progress, Done\"", text, column)
 	}
 	var options []string
-	for _, option := range strings.Split(text[m[6]:m[7]], ",") {
+	for _, option := range strings.Split(listed, ",") {
 		option = strings.TrimSpace(option)
 		if option == "" {
 			return ColumnSpec{}, fmt.Errorf("column type %q has an empty option; options are separated by commas", text)

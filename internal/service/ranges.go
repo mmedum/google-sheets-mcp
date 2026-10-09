@@ -409,7 +409,51 @@ func (s *Service) typedColumns(ctx context.Context, ref Reference, props *gsheet
 		applied = append(applied, render.Applied{Kind: "column typed", Value: render.ColumnText(spec.Column, column)})
 	}
 	sort.Slice(columns, func(i, j int) bool { return columns[i].ColumnIndex < columns[j].ColumnIndex })
+	if err := s.checkBooleanColumns(ctx, ref, props, table, columns); err != nil {
+		return nil, nil, err
+	}
 	return columns, applied, nil
+}
+
+// checkBooleanColumns refuses typing a column boolean while a cell under
+// its header holds something other than TRUE or FALSE.
+//
+// A boolean column shows checkboxes, and the tables guide says only that
+// it fills with FALSE: "The rating and checkbox column types populate
+// with default values of 0 and FALSE respectively". What it does to a
+// word or a number already there is unverified (§18), and a value that
+// turns into an unchecked box is a value lost with nothing said.
+func (s *Service) checkBooleanColumns(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
+	table a1.Rect, columns []*gsheets.TableColumn) error {
+
+	for _, c := range columns {
+		if c.ColumnType != gsheets.ColumnBoolean || table.Rows() < 2 {
+			continue
+		}
+		col := table.FirstCol + c.ColumnIndex
+		body := a1.Rect{FirstRow: table.FirstRow + 1, FirstCol: col, LastRow: table.LastRow, LastCol: col}
+		if err := readable(body, "the column is read first to see what a checkbox would replace"); err != nil {
+			return err
+		}
+		cells, err := s.readTarget(ctx, target{ref: ref, props: props, rect: body})
+		if err != nil {
+			return err
+		}
+		var other plan.Cells
+		for i, row := range cells.Cells {
+			if cell := row[0]; !cell.Empty() && cell.Kind != grid.KindBool {
+				other.AddCell(cells, i, 0)
+			}
+		}
+		if other.Any() {
+			return Errorf("blocked",
+				"%s %s something other than TRUE or FALSE, and a boolean column shows checkboxes. What Google does "+
+					"to a value that is not one is unverified, so it could be lost. Make %s TRUE or FALSE, or clear %s, "+
+					"first; an empty cell fills with FALSE",
+				other, other.Verb("holds", "hold"), other.Verb("it", "them"), other.Verb("it", "them"))
+		}
+	}
+	return nil
 }
 
 // tableNow is a table's columns and its header row, from one read.
@@ -419,7 +463,7 @@ type tableNow struct {
 }
 
 // readTable reads a table's columns and its header row as they are now,
-// and refuses a header cell that holds a formula.
+// and refuses a header cell that holds a formula or a smart chip.
 //
 // Fresh rather than from the card. The update sends the whole array
 // back, so a cached one would undo a change somebody made in between.
@@ -427,7 +471,7 @@ type tableNow struct {
 // The refusal is there because the update sends every column's name
 // (merge says why), and nothing Google publishes says whether a name
 // sent is written into the header cell. If it is, a formula there would
-// be replaced by the text it shows.
+// be replaced by the text it shows, and a chip by its text.
 func (s *Service) readTable(ctx context.Context, ref Reference, props *gsheets.SheetProperties, tableID string,
 	rect a1.Rect) (*tableNow, error) {
 
@@ -459,13 +503,20 @@ func (s *Service) readTable(ctx context.Context, ref Reference, props *gsheets.S
 	data, _, _ := sheetData(sp, props.SheetID)
 	header := grid.Build(props.Title, props.SheetID, head, data, grid.AsFormatted)
 	for j, cell := range header.Cells[0] {
-		if cell.HasFormula() {
-			return nil, Errorf("blocked",
-				"the header cell %s of the table on %s holds a formula. Changing a column type sends every column's "+
-					"name back, and whether Google writes a name into its header cell is unverified, so the formula "+
-					"could be replaced by the text it shows. Replace the formula with text first, or set the type in Sheets",
-				header.Address(0, j), a1.FormatRect(rect))
+		what, lost := "", ""
+		switch {
+		case cell.HasFormula():
+			what, lost = "a formula", "the formula"
+		case cell.Chip:
+			what, lost = "a smart chip (a person or a file link)", "the chip"
+		default:
+			continue
 		}
+		return nil, Errorf("blocked",
+			"the header cell %s of the table on %s holds %s. Changing a column type sends every column's "+
+				"name back, and whether Google writes a name into its header cell is unverified, so %s "+
+				"could be replaced by the text it shows. Replace %s with text first, or set the type in Sheets",
+			header.Address(0, j), a1.FormatRect(rect), what, lost, lost)
 	}
 	return &tableNow{columns: table.ColumnProperties, header: header}, nil
 }
@@ -480,16 +531,20 @@ func (t *tableNow) headings() map[string]int {
 	return headingIndex(texts)
 }
 
-// merge is the whole array an update sends: every column as read, with
-// the named ones retyped, and each with its name.
+// merge is the whole array an update sends: an entry for every column
+// of the table, as read, with the named ones retyped, and each with its
+// name.
 //
 // The name is the one this read gave the column, or its header cell's
 // text where the read gave none. The mask names a list, which may be
 // replaced whole (§18), and whether an entry with no name then clears
-// its header is unverified. A name sent as read leaves every header
-// showing the same text whichever way Google treats it. A formula would
-// lose what is under its text, so readTable refused one.
+// its header is unverified. So every column gets an entry, a column the
+// read left out included, with no type where the read gave it none. A
+// name sent as read leaves every header showing the same text whichever
+// way Google treats it. A formula or a chip would lose what is under
+// its text, so readTable refused one.
 func (t *tableNow) merge(changed []*gsheets.TableColumn) []*gsheets.TableColumn {
+	header := t.header.Cells[0]
 	byIndex := map[int]*gsheets.TableColumn{}
 	for _, c := range t.columns {
 		if c != nil {
@@ -504,14 +559,17 @@ func (t *tableNow) merge(changed []*gsheets.TableColumn) []*gsheets.TableColumn 
 		}
 		byIndex[c.ColumnIndex] = &retyped
 	}
-	out := make([]*gsheets.TableColumn, 0, len(byIndex))
-	for _, c := range byIndex {
-		if c.ColumnName == "" && c.ColumnIndex >= 0 && c.ColumnIndex < len(t.header.Cells[0]) {
-			c.ColumnName = t.header.Cells[0][c.ColumnIndex].Display
+	out := make([]*gsheets.TableColumn, 0, len(header))
+	for i, cell := range header {
+		c, ok := byIndex[i]
+		if !ok {
+			c = &gsheets.TableColumn{ColumnIndex: i}
+		}
+		if c.ColumnName == "" {
+			c.ColumnName = cell.Display
 		}
 		out = append(out, c)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ColumnIndex < out[j].ColumnIndex })
 	return out
 }
 

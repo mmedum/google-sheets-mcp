@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
 )
 
 // Card is the spreadsheet card: what get_spreadsheet knows before any
@@ -178,38 +179,14 @@ func section(b *strings.Builder, label string, items []NamedItem) {
 	}
 }
 
-// columnTypeNames are a table's column types in the spelling
-// manage_range takes, so a type read back can be written again as it
-// reads. The chip types are shown and never written.
-var columnTypeNames = map[string]string{
-	gsheets.ColumnText:     "text",
-	gsheets.ColumnDouble:   "number",
-	gsheets.ColumnCurrency: "currency",
-	gsheets.ColumnPercent:  "percent",
-	gsheets.ColumnDate:     "date",
-	gsheets.ColumnTime:     "time",
-	gsheets.ColumnDateTime: "date_time",
-	gsheets.ColumnBoolean:  "boolean",
-	gsheets.ColumnDropdown: "dropdown",
-	gsheets.ColumnFiles:    "files_chip",
-	gsheets.ColumnPeople:   "people_chip",
-	gsheets.ColumnFinance:  "finance_chip",
-	gsheets.ColumnPlace:    "place_chip",
-	gsheets.ColumnRatings:  "ratings_chip",
-}
-
-// ColumnText is one table column and its type, as manage_range spells
-// it: "Amount currency", "Status dropdown (Open, In progress, Done)". A
+// ColumnText is one table column and its type, as manage_range takes it
+// back: "Amount currency", "Status dropdown (Open, In progress, Done)". A
 // column with no type is its name alone.
 func ColumnText(name string, c *gsheets.TableColumn) string {
 	if c == nil || c.ColumnType == "" || c.ColumnType == "COLUMN_TYPE_UNSPECIFIED" {
 		return name
 	}
-	kind, ok := columnTypeNames[c.ColumnType]
-	if !ok {
-		kind = strings.ToLower(c.ColumnType)
-	}
-	text := name + " " + kind
+	text := name + " " + plan.ColumnTypeName(c.ColumnType)
 	if c.DataValidationRule != nil && c.DataValidationRule.Condition != nil {
 		var options []string
 		for _, v := range c.DataValidationRule.Condition.Values {

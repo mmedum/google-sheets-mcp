@@ -528,8 +528,9 @@ var columnTypes = map[string]bool{
 }
 
 // checkColumns makes the refusals a table's columns are believed to
-// meet. The type has to be one the enum has; the rest are beliefs, in
-// wording of this fake's own, and §18 says which the live run settles.
+// meet. The type has to be one the enum has, or none; the rest are
+// beliefs, in wording of this fake's own, and §18 says which the live
+// run settles.
 //
 // The tables guide says a dropdown column "must" carry a ONE_OF_LIST
 // rule and that other types "shouldn't" carry one, and the discovery
@@ -542,7 +543,10 @@ func checkColumns(columns []*gsheets.TableColumn, width int) error {
 		if c == nil {
 			return errors.New("invalid TableColumnProperties: an empty entry")
 		}
-		if !columnTypes[c.ColumnType] {
+		// No type is the enum's unspecified member. manage_range sends one
+		// for a column a read gave no entry, with its header's name; that
+		// Google takes it is a belief (§18).
+		if c.ColumnType != "" && !columnTypes[c.ColumnType] {
 			return errors.New("Invalid value at 'column_type': " + strconv.Quote(c.ColumnType))
 		}
 		if c.ColumnIndex < 0 || c.ColumnIndex >= width {

@@ -689,12 +689,14 @@ func (d *driver) typedColumnSteps() []step {
 		{
 			name: "one column retyped, and the others sent back as they were",
 			why: "the mask names a list, which may be replaced whole or appended to (§18), so the update " +
-				"reads the array and sends every column back; the card after it must show the change and the " +
-				"dropdown's list both",
+				"reads the array and sends an entry for every column, one the read left out with its header's " +
+				"name and no type, which Google may refuse (§18); the dropdown goes in the card's own spelling, " +
+				"and the card after it must show the change and the dropdown's list both",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": typedBand,
-				"kind": "table", "action": "update", "column_types": []any{"Amount currency"},
+				"kind": "table", "action": "update",
+				"column_types": []any{"Amount currency", "Status dropdown (Open, In progress, Done)"},
 			},
 		},
 		card("after the update", "currency", "date", "dropdown (Open, In progress, Done)"),
@@ -733,6 +735,23 @@ func (d *driver) typedColumnSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "D50", "input": "typed",
 				"values": [][]any{{"Status"}}, "overwrite": true, "overwrite_formulas": true,
+			},
+		},
+		{
+			name: "a boolean type over text is refused",
+			why: "a boolean column shows checkboxes, and what Google does to a word already in one is " +
+				"unverified (§18), so the update stops and names the cells",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": typedBand,
+				"kind": "table", "action": "update", "column_types": []any{"Item boolean"},
+			},
+			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "A51") || !strings.Contains(text, "TRUE or FALSE") {
+					return fmt.Errorf("the refusal does not name the cells: %s", text)
+				}
+				return nil
 			},
 		},
 		{

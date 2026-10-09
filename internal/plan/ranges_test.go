@@ -324,6 +324,9 @@ func TestParseColumnType(t *testing.T) {
 		// An option ending in a type's name is still an option: the first
 		// type that can end the column wins.
 		{"Kind dropdown: Draft, Final text", "Kind", "DROPDOWN", []string{"Draft", "Final text"}},
+		// The options in parentheses, as get_spreadsheet shows them.
+		{"Status dropdown (Open, In progress, Done)", "Status", "DROPDOWN", []string{"Open", "In progress", "Done"}},
+		{"Cost (net) dropdown (Low, High)", "Cost (net)", "DROPDOWN", []string{"Low", "High"}},
 	} {
 		got, err := plan.ParseColumnType(tc.in)
 		if err != nil {
@@ -365,6 +368,9 @@ func TestParseColumnTypeRefusals(t *testing.T) {
 		{"Status dropdown:", `column type "Status dropdown:" has an empty option; options are separated by commas`},
 		{"Amount currency: USD", `column type "Amount currency: USD" gives currency options, and only a ` +
 			`dropdown takes them`},
+		{"Amount currency (USD)", `column type "Amount currency (USD)" gives currency options, and only a ` +
+			`dropdown takes them`},
+		{"Status dropdown ()", `column type "Status dropdown ()" has an empty option; options are separated by commas`},
 	} {
 		_, err := plan.ParseColumnType(tc.in)
 		if err == nil || err.Error() != tc.want {

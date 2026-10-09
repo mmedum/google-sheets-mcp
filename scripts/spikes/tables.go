@@ -37,6 +37,10 @@ import (
 // sending the names as read do to it, and to a header in rich text?
 // manage_range refuses the update over a formula header; this says
 // whether that refusal can ever fire, and whether rich text needs one.
+// Q8. Is an entry with a name and no type taken on update? manage_range
+// sends one for a column a read gave no entry.
+// Q9. What does an update sending the names as read do to a person chip
+// in a header cell? manage_range refuses the update over one.
 func spikeT(ctx context.Context) {
 	sec("Spike T: typed table columns, and what an update does to them")
 	const sheet = "SpikeTables"
@@ -151,6 +155,13 @@ func spikeT(ctx context.Context) {
 	headers()
 
 	line("")
+	line("  Q8: an entry with its name and no type, the rest as read")
+	columns = readColumns(ctx, sheetID)
+	update("column 0 named Item, no type", id, setColumn(columns, map[string]any{"columnIndex": 0, "columnName": "Item"}))
+	readColumns(ctx, sheetID)
+	headers()
+
+	line("")
 	line("  Q4: a column name sent on update")
 	renamed := setName(columns, 0, "SPIKE-RENAMED")
 	update("column 0 named SPIKE-RENAMED", id, renamed)
@@ -183,6 +194,30 @@ func spikeT(ctx context.Context) {
 	columns = readColumns(ctx, sheetID)
 	update("every column as read, names included", id, columns)
 	headerCells("  B1 and C1 after it: formula and runs kept?")
+
+	line("")
+	line("  Q9: a person chip in the header, under an update sending the names as read")
+	status, body = batchOne(ctx, map[string]any{"updateCells": map[string]any{
+		"range": a1.Rect{FirstCol: 4, FirstRow: 1, LastCol: 4, LastRow: 1}.GridRange(sheetID),
+		"rows": []any{map[string]any{"values": []any{map[string]any{
+			"userEnteredValue": map[string]any{"stringValue": "@"},
+			"chipRuns": []any{map[string]any{"chip": map[string]any{
+				"personProperties": map[string]any{"email": "janedoe@example.com"},
+			}}},
+		}}}},
+		"fields": "userEnteredValue,chipRuns",
+	}})
+	line("    %-52s -> HTTP %d  %s", "a person chip into D1", status, first120(body))
+	chipCell := func(what string) {
+		status, body := call(ctx, http.MethodGet, sheetsBase+"/spreadsheets/"+scratchID+
+			"?ranges="+url.QueryEscape(a1.QuoteSheet(sheet)+"!D1")+
+			"&fields="+url.QueryEscape("sheets(data(rowData(values(userEnteredValue,formattedValue,chipRuns))))"), nil)
+		line("  %-50s -> HTTP %d  %s", what, status, first120(body))
+	}
+	chipCell("  D1 before the update")
+	columns = readColumns(ctx, sheetID)
+	update("every column as read, names included", id, columns)
+	chipCell("  D1 after it: chip kept?")
 }
 
 // column is one columnProperties entry with no name.

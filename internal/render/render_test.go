@@ -11,6 +11,7 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
 )
 
@@ -211,6 +212,36 @@ func TestCardGolden(t *testing.T) {
 		Protected:   []render.NamedItem{{Name: "heading row", Range: "'Vandel'!A1:D1", Detail: "you may not edit it"}},
 		FilterViews: []render.NamedItem{{Name: "Grivet over 500", Range: "'Vandel'!A1:D21"}},
 	}))
+}
+
+// TestAColumnTypeReadsBackAsItIsWritten is the promise the card makes:
+// every type manage_range writes, shown as the card shows it, is taken
+// back by column_types as the same type, a dropdown's list included.
+func TestAColumnTypeReadsBackAsItIsWritten(t *testing.T) {
+	list := &gsheets.TableColumnDataValidationRule{Condition: &gsheets.BooleanCondition{
+		Type: "ONE_OF_LIST", Values: []*gsheets.ConditionValue{{UserEnteredValue: "Open"}, {UserEnteredValue: "In progress"}},
+	}}
+	for _, kind := range []string{
+		gsheets.ColumnText, gsheets.ColumnDouble, gsheets.ColumnCurrency, gsheets.ColumnPercent, gsheets.ColumnDate,
+		gsheets.ColumnTime, gsheets.ColumnDateTime, gsheets.ColumnBoolean, gsheets.ColumnDropdown,
+	} {
+		column := &gsheets.TableColumn{ColumnType: kind}
+		if kind == gsheets.ColumnDropdown {
+			column.DataValidationRule = list
+		}
+		text := render.ColumnText("Amount", column)
+		got, err := plan.ParseColumnType(text)
+		if err != nil {
+			t.Errorf("%s reads as %q, which is refused: %v", kind, text, err)
+			continue
+		}
+		if got.Column != "Amount" || got.Type != kind || (got.Rule == nil) != (column.DataValidationRule == nil) {
+			t.Errorf("%q is taken back as column %q type %q rule %v", text, got.Column, got.Type, got.Rule)
+		}
+		if got.Rule != nil && len(got.Rule.Condition.Values) != 2 {
+			t.Errorf("%q is taken back with the options %v", text, got.Rule.Condition.Values)
+		}
+	}
 }
 
 func TestSeparated(t *testing.T) {

@@ -786,10 +786,12 @@ func TestTableUpdateRenamesAndRetypesInOneRequest(t *testing.T) {
 	}
 }
 
-// TestTableUpdateNamesAColumnTheReadLeftOutByItsHeader is a column the
-// read has no entry for. Whether Google ever returns such an array is
-// unverified (§18); if it does, the entry the update adds carries the
-// header cell's text from the same read, so it cannot blank the header.
+// TestTableUpdateNamesAColumnTheReadLeftOutByItsHeader is a read with
+// no entry for some columns. Whether Google ever returns such an array
+// is unverified (§18); if it does, the update still sends an entry for
+// every column, each a column the read left out named by its header
+// cell's text from the same read and given no type, so no header can be
+// left blank.
 func TestTableUpdateNamesAColumnTheReadLeftOutByItsHeader(t *testing.T) {
 	srv := sheetstest.Standard(t)
 	seedTypedTable(srv)
@@ -802,7 +804,8 @@ func TestTableUpdateNamesAColumnTheReadLeftOutByItsHeader(t *testing.T) {
 		t.Fatalf("retyping a column: %v", err)
 	}
 	columns, _ := sentColumns(t, srv)
-	const want = `[{"columnIndex":2,"columnName":"Status","columnType":"DROPDOWN","dataValidationRule":{"condition":` +
+	const want = `[{"columnName":"Trennow"},{"columnIndex":1,"columnName":"Bractal"},` +
+		`{"columnIndex":2,"columnName":"Status","columnType":"DROPDOWN","dataValidationRule":{"condition":` +
 		`{"type":"ONE_OF_LIST","values":[{"userEnteredValue":"Open"},{"userEnteredValue":"Done"}]}}},` +
 		`{"columnIndex":3,"columnName":"ID","columnType":"DATE"}]`
 	if columns != want {
@@ -840,6 +843,72 @@ func TestTableUpdateIsRefusedOverAFormulaInTheHeader(t *testing.T) {
 	rename.Name = "Bractal"
 	if _, err := svc.ManageRange(ctx, rename); err != nil {
 		t.Errorf("a rename over a formula header was refused: %v", err)
+	}
+}
+
+// TestTableUpdateIsRefusedOverAChipInTheHeader is the other header a
+// name sent back could change: written into the cell, the name would
+// replace a person or a file chip with the text it shows.
+func TestTableUpdateIsRefusedOverAChipInTheHeader(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	seedTypedTable(srv)
+	chip := sheetstest.Str("Jane Doe")
+	chip.ChipRuns = []gsheets.ChipRun{{Chip: &gsheets.Chip{
+		PersonProperties: &gsheets.PersonProperties{Email: "janedoe@example.test"},
+	}}}
+	srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Set(1, 4, chip)
+
+	update := rangeReq(service.RangeTable, service.RangeUpdate, "A1:D3")
+	update.ColumnTypes = []string{"B currency"}
+	_, err := newService(t, srv).ManageRange(context.Background(), update)
+	const want = "[blocked] the header cell D1 of the table on A1:D3 holds a smart chip (a person or a file link). " +
+		"Changing a column type sends every column's name back, and whether Google writes a name into its header " +
+		"cell is unverified, so the chip could be replaced by the text it shows. Replace the chip with text first, " +
+		"or set the type in Sheets"
+	if err == nil || err.Error() != want {
+		t.Errorf("error =\n%v\nwant\n%s", err, want)
+	}
+	if batched(srv) {
+		t.Fatal("a refused update reached the wire")
+	}
+}
+
+// TestABooleanColumnIsRefusedOverOtherValues is a checkbox column over
+// cells that are not TRUE or FALSE. The tables guide says only that a
+// checkbox column fills with FALSE, so a value already there could
+// become an unchecked box, on add and on update alike. TRUE, FALSE and
+// an empty cell are what a checkbox holds, and are not held back.
+func TestABooleanColumnIsRefusedOverOtherValues(t *testing.T) {
+	const want = "[blocked] B2, B3 hold something other than TRUE or FALSE, and a boolean column shows checkboxes. " +
+		"What Google does to a value that is not one is unverified, so it could be lost. Make them TRUE or FALSE, " +
+		"or clear them, first; an empty cell fills with FALSE"
+	for _, action := range []string{service.RangeAdd, service.RangeUpdate} {
+		srv := sheetstest.Standard(t)
+		if action == service.RangeAdd {
+			typedSheet(srv)
+		} else {
+			seedTypedTable(srv)
+		}
+		req := rangeReq(service.RangeTable, action, "A1:D3")
+		req.Name = "Trennow"
+		req.ColumnTypes = []string{"Bractal boolean"}
+		_, err := newService(t, srv).ManageRange(context.Background(), req)
+		if err == nil || err.Error() != want {
+			t.Errorf("%s: error =\n%v\nwant\n%s", action, err, want)
+		}
+		if batched(srv) {
+			t.Fatalf("%s: a refused boolean column reached the wire", action)
+		}
+	}
+
+	srv := sheetstest.Standard(t)
+	seedTypedTable(srv)
+	srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Set(2, 4, sheetstest.Bool(true)).Set(3, 4, sheetstest.Bool(false))
+	srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Set(2, 3, sheetstest.Bool(true))
+	update := rangeReq(service.RangeTable, service.RangeUpdate, "A1:D3")
+	update.ColumnTypes = []string{"C boolean", "D boolean"}
+	if _, err := newService(t, srv).ManageRange(context.Background(), update); err != nil {
+		t.Errorf("a boolean column over TRUE, FALSE and an empty cell was refused: %v", err)
 	}
 }
 
