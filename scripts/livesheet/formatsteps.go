@@ -625,7 +625,9 @@ func (d *driver) typedTablesAll() {
 // and check that the rest, a dropdown's list included, survive the
 // round trip, the header cells with them. Google replaces the whole list
 // on update (spike T Q3b), so the update sends every column. A formula
-// into the header is refused, since Google would replace it (spike T).
+// into the header is refused, since Google would replace it, and so is a
+// dropdown over cells with a list of their own, which Google would drop
+// (spike T).
 // What a type does to the cells is partly unverified (§18), and the
 // steps print it.
 func (d *driver) typedColumnSteps() []step {
@@ -785,6 +787,41 @@ func (d *driver) typedColumnSteps() []step {
 			check: func(text string, _ map[string]any) error {
 				if !strings.Contains(text, "F1") || !strings.Contains(text, "Formulas are not supported in a table header row") {
 					return fmt.Errorf("the refusal does not name the cell and Google's reason: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "a block whose cells carry a list of their own, beside the table",
+			why:  "a dropdown typed over it is the next step's to refuse",
+			tool: "write_values",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "I1:J3", "input": "typed",
+				"values": [][]any{{"Item", "Pick"}, {"Quorbin", "x"}, {"Skerry", "y"}},
+			},
+		},
+		{
+			name: "a list on two of its cells",
+			why:  "a rule of the cells' own, which a table's dropdown would replace",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "J2:J3",
+				"kind": "data_validation", "action": "add", "condition": "one_of_list", "values": []any{"x", "y"},
+			},
+		},
+		{
+			name: "a dropdown typed over cells with a list of their own is refused",
+			why: "spike T: Google dropped a cell's own list when its column was typed dropdown, and said " +
+				"nothing (§18), so the add stops and names the cells",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "I1:J3",
+				"kind": "table", "action": "add", "name": "LivesheetOwnRules", "column_types": []any{"Pick dropdown: x, y"},
+			},
+			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "J2, J3") || !strings.Contains(text, "data validation rules of their own") {
+					return fmt.Errorf("the refusal does not name the cells and their rules: %s", text)
 				}
 				return nil
 			},

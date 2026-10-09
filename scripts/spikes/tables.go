@@ -298,6 +298,78 @@ func spikeT(ctx context.Context) {
 	spikeT12(ctx)
 }
 
+// spikeT13 asks what an update does to cells with a data validation rule
+// of their own, which Q1 answered only for an add. manage_range refuses a
+// dropdown typing over one, on update too, and sends a dropdown column
+// back unchanged without reading its cells.
+//
+// Q13. Does an update typing a column dropdown drop its cells' own lists,
+// as Q1's add did? And does an update that sends a dropdown column back
+// unchanged drop a list a cell in it was given since?
+//
+// It is a selector of its own, -only T13, with one add, because spike T's
+// adds have drawn a 500 on every add after about five, and a 429 on the
+// per-minute write quota.
+func spikeT13(ctx context.Context) {
+	sec("Spike T Q13: what an update does to a cell's own validation rule")
+	const sheet = "SpikeDropdown"
+	sheetID, err := addSheet(ctx, sheet)
+	if err != nil {
+		line("  setup failed: %v", err)
+		return
+	}
+	if err := put(ctx, a1.QuoteSheet(sheet)+"!A1:B4", [][]any{
+		{"Item", "Status"}, {"Quorbin", "Open"}, {"Skerry", "Done"}, {"Nardle", ""},
+	}); err != nil {
+		line("  setup failed: %v", err)
+		return
+	}
+	status, body := batchOne(ctx, map[string]any{"addTable": map[string]any{"table": map[string]any{
+		"name": "SpikeDropdown", "range": a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 2, LastRow: 4}.GridRange(sheetID),
+	}}})
+	line("    %-52s -> HTTP %d  %s", "a plain table over A1:B4", status, first120(body))
+	id := addedTableID(status, body)
+	if id == "" {
+		return
+	}
+	rule := func(what string, rect a1.Rect, options ...string) {
+		pace()
+		status, body := batchOne(ctx, map[string]any{"setDataValidation": map[string]any{
+			"range": rect.GridRange(sheetID),
+			"rule":  map[string]any{"condition": oneOf(options...), "strict": true, "showCustomUi": true},
+		}})
+		line("    %-52s -> HTTP %d  %s", what, status, whole(body))
+	}
+	update := func(what string, columns []any) {
+		pace()
+		status, body := batchOne(ctx, map[string]any{"updateTable": map[string]any{
+			"table":  map[string]any{"tableId": id, "columnProperties": columns},
+			"fields": "columnProperties",
+		}})
+		line("    %-52s -> HTTP %d  %s", what, status, whole(body))
+	}
+
+	line("")
+	line("  Q13: a column typed dropdown over cells with lists of their own")
+	rule("a list Open, Done on B2:B3, inside the table", a1.Rect{FirstCol: 2, FirstRow: 2, LastCol: 2, LastRow: 3},
+		"Open", "Done")
+	cellsAt(ctx, "  B2:B4 before", a1.QuoteSheet(sheet)+"!B2:B4")
+	columns := readColumns(ctx, sheetID)
+	dropdown := named(columns, 1, "DROPDOWN")
+	dropdown["dataValidationRule"] = map[string]any{"condition": oneOf("Open", "In progress", "Done")}
+	update("DROPDOWN on B, named as read, the rest as read", setColumn(columns, dropdown))
+	cellsAt(ctx, "  B2:B4 after: own lists dropped?", a1.QuoteSheet(sheet)+"!B2:B4")
+
+	line("")
+	line("  Q13: a dropdown column sent back unchanged, over a list given to a cell in it since")
+	rule("a list x, y on B4, inside the dropdown column", a1.Rect{FirstCol: 2, FirstRow: 4, LastCol: 2, LastRow: 4},
+		"x", "y")
+	cellsAt(ctx, "  B4 before", a1.QuoteSheet(sheet)+"!B4")
+	columns = readColumns(ctx, sheetID)
+	update("every column as read, names included", columns)
+	cellsAt(ctx, "  B4 after: own list kept?", a1.QuoteSheet(sheet)+"!B4")
+}
+
 // spikeT11 bisects the live driver's 500. The driver typed three of four
 // columns of a block with a header row, numbers, dates and words, on a
 // sheet with one row and one column frozen; spike T Q1 typed two, on a

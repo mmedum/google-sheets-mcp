@@ -457,14 +457,16 @@ func (s *Service) typedColumns(ctx context.Context, ref Reference, props *gsheet
 		applied = append(applied, render.Applied{Kind: "column typed", Value: render.ColumnText(spec.Column, column)})
 	}
 	sort.Slice(columns, func(i, j int) bool { return columns[i].ColumnIndex < columns[j].ColumnIndex })
-	if err := s.checkBooleanColumns(ctx, ref, props, table, columns); err != nil {
+	if err := s.checkColumnCells(ctx, ref, props, table, columns); err != nil {
 		return nil, nil, err
 	}
 	return columns, applied, nil
 }
 
-// checkBooleanColumns refuses typing a column boolean while a cell under
-// its header holds anything but a true or false value.
+// checkColumnCells refuses a boolean or a dropdown type over cells it
+// would change. Every such column is read in one request, after the
+// header: a column named by its heading is known only once that read is
+// back.
 //
 // A boolean column shows checkboxes. Spike T Q5 typed one over "maybe",
 // the text "TRUE" and an empty cell, and all three became FALSE: a word
@@ -472,38 +474,87 @@ func (s *Service) typedColumns(ctx context.Context, ref Reference, props *gsheet
 // value. What it does to a number or a formula is not known, so they are
 // refused too. A cell already TRUE or FALSE is believed kept (§18); spike
 // T asks.
-func (s *Service) checkBooleanColumns(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
+//
+// A dropdown column brings the table's list. Spike T Q1 typed one over
+// cells with a list of their own, and the cells' own rule was gone after,
+// with nothing said. So a dropdown is refused while a cell under its
+// header has a rule of its own. The table's list is not on its cells (Q1
+// read none there), so retyping a dropdown column is not refused over it.
+// An update is believed to drop the rule as the add did; spike T Q13
+// asks.
+func (s *Service) checkColumnCells(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
 	table a1.Rect, columns []*gsheets.TableColumn) error {
 
+	var checked []*gsheets.TableColumn
+	var ranges []string
 	for _, c := range columns {
-		if c.ColumnType != gsheets.ColumnBoolean || table.Rows() < 2 {
+		if (c.ColumnType != gsheets.ColumnBoolean && c.ColumnType != gsheets.ColumnDropdown) || table.Rows() < 2 {
 			continue
 		}
-		col := table.FirstCol + c.ColumnIndex
-		body := a1.Rect{FirstRow: table.FirstRow + 1, FirstCol: col, LastRow: table.LastRow, LastCol: col}
-		if err := readable(body, "the column is read first to see what a checkbox would replace"); err != nil {
+		body := columnBody(table, c.ColumnIndex)
+		if err := readable(body, "the column is read first to see what its type would replace"); err != nil {
 			return err
 		}
-		cells, err := s.readTarget(ctx, target{ref: ref, props: props, rect: body})
-		if err != nil {
-			return err
+		checked = append(checked, c)
+		ranges = append(ranges, a1.Format(props.Title, body))
+	}
+	if len(checked) == 0 {
+		return nil
+	}
+	sp, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{
+		Fields: gapi.GridFields, Ranges: ranges, IncludeGridData: true,
+	})
+	if err != nil {
+		return wrap(err)
+	}
+	// One GridData comes back per range, each saying where it starts.
+	byColumn := map[int]*gsheets.GridData{}
+	for _, sh := range sp.Sheets {
+		if sh.Properties == nil || sh.Properties.SheetID != props.SheetID {
+			continue
 		}
-		var other plan.Cells
-		for i, row := range cells.Cells {
-			if cell := row[0]; !cell.Empty() && cell.Kind != grid.KindBool {
-				other.AddCell(cells, i, 0)
+		for _, data := range sh.Data {
+			if data != nil {
+				byColumn[data.StartColumn] = data
 			}
 		}
-		if other.Any() {
-			return Errorf("blocked",
-				"%s %s something other than a TRUE or FALSE value, and Google turns such a cell into FALSE when its "+
-					"column is typed boolean, text reading TRUE included, so what is there would be lost. Write TRUE or "+
-					"FALSE with input typed, which stores a true or false value rather than text, or clear %s, first; "+
-					"an empty cell becomes FALSE",
-				other, other.Verb("holds", "hold"), other.Verb("it", "them"))
+	}
+	var other, ruled plan.Cells
+	for _, c := range checked {
+		body := columnBody(table, c.ColumnIndex)
+		cells := grid.Build(props.Title, props.SheetID, body, byColumn[body.FirstCol-1], grid.AsRaw)
+		for i, row := range cells.Cells {
+			switch cell := row[0]; {
+			case c.ColumnType == gsheets.ColumnBoolean && !cell.Empty() && cell.Kind != grid.KindBool:
+				other.AddCell(cells, i, 0)
+			case c.ColumnType == gsheets.ColumnDropdown && cell.Validation != "":
+				ruled.AddCell(cells, i, 0)
+			}
 		}
 	}
+	if other.Any() {
+		return Errorf("blocked",
+			"%s %s something other than a TRUE or FALSE value, and Google turns such a cell into FALSE when its "+
+				"column is typed boolean, text reading TRUE included, so what is there would be lost. Write TRUE or "+
+				"FALSE with input typed, which stores a true or false value rather than text, or clear %s, first; "+
+				"an empty cell becomes FALSE",
+			other, other.Verb("holds", "hold"), other.Verb("it", "them"))
+	}
+	if ruled.Any() {
+		return Errorf("blocked",
+			"%s %s, and the table's dropdown would replace %s: Google drops a cell's own rule when its column is "+
+				"typed dropdown, and says nothing. To use the table's list, remove the rule from %s first, with "+
+				"kind data_validation and action delete",
+			ruled, ruled.Verb("has a data validation rule of its own", "have data validation rules of their own"),
+			ruled.Verb("it", "them"), ruled.Verb("that cell", "those cells"))
+	}
 	return nil
+}
+
+// columnBody is the cells under a table column's header.
+func columnBody(table a1.Rect, index int) a1.Rect {
+	col := table.FirstCol + index
+	return a1.Rect{FirstRow: table.FirstRow + 1, FirstCol: col, LastRow: table.LastRow, LastCol: col}
 }
 
 // formulaHeader refuses a table add over a formula anywhere in its header

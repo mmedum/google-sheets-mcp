@@ -541,8 +541,29 @@ func addTable(d *Doc, req *gsheets.AddTableRequest) (*gsheets.Reply, bool, error
 		copied.ColumnProperties = append(copied.ColumnProperties, &column)
 	}
 	checkboxes(sh, rect, copied.ColumnProperties)
+	dropdowns(sh, rect, copied.ColumnProperties)
 	sh.Tables = append(sh.Tables, &copied)
 	return &gsheets.Reply{AddTable: &gsheets.AddTableReply{Table: &copied}}, true, nil
+}
+
+// dropdowns is what typing a column dropdown does to the cells under its
+// header: a data validation rule of a cell's own is gone, and the
+// table's list is not put on the cell either.
+//
+// Spike T Q1, 2026-10-09: an add typing column D a dropdown over D2:D4,
+// which had a list of their own, read D2 back with no dataValidation. An
+// update is believed to do the same; nothing has answered it.
+func dropdowns(sh *Sheet, rect a1.Rect, columns []*gsheets.TableColumn) {
+	for _, c := range columns {
+		if c.ColumnType != gsheets.ColumnDropdown {
+			continue
+		}
+		for row := rect.FirstRow + 1; row <= rect.LastRow; row++ {
+			if cell := sh.At(row, rect.FirstCol+c.ColumnIndex); cell != nil {
+				cell.DataValidation = nil
+			}
+		}
+	}
 }
 
 // checkboxes is what typing a column boolean does to the cells under its
@@ -746,6 +767,7 @@ func replaceColumns(sh *Sheet, table *gsheets.Table, columns []*gsheets.TableCol
 		out = append(out, &column)
 	}
 	checkboxes(sh, rect, out)
+	dropdowns(sh, rect, out)
 	return out, nil
 }
 

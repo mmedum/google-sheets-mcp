@@ -633,6 +633,42 @@ func TestABooleanColumnTurnsTextAndEmptyCellsFalse(t *testing.T) {
 	}
 }
 
+// TestADropdownColumnDropsTheCellsOwnRules is spike T Q1: an add typing a
+// column dropdown over cells with a list of their own read them back with
+// no rule, and the table's list was not put on them either. A column the
+// add does not type keeps its cells' rules.
+func TestADropdownColumnDropsTheCellsOwnRules(t *testing.T) {
+	srv := Standard(t)
+	srv.Doc(FixtureID).Find(SecondSheet).
+		Set(1, 3, Str("Status")).
+		Set(2, 3, WithValidation(Str("x"), "x", "y")).
+		Set(3, 3, WithValidation(&gsheets.CellData{}, "x", "y")).
+		Set(2, 2, WithValidation(Num(42, "42"), "42"))
+	if _, err := srv.Client().BatchUpdate(context.Background(), FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*gsheets.Request{{AddTable: &gsheets.AddTableRequest{Table: &gsheets.Table{
+			Name: "Trennow", Range: a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 3, LastRow: 3}.GridRange(1837),
+			ColumnProperties: []*gsheets.TableColumn{{
+				ColumnIndex: 2, ColumnName: "Status", ColumnType: gsheets.ColumnDropdown,
+				DataValidationRule: &gsheets.TableColumnDataValidationRule{Condition: &gsheets.BooleanCondition{
+					Type: "ONE_OF_LIST", Values: []*gsheets.ConditionValue{{UserEnteredValue: "x"}},
+				}},
+			}},
+		}}}},
+	}); err != nil {
+		t.Fatalf("addTable: %v", err)
+	}
+	sh := srv.Doc(FixtureID).Find(SecondSheet)
+	if c2, c3 := sh.At(2, 3).DataValidation, sh.At(3, 3).DataValidation; c2 != nil || c3 != nil {
+		t.Errorf("C2 and C3 still carry rules of their own: %+v, %+v", c2, c3)
+	}
+	if got := sh.At(2, 3).FormattedValue; got != "x" {
+		t.Errorf("C2 reads %q, want its value x kept", got)
+	}
+	if sh.At(2, 2).DataValidation == nil {
+		t.Error("B2's rule went, though its column was not typed dropdown")
+	}
+}
+
 // TestANameWrittenIntoAHeaderDropsItsRichText is spike T Q7: an update
 // sending "Flag" back as read left the cell holding "Flag" with no runs,
 // where two of its letters had been bold. Its whole-cell format is

@@ -854,6 +854,17 @@ value.
   a value rather than text. An empty cell becomes FALSE, and the tool
   description says so.
 
+  Typing a column dropdown, on add or update, is refused while a cell
+  under its header has a data validation rule of its own. Google put the
+  table's list in place of a cell's own list and said nothing (spike T,
+  §18). The refusal names the cells and says to remove the rule with
+  `data_validation` `delete` first. The table's own list is not on its
+  cells, so a column already a dropdown is not refused over it. The
+  cells under every column typed boolean or dropdown come in one read,
+  after the header read, since a column named by its heading is known
+  only once the header is back. A column the update sends back unchanged
+  is not read.
+
   An add reads the header row first, with the same mask, whether it
   types a column or not. It is refused while any header cell holds a
   formula: Google takes no table over one, "Formulas are not supported
@@ -2057,7 +2068,12 @@ forgotten. Results go into §18.
   adds tables three seconds apart until one fails or twelve are taken,
   then deletes one and tries the failed add again, at once and a minute
   later, and a plain add last. It tells a count from timing. Owed, then:
-  Q5b, Q7's whole-cell format and Q12.
+  Q5b, Q7's whole-cell format and Q12. Q13 came later, with the refusal
+  of a dropdown over cells with a rule of their own: run alone with
+  `-only T13`, it asks whether an update typing a column dropdown drops
+  its cells' own lists, as Q1's add did, and whether an update sending a
+  dropdown column back unchanged drops a list a cell in it was given
+  since.
 - **U. Pivot grouping rules, filters and calculated values** (**run
   2026-10-09**, two answers owed): what Google answers for each refusal
   `manage_pivot_table` makes first — a value with an offset and a
@@ -3611,7 +3627,8 @@ still owed.
 | Google returns an entry for every column of a table | **Verified, spike T Q1**: after an add that sent two of four columns, four entries read back, each column left out named by its header cell, with no type. The first entry has no `columnIndex`, being 0 | The update's entry for a column the read left out stays, though it is not expected. The fake reads back an entry for every column |
 | An entry with a name and no type is taken | **Verified, spike T Q8**: column 0 sent as "Item" with no type, the rest as read, is a 200, and the header is unchanged | The update sends one only for a column a read gave no entry |
 | A name sent as read leaves a smart chip in a header cell | **Refuted, spike T Q9**: a person chip written into D1 renamed its column to the chip's text. An update sending every name as read then left D1 holding that text, with no `chipRuns`: the chip was erased | An update is refused while any header cell holds a chip, and an add while the header of a column it types does |
-| A type changes how a column is shown, not what its cells hold | **Refuted, spike T Q1 and Q5, both runs**: after the add typed column B `CURRENCY`, B2 kept its value, 1.5, and its number format `0.000`, set before, read back as `CURRENCY`. After the add typed column D a dropdown, D2 read back with no `dataValidation`: the per-cell list of x, y and z set before was gone. An update typing column C `BOOLEAN`, names sent, turned C2:C4, which held "maybe", nothing and the text "TRUE" written raw, into FALSE, FALSE and FALSE | A boolean column is refused over anything but a TRUE or FALSE value, text reading TRUE included, and the refusal says what Google does. The fake turns text and empty cells under a boolean typing into FALSE. A dropdown typing over a per-cell rule is not refused, though the rule goes |
+| A type changes how a column is shown, not what its cells hold | **Refuted, spike T Q1 and Q5, both runs**: after the add typed column B `CURRENCY`, B2 kept its value, 1.5, and its number format `0.000`, set before, read back as `CURRENCY`. After the add typed column D a dropdown, D2 read back with no `dataValidation`: the per-cell list of x, y and z set before was gone. An update typing column C `BOOLEAN`, names sent, turned C2:C4, which held "maybe", nothing and the text "TRUE" written raw, into FALSE, FALSE and FALSE | A boolean column is refused over anything but a TRUE or FALSE value, text reading TRUE included, and the refusal says what Google does. The fake turns text and empty cells under a boolean typing into FALSE. A dropdown typing is refused while a cell under its header has a rule of its own, naming the cells, and the fake drops such a rule. D2 carried no rule after the add, the table's list included, so a column already a dropdown is not refused over it. The live driver sets a list on two cells and expects the refusal |
+| An update typing a column dropdown drops its cells' own rules, as an add does | **Unverified**: only an add was asked (Q1). Nor is it known whether an update that sends a dropdown column back unchanged drops a rule a cell in it was given since | `manage_range` refuses the update as it refuses the add, for the columns it types; a column sent back unchanged is not read. The fake drops the rules under every dropdown entry an update sends. Owed: spike T Q13 gives two cells of a table column lists of their own and types the column dropdown, then gives a cell of that dropdown column a list and sends every column back as read |
 | A TRUE or FALSE value is kept under a boolean typing | **Unverified**: Q5's column held no true or false value, and Q11's boolean add was a 500. Whether an add does to a word what an update does is not known either | `manage_range` lets a TRUE or FALSE value through, and the fake keeps it, on add and on update. Owed: spike T Q5b types a column of TRUE, FALSE and TRUE on update, and one of TRUE, a word and an empty cell on add |
 | A chip column read back is taken back unchanged | **Unverified, not asked**: the chip types are in the enum, and nothing says whether a request may carry one. Spike T made no chip column, so the array Q6 sent back carried none | `manage_range` never sets a chip type, and an update sends a chip column back as it read |
 

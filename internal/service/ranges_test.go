@@ -1164,6 +1164,82 @@ func TestABooleanColumnIsRefusedOverOtherValues(t *testing.T) {
 	}
 }
 
+// TestADropdownColumnIsRefusedOverCellsWithTheirOwnRule is spike T Q1: an
+// add typing a column dropdown over cells with a list of their own read
+// them back with no rule. On add and on update, a dry run included, the
+// call is refused before anything is sent, naming the cells. A cell with
+// a rule and no value counts.
+func TestADropdownColumnIsRefusedOverCellsWithTheirOwnRule(t *testing.T) {
+	for _, tc := range []struct {
+		action string
+		ruled  []int
+		want   string
+	}{
+		{service.RangeAdd, []int{2, 3}, "[blocked] C2, C3 have data validation rules of their own, and the " +
+			"table's dropdown would replace them: Google drops a cell's own rule when its column is typed " +
+			"dropdown, and says nothing. To use the table's list, remove the rule from those cells first, with " +
+			"kind data_validation and action delete"},
+		{service.RangeUpdate, []int{3}, "[blocked] C3 has a data validation rule of its own, and the table's " +
+			"dropdown would replace it: Google drops a cell's own rule when its column is typed dropdown, and " +
+			"says nothing. To use the table's list, remove the rule from that cell first, with kind " +
+			"data_validation and action delete"},
+	} {
+		for _, dryRun := range []bool{false, true} {
+			srv := sheetstest.Standard(t)
+			if tc.action == service.RangeAdd {
+				typedSheet(srv)
+			} else {
+				seedTypedTable(srv)
+			}
+			sh := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet)
+			sh.Set(2, 3, sheetstest.Str("Open"))
+			for _, row := range tc.ruled {
+				if sh.At(row, 3) == nil {
+					sh.Set(row, 3, &gsheets.CellData{})
+				}
+				sheetstest.WithValidation(sh.At(row, 3), "Open", "Closed")
+			}
+			req := rangeReq(service.RangeTable, tc.action, "A1:D3")
+			req.Name = "Trennow"
+			req.DryRun = dryRun
+			req.ColumnTypes = []string{"Status dropdown: Open, Done"}
+			_, err := newService(t, srv).ManageRange(context.Background(), req)
+			if err == nil || err.Error() != tc.want {
+				t.Errorf("%s, dry_run=%v: error =\n%v\nwant\n%s", tc.action, dryRun, err, tc.want)
+			}
+			if batched(srv) {
+				t.Fatalf("%s, dry_run=%v: a refused dropdown column reached the wire", tc.action, dryRun)
+			}
+		}
+	}
+}
+
+// TestBooleanAndDropdownColumnsAreReadInOneRequest is what the two
+// refusals above cost: one read after the header, of the cells under
+// every column typed boolean or dropdown and of nothing else. A rule on a
+// cell of a column typed otherwise holds nothing back.
+func TestBooleanAndDropdownColumnsAreReadInOneRequest(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	typedSheet(srv).Set(2, 4, sheetstest.Bool(true)).
+		Set(2, 2, sheetstest.WithValidation(sheetstest.Num(42, "42"), "42"))
+	add := rangeReq(service.RangeTable, service.RangeAdd, "A1:D3")
+	add.Name = "Trennow"
+	add.ColumnTypes = []string{"Bractal currency", "Status dropdown: Open, Done", "ID boolean"}
+	if _, err := newService(t, srv).ManageRange(context.Background(), add); err != nil {
+		t.Fatalf("adding a typed table: %v", err)
+	}
+	var reads []string
+	for _, c := range srv.Calls() {
+		if c.Op == "spreadsheets.get" && c.Query.Get("includeGridData") == "true" {
+			reads = append(reads, strings.Join(c.Query["ranges"], " and "))
+		}
+	}
+	const want = "'Ürväl'!A1:D1 | 'Ürväl'!C2:C3 and 'Ürväl'!D2:D3"
+	if got := strings.Join(reads, " | "); got != want {
+		t.Errorf("the cell reads were\n%s\nwant\n%s", got, want)
+	}
+}
+
 // TestTableUpdateIsRefusedWhenTheTableMoved is the header row the
 // formula check reads: the caller's first row. A table moved since the
 // card was read has another, so the update stops and says where it is.
