@@ -969,10 +969,15 @@ the whole output with it.
   will be sent is checked, kept groups included, and two rules on one
   column are refused with the reason. A grouping made by hand in Sheets
   is kept by an update that leaves the groups out, and never written.
+  An update that keeps a calculated value keeps no column for it: the
+  formula names its columns by heading, so a new source moves nothing.
 - **Filters are `filters`, written as `filterSpecs`.** `Region show
   East, West` is a list of values to show, and `Amount number_greater
   100` a condition, with `manage_range`'s names for the ones the
-  discovery document says filters support. A column takes one of each,
+  discovery document says filters support. `date_before` and
+  `date_after` take a relative date as its word, `today` or `past_week`,
+  and send it as `relativeDate`; typed into a cell the word would be
+  text. A column takes one of each,
   and then a value must be listed and meet the condition. `filters`
   replaces every filter and `clear_filters` removes them. Both take the
   deprecated `criteria` map out too: a response carries it beside
@@ -3521,4 +3526,6 @@ spike U and the live driver are what settle them.
 | A filter by condition alone shows what meets it | **Unverified, and the reference says not without `visibleByDefault`**: with it false, "values that are both in visible_values and meet condition are shown", and `visibleValues` says "Values not listed here are excluded" | A condition alone is sent with `visibleByDefault` true; a list, alone or with a condition, without it. The fake reads the reference literally, so there a condition alone without it shows nothing. The live driver filters by a condition alone and checks the total; spike U sends it both ways |
 | A pivot filter takes every condition | **Unverified**: the discovery document marks some conditions "Supported by data validation" alone, `ONE_OF_LIST` among them, and others "and filters" | `filters` takes only the ones marked for filters, and refuses the rest naming them. The fake refuses the rest too. Spike U sends `ONE_OF_LIST` |
 | A pivot's filters are in `filterSpecs` | **Refined by the reference**: `criteria` is "deprecated in favor of filter_specs"; "Both criteria and filter_specs are populated in responses. If both fields are specified in an update request, this field takes precedence". A request with `criteria` alone is filtered by it | `filters` and `clear_filters` write `filterSpecs` and take `criteria` out, so a cleared filter cannot come back from the map a read carried. `list` reads `filterSpecs`, and `criteria` only where a pivot has none. The fake stores both, as a response carries them. Spike U sends each form alone and then neither |
+| A date filter's relative date goes back as one | **Unverified for a pivot table**: `ConditionValue.relativeDate` is "Valid only if the type is DATE_BEFORE, DATE_AFTER, DATE_ON_OR_BEFORE or DATE_ON_OR_AFTER", and relative dates "are supported only in conditional formatting and conditional filters". Whether a pivot table's filter is one of those is not said | `list` writes one as its word lower-cased, such as `date_before tomorrow`, and `filters` reads the six words back as `relativeDate` on `date_before` and `date_after`. The fake does not evaluate a date filter. The live driver filters by `date_before tomorrow` and checks the total |
+| An update that leaves the groups out keeps a grouping made by hand | **Unverified**: `ManualRule` names its groups and their items, and "Items may appear in at most one group within a given ManualRule. Items that do not appear in any group will appear on their own". No tool here writes one | The update sends the rule back as it read. The fake takes it, refuses an item in two groups or a group name twice, and draws each listed item under its group's name. The live driver cannot make one; spike U makes one in Sheets and updates the values beside it |
 | A calculated value names its columns by heading | **Unverified for this API**: `PivotFilterCriteria.condition` says "The source data of the pivot table can be referenced by column header name"; `PivotValue.formula` says only that it "must start with an `=` character" | The formula is sent as written, and Google resolves its names. The fake evaluates headings, quoted where they hold a space, arithmetic and five functions, and refuses the rest by name. The live driver checks the SUM formula's total and prints the CUSTOM one |

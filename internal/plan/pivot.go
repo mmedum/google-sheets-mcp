@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
@@ -56,8 +58,8 @@ var summaryFunctions = map[string]string{
 	"product": "PRODUCT", "stdev": "STDEV", "stdevp": "STDEVP", "var": "VAR", "varp": "VARP",
 }
 
-// SummaryNames lists the summaries a caller may write, for a message.
-func SummaryNames() []string { return sortedKeys(summaryFunctions) }
+// summaryNames lists the summaries a caller may write, for a message.
+func summaryNames() []string { return sortedKeys(summaryFunctions) }
 
 // dateTimeTypes are the date groupings, in the spelling a caller writes:
 // the API's enum, lower-cased, without its unspecified member.
@@ -76,6 +78,12 @@ var filterConditions = map[string]bool{
 	"text_eq": true, "date_before": true, "date_after": true, "blank": true, "not_blank": true,
 	"custom_formula": true,
 }
+
+// relativeDates are the dates a filter's date condition may count from
+// today, in the spelling a read writes them: the API's enum, lower-cased,
+// without its unspecified member. The discovery document allows one on
+// DATE_BEFORE and DATE_AFTER, the two date conditions a filter takes.
+var relativeDates = []string{"past_year", "past_month", "past_week", "yesterday", "today", "tomorrow"}
 
 // PivotGroupEntry is one entry of group_rows or group_columns, parsed.
 type PivotGroupEntry struct {
@@ -171,14 +179,13 @@ func number(entry, what, text string) (float64, error) {
 }
 
 // PivotGroupText writes a group back in the spelling ParsePivotGroup
-// takes. manual says the group carries a rule made by hand in Sheets,
-// which reads as "<column> by hand".
-func PivotGroupText(column string, rule *gsheets.PivotGroupRule, manual bool) string {
+// takes. A rule made by hand in Sheets reads as "<column> by hand".
+func PivotGroupText(column string, rule *gsheets.PivotGroupRule) string {
 	switch {
-	case manual:
-		return column + " by hand"
 	case rule == nil:
 		return column
+	case len(rule.ManualRule) > 0:
+		return column + " by hand"
 	case rule.DateTimeRule != nil:
 		return column + " by " + strings.ToLower(rule.DateTimeRule.Type)
 	case rule.HistogramRule != nil:
@@ -223,7 +230,7 @@ func ParsePivotValue(text string) (PivotValueEntry, error) {
 	}
 	body, name, _ := strings.Cut(text, " as ")
 	body = strings.TrimSpace(body)
-	last := strings.LastIndexFunc(body, isSpace)
+	last := strings.LastIndexFunc(body, unicode.IsSpace)
 	if last < 0 {
 		return PivotValueEntry{}, fmt.Errorf("%q does not say how to summarize the column; write it as \"B sum\", "+
 			"and add \"as Total\" to name it", text)
@@ -231,12 +238,12 @@ func ParsePivotValue(text string) (PivotValueEntry, error) {
 	column, fn := strings.TrimSpace(body[:last]), strings.ToLower(body[last+1:])
 	if fn == "custom" {
 		return PivotValueEntry{}, fmt.Errorf("%q asks for custom, which is for a calculated value, one that "+
-			"starts with =; a column takes %s", text, strings.Join(SummaryNames(), ", "))
+			"starts with =; a column takes %s", text, strings.Join(summaryNames(), ", "))
 	}
 	function, ok := summaryFunctions[fn]
 	if !ok {
 		return PivotValueEntry{}, fmt.Errorf("%q is not a summary this server offers: %s", fn,
-			strings.Join(SummaryNames(), ", "))
+			strings.Join(summaryNames(), ", "))
 	}
 	return PivotValueEntry{Column: column, Function: function, Name: strings.TrimSpace(name)}, nil
 }
@@ -251,7 +258,7 @@ func parseCalculated(text string) (PivotValueEntry, error) {
 	}
 	value := PivotValueEntry{Name: strings.TrimSpace(text[at+len(" as "):]), Function: "CUSTOM"}
 	formula := strings.TrimSpace(text[:at])
-	if last := strings.LastIndexFunc(formula, isSpace); last >= 0 {
+	if last := strings.LastIndexFunc(formula, unicode.IsSpace); last >= 0 {
 		switch word := strings.ToLower(formula[last+1:]); {
 		case word == "sum":
 			value.Function, formula = "SUM", strings.TrimSpace(formula[:last])
@@ -268,8 +275,6 @@ func parseCalculated(text string) (PivotValueEntry, error) {
 	value.Formula = formula
 	return value, nil
 }
-
-func isSpace(r rune) bool { return r == ' ' || r == '\t' || r == '\n' }
 
 // PivotValueText writes a value back in the spelling ParsePivotValue
 // takes. column is the value's column letter, and unused for a
@@ -324,6 +329,10 @@ var filterEntry = regexp.MustCompile(`(?i)^(.+?)\s+(show|` + strings.Join(Condit
 // and the values after it, two separated by a comma for a between; a
 // list of values to show is separated by commas, so a value with a comma
 // in it cannot be listed here.
+//
+// A date condition's value may be a relative date, "Day date_after
+// past_week", which is how a read writes one back. Typed into a cell the
+// word would be text, never a date.
 func ParsePivotFilter(text string) (PivotFilterEntry, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -365,6 +374,12 @@ func ParsePivotFilter(text string) (PivotFilterEntry, error) {
 	if err != nil {
 		return PivotFilterEntry{}, fmt.Errorf("filter %q: %w", text, err)
 	}
+	if cond.Type == "DATE_BEFORE" || cond.Type == "DATE_AFTER" {
+		word := strings.ToLower(strings.Join(strings.Fields(values[0]), "_"))
+		if slices.Contains(relativeDates, word) {
+			cond.Values[0] = &gsheets.ConditionValue{RelativeDate: strings.ToUpper(word)}
+		}
+	}
 	return PivotFilterEntry{Column: column, Condition: cond}, nil
 }
 
@@ -381,7 +396,7 @@ func PivotFilterTexts(column string, c *gsheets.PivotFilterCriteria) []string {
 		out = append(out, strings.TrimSpace(column+" show "+strings.Join(c.VisibleValues, ", ")))
 	}
 	if cond := c.Condition; cond != nil {
-		text := column + " " + ConditionName(cond.Type)
+		text := column + " " + conditionName(cond.Type)
 		var values []string
 		for _, v := range cond.Values {
 			switch {
@@ -400,8 +415,8 @@ func PivotFilterTexts(column string, c *gsheets.PivotFilterCriteria) []string {
 	return out
 }
 
-// ConditionName is a condition type in the spelling a caller writes.
-func ConditionName(apiType string) string {
+// conditionName is a condition type in the spelling a caller writes.
+func conditionName(apiType string) string {
 	for name, api := range conditionTypes {
 		if api == apiType {
 			return name

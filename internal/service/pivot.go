@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
@@ -121,13 +121,14 @@ func (s *Service) writePivot(ctx context.Context, ref Reference, req PivotReques
 	if err != nil {
 		return nil, err
 	}
-	var pivot map[string]any
+	// pivot is the raw definition the update edits and sends back whole,
+	// so a field this server does not model survives; held is the same
+	// pivot as it read, typed.
+	pivot, held := map[string]any{}, &gsheets.PivotTable{}
 	if req.Action == PivotUpdate {
-		existing, err := s.pivotAt(ctx, ref, props, anchor)
-		if err != nil {
+		if pivot, held, err = s.pivotAt(ctx, ref, props, anchor); err != nil {
 			return nil, err
 		}
-		pivot = existing
 	} else {
 		// An add onto an occupied anchor is an updateCells like any
 		// other: it discards the pivot that was there and everything it
@@ -143,14 +144,9 @@ func (s *Service) writePivot(ctx context.Context, ref Reference, req PivotReques
 					"everything it draws. Use action=update to change it, or delete it first",
 				anchorName(anchor), props.Title)
 		}
-		pivot = map[string]any{}
 	}
 
-	// The source the pivot had, read before editPivot replaces it: a new
-	// one is checked against the columns the update keeps, and those are
-	// named in the old one's letters.
-	oldSource, _ := gridRangeOf(pivot)
-	source, sourceName, err := s.pivotSource(ctx, ref, props, req, pivot)
+	source, sourceName, err := s.pivotSource(ctx, ref, props, req, held.Source)
 	if err != nil {
 		return nil, err
 	}
@@ -177,12 +173,20 @@ func (s *Service) writePivot(ctx context.Context, ref Reference, req PivotReques
 	if err != nil {
 		return nil, Errorf("invalid", "the pivot table could not be built: %v", err)
 	}
+	// The pivot as it will be sent, read once for both checks: what an
+	// update keeps is in it, a grouping made by hand included.
+	var sending gsheets.PivotTable
+	if err := json.Unmarshal(body, &sending); err != nil {
+		return nil, Errorf("unsupported",
+			"the pivot table's groups, values and filters could not be read, so they cannot be checked")
+	}
 	if req.Action == PivotUpdate && strings.TrimSpace(req.Source) != "" {
-		if err := s.checkKept(ctx, ref, body, req, oldSource, source); err != nil {
+		// Checked against the source the pivot had, in its letters.
+		if err := s.checkKept(ctx, ref, &sending, req, held.Source, source); err != nil {
 			return nil, err
 		}
 	}
-	if err := oneRulePerColumn(body, source.Rect); err != nil {
+	if err := oneRulePerColumn(&sending, source.Rect); err != nil {
 		return nil, err
 	}
 
@@ -217,13 +221,13 @@ func (s *Service) deletePivot(ctx context.Context, ref Reference, req PivotReque
 	if err != nil {
 		return nil, err
 	}
-	existing, err := s.pivotAt(ctx, ref, props, anchor)
+	_, held, err := s.pivotAt(ctx, ref, props, anchor)
 	if err != nil {
 		return nil, err
 	}
 	act := render.PivotAct{
 		Action: PivotDelete, Anchor: anchorName(anchor), Sheet: props.Title,
-		Source: pivotSourceName(existing, props.Title),
+		Source: pivotSourceName(held.Source, props.Title),
 		Output: s.pivotOutput(ctx, ref, props, anchor),
 	}
 	if req.DryRun {
@@ -296,15 +300,17 @@ func (s *Service) pivotsIn(ctx context.Context, ref Reference, props *gsheets.Sh
 	extents := s.pivotExtents(ctx, ref, props, found)
 	out := make([]PivotRecord, 0, len(found))
 	for i, p := range found {
-		var pivot map[string]any
+		// As much as reads: a field of a type this server does not expect
+		// costs that field, not the record.
+		var pivot gsheets.PivotTable
 		_ = json.Unmarshal(p.raw, &pivot)
 		record := PivotRecord{
 			Anchor: a1.FormatRect(p.at), Sheet: props.Title,
-			Source: pivotSourceName(pivot, props.Title),
+			Source: pivotSourceName(pivot.Source, props.Title),
 			Output: extentName(extents[i]),
 		}
-		if g, ok := gridRangeOf(pivot); ok {
-			record.Rows, record.Columns, record.Values, record.Filters = pivotRules(p.raw, a1.FromGridRange(g))
+		if pivot.Source != nil {
+			record.Rows, record.Columns, record.Values, record.Filters = pivotRules(&pivot, a1.FromGridRange(pivot.Source))
 		}
 		out = append(out, record)
 	}
@@ -320,77 +326,39 @@ func (s *Service) pivotsIn(ctx context.Context, ref Reference, props *gsheets.Sh
 // What the spelling cannot carry — a group's sort order and label, a
 // value's "show as" — is not in it, and passing an argument again
 // replaces what it covers.
-func pivotRules(raw json.RawMessage, source a1.Rect) (rows, columns, values, filters []string) {
-	var read struct {
-		gsheets.PivotTable
-		Criteria map[string]*gsheets.PivotFilterCriteria `json:"criteria"`
-	}
-	var manual struct {
-		Rows, Columns []struct {
-			GroupRule struct {
-				ManualRule json.RawMessage `json:"manualRule"`
-			} `json:"groupRule"`
-		}
-	}
-	if json.Unmarshal(raw, &read) != nil || json.Unmarshal(raw, &manual) != nil {
-		return nil, nil, nil, nil
-	}
-	letter := func(offset int) string { return columnLetter(max(source.FirstCol, 1) + offset) }
-	groups := func(held []*gsheets.PivotGroup, byHand func(int) bool) []string {
+func pivotRules(pivot *gsheets.PivotTable, source a1.Rect) (rows, columns, values, filters []string) {
+	groups := func(held []*gsheets.PivotGroup) []string {
 		var out []string
-		for i, g := range held {
+		for _, g := range held {
 			if g != nil {
-				out = append(out, plan.PivotGroupText(letter(g.SourceColumnOffset), g.GroupRule, byHand(i)))
+				out = append(out, plan.PivotGroupText(sourceLetter(source, g.SourceColumnOffset), g.GroupRule))
 			}
 		}
 		return out
 	}
-	rows = groups(read.Rows, func(i int) bool { return i < len(manual.Rows) && len(manual.Rows[i].GroupRule.ManualRule) > 0 })
-	columns = groups(read.Columns, func(i int) bool {
-		return i < len(manual.Columns) && len(manual.Columns[i].GroupRule.ManualRule) > 0
-	})
-	for _, v := range read.Values {
+	for _, v := range pivot.Values {
 		if v == nil {
 			continue
 		}
+		// A calculated value names its columns inside its formula.
 		column := ""
-		if v.Formula == "" {
-			column = letter(derefOr(v.SourceColumnOffset, 0))
+		if v.SourceColumnOffset != nil {
+			column = sourceLetter(source, *v.SourceColumnOffset)
 		}
 		values = append(values, plan.PivotValueText(column, v))
 	}
-	specs := read.FilterSpecs
-	if len(specs) == 0 {
-		for _, key := range sortedOffsets(read.Criteria) {
-			specs = append(specs, &gsheets.PivotFilterSpec{ColumnOffsetIndex: key, FilterCriteria: read.Criteria[strconv.Itoa(key)]})
-		}
-	}
-	for _, f := range specs {
+	for _, f := range pivot.Filters() {
 		if f != nil {
-			filters = append(filters, plan.PivotFilterTexts(letter(f.ColumnOffsetIndex), f.FilterCriteria)...)
+			filters = append(filters, plan.PivotFilterTexts(sourceLetter(source, f.ColumnOffsetIndex), f.FilterCriteria)...)
 		}
 	}
-	return rows, columns, values, filters
+	return groups(pivot.Rows), groups(pivot.Columns), values, filters
 }
 
-// sortedOffsets is the criteria map's keys as offsets, in order. A key
-// that is not a number is not an offset, and is skipped.
-func sortedOffsets(criteria map[string]*gsheets.PivotFilterCriteria) []int {
-	var out []int
-	for key := range criteria {
-		if offset, err := strconv.Atoi(key); err == nil {
-			out = append(out, offset)
-		}
-	}
-	sort.Ints(out)
-	return out
-}
-
-func derefOr(p *int, fallback int) int {
-	if p == nil {
-		return fallback
-	}
-	return *p
+// sourceLetter is the letter of the column at an offset into a source.
+// A source with no left edge starts at column A.
+func sourceLetter(source a1.Rect, offset int) string {
+	return columnLetter(max(source.FirstCol, 1) + offset)
 }
 
 // pivotAt reads the pivot anchored at a cell, refusing where there is
@@ -401,25 +369,29 @@ func derefOr(p *int, fallback int) int {
 // measured that pivot's whole output to build a record nothing read, and
 // then re-read the same cell to get the definition: three round trips to
 // answer one question, on an API that allows sixty a minute.
+//
+// It returns the definition twice: raw, for an update to edit and send
+// back whole, and typed, for what reads it.
 func (s *Service) pivotAt(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
-	anchor a1.Rect) (map[string]any, error) {
+	anchor a1.Rect) (map[string]any, *gsheets.PivotTable, error) {
 
 	found, err := s.pivotAnchors(ctx, ref, props, anchor)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(found) == 0 {
-		return nil, Errorf("not_found",
+		return nil, nil, Errorf("not_found",
 			"no pivot table is anchored at %s on %q. manage_pivot_table list reports the ones that are",
 			anchorName(anchor), props.Title)
 	}
-	var pivot map[string]any
-	if err := json.Unmarshal(found[0].raw, &pivot); err != nil {
-		return nil, Errorf("unsupported",
+	var raw map[string]any
+	var typed gsheets.PivotTable
+	if json.Unmarshal(found[0].raw, &raw) != nil || json.Unmarshal(found[0].raw, &typed) != nil {
+		return nil, nil, Errorf("unsupported",
 			"the pivot table at %s could not be read back, so changing it would lose what it holds",
 			anchorName(anchor))
 	}
-	return pivot, nil
+	return raw, &typed, nil
 }
 
 // pivotAnchors reads a rectangle for the cells carrying a pivot table.
@@ -689,7 +661,7 @@ func (s *Service) pivotAnchor(ctx context.Context, ref Reference, req PivotReque
 // pivotSource resolves the source range, falling back to the one the
 // pivot already has when an update does not name a new one.
 func (s *Service) pivotSource(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
-	req PivotRequest, pivot map[string]any) (SheetRef, string, error) {
+	req PivotRequest, held *gsheets.GridRange) (SheetRef, string, error) {
 
 	if strings.TrimSpace(req.Source) != "" {
 		target, err := s.ResolveRange(ctx, ref, props.Title, req.Source)
@@ -707,60 +679,16 @@ func (s *Service) pivotSource(ctx context.Context, ref Reference, props *gsheets
 	}
 	// An update that leaves the source alone still needs it, because
 	// every column it names is an offset into that rectangle.
-	g, ok := gridRangeOf(pivot)
-	if !ok {
+	if held == nil {
 		return SheetRef{}, "", Errorf("invalid",
 			"this pivot table has no source range this server could read, so a column cannot be resolved against it")
 	}
-	sheet := s.sheetByID(ctx, ref.ID, g.SheetID)
+	sheet := s.sheetByID(ctx, ref.ID, held.SheetID)
 	if sheet == nil {
 		sheet = props
 	}
-	rect := a1.FromGridRange(g)
+	rect := a1.FromGridRange(held)
 	return SheetRef{Props: sheet, Rect: rect}, a1.Format(sheet.Title, rect), nil
-}
-
-// gridRangeOf reads a raw pivot's source rectangle.
-//
-// One decode for the two readers of it: they had drifted into different
-// error handling for the same three lines, which is how a message ends
-// up describing what the other one does.
-func gridRangeOf(pivot map[string]any) (*gsheets.GridRange, bool) {
-	raw, ok := pivot["source"]
-	if !ok {
-		return nil, false
-	}
-	body, err := json.Marshal(raw)
-	if err != nil {
-		return nil, false
-	}
-	var g gsheets.GridRange
-	if err := json.Unmarshal(body, &g); err != nil {
-		return nil, false
-	}
-	return &g, true
-}
-
-// pivotColumn is a group's or a value's offset into the source.
-type pivotColumn struct {
-	Offset int `json:"sourceColumnOffset"`
-}
-
-// pivotFilter is a filter's offset, which the API names differently.
-type pivotFilter struct {
-	Offset int `json:"columnOffsetIndex"`
-}
-
-// pivotColumns is every offset a pivot holds, whoever wrote it. A filter
-// made in the Sheets interface counts from the source's first column
-// like the groups and values this server builds.
-type pivotColumns struct {
-	Rows        []pivotColumn `json:"rows"`
-	Columns     []pivotColumn `json:"columns"`
-	Values      []pivotColumn `json:"values"`
-	FilterSpecs []pivotFilter `json:"filterSpecs"`
-	// Criteria is the older form of filterSpecs, keyed by the offset.
-	Criteria map[string]json.RawMessage `json:"criteria"`
 }
 
 // keptArgs is the order kept columns are named in, by the argument that
@@ -772,55 +700,34 @@ var keptArgs = []string{"group_rows", "group_columns", "values", "filters"}
 // What the request named again was resolved against the new source, so
 // it is left out: only what the caller did not pass can read something
 // they did not choose. Filters passed again, or cleared, keep nothing.
-func keptOffsets(body json.RawMessage, req PivotRequest) (map[string][]int, error) {
-	var held pivotColumns
-	if err := json.Unmarshal(body, &held); err != nil {
-		return nil, Errorf("unsupported",
-			"the pivot table's columns could not be read, so the new source cannot be checked against them")
-	}
+// A calculated value has no column to keep: it names its columns inside
+// its formula, by heading.
+func keptOffsets(sending *gsheets.PivotTable, req PivotRequest) map[string][]int {
 	kept := map[string][]int{}
-	for _, group := range []struct {
-		arg   string
-		given []string
-		held  []pivotColumn
-	}{
-		{"group_rows", req.Rows, held.Rows},
-		{"group_columns", req.Columns, held.Columns},
-		{"values", req.Values, held.Values},
-	} {
-		if len(group.given) > 0 {
-			continue
-		}
-		for _, c := range group.held {
-			kept[group.arg] = append(kept[group.arg], c.Offset)
-		}
-	}
-	if len(req.Filters) == 0 && !req.ClearFilters {
-		for _, c := range held.FilterSpecs {
-			kept["filters"] = append(kept["filters"], c.Offset)
-		}
-		for key := range held.Criteria {
-			if offset, err := strconv.Atoi(key); err == nil {
-				kept["filters"] = append(kept["filters"], offset)
+	groups := func(arg string, given []string, held []*gsheets.PivotGroup) {
+		for _, g := range held {
+			if len(given) == 0 && g != nil {
+				kept[arg] = append(kept[arg], g.SourceColumnOffset)
 			}
 		}
 	}
-	for arg, offsets := range kept {
-		sort.Ints(offsets)
-		kept[arg] = uniqueInts(offsets)
-	}
-	return kept, nil
-}
-
-// uniqueInts drops repeats from a sorted list.
-func uniqueInts(xs []int) []int {
-	out := xs[:0]
-	for i, x := range xs {
-		if i == 0 || x != xs[i-1] {
-			out = append(out, x)
+	groups("group_rows", req.Rows, sending.Rows)
+	groups("group_columns", req.Columns, sending.Columns)
+	for _, v := range sending.Values {
+		if len(req.Values) == 0 && v != nil && v.SourceColumnOffset != nil {
+			kept["values"] = append(kept["values"], *v.SourceColumnOffset)
 		}
 	}
-	return out
+	for _, f := range sending.Filters() {
+		if len(req.Filters) == 0 && !req.ClearFilters && f != nil {
+			kept["filters"] = append(kept["filters"], f.ColumnOffsetIndex)
+		}
+	}
+	for arg, offsets := range kept {
+		slices.Sort(offsets)
+		kept[arg] = slices.Compact(offsets)
+	}
+	return kept
 }
 
 // checkKept refuses a new source that changes what a column the update
@@ -833,12 +740,12 @@ func uniqueInts(xs []int) []int {
 // past the right edge it reads nothing, and Google accepts that with a
 // 200 (spike M). A new source that starts anywhere else moves every kept
 // column, silently, onto other data.
-func (s *Service) checkKept(ctx context.Context, ref Reference, body json.RawMessage, req PivotRequest,
+func (s *Service) checkKept(ctx context.Context, ref Reference, sending *gsheets.PivotTable, req PivotRequest,
 	old *gsheets.GridRange, source SheetRef) error {
 
-	kept, err := keptOffsets(body, req)
-	if err != nil || len(kept) == 0 {
-		return err
+	kept := keptOffsets(sending, req)
+	if len(kept) == 0 {
+		return nil
 	}
 	newName := a1.Format(source.Props.Title, source.Rect)
 	if old == nil {
@@ -1094,20 +1001,27 @@ func (s *Service) headerRow(ctx context.Context, ref Reference, within SheetRef)
 	if err != nil {
 		return nil, wrap(err)
 	}
+	var texts []string
+	if len(values.Values) > 0 {
+		for _, cell := range values.Values[0] {
+			texts = append(texts, fmt.Sprint(cell))
+		}
+	}
+	return headingIndex(texts), nil
+}
+
+// headingIndex is a header row as a column name resolves against it:
+// each heading, trimmed and lower-cased, to its offset. An empty cell is
+// no heading, and the first of two equal headings wins.
+func headingIndex(texts []string) map[string]int {
 	out := map[string]int{}
-	if len(values.Values) == 0 {
-		return out, nil
-	}
-	for i, cell := range values.Values[0] {
-		text := strings.TrimSpace(fmt.Sprint(cell))
-		if text == "" {
-			continue
-		}
-		if _, seen := out[strings.ToLower(text)]; !seen {
-			out[strings.ToLower(text)] = i
+	for i, text := range texts {
+		text = strings.ToLower(strings.TrimSpace(text))
+		if _, seen := out[text]; text != "" && !seen {
+			out[text] = i
 		}
 	}
-	return out, nil
+	return out
 }
 
 // pivotOffset turns a column letter or a heading into an offset into the
@@ -1216,9 +1130,9 @@ func pivotValue(entry string, source a1.Rect, headers map[string]int) (*gsheets.
 // filterPivot applies filters and clear_filters.
 //
 // Both remove criteria, the deprecated form a response carries beside
-// filterSpecs. Left in place, it would put a cleared filter back, and
-// the reference does not say whether a request's filterSpecs replace it
-// or merge with it.
+// filterSpecs. filterSpecs take precedence only while they are there:
+// once a clear removes them, criteria left in place would filter by
+// themselves, and put the cleared filters back.
 func filterPivot(req PivotRequest, source a1.Rect, headers map[string]int, pivot map[string]any, changed *[]string) error {
 	switch {
 	case req.ClearFilters && len(req.Filters) > 0:
@@ -1267,7 +1181,7 @@ func pivotFilters(entries []string, source a1.Rect, headers map[string]int) ([]*
 		}
 		if (parsed.Show != nil && c.VisibleValues != nil) || (parsed.Condition != nil && c.Condition != nil) {
 			return nil, Errorf("invalid", "filters gives column %s two of a kind, as %q and %q; a column takes one list "+
-				"of values to show and one condition", columnLetter(max(source.FirstCol, 1)+offset), named[offset], entry)
+				"of values to show and one condition", sourceLetter(source, offset), named[offset], entry)
 		}
 		if parsed.Show != nil {
 			c.VisibleValues = parsed.Show
@@ -1289,38 +1203,28 @@ func pivotFilters(entries []string, source a1.Rect, headers map[string]int) ([]*
 // which Google allows once per column; a plain group beside a rule is
 // fine. It reads the pivot as it will be sent, so a rule the update
 // keeps counts too, a rule made by hand included.
-func oneRulePerColumn(body json.RawMessage, source a1.Rect) error {
-	var held struct {
-		Rows, Columns []struct {
-			Offset int             `json:"sourceColumnOffset"`
-			Rule   json.RawMessage `json:"groupRule"`
-		}
-	}
-	if err := json.Unmarshal(body, &held); err != nil {
-		return Errorf("unsupported", "the pivot table's groups could not be read, so their rules cannot be checked")
-	}
+func oneRulePerColumn(sending *gsheets.PivotTable, source a1.Rect) error {
 	ruled := map[int]bool{}
-	for _, g := range append(held.Rows, held.Columns...) {
-		if len(g.Rule) == 0 || string(g.Rule) == "null" {
+	for _, g := range append(append([]*gsheets.PivotGroup{}, sending.Rows...), sending.Columns...) {
+		if g == nil || g.GroupRule == nil {
 			continue
 		}
-		if ruled[g.Offset] {
+		if ruled[g.SourceColumnOffset] {
 			return Errorf("invalid", "column %s is grouped by a rule twice, and Google allows one grouping rule per "+
 				"source column. Group it once with a rule; a second group without one is allowed",
-				columnLetter(max(source.FirstCol, 1)+g.Offset))
+				sourceLetter(source, g.SourceColumnOffset))
 		}
-		ruled[g.Offset] = true
+		ruled[g.SourceColumnOffset] = true
 	}
 	return nil
 }
 
-// pivotSourceName reads the source out of a raw pivot, for a message.
-func pivotSourceName(pivot map[string]any, sheet string) string {
-	g, ok := gridRangeOf(pivot)
-	if !ok {
+// pivotSourceName is a pivot's source, for a message.
+func pivotSourceName(source *gsheets.GridRange, sheet string) string {
+	if source == nil {
 		return ""
 	}
-	return a1.Format(sheet, a1.FromGridRange(g))
+	return a1.Format(sheet, a1.FromGridRange(source))
 }
 
 // anchorName is a one-cell rectangle in A1.

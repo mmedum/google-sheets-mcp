@@ -1501,3 +1501,39 @@ func TestPivotHeadingThatIsAlsoALetter(t *testing.T) {
 		t.Errorf("sent %s", sent)
 	}
 }
+
+// TestPivotUpdateKeepsACalculatedValueAcrossANewSource is a kept value
+// with no column: a calculated value names its columns inside the
+// formula, so a new source that starts elsewhere moves nothing of it.
+func TestPivotUpdateKeepsACalculatedValueAcrossANewSource(t *testing.T) {
+	srv, svc := standard(t)
+	seedPivot(t, srv, `{`+sourceAC+`,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],`+
+		`"values":[{"formula":"=1","summarizeFunction":"CUSTOM","name":"One"}]}`)
+	if _, err := svc.ManagePivotTable(context.Background(), service.PivotRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Action: service.PivotUpdate,
+		Anchor: "F1", Source: "B1:D6", Rows: []string{"B"},
+	}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if sent := sentPivot(t, srv); !strings.Contains(sent, `"values":[{"formula":"=1","name":"One","summarizeFunction":"CUSTOM"}]`) {
+		t.Errorf("the calculated value was not kept: %s", sent)
+	}
+}
+
+// TestPivotUpdateKeepsAGroupingMadeByHand is what an update that leaves
+// the groups out promises: a grouping made in Sheets goes back as read.
+func TestPivotUpdateKeepsAGroupingMadeByHand(t *testing.T) {
+	srv, svc := standard(t)
+	manual := `{"groups":[{"groupName":{"stringValue":"Grouped"},"items":[{"stringValue":"Skerry"}]}]}`
+	seedPivot(t, srv, `{`+sourceAC+`,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING","groupRule":`+
+		`{"manualRule":`+manual+`}}],"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}]}`)
+	if _, err := svc.ManagePivotTable(context.Background(), service.PivotRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Action: service.PivotUpdate,
+		Anchor: "F1", Values: []string{"C max"},
+	}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if sent := sentPivot(t, srv); !strings.Contains(sent, `"groupRule":{"manualRule":`+manual+`}`) {
+		t.Errorf("the grouping by hand was not kept: %s", sent)
+	}
+}

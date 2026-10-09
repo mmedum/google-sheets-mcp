@@ -788,6 +788,12 @@ func (d *driver) pivotRuleSteps() []step {
 			map[string]any{"filters": []any{"Region show East, West", "Region text_contains Ea"}}),
 		output("East alone", "100 + 50 + 20 is 170", "170"),
 		listed("list reads both back", "filters", "A show East, West", "A text_contains Ea"),
+		update("a relative date",
+			"a date filter's relative date is sent as relativeDate; whether a pivot filter takes one is "+
+				"unverified (§18), and sent as typed text \"tomorrow\" would match no date",
+			map[string]any{"filters": []any{"Day date_before tomorrow"}}),
+		output("every row is before tomorrow", "all six rows take in 750", "750"),
+		listed("list reads the relative date back", "filters", "B date_before tomorrow"),
 		{
 			name: "a second rule on one column is refused here",
 			why:  "Google allows one grouping rule per source column, and this says so before the request",

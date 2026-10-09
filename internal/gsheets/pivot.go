@@ -1,5 +1,11 @@
 package gsheets
 
+import (
+	"encoding/json"
+	"slices"
+	"strconv"
+)
+
 // A pivot table is the odd structure in the API: there is no
 // addPivotTable, no updatePivotTable and no deletePivotTable. A pivot is
 // a field of one CellData, written through updateCells at the cell it is
@@ -25,19 +31,40 @@ type UpdateCellsRequest struct {
 	Fields string          `json:"fields,omitempty"`
 }
 
-// PivotTable is a pivot this server builds from nothing, for add.
+// PivotTable is a pivot table as it reads: what list reports, and what
+// an update checks before it sends one. The write itself goes out as
+// the raw JSON it was read as, edited, so a field this type does not
+// model survives the round trip.
 //
-// FilterSpecs is the filter form this server writes. A response carries
-// the deprecated criteria map as well, keyed by the same offsets; a
-// request that sends both has filterSpecs win, so a write that changes
-// filters removes criteria from the raw pivot rather than modeling it.
+// FilterSpecs is the filter form this server writes. Criteria is the
+// deprecated form, keyed by the same offsets as text, and is read only:
+// a response carries both, and a request that sends both has
+// filterSpecs win.
 type PivotTable struct {
-	Source      *GridRange         `json:"source,omitempty"`
-	Rows        []*PivotGroup      `json:"rows,omitempty"`
-	Columns     []*PivotGroup      `json:"columns,omitempty"`
-	Values      []*PivotValue      `json:"values,omitempty"`
-	ValueLayout string             `json:"valueLayout,omitempty"`
-	FilterSpecs []*PivotFilterSpec `json:"filterSpecs,omitempty"`
+	Source      *GridRange                      `json:"source,omitempty"`
+	Rows        []*PivotGroup                   `json:"rows,omitempty"`
+	Columns     []*PivotGroup                   `json:"columns,omitempty"`
+	Values      []*PivotValue                   `json:"values,omitempty"`
+	ValueLayout string                          `json:"valueLayout,omitempty"`
+	FilterSpecs []*PivotFilterSpec              `json:"filterSpecs,omitempty"`
+	Criteria    map[string]*PivotFilterCriteria `json:"criteria,omitempty"`
+}
+
+// Filters is what filters the pivot: its filterSpecs, which take
+// precedence, or else its criteria, in offset order. A criteria key that
+// is not a number is not an offset, and is skipped.
+func (p *PivotTable) Filters() []*PivotFilterSpec {
+	if len(p.FilterSpecs) > 0 {
+		return p.FilterSpecs
+	}
+	var out []*PivotFilterSpec
+	for key, c := range p.Criteria {
+		if offset, err := strconv.Atoi(key); err == nil {
+			out = append(out, &PivotFilterSpec{ColumnOffsetIndex: offset, FilterCriteria: c})
+		}
+	}
+	slices.SortFunc(out, func(a, b *PivotFilterSpec) int { return a.ColumnOffsetIndex - b.ColumnOffsetIndex })
+	return out
 }
 
 // PivotGroup is one row or column grouping.
@@ -54,12 +81,14 @@ type PivotGroup struct {
 }
 
 // PivotGroupRule buckets a group's values rather than listing each one.
-// One of the two is set. Google allows one group with a rule per source
-// column. A rule made by hand in Sheets (manualRule) is read raw and
-// never written here.
+// One of the three is set. Google allows one group with a rule per
+// source column. ManualRule is a grouping made by hand in Sheets, which
+// names every value of every group; it is kept raw, read as being there,
+// and never written here.
 type PivotGroupRule struct {
-	DateTimeRule  *DateTimeRule  `json:"dateTimeRule,omitempty"`
-	HistogramRule *HistogramRule `json:"histogramRule,omitempty"`
+	DateTimeRule  *DateTimeRule   `json:"dateTimeRule,omitempty"`
+	HistogramRule *HistogramRule  `json:"histogramRule,omitempty"`
+	ManualRule    json.RawMessage `json:"manualRule,omitempty"`
 }
 
 // DateTimeRule groups dates by a part of them, such as YEAR_MONTH.
@@ -108,9 +137,3 @@ type PivotFilterCriteria struct {
 	Condition        *BooleanCondition `json:"condition,omitempty"`
 	VisibleByDefault bool              `json:"visibleByDefault,omitempty"`
 }
-
-// A pivot as it comes back from a read is not a type here at all. It
-// arrives as CellData.PivotTable, which is raw JSON, and manage_pivot_table
-// edits that JSON rather than a struct built from it — the same reason
-// the chart spec is raw: an update replaces the pivot whole, so a field
-// this server does not model has to survive the round trip.

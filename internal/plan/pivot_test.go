@@ -51,7 +51,7 @@ func TestParsePivotGroup(t *testing.T) {
 		if got.Column != tc.column || asJSON(t, got.Rule) != tc.rule {
 			t.Errorf("%q = column %q rule %s, want %q %s", tc.in, got.Column, asJSON(t, got.Rule), tc.column, tc.rule)
 		}
-		if text := plan.PivotGroupText(got.Column, got.Rule, false); text != tc.text {
+		if text := plan.PivotGroupText(got.Column, got.Rule); text != tc.text {
 			t.Errorf("%q is written back as %q, want %q", tc.in, text, tc.text)
 		}
 	}
@@ -85,7 +85,8 @@ func TestParsePivotGroupRefusals(t *testing.T) {
 // TestAGroupMadeByHandReadsAsOne is the one rule this tool reads and
 // does not write: list says so in words the parser then refuses.
 func TestAGroupMadeByHandReadsAsOne(t *testing.T) {
-	if got := plan.PivotGroupText("C", nil, true); got != "C by hand" {
+	byHand := &gsheets.PivotGroupRule{ManualRule: json.RawMessage(`{"groups":[]}`)}
+	if got := plan.PivotGroupText("C", byHand); got != "C by hand" {
 		t.Errorf("a group made by hand reads %q", got)
 	}
 	if _, err := plan.ParsePivotGroup("C by hand"); err == nil {
@@ -259,6 +260,40 @@ func TestPivotFilterTexts(t *testing.T) {
 	} {
 		if got := asJSON(t, plan.PivotFilterTexts("B", tc.criteria)); got != tc.want {
 			t.Errorf("%s: %s, want %s", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestARelativeDateFilterRoundTrips is a date condition that counts from
+// today. It reads back as its word, and that word has to go back as the
+// same relative date: sent as typed text, "today" is not a date at all.
+func TestARelativeDateFilterRoundTrips(t *testing.T) {
+	for _, kind := range []string{"DATE_BEFORE", "DATE_AFTER"} {
+		for _, date := range []string{"PAST_YEAR", "PAST_MONTH", "PAST_WEEK", "YESTERDAY", "TODAY", "TOMORROW"} {
+			read := &gsheets.PivotFilterCriteria{VisibleByDefault: true, Condition: &gsheets.BooleanCondition{
+				Type: kind, Values: []*gsheets.ConditionValue{{RelativeDate: date}}}}
+			texts := plan.PivotFilterTexts("B", read)
+			if len(texts) != 1 {
+				t.Fatalf("%s %s reads back as %q", kind, date, texts)
+			}
+			got, err := plan.ParsePivotFilter(texts[0])
+			if err != nil {
+				t.Fatalf("%q: %v", texts[0], err)
+			}
+			if want := asJSON(t, read.Condition); asJSON(t, got.Condition) != want {
+				t.Errorf("%q parses as %s, want %s", texts[0], asJSON(t, got.Condition), want)
+			}
+		}
+	}
+	// A date typed as a date is still a date, and the words go back with
+	// a space as well as the underscore a read writes.
+	for in, want := range map[string]string{
+		"B date_before 2026-01-31": `{"type":"DATE_BEFORE","values":[{"userEnteredValue":"2026-01-31"}]}`,
+		"B date_after Past Week":   `{"type":"DATE_AFTER","values":[{"relativeDate":"PAST_WEEK"}]}`,
+	} {
+		got, err := plan.ParsePivotFilter(in)
+		if err != nil || asJSON(t, got.Condition) != want {
+			t.Errorf("%q = %s %v, want %s", in, asJSON(t, got.Condition), err, want)
 		}
 	}
 }

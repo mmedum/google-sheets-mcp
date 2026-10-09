@@ -557,6 +557,24 @@ func TestPivotDrawsAHistogramAsTheReferenceDoes(t *testing.T) {
 	}
 }
 
+// TestPivotDrawsAGroupingByHand is the reference's ManualRule: each
+// listed item goes under its group's name, and "Items that do not appear
+// in any group will appear on their own".
+func TestPivotDrawsAGroupingByHand(t *testing.T) {
+	srv := salesSheet(t)
+	err := writePivotAt(srv, `{`+salesSource+`,`+
+		`"rows":[{"sourceColumnOffset":0,"showTotals":true,"sortOrder":"ASCENDING","groupRule":{"manualRule":{"groups":`+
+		`[{"groupName":{"stringValue":"Coast"},"items":[{"stringValue":"East"},{"stringValue":"West"}]}]}}}],`+
+		`"values":[{"sourceColumnOffset":3,"summarizeFunction":"SUM"}]}`)
+	if err != nil {
+		t.Fatalf("the pivot was refused: %v", err)
+	}
+	const want = "Region | SUM of Revenue\nCoast | 450\nNorth | 300\nGrand Total | 750"
+	if got := drawnFrom(srv); got != want {
+		t.Errorf("drawn:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 // TestPivotFiltersFollowTheReference is visibleByDefault as the
 // reference defines it, and the criteria map a request may still carry.
 func TestPivotFiltersFollowTheReference(t *testing.T) {
@@ -644,6 +662,19 @@ func TestPivotRulesAreChecked(t *testing.T) {
 			group("1", `{"dateTimeRule":{"type":"YEAR"},"histogramRule":{"interval":1}}`), sum, "",
 			"set exactly one rule"},
 		{"a rule of no kind", group("1", `{}`), sum, "", "set exactly one rule"},
+		{"a rule by hand and by date", group("0", `{"dateTimeRule":{"type":"YEAR"},"manualRule":{"groups":[]}}`), sum, "",
+			"set exactly one rule"},
+		{"an item in two groups by hand", group("0", `{"manualRule":{"groups":[`+
+			`{"groupName":{"stringValue":"One"},"items":[{"stringValue":"East"}]},`+
+			`{"groupName":{"stringValue":"Two"},"items":[{"stringValue":"East"}]}]}}`), sum, "",
+			"an item may appear in at most one group"},
+		{"two groups by hand of one name", group("0", `{"manualRule":{"groups":[`+
+			`{"groupName":{"stringValue":"One"},"items":[{"stringValue":"East"}]},`+
+			`{"groupName":{"stringValue":"One"},"items":[{"stringValue":"West"}]}]}}`), sum, "",
+			"each group must have a unique group name"},
+		{"a group by hand named by a number", group("0", `{"manualRule":{"groups":[`+
+			`{"groupName":{"numberValue":1},"items":[{"stringValue":"East"}]}]}}`), sum, "",
+			"the group name must be a string"},
 		{"an interval of 0", group("2", `{"histogramRule":{"interval":0}}`), sum, "",
 			"the interval must be positive"},
 		{"a start past the end", group("2", `{"histogramRule":{"interval":5,"start":50,"end":20}}`), sum, "",
@@ -666,6 +697,7 @@ func TestPivotRulesAreChecked(t *testing.T) {
 		// refuse what they name and nothing beside it.
 		{"a plain group beside a rule on one column",
 			group("1", "null") + `,` + group("1", `{"dateTimeRule":{"type":"YEAR"}}`), sum, "", ""},
+		{"a grouping by hand", group("0", `{"manualRule":{"groups":[]}}`), sum, "", ""},
 		{"a calculated value", group("0", "null"),
 			`{"formula":"=SUM(Revenue)/COUNT(Cost)","summarizeFunction":"CUSTOM","name":"Mean"}`, "", ""},
 	} {

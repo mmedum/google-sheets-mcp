@@ -34,8 +34,10 @@ import (
 // reference's definitions: a filter keeps the rows it shows before
 // anything is summed, a date rule buckets by the part of the date its
 // enum names and labels it as the enum's description shows, a histogram
-// buckets as the reference's example does, and a calculated value is
-// worked out per row and summed (SUM) or once per group (CUSTOM). What
+// buckets as the reference's example does, a grouping made by hand puts
+// each listed item under its group's name and leaves the rest on their
+// own, and a calculated value is worked out per row and summed (SUM) or
+// once per group (CUSTOM). What
 // the fake cannot work out — a date or formula filter, a formula beyond
 // arithmetic and five functions — it refuses by name rather than drawing
 // a number Google might not.
@@ -43,13 +45,6 @@ import (
 // Output cells carry an effectiveValue and no userEnteredValue, which is
 // how the live API returns them and how everything above tells a pivot's
 // own output apart from something a person typed.
-
-// fakePivot is a pivot as the fake reads one: the typed fields, and the
-// deprecated criteria map a response carries beside filterSpecs.
-type fakePivot struct {
-	gsheets.PivotTable
-	Criteria map[string]*gsheets.PivotFilterCriteria `json:"criteria,omitempty"`
-}
 
 // applyCells is the fake's updateCells, which is a pivot write and
 // nothing else here: this server sends the request for no other purpose.
@@ -118,10 +113,11 @@ func applyCells(d *Doc, req *gsheets.UpdateCellsRequest) (*gsheets.Reply, bool, 
 // of this fake's own, since no live run has seen Google's (§18): a value
 // sets one of an offset and a formula, a formula starts with = and is
 // summed or used as written, a group rule is one of its kinds with a
-// positive interval and a start below its end, one group per column has
+// positive interval and a start below its end, a grouping by hand names
+// each group once and each item in one group, one group per column has
 // a rule, and a filter's condition is one filters support.
-func validatePivot(raw json.RawMessage) (*fakePivot, error) {
-	var pivot fakePivot
+func validatePivot(raw json.RawMessage) (*gsheets.PivotTable, error) {
+	var pivot gsheets.PivotTable
 	if err := json.Unmarshal(raw, &pivot); err != nil {
 		//nolint:staticcheck // Google's own wording, kept verbatim
 		return nil, errors.New("Invalid requests[0].updateCells: unreadable pivot table")
@@ -170,7 +166,7 @@ func validatePivot(raw json.RawMessage) (*fakePivot, error) {
 		}
 		ruled[g.SourceColumnOffset] = true
 	}
-	for _, f := range effectiveFilters(&pivot) {
+	for _, f := range pivot.Filters() {
 		if c := f.FilterCriteria; c != nil && c.Condition != nil && !filterConditionTypes[c.Condition.Type] {
 			return nil, errors.New("invalid PivotFilterCriteria: " + c.Condition.Type + " is not a filter condition")
 		}
@@ -180,9 +176,18 @@ func validatePivot(raw json.RawMessage) (*fakePivot, error) {
 
 // checkGroupRule holds one rule to what the reference says of it.
 func checkGroupRule(r *gsheets.PivotGroupRule) error {
+	set := 0
+	for _, on := range []bool{r.HistogramRule != nil, r.DateTimeRule != nil, len(r.ManualRule) > 0} {
+		if on {
+			set++
+		}
+	}
 	switch h, dt := r.HistogramRule, r.DateTimeRule; {
-	case (h == nil) == (dt == nil):
+	case set != 1:
 		return errors.New("invalid PivotGroupRule: set exactly one rule")
+	case len(r.ManualRule) > 0:
+		_, err := manualGroups(r.ManualRule)
+		return err
 	case h != nil && h.Interval <= 0:
 		return errors.New("invalid HistogramRule: the interval must be positive")
 	case h != nil && h.Start != nil && h.End != nil && *h.Start >= *h.End:
@@ -203,27 +208,66 @@ var filterConditionTypes = map[string]bool{
 	"CUSTOM_FORMULA": true,
 }
 
-// effectiveFilters is what filters a pivot: its filterSpecs, which the
-// reference says take precedence, or else its criteria map.
-func effectiveFilters(p *fakePivot) []*gsheets.PivotFilterSpec {
-	if len(p.FilterSpecs) > 0 {
-		return p.FilterSpecs
+// manualRule is a grouping made by hand, which the wire types keep raw:
+// this fake is the one reader of what is inside it.
+type manualRule struct {
+	Groups []struct {
+		GroupName *gsheets.ExtendedValue   `json:"groupName"`
+		Items     []*gsheets.ExtendedValue `json:"items"`
+	} `json:"groups"`
+}
+
+// manualGroups reads a grouping made by hand into each item's group
+// name, holding it to the reference: a group name is a string and
+// unique, and "Items may appear in at most one group within a given
+// ManualRule".
+func manualGroups(raw json.RawMessage) (map[string]string, error) {
+	var rule manualRule
+	if err := json.Unmarshal(raw, &rule); err != nil {
+		return nil, errors.New("invalid ManualRule: " + err.Error())
 	}
-	var out []*gsheets.PivotFilterSpec
-	for key, c := range p.Criteria {
-		if offset, err := strconv.Atoi(key); err == nil {
-			out = append(out, &gsheets.PivotFilterSpec{ColumnOffsetIndex: offset, FilterCriteria: c})
+	names := map[string]bool{}
+	out := map[string]string{}
+	for _, g := range rule.Groups {
+		if g.GroupName == nil || g.GroupName.StringValue == nil {
+			return nil, errors.New("invalid ManualRuleGroup: the group name must be a string")
+		}
+		name := *g.GroupName.StringValue
+		if names[name] {
+			return nil, errors.New("invalid ManualRule: each group must have a unique group name")
+		}
+		names[name] = true
+		for _, item := range g.Items {
+			text := extendedText(item)
+			if _, twice := out[text]; twice {
+				return nil, errors.New("invalid ManualRule: an item may appear in at most one group")
+			}
+			out[text] = name
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ColumnOffsetIndex < out[j].ColumnOffsetIndex })
-	return out
+	return out, nil
+}
+
+// extendedText is a string, number or boolean item as a cell shows it.
+func extendedText(v *gsheets.ExtendedValue) string {
+	switch {
+	case v == nil:
+		return ""
+	case v.StringValue != nil:
+		return *v.StringValue
+	case v.NumberValue != nil:
+		return strconv.FormatFloat(*v.NumberValue, 'f', -1, 64)
+	case v.BoolValue != nil:
+		return strings.ToUpper(strconv.FormatBool(*v.BoolValue))
+	}
+	return ""
 }
 
 // bothFilterForms is the pivot as a read returns it: its filters in
 // filterSpecs and in criteria both, which the reference says a response
 // populates. A request with criteria alone is filtered by them, so a
 // clear that left criteria behind reads back with its filters.
-func bothFilterForms(raw json.RawMessage, p *fakePivot) (json.RawMessage, error) {
+func bothFilterForms(raw json.RawMessage, p *gsheets.PivotTable) (json.RawMessage, error) {
 	if len(p.FilterSpecs) == 0 && len(p.Criteria) == 0 {
 		return append(json.RawMessage(nil), raw...), nil
 	}
@@ -233,7 +277,7 @@ func bothFilterForms(raw json.RawMessage, p *fakePivot) (json.RawMessage, error)
 	}
 	delete(m, "filterSpecs")
 	delete(m, "criteria")
-	if specs := effectiveFilters(p); len(specs) > 0 {
+	if specs := p.Filters(); len(specs) > 0 {
 		criteria := map[string]*gsheets.PivotFilterCriteria{}
 		for _, f := range specs {
 			criteria[strconv.Itoa(f.ColumnOffsetIndex)] = f.FilterCriteria
@@ -295,14 +339,14 @@ func clearPivotOutput(sh *Sheet, row, col int) {
 // drawn, because how Google nests them is not something this repository
 // has watched, and a fake that guessed would teach the tests a layout
 // the API might not produce.
-func computePivot(d *Doc, pivot *fakePivot) ([][]any, error) {
+func computePivot(d *Doc, pivot *gsheets.PivotTable) ([][]any, error) {
 	source := d.FindByID(pivot.Source.SheetID)
 	if source == nil || len(pivot.Values) == 0 {
 		return nil, nil
 	}
 	rect := a1.FromGridRange(pivot.Source)
 	headings := sourceRow(source, rect, rect.FirstRow)
-	kept, err := filteredRows(source, rect, effectiveFilters(pivot))
+	kept, err := filteredRows(source, rect, pivot.Filters())
 	if err != nil {
 		return nil, err
 	}
@@ -415,10 +459,19 @@ func groupRows(source *Sheet, rect a1.Rect, rows []int, rule *gsheets.PivotGroup
 
 // bucketOf is the group one cell falls in, and where that group sorts.
 // A cell a rule cannot read — a word under a date rule, say — falls in
-// none, which is a belief: Google may put it in a bucket of its own.
+// none, which is a belief: Google may put it in a bucket of its own. A
+// grouping made by hand sorts its group names among the values it leaves
+// on their own, by label, which is a belief too.
 func bucketOf(source *Sheet, row, col int, rule *gsheets.PivotGroupRule) (string, float64, bool) {
-	if rule == nil {
+	if rule == nil || len(rule.ManualRule) > 0 {
 		key := textAt(source, row, col)
+		if rule != nil {
+			// Read when the pivot was written, so it reads here.
+			groups, _ := manualGroups(rule.ManualRule)
+			if name, ok := groups[key]; ok {
+				key = name
+			}
+		}
 		return key, 0, key != ""
 	}
 	n, ok := numberAt(source, row, col)

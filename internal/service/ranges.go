@@ -452,7 +452,7 @@ func (s *Service) readTable(ctx context.Context, ref Reference, props *gsheets.S
 	// The header read is the caller's first row. A table moved since the
 	// card was read has another one, which the formula check below would
 	// not have seen.
-	if now := rectsOf([]*gsheets.Table{table}, func(t *gsheets.Table) *gsheets.GridRange { return t.Range }, props)[0]; now != rect {
+	if now := a1.FromGridRange(table.Range).Clamp(extent(props)); now != rect {
 		return nil, Errorf("not_found", "the table on %s covers %s since this call began; name it by that range",
 			a1.FormatRect(rect), a1.FormatRect(now))
 	}
@@ -471,17 +471,13 @@ func (s *Service) readTable(ctx context.Context, ref Reference, props *gsheets.S
 }
 
 // headings is the header row as typedColumns resolves a column name
-// against it: each heading, lower-cased, to its offset in the table. The
-// first of two equal headings wins, as in headerRow.
+// against it.
 func (t *tableNow) headings() map[string]int {
-	out := map[string]int{}
-	for j, cell := range t.header.Cells[0] {
-		text := strings.ToLower(strings.TrimSpace(cell.Display))
-		if _, seen := out[text]; text != "" && !seen {
-			out[text] = j
-		}
+	texts := make([]string, 0, len(t.header.Cells[0]))
+	for _, cell := range t.header.Cells[0] {
+		texts = append(texts, cell.Display)
 	}
-	return out
+	return headingIndex(texts)
 }
 
 // merge is the whole array an update sends: every column as read, with
