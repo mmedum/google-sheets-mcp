@@ -37,8 +37,8 @@ files, and their revisions, belong to a server built on the Drive API.
 Comments on cells are here, and so are cell **notes**.
 
 Reading, writing, formatting, the objects attached to a range,
-`gsheets://` resources, durable anchors, charts, pivot tables and
-pivot tables, Connected Sheets data sources and cell comments all work.
+`gsheets://` resources, durable anchors, charts, pivot tables,
+Connected Sheets data sources and cell comments all work.
 The twenty-four tools, their
 arguments and the fields they return are stable: a breaking change needs a
 major version, and a gate compares every commit against the newest release's recorded surface. It has been driven by one MCP

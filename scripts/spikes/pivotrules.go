@@ -32,6 +32,12 @@ import (
 // U7. Sent filterSpecs alone, does criteria read back too? Sent
 // criteria alone, filterSpecs? Sent a pivot with neither over one that
 // had both, does any filter survive?
+// U8. Does a pivot filter take a relative date, as manage_pivot_table
+// sends "Day date_before tomorrow"? What reads back?
+// U9. Is a grouping made by hand kept when the pivot is sent back with
+// other values, as an update that leaves the groups out sends it? Are an
+// item in two groups, two groups of one name, and a group named by a
+// number refused, as the fake refuses them?
 func spikeU(ctx context.Context) {
 	sec("Spike U: pivot grouping rules, filters and calculated values")
 	const sheet = "SpikePivotRules"
@@ -170,6 +176,50 @@ func spikeU(ctx context.Context) {
 	if try("neither, over the pivot that had both", pivot([]any{group(0, nil)}, []any{sum}, nil)) {
 		show("does any filter survive?")
 	}
+
+	line("")
+	line("  U8: a relative date")
+	for _, rel := range []struct{ kind, date, says string }{
+		{"DATE_BEFORE", "TOMORROW", "every row (East 170, North 300, West 280)"},
+		{"DATE_AFTER", "PAST_YEAR", "the rows of the past year, which depends on the day this runs"},
+	} {
+		if try(rel.kind+" "+rel.date+" on Day", pivot([]any{group(0, nil)}, []any{sum}, map[string]any{
+			"filterSpecs": []any{map[string]any{"columnOffsetIndex": 1, "filterCriteria": map[string]any{
+				"visibleByDefault": true,
+				"condition": map[string]any{"type": rel.kind,
+					"values": []any{map[string]any{"relativeDate": rel.date}}},
+			}}},
+		})) {
+			show(rel.says)
+		}
+	}
+
+	line("")
+	line("  U9: a grouping made by hand")
+	byHand := func(groups ...[]string) map[string]any {
+		var out []any
+		for _, g := range groups {
+			var items []any
+			for _, item := range g[1:] {
+				items = append(items, map[string]any{"stringValue": item})
+			}
+			out = append(out, map[string]any{"groupName": map[string]any{"stringValue": g[0]}, "items": items})
+		}
+		return map[string]any{"manualRule": map[string]any{"groups": out}}
+	}
+	coast := byHand([]string{"Coast", "East", "West"})
+	if try("Coast: East and West", pivot([]any{group(0, coast)}, []any{sum}, nil)) {
+		show("Coast 450, North 300")
+	}
+	if try("the same group, sent back with Cost summed", pivot([]any{group(0, coast)},
+		[]any{map[string]any{"sourceColumnOffset": 4, "summarizeFunction": "SUM"}}, nil)) {
+		show("is the hand grouping kept? (Coast 290, North 100)")
+	}
+	try("East in two groups", pivot([]any{group(0, byHand([]string{"One", "East"}, []string{"Two", "East"}))}, []any{sum}, nil))
+	try("two groups named One", pivot([]any{group(0, byHand([]string{"One", "East"}, []string{"One", "West"}))}, []any{sum}, nil))
+	try("a group named by a number", pivot([]any{group(0, map[string]any{"manualRule": map[string]any{"groups": []any{
+		map[string]any{"groupName": map[string]any{"numberValue": 1}, "items": []any{map[string]any{"stringValue": "East"}}},
+	}}})}, []any{sum}, nil))
 }
 
 // definition prints the pivot definition on one cell, as Google stores
