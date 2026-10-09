@@ -330,7 +330,8 @@ value would silently destroy:
 - **a smart chip** (a person or a file link) — named in the refusal and
   allowed by `overwrite`, because it reads as plain text and a value
   write erases it: "Writing a new user_entered_value will erase previous
-  runs" (`CellData.chipRuns`, discovery 20260930);
+  runs" (`CellData.chipRuns`, discovery 20260930). The same holds where
+  a paste, a cut, a fill or a split lands;
 - a cell carrying a **note** or **data validation** is reported as kept,
   since those are invisible in a values read and survive a value write.
 

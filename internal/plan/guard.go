@@ -633,6 +633,7 @@ func (r *Report) Merge(o Report) {
 	r.Computed = r.Computed || o.Computed
 	r.DrawnBy = append(r.DrawnBy, o.DrawnBy...)
 	r.Formulas.Merge(o.Formulas)
+	r.Chips.Merge(o.Chips)
 	r.Notes.Merge(o.Notes)
 	r.Validation.Merge(o.Validation)
 	r.Fetching.Merge(o.Fetching)
