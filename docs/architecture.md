@@ -3348,3 +3348,10 @@ empty `post_id`, passed all 246 steps, and its transcript was read: an
 edit by `post_id` changed the reply and left the first comment, a
 thread whose row was deleted kept its posts and its assignee, and a
 deleted thread's replies went with it.
+
+**The filter rows of the API record, 2026-10-09**, read against the
+Sheets API's filters guide.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| Creating a filter view changes what everybody sees on opening the file (`addFilterView` in `testdata/api-coverage.tsv`) | **Refuted**: "A FilterView is a named filter that you can turn off and on whenever you like." What everybody sees is the basic filter, "the default filter that's applied whenever anyone views the spreadsheet" | The two reasons were swapped. `addFilterView`'s now says a view changes nobody else's view, and `setBasicFilter`'s that a basic filter changes everybody's. Both stay written off |

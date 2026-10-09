@@ -36,7 +36,7 @@ sheets	request	addChart	used	internal/plan builds it
 sheets	request	addConditionalFormatRule	used	internal/plan builds it
 sheets	request	addDataSource	used	internal/plan builds it
 sheets	request	addDimensionGroup	used	internal/plan builds it
-sheets	request	addFilterView	out	a saved view of somebody else's screen; the card reports the ones that exist, and creating one changes what everybody sees on opening the file
+sheets	request	addFilterView	out	a named filter each person turns on for themselves, which changes nobody else's view (Sheets filters guide); the card reports the ones that exist
 sheets	request	addNamedRange	used	internal/plan builds it
 sheets	request	addProtectedRange	used	internal/plan builds it
 sheets	request	addSheet	used	internal/plan builds it
@@ -76,7 +76,7 @@ sheets	request	pasteData	out	takes a delimited string and splits it; write_value
 sheets	request	randomizeRange	used	internal/plan builds it
 sheets	request	refreshDataSource	used	internal/plan builds it
 sheets	request	repeatCell	used	internal/plan builds it
-sheets	request	setBasicFilter	out	as addFilterView: a filter is a preference rather than data
+sheets	request	setBasicFilter	out	the filter applied whenever anyone views the sheet (Sheets filters guide), so setting one changes what everybody sees; a filter is a way of looking, not data
 sheets	request	setDataValidation	used	internal/plan builds it
 sheets	request	sortRange	used	internal/plan builds it
 sheets	request	textToColumns	used	internal/plan builds it
