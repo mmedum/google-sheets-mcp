@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
@@ -139,6 +140,10 @@ func (s *Service) writePivot(ctx context.Context, ref Reference, req PivotReques
 		pivot = map[string]any{}
 	}
 
+	// The source the pivot had, read before editPivot replaces it: a new
+	// one is checked against the columns the update keeps, and those are
+	// named in the old one's letters.
+	oldSource, _ := gridRangeOf(pivot)
 	source, sourceName, err := s.pivotSource(ctx, ref, props, req, pivot)
 	if err != nil {
 		return nil, err
@@ -164,6 +169,11 @@ func (s *Service) writePivot(ctx context.Context, ref Reference, req PivotReques
 	body, err := json.Marshal(pivot)
 	if err != nil {
 		return nil, Errorf("invalid", "the pivot table could not be built: %v", err)
+	}
+	if req.Action == PivotUpdate && strings.TrimSpace(req.Source) != "" {
+		if err := s.keptPastEdge(ctx, ref, body, oldSource, source); err != nil {
+			return nil, err
+		}
 	}
 
 	act := render.PivotAct{
@@ -633,6 +643,131 @@ func gridRangeOf(pivot map[string]any) (*gsheets.GridRange, bool) {
 		return nil, false
 	}
 	return &g, true
+}
+
+// pivotColumn is a group's or a value's offset into the source.
+type pivotColumn struct {
+	Offset int `json:"sourceColumnOffset"`
+}
+
+// pivotFilter is a filter's offset, which the API names differently.
+type pivotFilter struct {
+	Offset int `json:"columnOffsetIndex"`
+}
+
+// pivotColumns is every offset a pivot holds, whoever wrote it. A filter
+// made in the Sheets interface counts from the source's first column
+// like the groups and values this server builds.
+type pivotColumns struct {
+	Rows        []pivotColumn `json:"rows"`
+	Columns     []pivotColumn `json:"columns"`
+	Values      []pivotColumn `json:"values"`
+	FilterSpecs []pivotFilter `json:"filterSpecs"`
+	// Criteria is the older form of filterSpecs, keyed by the offset.
+	Criteria map[string]json.RawMessage `json:"criteria"`
+}
+
+// keptPastEdge refuses a new source that is too narrow for a column the
+// update keeps, and names each one.
+//
+// A group, value or filter is an offset from the source's first column,
+// so one the update was not given reads whatever sits at the same
+// position in the new source. Past its right edge it reads nothing, and
+// Google accepts that with a 200 (spike M). What the request named again
+// was resolved against the new source and fits, so anything found here
+// is something the caller did not pass.
+func (s *Service) keptPastEdge(ctx context.Context, ref Reference, body json.RawMessage,
+	old *gsheets.GridRange, source SheetRef) error {
+
+	var held pivotColumns
+	if err := json.Unmarshal(body, &held); err != nil {
+		return Errorf("unsupported",
+			"the pivot table's columns could not be read, so the new source cannot be checked against them")
+	}
+	width := source.Rect.Cols()
+	past := map[string][]int{}
+	note := func(arg string, offset int) {
+		if offset >= width {
+			past[arg] = append(past[arg], offset)
+		}
+	}
+	for _, c := range held.Rows {
+		note("group_rows", c.Offset)
+	}
+	for _, c := range held.Columns {
+		note("group_columns", c.Offset)
+	}
+	for _, c := range held.Values {
+		note("values", c.Offset)
+	}
+	for _, c := range held.FilterSpecs {
+		note("filters", c.Offset)
+	}
+	for key := range held.Criteria {
+		if offset, err := strconv.Atoi(key); err == nil {
+			note("filters", offset)
+		}
+	}
+	if len(past) == 0 {
+		return nil
+	}
+
+	// Named in the old source's letters, which is where the caller last
+	// saw them. A source with no left edge starts at column A.
+	first, oldName := 1, "the old source"
+	if old != nil {
+		rect := a1.FromGridRange(old)
+		first = max(rect.FirstCol, 1)
+		if sheet := s.sheetByID(ctx, ref.ID, old.SheetID); sheet != nil {
+			oldName = "the old source " + a1.Format(sheet.Title, rect)
+		}
+	}
+	var kept, again []string
+	widest, widestGiven, filters := 0, 0, "it"
+	for _, arg := range []string{"group_rows", "group_columns", "values", "filters"} {
+		offsets := past[arg]
+		if len(offsets) == 0 {
+			continue
+		}
+		sort.Ints(offsets)
+		var letters []string
+		for i, offset := range offsets {
+			if i > 0 && offset == offsets[i-1] {
+				continue
+			}
+			letter, err := a1.ColumnName(first + offset)
+			if err != nil {
+				letter = fmt.Sprintf("column %d", offset+1)
+			}
+			letters = append(letters, letter)
+		}
+		last := offsets[len(offsets)-1] + 1
+		widest = max(widest, last)
+		name := arg
+		if arg == "filters" {
+			name = "a filter"
+			if len(letters) > 1 {
+				name, filters = "filters", "them"
+			}
+		} else {
+			again = append(again, arg)
+			widestGiven = max(widestGiven, last)
+		}
+		kept = append(kept, name+" on "+join(letters))
+	}
+	var fix string
+	if len(again) > 0 {
+		fix = fmt.Sprintf(" Pass %s again, named against the new source, or choose a source at least %d columns wide.",
+			join(again), widestGiven)
+	}
+	if len(past["filters"]) > 0 {
+		fix += fmt.Sprintf(" This tool cannot set a filter, so only a source at least %d columns wide keeps %s.",
+			widest, filters)
+	}
+	return Errorf("invalid",
+		"the new source %s is %s wide, and the pivot table would keep %s from %s, past its right edge. "+
+			"Google accepts that and the pivot reads nothing there.%s",
+		a1.Format(source.Props.Title, source.Rect), render.Plural(width, "column"), join(kept), oldName, fix)
 }
 
 // editPivot applies the arguments, and says what it changed.

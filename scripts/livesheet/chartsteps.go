@@ -508,6 +508,25 @@ func (d *driver) pivotSteps() []step {
 			},
 		},
 		{
+			name: "a new source too narrow for the columns the update keeps is refused here",
+			why: "a kept group or value keeps its offset into the source, and Google accepts one past the new " +
+				"source's edge with a 200 and a pivot that reads nothing there (spike M)",
+			tool: "manage_pivot_table",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "update",
+				"anchor": "H1", "source": "A1:B6",
+			},
+			expectError: "invalid",
+			check: func(text string, _ map[string]any) error {
+				for _, want := range []string{"group_columns on C", "values on C", "at least 3 columns wide"} {
+					if !strings.Contains(text, want) {
+						return fmt.Errorf("the refusal does not say %q: %q", want, text)
+					}
+				}
+				return nil
+			},
+		},
+		{
 			name: "a merge over the output is refused, with the reason Sheets gives",
 			why: "Sheets refuses a merge over any cell of a pivot table (400, spike Q), so this guard prevents " +
 				"nothing and fixes a sentence: it used to promise a discard that cannot happen and offer " +

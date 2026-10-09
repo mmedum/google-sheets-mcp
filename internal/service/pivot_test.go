@@ -199,6 +199,139 @@ func TestPivotUpdateRefusals(t *testing.T) {
 	}
 }
 
+// seedPivot anchors a pivot table at F1 on the first sheet exactly as
+// given, so a test can start from columns this server would not build.
+func seedPivot(t *testing.T, srv *sheetstest.Server, pivot string) {
+	t.Helper()
+	sh := srv.Doc(sheetstest.FixtureID).Find(sheetstest.FirstSheet)
+	if sh == nil {
+		t.Fatal("no first sheet")
+	}
+	sh.Set(1, 6, &gsheets.CellData{PivotTable: json.RawMessage(pivot)})
+}
+
+// The old sources the tests below start from, on the first sheet.
+const (
+	sourceAC = `"source":{"sheetId":0,"startRowIndex":0,"endRowIndex":6,"startColumnIndex":0,"endColumnIndex":3}`
+	sourceAD = `"source":{"sheetId":0,"startRowIndex":0,"endRowIndex":6,"startColumnIndex":0,"endColumnIndex":4}`
+)
+
+// TestPivotUpdateRefusesASourceTooNarrowForWhatItKeeps is the update
+// that changes source. A group, value or filter it was not given keeps
+// its offset, and Google accepts an offset past the new source's edge
+// with a 200 and a pivot that reads nothing there (spike M).
+func TestPivotUpdateRefusesASourceTooNarrowForWhatItKeeps(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		pivot string
+		req   service.PivotRequest
+		want  string
+	}{
+		{"a kept value",
+			`{` + sourceAC + `,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":2,"summarizeFunction":"SUM"}]}`,
+			service.PivotRequest{Source: "A1:B6"},
+			`[invalid] the new source 'Vandel'!A1:B6 is 2 columns wide, and the pivot table would keep values on C ` +
+				`from the old source 'Vandel'!A1:C6, past its right edge. Google accepts that and the pivot reads nothing ` +
+				`there. Pass values again, named against the new source, or choose a source at least 3 columns wide.`},
+		{"kept groups",
+			`{` + sourceAD + `,"rows":[{"sourceColumnOffset":3,"sortOrder":"ASCENDING"}],` +
+				`"columns":[{"sourceColumnOffset":2,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}]}`,
+			service.PivotRequest{Source: "A1:B6", Values: []string{"B sum"}},
+			`[invalid] the new source 'Vandel'!A1:B6 is 2 columns wide, and the pivot table would keep group_rows on D ` +
+				`and group_columns on C from the old source 'Vandel'!A1:D6, past its right edge. Google accepts that and ` +
+				`the pivot reads nothing there. Pass group_rows and group_columns again, named against the new source, ` +
+				`or choose a source at least 4 columns wide.`},
+		{"a kept filter",
+			`{` + sourceAD + `,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}],` +
+				`"filterSpecs":[{"columnOffsetIndex":3,"filterCriteria":{"visibleValues":["Skerry"]}}]}`,
+			service.PivotRequest{Source: "A1:C6", Rows: []string{"A"}, Values: []string{"B sum"}},
+			`[invalid] the new source 'Vandel'!A1:C6 is 3 columns wide, and the pivot table would keep a filter on D ` +
+				`from the old source 'Vandel'!A1:D6, past its right edge. Google accepts that and the pivot reads nothing ` +
+				`there. This tool cannot set a filter, so only a source at least 4 columns wide keeps it.`},
+		{"a kept filter in the older form",
+			`{` + sourceAD + `,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}],` +
+				`"criteria":{"3":{"visibleValues":["Skerry"]}}}`,
+			service.PivotRequest{Source: "A1:C6", Rows: []string{"A"}, Values: []string{"B sum"}},
+			`[invalid] the new source 'Vandel'!A1:C6 is 3 columns wide, and the pivot table would keep a filter on D ` +
+				`from the old source 'Vandel'!A1:D6, past its right edge. Google accepts that and the pivot reads nothing ` +
+				`there. This tool cannot set a filter, so only a source at least 4 columns wide keeps it.`},
+		// A pivot built in the Sheets interface over a whole sheet has no
+		// left edge, and its offsets count from column A.
+		{"a kept value under a whole-sheet source",
+			`{"source":{"sheetId":0},"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":3,"summarizeFunction":"SUM"}]}`,
+			service.PivotRequest{Source: "A1:C6"},
+			`[invalid] the new source 'Vandel'!A1:C6 is 3 columns wide, and the pivot table would keep values on D ` +
+				`from the old source 'Vandel', past its right edge. Google accepts that and the pivot reads nothing ` +
+				`there. Pass values again, named against the new source, or choose a source at least 4 columns wide.`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, svc := standard(t)
+			seedPivot(t, srv, tc.pivot)
+			tc.req.Spreadsheet = sheetstest.FixtureID
+			tc.req.Sheet = sheetstest.FirstSheet
+			tc.req.Action = service.PivotUpdate
+			tc.req.Anchor = "F1"
+			_, err := svc.ManagePivotTable(context.Background(), tc.req)
+			if err == nil {
+				t.Fatal("a source too narrow for the kept columns was accepted")
+			}
+			if err.Error() != tc.want {
+				t.Errorf("error =\n%v\nwant\n%s", err, tc.want)
+			}
+			for _, c := range srv.Calls() {
+				if c.Op == "spreadsheets.batchUpdate" {
+					t.Fatal("the request was sent")
+				}
+			}
+		})
+	}
+}
+
+// TestPivotUpdateTakesANewSourceThatFits is the other side of the same
+// check: what the update names again, and what still fits, goes through.
+func TestPivotUpdateTakesANewSourceThatFits(t *testing.T) {
+	kept := `{` + sourceAC + `,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+		`"values":[{"sourceColumnOffset":2,"summarizeFunction":"SUM"}]}`
+	for _, tc := range []struct {
+		name string
+		req  service.PivotRequest
+		want string
+	}{
+		// The last kept offset is the new source's last column.
+		{"the same width, more rows", service.PivotRequest{Source: "A1:C20"},
+			`{"sheetId":0,"startRowIndex":0,"endRowIndex":20,"startColumnIndex":0,"endColumnIndex":3}`},
+		{"the value given again", service.PivotRequest{Source: "A1:B6", Values: []string{"B sum"}},
+			`{"sheetId":0,"startRowIndex":0,"endRowIndex":6,"startColumnIndex":0,"endColumnIndex":2}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, svc := standard(t)
+			seedPivot(t, srv, kept)
+			tc.req.Spreadsheet = sheetstest.FixtureID
+			tc.req.Sheet = sheetstest.FirstSheet
+			tc.req.Action = service.PivotUpdate
+			tc.req.Anchor = "F1"
+			if _, err := svc.ManagePivotTable(context.Background(), tc.req); err != nil {
+				t.Fatalf("update: %v", err)
+			}
+			var stored struct {
+				Source json.RawMessage `json:"source"`
+			}
+			cell := srv.Doc(sheetstest.FixtureID).Find(sheetstest.FirstSheet).At(1, 6)
+			if cell == nil || json.Unmarshal(cell.PivotTable, &stored) != nil {
+				t.Fatal("no pivot table at F1 after the update")
+			}
+			if string(stored.Source) != tc.want {
+				t.Errorf("source = %s, want %s", stored.Source, tc.want)
+			}
+		})
+	}
+}
+
 // TestPivotDeleteTakesTheWholeOutput is the shape of the delete: there
 // is no deletePivotTable, and naming the field with an empty cell takes
 // every computed cell with it.
