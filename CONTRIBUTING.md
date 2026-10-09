@@ -39,11 +39,13 @@ why.
 - Put an entry under `[Unreleased]` in `CHANGELOG.md`. The staleness gate
   asks for one when Go changed.
 - Add to a tool's arguments and fields; do not take away. The schema diff
-  fails on a tool, resource or field removed or retyped at any depth, or
-  an argument newly required, against the newest release's surface in
-  `testdata/schema-baseline.json`. A break ships only as a new major
-  version, with go.mod's `/vN` raised; the release commit records the new
-  surface with `make schema-baseline VERSION=vX.Y.Z`.
+  compares with the newest release's surface in
+  `testdata/schema-baseline.json`, at any depth. It fails on a tool,
+  resource or field removed; an argument that takes fewer types or
+  values, or is newly required; and a returned field that may carry
+  another type, or be missing where it was required. A break ships only
+  as a new major version, with go.mod's `/vN` raised; the release commit
+  records the new surface with `make schema-baseline VERSION=vX.Y.Z`.
 - Verify against the discovery document or a live probe before adopting a
   convention, and record the verdict in the evidence log in
   `docs/architecture.md` §18. A reference page's prose is not evidence:

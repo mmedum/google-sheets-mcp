@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"slices"
 	"strings"
@@ -51,8 +52,8 @@ func TestAnUnreadableReleaseFailsABreak(t *testing.T) {
 }
 
 // A tool kept by name breaks a caller when it loses a field it took or
-// returned, at any depth, when a field changes type, or when an input is
-// newly required; adding fields does not.
+// returned, at any depth, when an output may now be null, or when an
+// input is newly required; adding fields does not.
 func TestBrokenFields(t *testing.T) {
 	was, err := readToolSurface([]byte(`{"version":"v3.0.2","tools":[
 		{"name":"read_cell_comments","inputSchema":{"type":"object","properties":{"spreadsheet":{"type":"string"},
@@ -88,6 +89,166 @@ func TestBrokenFields(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got  %q\nwant %q", got, want)
+	}
+}
+
+// fieldsOf is the fields of a dump of one tool, read_range, with the
+// input and output schemas given.
+func fieldsOf(t *testing.T, input, output string) map[string]toolFields {
+	t.Helper()
+	s, err := readToolSurface([]byte(`{"tools":[{"name":"read_range","inputSchema":` + input + `,"outputSchema":` + output + `}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s.fields
+}
+
+// A type change breaks a caller in one direction only: an input that
+// takes fewer types, or an output that may return more. An input that
+// takes more, or an output that returns fewer, breaks nobody. No type
+// and the schema `true` are any type, and the schema `false` is none.
+func TestATypeChangeBreaksOneWay(t *testing.T) {
+	const empty = `{"type":"object"}`
+	field := func(typ string) string {
+		switch typ {
+		case "":
+			return `{"type":"object","properties":{"x":{}}}`
+		case "true", "false":
+			return `{"type":"object","properties":{"x":` + typ + `}}`
+		}
+		return `{"type":"object","properties":{"x":{"type":` + typ + `}}}`
+	}
+	for _, c := range []struct {
+		side, was, now, want string
+	}{
+		{"input", `"boolean"`, `["null","boolean"]`, ""},
+		{"input", `"integer"`, `"number"`, ""},
+		{"input", `"string"`, ``, ""},
+		{"input", `"string"`, `true`, ""},
+		{"input", `false`, `"string"`, ""},
+		{"input", `"number"`, `"integer"`, `read_range: input field x changed type from "number" to "integer"`},
+		{"input", `["null","string"]`, `"string"`, `read_range: input field x changed type from ["null","string"] to "string"`},
+		{"input", ``, `"string"`, `read_range: input field x changed type from any to "string"`},
+		{"input", `true`, `"string"`, `read_range: input field x changed type from any to "string"`},
+		{"input", `"string"`, `false`, `read_range: input field x changed type from "string" to false`},
+		{"output", `["null","string"]`, `"string"`, ""},
+		{"output", `"number"`, `"integer"`, ""},
+		{"output", `true`, `"string"`, ""},
+		{"output", `"string"`, `false`, ""},
+		{"output", `"string"`, `["null","string"]`, `read_range: output field x changed type from "string" to ["null","string"]`},
+		{"output", `"integer"`, `"number"`, `read_range: output field x changed type from "integer" to "number"`},
+		{"output", `"string"`, ``, `read_range: output field x changed type from "string" to any`},
+		{"output", `"string"`, `true`, `read_range: output field x changed type from "string" to any`},
+		{"output", `false`, `"string"`, `read_range: output field x changed type from false to "string"`},
+	} {
+		was, now := fieldsOf(t, field(c.was), empty), fieldsOf(t, field(c.now), empty)
+		if c.side == "output" {
+			was, now = fieldsOf(t, empty, field(c.was)), fieldsOf(t, empty, field(c.now))
+		}
+		got := strings.Join(brokenFields(was, now), "\n")
+		if got != c.want {
+			t.Errorf("%s %s to %s: got %q, want %q", c.side, c.was, c.now, got, c.want)
+		}
+	}
+}
+
+// An output field a caller read as always there breaks it when it may
+// now be missing, at any depth. One removed is reported once, as removed.
+// An input no longer required breaks nobody.
+func TestAnOutputNoLongerRequiredBreaks(t *testing.T) {
+	was := fieldsOf(t, `{"type":"object","properties":{"spreadsheet":{"type":"string"}},"required":["spreadsheet"]}`,
+		`{"type":"object","properties":{"range":{"type":"string"},"sheet":{"type":"string"},
+		"next_range":{"type":"string"},"note":{"type":"string"},
+		"rows":{"type":"array","items":{"type":"object","properties":{"row":{"type":"integer"}},"required":["row"]}}},
+		"required":["range","sheet","next_range","rows"]}`)
+	now := fieldsOf(t, `{"type":"object","properties":{"spreadsheet":{"type":"string"}}}`,
+		`{"type":"object","properties":{"range":{"type":"string"},"sheet":{"type":"string"},
+		"note":{"type":"string"},
+		"rows":{"type":"array","items":{"type":"object","properties":{"row":{"type":"integer"}}}}},
+		"required":["range","rows","note"]}`)
+	got := brokenFields(was, now)
+	want := []string{
+		`read_range: output field next_range removed`,
+		`read_range: output field rows[].row no longer required`,
+		`read_range: output field sheet no longer required`,
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got  %q\nwant %q", got, want)
+	}
+}
+
+// An input value a caller sent breaks it when the field no longer takes
+// it, in a list's elements too. A value added, or the list dropped so
+// any value goes, breaks nobody.
+func TestAnInputThatLosesAValueBreaks(t *testing.T) {
+	const output = `{"type":"object"}`
+	was := fieldsOf(t, `{"type":"object","properties":{
+		"show":{"type":"string","enum":["values","formulas","both"]},
+		"input":{"type":"string","enum":["typed","literal"]},
+		"render":{"type":"string","enum":["formatted","unformatted"]},
+		"dimensions":{"type":"array","items":{"type":"string","enum":["rows","columns"]}}}}`, output)
+	now := fieldsOf(t, `{"type":"object","properties":{
+		"show":{"type":"string","enum":["values","both"]},
+		"input":{"type":"string","enum":["typed","raw","literal"]},
+		"render":{"type":"string"},
+		"dimensions":{"type":"array","items":{"type":"string","enum":["columns"]}}}}`, output)
+	got := brokenFields(was, now)
+	want := []string{
+		`read_range: input field dimensions[] no longer takes "rows"`,
+		`read_range: input field show no longer takes "formulas"`,
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got  %q\nwant %q", got, want)
+	}
+}
+
+// Listed values that may or may not break a caller are reported, not
+// failed: an output that may carry a value it did not, and an input
+// newly limited to a list. An output that lists fewer, or newly lists
+// its values, is neither, and a field removed is a break, said once.
+func TestValuesThatMayBreakAreReported(t *testing.T) {
+	was := fieldsOf(t, `{"type":"object","properties":{"show":{"type":"string"},
+		"input":{"type":"string","enum":["typed","literal"]}}}`,
+		`{"type":"object","properties":{"range":{"type":"string"},"kind":{"type":"string"},
+		"dimension":{"type":"string","enum":["rows","columns"]},
+		"status":{"type":"string","enum":["complete","partial"]},
+		"value_type":{"type":"string","enum":["number","text"]},
+		"source":{"type":"string","enum":["typed","formula"]}}}`)
+	now := fieldsOf(t, `{"type":"object","properties":{"show":{"type":"string","enum":["values","both"]},
+		"input":{"type":"string","enum":["typed","literal"]}}}`,
+		`{"type":"object","properties":{"range":{"type":"string"},"kind":{"type":"string","enum":["a","b"]},
+		"status":{"type":"string","enum":["complete","partial","truncated"]},
+		"value_type":{"type":"string"},
+		"source":{"type":"string","enum":["typed"]}}}`)
+	if b := brokenFields(was, now); !slices.Equal(b, []string{"read_range: output field dimension removed"}) {
+		t.Fatalf("got breaks %q, want only the field removed", b)
+	}
+	got := valueNotes(was, now)
+	want := []string{
+		`read_range: output field status may now be "truncated"`,
+		`read_range: output field value_type may now be any value`,
+		`read_range: input field show now takes only "values", "both"`,
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got  %q\nwant %q", got, want)
+	}
+}
+
+// The diff names an output that may carry a value it did not list, and
+// passes it.
+func TestANewOutputValueIsNamedAndPasses(t *testing.T) {
+	dump := func(version, values string) []byte {
+		return []byte(`{"version":"` + version + `","tools":[{"name":"read_range","description":"d",
+			"inputSchema":{"type":"object","properties":{"spreadsheet":{"type":"string"}}},
+			"outputSchema":{"type":"object","properties":{"status":{"type":"string","enum":[` + values + `]}}}}]}`)
+	}
+	var out bytes.Buffer
+	err := schemaVerdict(&out, dump("v3.0.2", `"complete"`), dump("dev", `"complete","partial"`), changelogOpen, testModule+"/v3")
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	if want := `  ~ read_range: output field status may now be "partial"` + "\n"; !strings.Contains(out.String(), want) {
+		t.Errorf("output %q does not name the new value as %q", out.String(), want)
 	}
 }
 
