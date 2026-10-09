@@ -1,9 +1,15 @@
 # Architecture — google-sheets-mcp
 
-**Status: v3.1.1 (2026-10-09):** the code of v3.1.0, republished so its Go module
-and its release binaries are one commit. v3.1.0 (2026-10-09): the 2026-10-08 gap analysis (cell comments,
-typed table columns, pivot rules, color scales), built, reviewed and run live:
-300 steps, none failed. v3.0.2 (2026-10-01): a write that may have landed is reported as
+**Status: v3.1.1 (2026-10-09), released and verified from outside:** checksums,
+the cosign signature and the provenance attestation, each also against a
+tampered copy, the version in the binary, the registry publish, and
+`go install …/v3/cmd/google-sheets-mcp@latest` resolving v3.1.1. It is the
+code of v3.1.0, republished so its Go module and its release binaries are one
+commit. v3.1.0's tag stays as it is: its Go module is an earlier commit than
+its binaries, the two differing only in this status line. v3.1.0
+(2026-10-09): the 2026-10-08 gap analysis (cell comments, typed table columns,
+pivot rules, color scales), built, reviewed and run live: 297 steps, none
+failed. v3.0.2 (2026-10-01): a write that may have landed is reported as
 `[ambiguous_outcome]` and never repeated. v3.0.0 (2026-09-30) was released and
 verified from outside: checksums, the cosign signature and the provenance
 attestation, each also against a tampered copy, the version in five places, the
@@ -18,16 +24,15 @@ gate holds — `$schema` at a release tag rather than a branch, with a
 floor under `manifest_version`. Spikes L, M, N and P ran
 against a real account and §18 carries what they found.
 
-**Unreleased: the live driver ran on 2026-10-09 evening, 297 steps, none
-failed, one undetermined** — Drive's content index, as in earlier runs. The
-typed-table steps ran in a spreadsheet of their own and all passed. The
-header row read the same after a typed add and after an update. The
-refusals of a formula into a header, a boolean column over text and a
-table over a formula heading held against Google, and Google refused
-`1.5` under `de_DE`. Spike T's third run answered Q5b and Q7's
-whole-cell format, and saw Q11's 500s again. Owed: spike T Q12 and Q13,
-each run alone (§15), and a live run of the newer dropdown refusal
-(§16).
+**Unreleased: spike T Q12 and Q13 are answered, each run alone on
+2026-10-09** (§15, §18). In a fresh spreadsheet, Google answered the
+fifth table add with column types HTTP 500 and took a plain add after it.
+`manage_range` now says so when such an add fails and nothing was added.
+Google refuses a data validation rule on a cell in a typed column, so
+`manage_range` refuses one on a dropdown column's cells before sending
+it. Owed: a live run of the dropdown refusal of v3.1.0 and of the new
+validation step (§16), spike T Q13b (§15), and a person reading the
+comma-locale color scale.
 
 **§17a.31 is closed, and closing it found a destructive hole in a
 shipped tool.** It was written as a cosmetic gap: `format_cells merge`
@@ -871,14 +876,25 @@ value.
 
   Typing a column dropdown, on add or update, is refused while a cell
   under its header has a data validation rule of its own. Google put the
-  table's list in place of a cell's own list and said nothing (spike T,
-  §18). The refusal names the cells and says to remove the rule with
-  `data_validation` `delete` first. The table's own list is not on its
-  cells, so a column already a dropdown is not refused over it. The
-  cells under every column typed boolean or dropdown come in one read,
-  after the header read, since a column named by its heading is known
-  only once the header is back. A column the update sends back unchanged
-  is not read.
+  table's list in place of a cell's own list and said nothing, on add
+  and on update (spike T Q1 and Q13, §18). The refusal names the cells
+  and says to remove the rule with `data_validation` `delete` first. The
+  table's own list is not on its cells, so a column already a dropdown is
+  not refused over it. The cells under every column typed boolean or
+  dropdown come in one read, after the header read, since a column named
+  by its heading is known only once the header is back. A column the
+  update sends back unchanged is not read: Google refuses a rule set on a
+  cell in a typed column (Q13), so a dropdown column's cells cannot have
+  gained one since it was typed.
+
+  `data_validation` `add` and `update` are refused over the cells under a
+  dropdown column's header, naming them and quoting Google's reason, "This
+  operation is not allowed on cells in typed columns." (spike T Q13,
+  §18). A dry run is refused the same way. The tables come from the card,
+  so the check costs no request. The refusal points at `table` `update`
+  with `column_types`, which is where a dropdown column's list is
+  changed. A column of another type, a header cell and a `delete` go to
+  Google as sent, since nothing has asked what Google does with them.
 
   An add reads the header row first, with the same mask, whether it
   types a column or not. It is refused while any header cell holds a
@@ -899,11 +915,15 @@ value.
   settled by a fresh read of the card, since a table has a name and a
   range. Where a table of the name and range sent is there, the result
   says Google answered with an error and the table was added. Where it
-  is not, the call is refused as `unavailable`, saying nothing was added
-  and the call can be repeated. Spike T saw Google fail every table add
-  in one spreadsheet after seven were taken, for a reason not known
-  (§18), so the refusal says a repeat may fail the same way. A read that
-  fails too leaves `ambiguous_outcome`.
+  is not, the call is refused as `unavailable`, saying nothing was added.
+  Spike T Q12 saw Google answer every table add with column types HTTP
+  500 after four in a fresh spreadsheet, and take an add without them
+  (§18). So where Google answered an add with column types, the refusal
+  says Google has refused such adds after about four in a spreadsheet,
+  and that an add without `column_types` was still taken. Whether the
+  columns can be typed after that is not known, and it says so. Any
+  other add it says can be repeated. A read that fails too leaves
+  `ambiguous_outcome`.
 
   **The conditional-format ops are here rather than on `format_cells`,
   which is a change from an earlier draft of this section.** A rule is
@@ -2052,7 +2072,8 @@ forgotten. Results go into §18.
   whether the refusals the fake makes are Google's, what a number value
   means under a comma-decimal locale, and what a percent or percentile
   value outside 0 to 100 does. Results in §18.
-- **T. Typed table columns** (**run three times, 2026-10-09**): whether a sparse
+- **T. Typed table columns** (**run three times, 2026-10-09, then Q12
+  and Q13 each alone**): whether a sparse
   `columnProperties` is taken on add, whether a dropdown with no rule is
   refused, whether an update with `fields=columnProperties` replaces the
   whole array, whether a column name sent, or left out, rewrites the
@@ -2098,8 +2119,21 @@ forgotten. Results go into §18.
   cells with a rule of their own: run alone with `-only T13`, it asks
   whether an update typing a column dropdown drops its cells' own lists,
   as Q1's add did, and whether an update sending a dropdown column back
-  unchanged drops a list a cell in it was given since. Owed: Q12 and
-  Q13.
+  unchanged drops a list a cell in it was given since.
+  Q12, run alone, answered the 500. In a fresh spreadsheet, four adds of
+  the driver's three typed columns were taken three seconds apart, and
+  the fifth was a 500. With the first table deleted it was a 500 again,
+  at once and a minute later, and a plain add with no column types was
+  then taken. So Google stops taking table adds with column types after
+  about four, here in a spreadsheet of one sheet. What it counts is not
+  known: Q11's spreadsheet took more, across two sheets (§18). Q13, run
+  alone, answered both. An update typing a column dropdown dropped the
+  lists its cells had of their own, as an add does. Google refused a
+  list on a cell of the dropdown column, "This operation is not allowed
+  on cells in typed columns.", so an update sending the column back has
+  no such list to drop. Q13b, in the same selector, asks whether a
+  rule's removal is refused there too, a rule over a range only half in
+  the column, and a rule on a column typed text. Owed: Q13b.
 - **U. Pivot grouping rules, filters and calculated values** (**run
   2026-10-09**, two answers owed): what Google answers for each refusal
   `manage_pivot_table` makes first — a value with an offset and a
@@ -2409,9 +2443,10 @@ refused `[not_found]` if it is still absent. The question is built only
 when it will be put or checked, so a client that cannot ask costs no
 extra read.
 
-**Unreleased: cell comments, color scales, typed table columns and pivot
-rules. Live run 2026-10-09 evening: 297 steps, 0 failed, 1
-undetermined**, the content search, undetermined in earlier phases too.
+**Cell comments, color scales, typed table columns and pivot rules
+(v3.1.0, republished as v3.1.1, both 2026-10-09). Live run 2026-10-09
+evening: 297 steps, 0 failed, 1 undetermined**, the content search,
+undetermined in earlier phases too.
 The transcript was read. The typed-table steps ran in
 a spreadsheet of their own, so no earlier table add could draw Google's
 500 there, and every one passed: the add of three typed columns was
@@ -2421,10 +2456,19 @@ the card showed the types. The refusals of a formula into a header, a
 boolean column over text and a table over a formula heading each came
 back as expected. Under `de_DE`, Google refused a color scale point of
 `1.5` and took `1,5`; which value `1,5` colors from is for a person to
-read in that spreadsheet. Owed before a release: a live run with the
-step added since, a dropdown typed over cells with a list of their own,
-which must be refused; spike T Q12 and Q13, each run alone (§15); and
-that reading of the comma-locale scale.
+read in that spreadsheet. Still owed: a live run of the step added
+since, a dropdown typed over cells with a list of their own, which must
+be refused; and that reading of the comma-locale scale. Spike T Q12 and
+Q13 ran alone the same evening (§15).
+
+**Unreleased: what Q12 and Q13 found, built in.** A table add with
+column types that Google answers HTTP 500, and that a read finds did not
+land, says Google has refused such adds after about four in a
+spreadsheet, and that an add without `column_types` was still taken
+(§7.5). `data_validation` `add` and `update` are refused over a dropdown
+column's cells with Google's reason, from the card's tables (§7.5). The
+live driver asks for that refusal on the typed table's dropdown column.
+Owed: a live run of it and of the step above, and spike T Q13b (§15).
 
 ## 17. Open decisions
 
@@ -3654,7 +3698,8 @@ verdicts quote what came back.
 **Typed table columns on `manage_range`, 2026-10-09**, read against the
 Sheets discovery document (revision 20261005), the tables guide and the
 Sheets help on tables, then put to Google by spike T on 2026-10-09,
-three times. The verdicts quote what came back. §15 says which answers are
+three times, and by its Q12 and Q13 each alone after. The verdicts quote
+what came back. §15 says which answers are
 still owed.
 
 | Convention | Verdict | Effect |
@@ -3662,7 +3707,8 @@ still owed.
 | A table column's index is the sheet's column index | **Refuted**: `columnIndex` is "relative to its position in the table and is not necessarily the same as the column index in the sheet" | `column_types` resolves a letter or a header against the table's range and sends the offset from its first column. A unit test over a table starting at B |
 | A dropdown column needs a `ONE_OF_LIST` rule, and no other type takes one | **Verified, spike T Q2**: a dropdown with no rule is `400 Invalid requests[0].addTable: Condition must be set for dropdown column type.`, and a `ONE_OF_LIST` rule on a `DOUBLE` column is `400 Invalid requests[0].addTable: Cannot set condition for non-dropdown column type.` | A dropdown always carries its list. The fake refuses both in Google's words. A rule that is not a list it refuses in its own, since nothing asked Google |
 | A sparse `columnProperties` is taken on add | **Verified, at a cost, spike T Q1**: `CURRENCY` on column 1 and `DROPDOWN` on column 3 of four, sent with no names, is a 200. Google named the two typed columns "Column 1" and "Column 2", counting the typed entries sent with no name, and wrote those names into their header cells, so "Amount" and "Status" were gone. The live run's add of three typed columns, number, date and dropdown, was taken by spike T's second run (Q11), and by `manage_range` on the live run of 2026-10-09 evening, each column named, in a spreadsheet of its own | An add sends each typed column with its header's text as its name (§7.5). The fake gives a typed entry with no name "Column N" and writes it into the header cell |
-| A table add Google has taken once is taken again | **Refuted, cause unknown, spike T Q11, second run**: on a new sheet of the spike's spreadsheet, the live run's add, number on B, date on C and a dropdown on D with no names, was a 200, and so were currency, number, date and text alone. Every add after those was `500 INTERNAL: Internal error encountered.` and made no table: percent, time, date-time, boolean and dropdown alone, all ten again with names, and the live run's add on a new sheet frozen as the driver's was. The spreadsheet held seven tables by then. The live run's add was a 500 after one table, added and deleted. Whether a count of tables, the time between adds or something else draws it is not known. The third run did the same: on a new sheet, the live run's add and currency, number, date and text alone were taken, and every add after those five was a 500, the spreadsheet holding eight tables by then. Q12, right after, met `429 RESOURCE_EXHAUSTED` on "Write requests per minute per user" on its first add, and a plain add a few seconds later was taken, which tells neither a count nor timing | On a 500, or a reply that never came, `manage_range` reads the card and says whether a table of the name and range sent is there: added, or nothing added and safe to repeat (§7.5). The live driver's typed-column steps make a spreadsheet of their own, and on the live run of 2026-10-09 evening their add was taken there. Owed: spike T Q12 adds tables three seconds apart in a fresh spreadsheet until one fails, then deletes one and tries again. It runs alone now, `-only T12`, a minute after any other spike's writes |
+| A table add Google has taken once is taken again | **Refuted, cause unknown, spike T Q11, second run**: on a new sheet of the spike's spreadsheet, the live run's add, number on B, date on C and a dropdown on D with no names, was a 200, and so were currency, number, date and text alone. Every add after those was `500 INTERNAL: Internal error encountered.` and made no table: percent, time, date-time, boolean and dropdown alone, all ten again with names, and the live run's add on a new sheet frozen as the driver's was. The spreadsheet held seven tables by then. The live run's add was a 500 after one table, added and deleted. Whether a count of tables, the time between adds or something else draws it is not known. The third run did the same: on a new sheet, the live run's add and currency, number, date and text alone were taken, and every add after those five was a 500, the spreadsheet holding eight tables by then. Q12, right after, met `429 RESOURCE_EXHAUSTED` on "Write requests per minute per user" on its first add, and a plain add a few seconds later was taken, which tells neither a count nor timing | On a 500, or a reply that never came, `manage_range` reads the card and says whether a table of the name and range sent is there: added, or nothing added (§7.5). The live driver's typed-column steps make a spreadsheet of their own, and on the live run of 2026-10-09 evening their add was taken there. Q12, the next row, ran alone to tell a count from timing |
+| A spreadsheet takes any number of table adds with column types | **Refuted, spike T Q12, run alone 2026-10-09**: in a fresh spreadsheet with one sheet, the live run's add, number on B, date on C and a dropdown on D, each named, was taken four times, three seconds apart, each on a block of its own. The fifth was `500 INTERNAL: Internal error encountered.` and made no table. With the first table deleted, the fifth was a 500 again, at once and a minute later. A plain add with no column types was then taken. What Google counts is not known. It is not tables there now, since a delete did not help. Nor is it typed adds in the spreadsheet alone: in Q11's, a typed add on one sheet and five on another were taken before the 500s began (third run, two on the first sheet). The live run's add of the afternoon was a 500 after a single table | When an add with column types meets a 500 and a read finds nothing added, `manage_range` says Google has refused such adds after about four in a spreadsheet, that deleting a table or waiting did not let another in, and that an add without `column_types` was still taken. Whether its columns can be typed after that is not known, and the result says so. Any other add that a read finds did not land is said to be safe to repeat. The fake has no such limit |
 | An update with `fields=columnProperties` replaces the whole array | **Verified, spike T Q3b, second run**: column 1 sent alone, named as read and typed `DATE`, over a table whose column 1 was `CURRENCY` and column 3 a dropdown of x, y and z, was a 200. Four entries read back: column 1 `DATE`, and the other three named by their headers with no type, the dropdown's list gone. Every update before it sent every column and read back four entries, not eight, so the list is not appended to either, whatever field_mask.proto says of a repeated field | The update reads the columns fresh and sends every one back. The fake replaces the whole list: a column left out keeps its header's text as its name and loses its type and list. A unit test holds the fake to Q3b, and the update's round trip test fails against it if the update sends fewer columns |
 | A column name sent, or left out, leaves the header cell alone | **Refuted, spike T Q1, Q3, Q4, Q5**: a name sent is written into its header cell; column 0 sent as "SPIKE-RENAMED" and A1 read "SPIKE-RENAMED" after. An update entry with no name is refused, `400 Invalid requests[0].updateTable: Table header row cell must have a value.`, for one column (Q3) and for every column (Q5). On add, a typed entry with no name has "Column N" written over its header (Q1) | An update sends every column's name as the same fresh read gave it, which Q6 shows is taken and leaves the header as it was. An add sends names too. The live run of 2026-10-09 evening read the header row unchanged after a typed add and after an update. The fake refuses an update entry with no name in Google's words, and writes a name sent into its header cell |
 | A name sent as read rewrites a header cell, if at all, with what it already shows | **Refuted for rich text, answered for a formula, spike T Q7, both runs**: `values.update` wrote a formula into B1, the header of a typed column, and answered 200. Google had already replaced it with "Column 2", B's place in the table, before any update, and the column took that name, in both runs. A table's header does not keep a formula written into it. C1 held "Flag" with its first two letters bold, read back as two `textFormatRuns`, the second with an empty format. An update sending every name as read, "Flag" included, left C1 holding "Flag" with no runs: the bold was gone. A format set on a whole header cell stays: A1, bold, italic and centered as a whole cell, read back the same after the update (third run). A number header was not asked | `write_values` refuses a formula into a table's header row (§7.3), as the live run of 2026-10-09 evening confirmed, and an add over one is refused (Q10, below), so no header written through the API holds one; the update's refusal over a formula header stays for one made some other way. An update is refused while any header cell holds rich text, and an add while the header of a column it types does; the header read asks for `textFormatRuns`, and a run counts only where it carries a format. The fake replaces a formula written into a header with "Column" and the column's place, and drops a header's runs when a name is written into it. It keeps the whole-cell format, as Google did. No refusal is needed for one |
@@ -3671,7 +3717,8 @@ still owed.
 | An entry with a name and no type is taken | **Verified, spike T Q8**: column 0 sent as "Item" with no type, the rest as read, is a 200, and the header is unchanged | The update sends one only for a column a read gave no entry |
 | A name sent as read leaves a smart chip in a header cell | **Refuted, spike T Q9**: a person chip written into D1 renamed its column to the chip's text. An update sending every name as read then left D1 holding that text, with no `chipRuns`: the chip was erased | An update is refused while any header cell holds a chip, and an add while the header of a column it types does |
 | A type changes how a column is shown, not what its cells hold | **Refuted, spike T Q1 and Q5, both runs**: after the add typed column B `CURRENCY`, B2 kept its value, 1.5, and its number format `0.000`, set before, read back as `CURRENCY`. After the add typed column D a dropdown, D2 read back with no `dataValidation`: the per-cell list of x, y and z set before was gone. An update typing column C `BOOLEAN`, names sent, turned C2:C4, which held "maybe", nothing and the text "TRUE" written raw, into FALSE, FALSE and FALSE | A boolean column is refused over anything but a TRUE or FALSE value, text reading TRUE included, and the refusal says what Google does; the live run of 2026-10-09 evening got it over a column of words. The fake turns text and empty cells under a boolean typing into FALSE. A dropdown typing is refused while a cell under its header has a rule of its own, naming the cells, and the fake drops such a rule. D2 carried no rule after the add, the table's list included, so a column already a dropdown is not refused over it. The live driver sets a list on two cells and expects the refusal |
-| An update typing a column dropdown drops its cells' own rules, as an add does | **Unverified**: only an add was asked (Q1). Nor is it known whether an update that sends a dropdown column back unchanged drops a rule a cell in it was given since | `manage_range` refuses the update as it refuses the add, for the columns it types; a column sent back unchanged is not read. The fake drops the rules under every dropdown entry an update sends. Owed: spike T Q13 gives two cells of a table column lists of their own and types the column dropdown, then gives a cell of that dropdown column a list and sends every column back as read |
+| An update typing a column dropdown drops its cells' own rules, as an add does | **Verified, spike T Q13, run alone 2026-10-09**: B2:B3, inside a plain table over A1:B4, held lists of Open and Done of their own. An update typing B `DROPDOWN` with a list of its own, every column named as read, was a 200, and B2:B3 read back with no `dataValidation`. Whether an update sending a dropdown column back unchanged drops a list a cell in it was given since cannot arise: Google refuses such a list (next row) | `manage_range` refuses the update as it refuses the add, for the columns it types; a column sent back unchanged is not read. The fake drops the rules under every dropdown entry an update sends |
+| A data validation rule may be set on a cell in a typed column | **Refuted for a dropdown column, spike T Q13**: a list of x and y on B4, inside the dropdown column, was `400 Invalid requests[0].setDataValidation: This operation is not allowed on cells in typed columns.`, and B4 read back with no rule. An update sending every column back as read left it with none. A column of another type, a range only half in the column, a header cell and a rule's removal were not asked | `manage_range` `data_validation` `add` and `update` are refused over the cells under a dropdown column's header, a dry run included, naming them and quoting Google, from the tables on the card (§7.5). A range half in the column is refused over the half in it, as Google's message suggests. The rest go to Google as sent. The fake refuses a rule over a dropdown column's cells in Google's words, a range reaching them included. Owed: spike T Q13b asks a rule's removal there, a rule over A3:B3 half in the column, and a rule on a column typed text. The live driver asks for the refusal on its typed table |
 | A TRUE or FALSE value is kept under a boolean typing | **Verified, spike T Q5b, third run**: J2:J4 held the values TRUE, FALSE and TRUE, read back as `boolValue`, not text. An update typing J `BOOLEAN`, both columns named, left them TRUE, FALSE and TRUE. An add over L1:M4 typing M `BOOLEAN`, named "Done", turned M2:M4, which held TRUE, "maybe" and nothing, into TRUE, FALSE and FALSE: an add does to a word and an empty cell what an update does | `manage_range` lets a TRUE or FALSE value through and refuses text, on add and on update, so the refusal over text is right and a true or false value needs none. The fake keeps a TRUE or FALSE value, and turns text and empty cells into FALSE, on add and on update |
 | A chip column read back is taken back unchanged | **Unverified, not asked**: the chip types are in the enum, and nothing says whether a request may carry one. Spike T made no chip column, so the array Q6 sent back carried none | `manage_range` never sets a chip type, and an update sends a chip column back as it read |
 

@@ -577,32 +577,44 @@ func TestDeletingAPlainTableIsNotHeldBack(t *testing.T) {
 }
 
 // TestATableAddGoogleFailedIsSettledByARead is an add answered HTTP 500,
-// which says nothing of whether it ran. Spike T Q11 saw a run of them make
-// no table. A table has a name and a range, so a read afterwards says
-// which: nothing added, or added after all. Anything else, and a read
-// that fails too, stay [ambiguous_outcome].
+// which says nothing of whether it ran. A table has a name and a range,
+// so a read afterwards says which: nothing added, or added after all.
+// Spike T Q12 saw Google answer every add with column types after the
+// fourth in a spreadsheet that way, and take an add without them; when
+// Google answered an add with column types, the refusal says so. Anything
+// else, and a read that fails too, stay [ambiguous_outcome].
 func TestATableAddGoogleFailedIsSettledByARead(t *testing.T) {
 	const internal = `{"error":{"code":500,"message":"Internal error encountered.","status":"INTERNAL"}}`
 	const ambiguous = "[ambiguous_outcome] ambiguous outcome: spreadsheets.batchUpdate may have been applied; read " +
 		"the spreadsheet before repeating it, since a repeat could apply it twice (google api " +
 		"spreadsheets.batchUpdate: HTTP 500 INTERNAL: Internal error encountered.)"
+	failed := sheetstest.Failure{Status: 500, Body: internal}
+	landed := sheetstest.Failure{Status: 500, Body: internal, Applied: true}
+	typed := []string{"Bractal number"}
 	for _, tc := range []struct {
 		name    string
 		action  string
-		applied bool
+		columns []string
+		failure sheetstest.Failure
 		getFail bool
 		want    string
 	}{
-		{"nothing added", service.RangeAdd, false, false,
+		{"nothing added", service.RangeAdd, nil, failed, false,
 			`[unavailable] Google answered HTTP 500 INTERNAL (Internal error encountered). A read afterwards finds ` +
-				`no table called "Trennow" on A1:B3, so nothing was added and the call can be repeated. Once Google ` +
-				`has failed a table add this way, it has been seen to fail every later one in the same spreadsheet, ` +
-				`for a reason not known`},
-		{"added after all", service.RangeAdd, true, false,
+				`no table called "Trennow" on A1:B3, so nothing was added and the call can be repeated`},
+		{"nothing added, with column types", service.RangeAdd, typed, failed, false,
+			`[unavailable] Google answered HTTP 500 INTERNAL (Internal error encountered). A read afterwards finds ` +
+				`no table called "Trennow" on A1:B3, so nothing was added. Google has refused table adds with column ` +
+				`types in a spreadsheet after about four of them, and deleting a table or waiting did not let another ` +
+				`in. An add without column_types was still taken; whether its columns can be typed after that is not known`},
+		{"no answer, with column types", service.RangeAdd, typed, sheetstest.Failure{Cut: true}, false,
+			`[unavailable] The call ended before Google answered. A read afterwards finds no table called "Trennow" ` +
+				`on A1:B3, so nothing was added and the call can be repeated`},
+		{"added after all", service.RangeAdd, nil, landed, false,
 			"Done: 1 change(s) to 'Ürväl'!A1:B3.\n  table added — Trennow\n\n" +
 				"Google answered HTTP 500 INTERNAL (Internal error encountered), and a read afterwards found the change made.\n"},
-		{"the read fails too", service.RangeAdd, false, true, ambiguous},
-		{"a rename", service.RangeUpdate, false, false, ambiguous},
+		{"the read fails too", service.RangeAdd, nil, failed, true, ambiguous},
+		{"a rename", service.RangeUpdate, nil, failed, false, ambiguous},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := sheetstest.Standard(t)
@@ -614,7 +626,7 @@ func TestATableAddGoogleFailedIsSettledByARead(t *testing.T) {
 			if _, err := svc.Card(ctx, sheetstest.FixtureID); err != nil {
 				t.Fatal(err)
 			}
-			srv.FailOnce("spreadsheets.batchUpdate", sheetstest.Failure{Status: 500, Body: internal, Applied: tc.applied})
+			srv.FailOnce("spreadsheets.batchUpdate", tc.failure)
 			if tc.getFail {
 				// The add's read of the header row goes through; the read
 				// after the 500 does not.
@@ -626,6 +638,7 @@ func TestATableAddGoogleFailedIsSettledByARead(t *testing.T) {
 				req.Range = "A1:D3"
 			}
 			req.Name = "Trennow"
+			req.ColumnTypes = tc.columns
 			res, err := svc.ManageRange(ctx, req)
 			got := ""
 			if err != nil {
@@ -1210,6 +1223,48 @@ func TestADropdownColumnIsRefusedOverCellsWithTheirOwnRule(t *testing.T) {
 			if batched(srv) {
 				t.Fatalf("%s, dry_run=%v: a refused dropdown column reached the wire", tc.action, dryRun)
 			}
+		}
+	}
+}
+
+// TestARuleOnADropdownColumnsCellsIsRefused is spike T Q13: Google refuses
+// a data validation rule on a cell under a dropdown column's header. On
+// add and on update, a dry run and a range reaching past the column
+// included, the call is refused before anything is sent, naming the cells
+// in the column and quoting Google. A rule under the table and a rule's
+// removal go through.
+func TestARuleOnADropdownColumnsCellsIsRefused(t *testing.T) {
+	const reason = `, which is typed dropdown, and Google sets no data validation rule on a cell in a typed ` +
+		`column: "This operation is not allowed on cells in typed columns." To change the column's list, use ` +
+		`kind table, action update and column_types`
+	for _, tc := range []struct {
+		action  string
+		rangeA1 string
+		dryRun  bool
+		want    string
+	}{
+		{service.RangeAdd, "C2:C3", false, `[invalid] C2:C3 is in the column "Status" of the table "Trennow"` + reason},
+		{service.RangeUpdate, "B3:C5", false, `[invalid] C3 is in the column "Status" of the table "Trennow"` + reason},
+		{service.RangeAdd, "C2", true, `[invalid] C2 is in the column "Status" of the table "Trennow"` + reason},
+		{service.RangeAdd, "C4:C5", false, ""},
+		{service.RangeDelete, "C2:C3", false, ""},
+	} {
+		srv := sheetstest.Standard(t)
+		seedTypedTable(srv)
+		req := rangeReq(service.RangeValidation, tc.action, tc.rangeA1)
+		req.Condition = "one_of_list"
+		req.Values = []string{"Open", "Done"}
+		req.DryRun = tc.dryRun
+		_, err := newService(t, srv).ManageRange(context.Background(), req)
+		got := ""
+		if err != nil {
+			got = err.Error()
+		}
+		if got != tc.want {
+			t.Errorf("%s on %s, dry_run=%v: error =\n%s\nwant\n%s", tc.action, tc.rangeA1, tc.dryRun, got, tc.want)
+		}
+		if tc.want != "" && batched(srv) {
+			t.Errorf("%s on %s: a refused rule reached the wire", tc.action, tc.rangeA1)
 		}
 	}
 }

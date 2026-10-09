@@ -5,6 +5,11 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+
+- `manage_range` `table` `add` with `column_types` says why when Google answers with an internal error (HTTP 500) and nothing was added: Google has refused table adds with column types after about four in one spreadsheet, and an add without `column_types` was still taken. Whether the columns can be typed after that is not known, and the result says so. It used to say only that Google had been seen to fail every later table add, for a reason not known.
+- `manage_range` `data_validation` `add` and `update` are refused before anything is sent over the cells of a table's dropdown column, naming the cells, and a dry run says so. Google refuses a rule there: "This operation is not allowed on cells in typed columns." The refusal says to change the column's list with `table` `update` and `column_types`.
+
 ## [3.1.1] - 2026-10-09
 
 ### Fixed

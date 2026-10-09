@@ -341,10 +341,20 @@ func unmergeCells(d *Doc, req *gsheets.UnmergeCellsRequest) error {
 }
 
 // setValidation puts a rule on every cell of a rectangle, or clears it.
+//
+// A rule on a cell under a dropdown column's header is refused in
+// Google's words (spike T Q13, 2026-10-09). A rule reaching such a cell
+// from a wider range is believed refused the same way. A column of
+// another type, a header cell and a rule's removal are let through:
+// nothing has asked.
 func setValidation(d *Doc, req *gsheets.SetDataValidationRequest) error {
 	sh, rect, err := sheetForRange(d, req.Range)
 	if err != nil {
 		return err
+	}
+	if req.Rule != nil && inDropdownColumn(sh, rect) {
+		//nolint:staticcheck // Google's own wording, kept verbatim
+		return errors.New("Invalid requests[0].setDataValidation: This operation is not allowed on cells in typed columns.")
 	}
 	for row := rect.FirstRow; row <= rect.LastRow; row++ {
 		for col := rect.FirstCol; col <= rect.LastCol; col++ {
@@ -360,6 +370,24 @@ func setValidation(d *Doc, req *gsheets.SetDataValidationRequest) error {
 		}
 	}
 	return nil
+}
+
+// inDropdownColumn reports whether a rectangle reaches a cell under the
+// header of a column typed dropdown.
+func inDropdownColumn(sh *Sheet, rect a1.Rect) bool {
+	for _, t := range sh.Tables {
+		table := a1.FromGridRange(t.Range)
+		for _, c := range t.ColumnProperties {
+			if c.ColumnType != gsheets.ColumnDropdown || table.Rows() < 2 {
+				continue
+			}
+			col := table.FirstCol + c.ColumnIndex
+			if rect.Overlaps(a1.Rect{FirstRow: table.FirstRow + 1, FirstCol: col, LastRow: table.LastRow, LastCol: col}) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func addNamedRange(d *Doc, req *gsheets.AddNamedRangeRequest) (*gsheets.Reply, bool, error) {
@@ -551,8 +579,9 @@ func addTable(d *Doc, req *gsheets.AddTableRequest) (*gsheets.Reply, bool, error
 // table's list is not put on the cell either.
 //
 // Spike T Q1, 2026-10-09: an add typing column D a dropdown over D2:D4,
-// which had a list of their own, read D2 back with no dataValidation. An
-// update is believed to do the same; nothing has answered it.
+// which had a list of their own, read D2 back with no dataValidation. Q13:
+// an update typing B a dropdown over B2:B3, which had lists of their own,
+// read both back with none.
 func dropdowns(sh *Sheet, rect a1.Rect, columns []*gsheets.TableColumn) {
 	for _, c := range columns {
 		if c.ColumnType != gsheets.ColumnDropdown {

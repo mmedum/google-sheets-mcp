@@ -596,13 +596,13 @@ const (
 )
 
 // typedTablesAll makes a spreadsheet of its own for the typed-column
-// steps. Spike T Q11 saw every table add in one spreadsheet answered
-// HTTP 500 after earlier ones were taken, for a reason not known (§18),
-// so the table steps before these could fail them.
+// steps. Spike T Q12 saw Google answer every table add with column types
+// HTTP 500 after about four in one spreadsheet (§18), so table steps
+// before these could fail them.
 func (d *driver) typedTablesAll() {
 	d.run(step{
 		name: "a spreadsheet of its own for the typed table",
-		why:  "earlier table adds in a spreadsheet may be what makes Google fail a later one with a 500 (§18)",
+		why:  "Google refuses table adds with column types after about four in one spreadsheet, with a 500 (§18)",
 		tool: "create_spreadsheet",
 		args: map[string]any{"title": scratchTitle + " typed tables", "sheets": []any{typedSheet}},
 		check: func(_ string, s map[string]any) error {
@@ -626,8 +626,8 @@ func (d *driver) typedTablesAll() {
 // round trip, the header cells with them. Google replaces the whole list
 // on update (spike T Q3b), so the update sends every column. A formula
 // into the header is refused, since Google would replace it, and so is a
-// dropdown over cells with a list of their own, which Google would drop
-// (spike T).
+// dropdown over cells with a list of their own, which Google would drop,
+// and a list on a dropdown column's cells, which Google refuses (spike T).
 // What a type does to the cells is partly unverified (§18), and the
 // steps print it.
 func (d *driver) typedColumnSteps() []step {
@@ -822,6 +822,23 @@ func (d *driver) typedColumnSteps() []step {
 			check: func(text string, _ map[string]any) error {
 				if !strings.Contains(text, "J2, J3") || !strings.Contains(text, "data validation rules of their own") {
 					return fmt.Errorf("the refusal does not name the cells and their rules: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "a list on the dropdown column's cells is refused",
+			why: "spike T Q13: Google refuses a data validation rule on a cell in a typed column (§18), so the " +
+				"call stops before it is sent, naming the cells; the card's column types are what it reads",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "D2:D4",
+				"kind": "data_validation", "action": "add", "condition": "one_of_list", "values": []any{"x", "y"},
+			},
+			expectError: "invalid",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "D2:D4") || !strings.Contains(text, "not allowed on cells in typed columns") {
+					return fmt.Errorf("the refusal does not name the cells and Google's reason: %s", text)
 				}
 				return nil
 			},
