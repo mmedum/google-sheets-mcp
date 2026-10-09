@@ -1,6 +1,6 @@
 {
   "server": "google-sheets-mcp",
-  "version": "v3.1.1",
+  "version": "v3.1.2",
   "sdk": "v1.8.0",
   "tools": [
     {

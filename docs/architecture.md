@@ -1,6 +1,9 @@
 # Architecture — google-sheets-mcp
 
-**Status: v3.1.1 (2026-10-09), released and verified from outside:** checksums,
+**Status: v3.1.2 (2026-10-10):** a clearer answer when Google refuses a typed
+table add, and a refusal of a validation rule on a dropdown column's cells;
+run live first: 301 steps, none failed. v3.1.1 (2026-10-09), released and
+verified from outside: checksums,
 the cosign signature and the provenance attestation, each also against a
 tampered copy, the version in the binary, the registry publish, and
 `go install …/v3/cmd/google-sheets-mcp@latest` resolving v3.1.1. It is the
