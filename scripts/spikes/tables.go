@@ -74,7 +74,12 @@ import (
 //
 // Q12. Is it a count? In a fresh spreadsheet, the driver's add, a few
 // seconds apart, until one fails or twelve are taken; then one table
-// goes and the failed add is tried again.
+// goes and the failed add is tried again. It is a selector of its own,
+// -only T12, since the third run's first add met the per-minute write
+// quota right after Q11.
+//
+// The third run answered Q5b, a TRUE or FALSE value is kept, and Q7's
+// whole-cell format, which stays (§18).
 func spikeT(ctx context.Context) {
 	sec("Spike T: typed table columns, and what an update does to them")
 	const sheet = "SpikeTables"
@@ -295,7 +300,6 @@ func spikeT(ctx context.Context) {
 	cellsWhole(ctx, "  F1 after the add: formula kept?", a1.QuoteSheet(sheet)+"!F1")
 
 	spikeT11(ctx)
-	spikeT12(ctx)
 }
 
 // spikeT13 asks what an update does to cells with a data validation rule
@@ -521,8 +525,13 @@ var typedSeed = [][]any{
 // and the failed add is tried again: taken means a count. If not, it is
 // tried once more a minute later, which is timing if taken. A plain add
 // with no types comes last, to say whether typing matters.
+//
+// Run it alone, with -only T12, a minute after any other spike's writes.
+// The third run's first add here answered 429 on the per-minute write
+// quota, right after Q11, and a plain add after it was taken, so it said
+// nothing about a count.
 func spikeT12(ctx context.Context) {
-	line("")
+	sec("Spike T Q12: whether a spreadsheet takes only so many table adds")
 	line("  Q12: how many adds a fresh spreadsheet takes, and whether one table fewer lets the next in")
 	title := "spike scratch tables " + time.Now().UTC().Format("2006-01-02 15:04:05")
 	status, body := call(ctx, http.MethodPost, sheetsBase+"/spreadsheets", map[string]any{

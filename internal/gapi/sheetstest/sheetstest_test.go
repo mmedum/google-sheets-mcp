@@ -595,7 +595,7 @@ func TestUpdateTableReplacesTheColumnsWhole(t *testing.T) {
 
 // TestABooleanColumnTurnsTextAndEmptyCellsFalse is spike T Q5: typing a
 // column boolean turned a word, the text "TRUE" and an empty cell into
-// FALSE. A cell already TRUE is believed kept, which spike T still asks.
+// FALSE. A cell already TRUE was kept (Q5b).
 func TestABooleanColumnTurnsTextAndEmptyCellsFalse(t *testing.T) {
 	srv := Standard(t)
 	sh := srv.Doc(FixtureID).Find(SecondSheet)
@@ -671,8 +671,8 @@ func TestADropdownColumnDropsTheCellsOwnRules(t *testing.T) {
 
 // TestANameWrittenIntoAHeaderDropsItsRichText is spike T Q7: an update
 // sending "Flag" back as read left the cell holding "Flag" with no runs,
-// where two of its letters had been bold. Its whole-cell format is
-// believed to stay, which spike T still asks.
+// where two of its letters had been bold. Its whole-cell format stayed
+// (Q7, third run).
 func TestANameWrittenIntoAHeaderDropsItsRichText(t *testing.T) {
 	srv := Standard(t)
 	sh := srv.Doc(FixtureID).Find(FirstSheet)

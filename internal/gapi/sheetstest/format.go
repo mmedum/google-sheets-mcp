@@ -567,13 +567,14 @@ func dropdowns(sh *Sheet, rect a1.Rect, columns []*gsheets.TableColumn) {
 }
 
 // checkboxes is what typing a column boolean does to the cells under its
-// header: text and empty cells become FALSE.
+// header: text and empty cells become FALSE, and a TRUE or FALSE value
+// stays.
 //
 // Spike T Q5, 2026-10-09: an update typing a column BOOLEAN turned
-// "maybe", the text "TRUE" and an empty cell into FALSE. What it does to
-// a number, a formula or a cell already TRUE is not known, so those are
-// left as they are. An add is believed to do the same; nothing has
-// answered it, since Q11's boolean add was a 500.
+// "maybe", the text "TRUE" and an empty cell into FALSE. Q5b: an update
+// kept TRUE, FALSE and TRUE values, and an add kept TRUE and turned
+// "maybe" and an empty cell into FALSE. What it does to a number or a
+// formula is not known, so those are left as they are.
 func checkboxes(sh *Sheet, rect a1.Rect, columns []*gsheets.TableColumn) {
 	for _, c := range columns {
 		if c.ColumnType != gsheets.ColumnBoolean {
@@ -596,8 +597,8 @@ func checkboxes(sh *Sheet, rect a1.Rect, columns []*gsheets.TableColumn) {
 // writeHeader writes a column's name into its header cell as plain
 // text, which is what Google does with a name it is sent: the text
 // stays, and a smart chip and rich text's runs go (spike T Q4, Q7 and
-// Q9). The cell's whole-cell format and its note are believed to stay;
-// nothing has asked.
+// Q9). The cell's whole-cell format stays (Q7, third run). Its note is
+// believed to stay; nothing has asked.
 func writeHeader(sh *Sheet, row, col int, name string) {
 	cell := sh.At(row, col)
 	if cell == nil {

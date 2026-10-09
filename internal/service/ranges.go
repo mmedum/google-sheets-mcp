@@ -471,9 +471,9 @@ func (s *Service) typedColumns(ctx context.Context, ref Reference, props *gsheet
 // A boolean column shows checkboxes. Spike T Q5 typed one over "maybe",
 // the text "TRUE" and an empty cell, and all three became FALSE: a word
 // is lost with nothing said, and text that reads TRUE is not a true
-// value. What it does to a number or a formula is not known, so they are
-// refused too. A cell already TRUE or FALSE is believed kept (§18); spike
-// T asks.
+// value. A TRUE or FALSE value was kept, on update and on add (Q5b), and
+// is let through. What it does to a number or a formula is not known, so
+// they are refused too.
 //
 // A dropdown column brings the table's list. Spike T Q1 typed one over
 // cells with a list of their own, and the cells' own rule was gone after,
