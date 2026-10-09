@@ -243,6 +243,17 @@ func (s *Service) editComment(ctx context.Context, id string, req ManageCommentR
 	return res, nil
 }
 
+// notThere is the answer to a delete of a thread or a reply the read
+// before it did not find. rec is the thread, where it is a reply that
+// is not there.
+func notThere(id, commentID, postID string, rec *CommentRecord, dryRun bool) *DeleteCommentResult {
+	return &DeleteCommentResult{
+		Spreadsheet: id, CommentID: commentID, PostID: postID, Thread: rec,
+		Deleted: true, Gone: true, DryRun: dryRun,
+		Summary: render.CommentNotThere(commentID, postID),
+	}
+}
+
 // DeleteCommentRequest is what delete_cell_comment asks for.
 type DeleteCommentRequest struct {
 	Spreadsheet string
@@ -260,7 +271,7 @@ type DeleteCommentResult struct {
 	PostID      string         `json:"post_id,omitempty" jsonschema:"the reply deleted, when only a reply was"`
 	Thread      *CommentRecord `json:"thread" jsonschema:"the thread as it was before the delete"`
 	Deleted     bool           `json:"deleted" jsonschema:"true when it is gone now"`
-	Gone        bool           `json:"gone,omitempty" jsonschema:"Google answered that it was already gone"`
+	Gone        bool           `json:"gone,omitempty" jsonschema:"it was already gone: Google answered so, or the read before the delete did not find it"`
 	DryRun      bool           `json:"dry_run,omitempty" jsonschema:"true when nothing was sent"`
 }
 
@@ -271,17 +282,26 @@ func (r DeleteCommentResult) Render() string { return r.Summary }
 // reply. Registered only with GSHEETS_ENABLE_DESTRUCTIVE=true, it needs
 // confirm and asks the person, because Sheets cannot bring a deleted
 // comment back. Resolving keeps it, and is usually what is wanted.
+//
+// A thread or a reply the read does not find is reported gone, which is
+// what a repeat delete asked for, and nothing is sent or asked. Google
+// answers a repeat and an id it never had with the same 404, and a read
+// shows neither (spike R), so a mistyped id reads as gone too; the
+// summary says it may be either.
 func (s *Service) DeleteComment(ctx context.Context, req DeleteCommentRequest) (*DeleteCommentResult, error) {
 	ref, err := s.Resolve(ctx, req.Spreadsheet)
 	if err != nil {
 		return nil, err
 	}
+	postID := strings.TrimSpace(req.PostID)
 	rec, err := s.findThread(ctx, ref.ID, req.CommentID)
+	if se := (*Error)(nil); errors.As(err, &se) && se.Class == "not_found" {
+		return notThere(ref.ID, strings.TrimSpace(req.CommentID), postID, nil, req.DryRun), nil
+	}
 	if err != nil {
 		return nil, err
 	}
 	res := &DeleteCommentResult{Spreadsheet: ref.ID, CommentID: rec.CommentID, Thread: &rec}
-	postID := strings.TrimSpace(req.PostID)
 	target := &rec.Posts[0]
 	switch {
 	case postID == rec.Posts[0].PostID:
@@ -290,7 +310,7 @@ func (s *Service) DeleteComment(ctx context.Context, req DeleteCommentRequest) (
 	case postID != "":
 		i := rec.postIndex(postID)
 		if i < 0 {
-			return nil, Errorf("not_found", "thread %s has no reply %q; read_cell_comments lists each post's id", rec.CommentID, postID)
+			return notThere(ref.ID, rec.CommentID, postID, &rec, req.DryRun), nil
 		}
 		target, res.PostID = &rec.Posts[i], postID
 	}

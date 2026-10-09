@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -471,9 +472,6 @@ func TestDeleteCommentRefusesWhatGoogleWould(t *testing.T) {
 			"forbidden", "John Doe wrote it"},
 		{"somebody else's reply", service.DeleteCommentRequest{CommentID: sheetstest.FixtureCommentID,
 			PostID: sheetstest.FixtureReplyID, Confirm: true}, "forbidden", "John Doe wrote it"},
-		{"an unknown reply", service.DeleteCommentRequest{CommentID: sheetstest.FixtureCommentID, PostID: "AAAAnopost",
-			Confirm: true}, "not_found", "has no reply"},
-		{"an unknown thread", service.DeleteCommentRequest{CommentID: "AAAAnothread", Confirm: true}, "not_found", "no comment thread"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, svc := destructive(t)
@@ -508,6 +506,51 @@ func TestADeleteFoundGoneIsDone(t *testing.T) {
 	}
 	if !res.Deleted || !res.Gone || !strings.Contains(res.Summary, "was already gone") {
 		t.Errorf("result = %+v", res)
+	}
+}
+
+// A repeat delete finds nothing to delete, which is what it asked for
+// (spike R): it is reported gone, and nothing is sent or asked. Google
+// answers a repeat and an id it never had with the same 404, and a read
+// shows neither, so the summary says it may be either.
+func TestARepeatDeleteIsReportedGone(t *testing.T) {
+	for _, tc := range []struct {
+		name, post, says string
+	}{
+		{"a thread", "", "This spreadsheet has no comment thread " + sheetstest.FixtureCommentID + " now, so nothing " +
+			"was sent: it is already gone, or it was never one of this spreadsheet's. read_cell_comments lists the " +
+			"threads it has.\n"},
+		{"a reply", "mine", "Thread " + sheetstest.FixtureCommentID + " has no reply %s now, so nothing was sent: " +
+			"it is already gone, or it was never one of this thread's. read_cell_comments lists each post's id.\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, svc := destructive(t)
+			req := service.DeleteCommentRequest{Spreadsheet: sheetstest.FixtureID, CommentID: sheetstest.FixtureCommentID, Confirm: true}
+			says := tc.says
+			if tc.post != "" {
+				mine, err := manage(svc, service.ManageCommentRequest{Action: "reply", CommentID: sheetstest.FixtureCommentID, Text: "Ignore this."})
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.PostID, says = mine.PostID, fmt.Sprintf(tc.says, mine.PostID)
+			}
+			asked := 0
+			ctx := service.WithAsker(context.Background(), askCounter{&asked})
+			if _, err := svc.DeleteComment(ctx, req); err != nil {
+				t.Fatalf("the first delete: %v", err)
+			}
+			sent := len(batchBodies(srv))
+			res, err := svc.DeleteComment(ctx, req)
+			if err != nil {
+				t.Fatalf("the repeat: %v", err)
+			}
+			if !res.Deleted || !res.Gone || res.Summary != says {
+				t.Errorf("result = %+v\nsummary %q\nwant    %q", res, res.Summary, says)
+			}
+			if len(batchBodies(srv)) != sent || asked != 1 {
+				t.Errorf("the repeat sent %d batches and asked %d times in all", len(batchBodies(srv))-sent, asked)
+			}
+		})
 	}
 }
 

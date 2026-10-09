@@ -312,6 +312,18 @@ func CommentDeleted(c Comment, postID string, gone bool) string {
 	return fmt.Sprintf("Deleted %s.\n", CommentTarget(c, postID))
 }
 
+// CommentNotThere reports a delete of a thread or a reply the read
+// before it did not find. Google answers a repeat delete and an id it
+// never had alike (spike R), so this says both.
+func CommentNotThere(commentID, postID string) string {
+	if postID != "" {
+		return fmt.Sprintf("Thread %s has no reply %s now, so nothing was sent: it is already gone, or it was never "+
+			"one of this thread's. read_cell_comments lists each post's id.\n", commentID, postID)
+	}
+	return fmt.Sprintf("This spreadsheet has no comment thread %s now, so nothing was sent: it is already gone, or "+
+		"it was never one of this spreadsheet's. read_cell_comments lists the threads it has.\n", commentID)
+}
+
 // AskDeleteComment asks before delete_cell_comment.
 func AskDeleteComment(spreadsheetID, spreadsheet string, c Comment, postID string) Question {
 	what := "the comment thread on " + quoted(c.where(), quotedLen)

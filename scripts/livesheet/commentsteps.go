@@ -388,6 +388,19 @@ func (d *driver) commentDeleteSteps() []step {
 			args: map[string]any{"spreadsheet": d.spreadsheet, "comment_id": d.commentID, "confirm": true},
 		},
 		{
+			name: "a repeat delete reports it gone",
+			why: "Google answers a repeat with 404 (spike R), and the read before the delete no longer has the " +
+				"thread, so it is reported gone and nothing is sent",
+			tool: "delete_cell_comment",
+			args: map[string]any{"spreadsheet": d.spreadsheet, "comment_id": d.commentID, "confirm": true},
+			check: func(text string, s map[string]any) error {
+				if gone, _ := s["gone"].(bool); !gone || !strings.Contains(text, "already gone") {
+					return fmt.Errorf("the repeat is not reported gone:\n%s", text)
+				}
+				return nil
+			},
+		},
+		{
 			name: "it is gone",
 			why:  "the claim is about what Google holds now",
 			tool: "read_cell_comments",

@@ -80,7 +80,8 @@ func registerComments(s *mcp.Server, d Deps) {
 		Description: "Delete a comment thread with its replies, or one reply with post_id. Sheets cannot bring it back, " +
 			"and resolving with manage_cell_comment usually does what is wanted while keeping it. Google lets only the " +
 			"author delete, and does not delete a reply that resolved, reopened or assigned the thread. confirm is required; " +
-			"dry_run shows what would go.",
+			"dry_run shows what would go. A thread or reply that is not there is reported gone, and nothing is sent: " +
+			"Google cannot tell one already deleted from an id it never had.",
 		Kind: Destructive,
 		Asks: true,
 		Handle: func(ctx context.Context, in DeleteCommentInput) (*service.DeleteCommentResult, error) {
