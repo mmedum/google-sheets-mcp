@@ -674,31 +674,39 @@ func updateTable(d *Doc, req *gsheets.UpdateTableRequest) error {
 	return errors.New("No table with id: " + t.TableID)
 }
 
-// replaceColumns is columnProperties under a mask: the whole array is
-// replaced, and a column the request leaves out loses its type.
+// replaceColumns is columnProperties under a mask: the whole list is
+// replaced, and a column the request leaves out loses its type and its
+// dropdown's list, and keeps its header's text as its name.
 //
 // Spike T, 2026-10-09: an entry with no name is refused, in the words
 // below (Q3, Q5), and a name sent is written into its header cell (Q4).
-// That a partial array replaces the whole one, where field_mask.proto
-// says a repeated field is appended to, is a belief: every update Google
-// took sent every column, and read back one entry a column, so it is
-// not appended to (§18).
+// Q3b sent column 1 alone, named and typed DATE, over a table whose
+// column 1 was CURRENCY and column 3 a dropdown with its list; four
+// entries read back, the three left out named by their headers with no
+// type, and the dropdown's list gone.
 func replaceColumns(sh *Sheet, table *gsheets.Table, columns []*gsheets.TableColumn) ([]*gsheets.TableColumn, error) {
 	rect := clamp(sh, a1.FromGridRange(table.Range))
 	if err := checkColumns("updateTable", columns, rect.Cols()); err != nil {
 		return nil, err
 	}
-	out := make([]*gsheets.TableColumn, 0, len(columns))
+	sent := map[int]*gsheets.TableColumn{}
 	for _, c := range columns {
 		if c.ColumnName == "" {
 			//nolint:staticcheck // Google's own wording, kept verbatim
 			return nil, errors.New("Invalid requests[0].updateTable: Table header row cell must have a value.")
 		}
-		column := *c
-		out = append(out, &column)
+		sent[c.ColumnIndex] = c
 	}
-	for _, c := range out {
-		writeHeader(sh, rect.FirstRow, rect.FirstCol+c.ColumnIndex, c.ColumnName)
+	out := make([]*gsheets.TableColumn, 0, rect.Cols())
+	for i := range rect.Cols() {
+		column := gsheets.TableColumn{ColumnIndex: i}
+		if c, ok := sent[i]; ok {
+			column = *c
+			writeHeader(sh, rect.FirstRow, rect.FirstCol+i, c.ColumnName)
+		} else if header := sh.At(rect.FirstRow, rect.FirstCol+i); header != nil {
+			column.ColumnName = header.FormattedValue
+		}
+		out = append(out, &column)
 	}
 	return out, nil
 }

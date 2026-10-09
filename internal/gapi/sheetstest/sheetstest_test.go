@@ -534,12 +534,20 @@ func TestATableHeaderTakesWhatIsWrittenIntoIt(t *testing.T) {
 	}
 }
 
-// TestUpdateTableReplacesTheColumnsWhole is the belief §18 keeps: a
-// partial array replaces the whole one. The name sent is written into
-// its header cell, as spike T Q4 saw.
+// TestUpdateTableReplacesTheColumnsWhole is spike T Q3b: one column sent
+// alone, named, replaces the whole list. The columns left out keep their
+// headers' text as their names and lose their types, a dropdown its list
+// with it. The name sent is written into its header cell (Q4).
 func TestUpdateTableReplacesTheColumnsWhole(t *testing.T) {
 	srv := Standard(t)
-	// The fixture's table: Plimth TEXT and Nardle DOUBLE.
+	sh := srv.Doc(FixtureID).Find(FirstSheet)
+	// The fixture's table over A1:D21, with Oblisk made a dropdown.
+	sh.Tables[0].ColumnProperties = append(sh.Tables[0].ColumnProperties, &gsheets.TableColumn{
+		ColumnIndex: 3, ColumnName: "Oblisk", ColumnType: gsheets.ColumnDropdown,
+		DataValidationRule: &gsheets.TableColumnDataValidationRule{Condition: &gsheets.BooleanCondition{
+			Type: "ONE_OF_LIST", Values: []*gsheets.ConditionValue{{UserEnteredValue: "Open"}},
+		}},
+	})
 	_, err := srv.Client().BatchUpdate(context.Background(), FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{{UpdateTable: &gsheets.UpdateTableRequest{
 			Table: &gsheets.Table{TableID: "tbl-fixture-1", ColumnProperties: []*gsheets.TableColumn{
@@ -551,10 +559,12 @@ func TestUpdateTableReplacesTheColumnsWhole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("updateTable: %v", err)
 	}
-	sh := srv.Doc(FixtureID).Find(FirstSheet)
-	got := sh.Tables[0].ColumnProperties
-	if len(got) != 1 || got[0].ColumnIndex != 1 || got[0].ColumnType != gsheets.ColumnCurrency || got[0].ColumnName != "Quorbin" {
-		t.Errorf("columns after the update = %+v; want Quorbin CURRENCY alone", got)
+	sh = srv.Doc(FixtureID).Find(FirstSheet)
+	columns, _ := json.Marshal(sh.Tables[0].ColumnProperties)
+	const want = `[{"columnName":"Plimth"},{"columnIndex":1,"columnName":"Quorbin","columnType":"CURRENCY"},` +
+		`{"columnIndex":2,"columnName":"Grivet"},{"columnIndex":3,"columnName":"Oblisk"}]`
+	if string(columns) != want {
+		t.Errorf("columns after the update =\n%s\nwant\n%s", columns, want)
 	}
 	if header := sh.At(1, 2).FormattedValue; header != "Quorbin" {
 		t.Errorf("the header cell B1 reads %q, want Quorbin", header)

@@ -659,9 +659,10 @@ func headings(header *grid.Grid) map[string]int {
 // name sent into the header cell (Q4); a name sent as read leaves the
 // header showing what it did. Google reads back an entry for every
 // column (Q1), so one the read left out is not expected; it is named by
-// its header all the same, with no type. The mask names a list, which
-// may be replaced whole (§18), so every column goes back. A formula or a
-// chip would lose what is under its text, so readTable refused one.
+// its header all the same, with no type. Google replaces the whole list:
+// one column sent alone left the others with no type, and a dropdown
+// with no list (Q3b). So every column goes back. A formula or a chip
+// would lose what is under its text, so readTable refused one.
 func (t *tableNow) merge(changed []*gsheets.TableColumn) []*gsheets.TableColumn {
 	header := t.header.Cells[0]
 	byIndex := map[int]*gsheets.TableColumn{}

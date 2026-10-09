@@ -857,10 +857,11 @@ func seedTypedTable(srv *sheetstest.Server) {
 	}}
 }
 
-// TestTableUpdateRetypesOneColumnAndKeepsTheRest is the round trip. The
-// mask names a list, which may be replaced whole (§18), so every column
-// goes back as it was — the dropdown with its list, the chip as a chip —
-// and each with the name it was read with, so no header is left blank.
+// TestTableUpdateRetypesOneColumnAndKeepsTheRest is the round trip.
+// Google replaces the whole list (spike T Q3b), and so does the fake, so
+// every column goes back as it was — the dropdown with its list, the
+// chip as a chip — and each with the name it was read with, so no header
+// is left blank. The card after it reads what the fake kept.
 func TestTableUpdateRetypesOneColumnAndKeepsTheRest(t *testing.T) {
 	srv := sheetstest.Standard(t)
 	seedTypedTable(srv)

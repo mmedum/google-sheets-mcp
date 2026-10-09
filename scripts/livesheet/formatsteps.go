@@ -623,11 +623,11 @@ func (d *driver) typedTablesAll() {
 
 // typedColumnSteps type a table's columns on add, retype one on update,
 // and check that the rest, a dropdown's list included, survive the
-// whole-array round trip, the header cells with them. A formula into the
-// header is refused, since Google would replace it (spike T). Two things
-// here are unverified (§18), and each step says which it settles:
-// whether an update replaces the whole array, and what a type does to
-// the cells.
+// round trip, the header cells with them. Google replaces the whole list
+// on update (spike T Q3b), so the update sends every column. A formula
+// into the header is refused, since Google would replace it (spike T).
+// What a type does to the cells is partly unverified (§18), and the
+// steps print it.
 func (d *driver) typedColumnSteps() []step {
 	headers := func(when string) step {
 		return step{
@@ -716,10 +716,10 @@ func (d *driver) typedColumnSteps() []step {
 		},
 		{
 			name: "one column retyped, and the others sent back as they were",
-			why: "whether one column alone would replace the array is open (§18), so the update reads the " +
-				"array and sends every column back, each with its name, since Google refuses an entry with " +
-				"none; the dropdown goes in the card's own spelling, and the card after it must show the change " +
-				"and the dropdown's list both",
+			why: "Google replaces the whole list, and one column sent alone takes every other column's type " +
+				"(§18), so the update reads the list and sends every column back, each with its name, since " +
+				"Google refuses an entry with none; the dropdown goes in the card's own spelling, and the card " +
+				"after it must show the change and the dropdown's list both",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": typedBand,
