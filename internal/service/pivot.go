@@ -1130,9 +1130,12 @@ func pivotValue(entry string, source a1.Rect, headers map[string]int) (*gsheets.
 // filterPivot applies filters and clear_filters.
 //
 // Both remove criteria, the deprecated form a response carries beside
-// filterSpecs. filterSpecs take precedence only while they are there:
-// once a clear removes them, criteria left in place would filter by
-// themselves, and put the cleared filters back.
+// filterSpecs. Spike U7: Google writes either form when sent the other,
+// and a pivot sent with neither has no filter. So a clear removes both:
+// criteria left in place would put the cleared filters back. filters
+// would not need to, since filterSpecs take precedence where both are
+// sent, but sending a stale criteria beside new filterSpecs would be
+// sending two answers to one question.
 func filterPivot(req PivotRequest, source a1.Rect, headers map[string]int, pivot map[string]any, changed *[]string) error {
 	switch {
 	case req.ClearFilters && len(req.Filters) > 0:
@@ -1161,7 +1164,8 @@ func filterPivot(req PivotRequest, source a1.Rect, headers map[string]int, pivot
 //
 // A filter by condition alone sets visibleByDefault, the one way it
 // shows what meets the condition: with it false, the reference shows
-// only values that are listed as well, and none are.
+// only values that are listed as well, and none are. Spike U5 saw both:
+// false showed nothing, true showed every value meeting the condition.
 func pivotFilters(entries []string, source a1.Rect, headers map[string]int) ([]*gsheets.PivotFilterSpec, error) {
 	byOffset := map[int]*gsheets.PivotFilterCriteria{}
 	named := map[int]string{}
@@ -1199,10 +1203,13 @@ func pivotFilters(entries []string, source a1.Rect, headers map[string]int) ([]*
 	return out, nil
 }
 
-// oneRulePerColumn refuses two groups with a rule on one source column,
-// which Google allows once per column; a plain group beside a rule is
-// fine. It reads the pivot as it will be sent, so a rule the update
-// keeps counts too, a rule made by hand included.
+// oneRulePerColumn refuses two groups with a rule on one source column;
+// a plain group beside a rule is fine. The reference allows one rule per
+// column: "Only one PivotGroup with a group rule may be added for each
+// column in the source data". Google took two in spike U2, so the
+// refusal is this server's, and keeps a pivot inside what is documented.
+// It reads the pivot as it will be sent, so a rule the update keeps
+// counts too, a rule made by hand included.
 func oneRulePerColumn(sending *gsheets.PivotTable, source a1.Rect) error {
 	ruled := map[int]bool{}
 	for _, g := range append(append([]*gsheets.PivotGroup{}, sending.Rows...), sending.Columns...) {
@@ -1210,8 +1217,9 @@ func oneRulePerColumn(sending *gsheets.PivotTable, source a1.Rect) error {
 			continue
 		}
 		if ruled[g.SourceColumnOffset] {
-			return Errorf("invalid", "column %s is grouped by a rule twice, and Google allows one grouping rule per "+
-				"source column. Group it once with a rule; a second group without one is allowed",
+			return Errorf("invalid", "column %s is grouped by a rule twice. The Sheets reference allows one grouping "+
+				"rule per source column, though Google does not refuse a second. Group it once with a rule; a "+
+				"second group without one is allowed",
 				sourceLetter(source, g.SourceColumnOffset))
 		}
 		ruled[g.SourceColumnOffset] = true

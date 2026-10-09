@@ -1385,12 +1385,12 @@ func TestPivotRuleAndFilterRefusals(t *testing.T) {
 	}{
 		{"two rules on one column", "", func(r *service.PivotRequest) {
 			r.Rows, r.Values = []string{"Day by year", "Day by month"}, []string{"Revenue sum"}
-		}, "[invalid] column B is grouped by a rule twice, and Google allows one grouping rule per source column. " +
-			"Group it once with a rule; a second group without one is allowed"},
+		}, "[invalid] column B is grouped by a rule twice. The Sheets reference allows one grouping rule per source " +
+			"column, though Google does not refuse a second. Group it once with a rule; a second group without one is allowed"},
 		{"a rule beside a kept one made by hand", byHandInColumns, func(r *service.PivotRequest) {
 			r.Rows = []string{"A by year"}
-		}, "[invalid] column A is grouped by a rule twice, and Google allows one grouping rule per source column. " +
-			"Group it once with a rule; a second group without one is allowed"},
+		}, "[invalid] column A is grouped by a rule twice. The Sheets reference allows one grouping rule per source " +
+			"column, though Google does not refuse a second. Group it once with a rule; a second group without one is allowed"},
 		{"a group by hand", "", func(r *service.PivotRequest) {
 			r.Rows, r.Values = []string{"Region by hand"}, []string{"Revenue sum"}
 		}, `[invalid] "Region by hand" is a grouping made by hand in Sheets, which this tool cannot set; an update ` +

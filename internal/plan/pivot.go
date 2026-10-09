@@ -70,7 +70,9 @@ var dateTimeTypes = []string{
 
 // filterConditions are the conditions a pivot table filter takes: the
 // ones the discovery document says filters support, of those
-// manage_range already names. The others are data validation's alone.
+// manage_range already names. The others it marks "Supported by data
+// validation" alone, and Google refuses one in a filter: "ConditionType
+// 'ONE_OF_LIST' is not supported in filters" (spike U6).
 var filterConditions = map[string]bool{
 	"number_greater": true, "number_greater_eq": true, "number_less": true, "number_less_eq": true,
 	"number_eq": true, "number_not_eq": true, "number_between": true, "number_not_between": true,

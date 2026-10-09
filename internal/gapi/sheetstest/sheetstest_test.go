@@ -656,21 +656,27 @@ func TestPivotDrawsFiltersRulesAndCalculatedValues(t *testing.T) {
 	}
 }
 
-// TestPivotDrawsAHistogramAsTheReferenceDoes is the reference's own
-// example: start 25, interval 20 and end 65 make "< 25", "25-45",
-// "45-65" and "> 65".
-func TestPivotDrawsAHistogramAsTheReferenceDoes(t *testing.T) {
-	srv := salesSheet(t)
-	err := writePivotAt(srv, `{`+salesSource+`,`+
-		`"rows":[{"sourceColumnOffset":2,"showTotals":true,"sortOrder":"ASCENDING",`+
-		`"groupRule":{"histogramRule":{"interval":20,"start":25,"end":65}}}],`+
-		`"values":[{"sourceColumnOffset":3,"summarizeFunction":"SUM"}]}`)
-	if err != nil {
-		t.Fatalf("the pivot was refused: %v", err)
-	}
-	const want = "Age | SUM of Revenue\n< 25 | 100\n25-45 | 270\n45-65 | 80\n> 65 | 300\nGrand Total | 750"
-	if got := drawnFrom(srv); got != want {
-		t.Errorf("drawn:\n%s\nwant:\n%s", got, want)
+// TestPivotDrawsAHistogramAsGoogleDoes is spike U4's labels: every 20
+// from 25 to 70 drew "< 25", "25 - 44", "45 - 64" and "65 - 70", the
+// last holding the end itself. Ending at 68, the one age of 68 is the
+// end, and stays in the last bucket rather than going past it.
+func TestPivotDrawsAHistogramAsGoogleDoes(t *testing.T) {
+	for end, want := range map[string]string{
+		"70": "Age | SUM of Revenue\n< 25 | 100\n25 - 44 | 270\n45 - 64 | 80\n65 - 70 | 300\nGrand Total | 750",
+		"68": "Age | SUM of Revenue\n< 25 | 100\n25 - 44 | 270\n45 - 64 | 80\n65 - 68 | 300\nGrand Total | 750",
+		"60": "Age | SUM of Revenue\n< 25 | 100\n25 - 44 | 270\n45 - 60 | 80\n> 60 | 300\nGrand Total | 750",
+	} {
+		srv := salesSheet(t)
+		err := writePivotAt(srv, `{`+salesSource+`,`+
+			`"rows":[{"sourceColumnOffset":2,"showTotals":true,"sortOrder":"ASCENDING",`+
+			`"groupRule":{"histogramRule":{"interval":20,"start":25,"end":`+end+`}}}],`+
+			`"values":[{"sourceColumnOffset":3,"summarizeFunction":"SUM"}]}`)
+		if err != nil {
+			t.Fatalf("end %s: the pivot was refused: %v", end, err)
+		}
+		if got := drawnFrom(srv); got != want {
+			t.Errorf("end %s drawn:\n%s\nwant:\n%s", end, got, want)
+		}
 	}
 }
 
@@ -753,9 +759,10 @@ func TestAStoredPivotCarriesBothFilterForms(t *testing.T) {
 	}
 }
 
-// TestPivotRulesAreChecked holds the fake to the reference's rules for
-// values, group rules and filters, in wording of its own (§18), and to
-// what it refuses because it cannot evaluate it.
+// TestPivotRulesAreChecked holds the fake to the rules for values, group
+// rules and filters: in Google's words where spike U saw Google refuse,
+// in the fake's own elsewhere, and to what it refuses because it cannot
+// evaluate it.
 func TestPivotRulesAreChecked(t *testing.T) {
 	group := func(offset, rule string) string {
 		return `{"sourceColumnOffset":` + offset + `,"sortOrder":"ASCENDING","groupRule":` + rule + `}`
@@ -766,15 +773,15 @@ func TestPivotRulesAreChecked(t *testing.T) {
 	}{
 		{"an offset and a formula", group("0", "null"),
 			`{"sourceColumnOffset":3,"formula":"=Revenue","summarizeFunction":"SUM"}`, "",
-			"set exactly one of sourceColumnOffset and formula"},
+			"oneof field 'value' is already set"},
 		{"neither an offset nor a formula", group("0", "null"), `{"summarizeFunction":"SUM"}`, "",
 			"set exactly one of sourceColumnOffset and formula"},
 		{"a formula without =", group("0", "null"), `{"formula":"Revenue","summarizeFunction":"SUM"}`, "",
 			"a formula starts with ="},
 		{"a formula averaged", group("0", "null"), `{"formula":"=Revenue","summarizeFunction":"AVERAGE"}`, "",
-			"a formula is summarized by SUM or CUSTOM, not AVERAGE"},
+			`Invalid summarizeFunction: AVERAGE. Only "CUSTOM" or "SUM" are valid if PivotValue.calculatedField is set.`},
 		{"CUSTOM on a column", group("0", "null"), `{"sourceColumnOffset":3,"summarizeFunction":"CUSTOM"}`, "",
-			"CUSTOM is only valid with a formula"},
+			`"CUSTOM" may not be used in PivotValue.summarizeFunction unless PivotValue.calculatedField is set.`},
 		{"a rule of both kinds",
 			group("1", `{"dateTimeRule":{"type":"YEAR"},"histogramRule":{"interval":1}}`), sum, "",
 			"set exactly one rule"},
@@ -791,19 +798,16 @@ func TestPivotRulesAreChecked(t *testing.T) {
 			"each group must have a unique group name"},
 		{"a group by hand named by a number", group("0", `{"manualRule":{"groups":[`+
 			`{"groupName":{"numberValue":1},"items":[{"stringValue":"East"}]}]}}`), sum, "",
-			"the group name must be a string"},
+			"Found a manual group name of type number. Manual group names must be strings."},
 		{"an interval of 0", group("2", `{"histogramRule":{"interval":0}}`), sum, "",
-			"the interval must be positive"},
+			"Histogram group rules require a positive value for interval."},
 		{"a start past the end", group("2", `{"histogramRule":{"interval":5,"start":50,"end":20}}`), sum, "",
-			"start must be less than end"},
+			"Start must be less than end."},
 		{"a date type the enum lacks", group("1", `{"dateTimeRule":{"type":"FORTNIGHT"}}`), sum, "",
 			`Invalid value at 'date_time_rule.type': "FORTNIGHT"`},
-		{"two rules on one column",
-			group("1", `{"dateTimeRule":{"type":"YEAR"}}`) + `,` + group("1", `{"dateTimeRule":{"type":"MONTH"}}`), sum, "",
-			"only one PivotGroup with a group rule may be added for each column"},
 		{"a filter condition only data validation takes", group("0", "null"), sum,
 			`,"filterSpecs":[{"columnOffsetIndex":0,"filterCriteria":{"condition":{"type":"ONE_OF_LIST","values":[{"userEnteredValue":"East"}]}}}]`,
-			"ONE_OF_LIST is not a filter condition"},
+			"Invalid requests[0].updateCells: ConditionType 'ONE_OF_LIST' is not supported in filters."},
 		{"a date filter this fake does not evaluate", group("0", "null"), sum,
 			`,"filterSpecs":[{"columnOffsetIndex":1,"filterCriteria":{"visibleByDefault":true,"condition":{"type":"DATE_AFTER","values":[{"userEnteredValue":"2026-01-15"}]}}}]`,
 			"this fake does not evaluate a DATE_AFTER filter"},
@@ -814,6 +818,10 @@ func TestPivotRulesAreChecked(t *testing.T) {
 		// refuse what they name and nothing beside it.
 		{"a plain group beside a rule on one column",
 			group("1", "null") + `,` + group("1", `{"dateTimeRule":{"type":"YEAR"}}`), sum, "", ""},
+		// The reference allows one rule per column, and Google took two
+		// (spike U2).
+		{"two rules on one column",
+			group("1", `{"dateTimeRule":{"type":"YEAR"}}`) + `,` + group("1", `{"dateTimeRule":{"type":"MONTH"}}`), sum, "", ""},
 		{"a grouping by hand", group("0", `{"manualRule":{"groups":[]}}`), sum, "", ""},
 		{"a calculated value", group("0", "null"),
 			`{"formula":"=SUM(Revenue)/COUNT(Cost)","summarizeFunction":"CUSTOM","name":"Mean"}`, "", ""},

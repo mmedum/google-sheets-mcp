@@ -768,35 +768,38 @@ func (d *driver) pivotRuleSteps() []step {
 			},
 		},
 		output("the month buckets, North left out",
-			"East and West take in 450, Margin 160; how Google labels a month bucket is unverified (§18)",
-			"Margin", "Ratio", "450", "160", "Grand Total"),
+			"East and West take in 450, Margin 160; spike U saw Google label a month bucket 2026-Jan (§18)",
+			"Margin", "Ratio", "450", "160", "2026-Jan", "Grand Total"),
 		listed("list reads the month rule back", "rows", "B by year_month"),
 		listed("list reads the filter back", "filters", "A show East, West"),
 		listed("list reads the calculated values back", "values",
 			"D sum", "=Revenue-Cost sum as Margin", "=SUM(Revenue)/SUM(Cost) as Ratio"),
-		update("group by age, ten years at a time", "a histogram rule; how Google labels its buckets is unverified (§18)",
+		update("group by age, ten years at a time",
+			"a histogram rule; spike U saw Google label a bucket 20 - 29, and the last one up to the end (§18)",
 			map[string]any{"group_rows": []any{"Age every 10 from 20 to 70"}}),
-		output("the age buckets", "the transcript shows Google's bucket labels, and the total is unchanged",
-			"450", "Grand Total"),
+		output("the age buckets", "Google's bucket labels, and the total unchanged",
+			"20 - 29", "50 - 59", "450", "Grand Total"),
 		update("a condition alone",
-			"with visibleByDefault set, a condition shows every value that meets it; without, the reference "+
-				"reads as showing nothing (§18)",
+			"with visibleByDefault set, a condition shows every value that meets it; spike U saw it show "+
+				"nothing without (§18)",
 			map[string]any{"filters": []any{"Revenue number_greater 60"}}),
-		output("the rows over 60, North back in", "100 + 200 + 300 + 80 is 680", "680"),
+		output("the rows over 60, North back in",
+			"100 + 200 + 300 + 80 is 680, and North's 68 lands in the last bucket, which runs to the end",
+			"680", "60 - 70"),
 		update("a list and a condition on one column",
 			"a value must be listed and meet the condition, so only East is left",
 			map[string]any{"filters": []any{"Region show East, West", "Region text_contains Ea"}}),
 		output("East alone", "100 + 50 + 20 is 170", "170"),
 		listed("list reads both back", "filters", "A show East, West", "A text_contains Ea"),
 		update("a relative date",
-			"a date filter's relative date is sent as relativeDate; whether a pivot filter takes one is "+
-				"unverified (§18), and sent as typed text \"tomorrow\" would match no date",
+			"a date filter's relative date is sent as relativeDate, which spike U saw a pivot filter take "+
+				"(§18); sent as typed text \"tomorrow\" would match no date",
 			map[string]any{"filters": []any{"Day date_before tomorrow"}}),
 		output("every row is before tomorrow", "all six rows take in 750", "750"),
 		listed("list reads the relative date back", "filters", "B date_before tomorrow"),
 		{
 			name: "a second rule on one column is refused here",
-			why:  "Google allows one grouping rule per source column, and this says so before the request",
+			why:  "the reference allows one grouping rule per source column and Google does not enforce it (§18)",
 			tool: "manage_pivot_table",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "update", "anchor": pivotAnchor,
@@ -816,8 +819,8 @@ func (d *driver) pivotRuleSteps() []step {
 		},
 		{
 			name: "clear the filters",
-			why: "clear_filters removes filterSpecs and the older criteria both, or the criteria a response " +
-				"carries would bring the filters back",
+			why: "Google writes filterSpecs and the older criteria each from the other (§18), so clear_filters " +
+				"removes both, or the criteria a response carries would bring the filters back",
 			tool: "manage_pivot_table",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "update", "anchor": pivotAnchor,

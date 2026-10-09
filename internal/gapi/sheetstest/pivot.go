@@ -109,18 +109,25 @@ func applyCells(d *Doc, req *gsheets.UpdateCellsRequest) (*gsheets.Reply, bool, 
 // with a 200 — and neither is it refused here, because that acceptance
 // is the whole reason manage_pivot_table checks it first.
 //
-// The refusals after those three are the reference's rules, in wording
-// of this fake's own, since no live run has seen Google's (§18): a value
-// sets one of an offset and a formula, a formula starts with = and is
-// summed or used as written, a group rule is one of its kinds with a
-// positive interval and a start below its end, a grouping by hand names
-// each group once and each item in one group, one group per column has
-// a rule, and a filter's condition is one filters support.
+// The refusals after those three are the reference's rules. Spike U
+// put most of them to Google on 2026-10-09, and they are in Google's
+// words: a value with both an offset and a formula, which the request's
+// parser refuses before anything else; a formula summarized by anything
+// but SUM or CUSTOM; CUSTOM on a column; a histogram's interval and its
+// bounds; a grouping by hand named by a number; and a filter condition
+// only data validation takes. A value with neither, a formula without =,
+// and an item in two groups or two groups of one name are in this
+// fake's own words: nothing asked Google, or a 429 cut the answer off.
+// Two groups with a rule on one column are taken, as Google took them,
+// though the reference allows one (§18).
 func validatePivot(raw json.RawMessage) (*gsheets.PivotTable, error) {
 	var pivot gsheets.PivotTable
 	if err := json.Unmarshal(raw, &pivot); err != nil {
 		//nolint:staticcheck // Google's own wording, kept verbatim
 		return nil, errors.New("Invalid requests[0].updateCells: unreadable pivot table")
+	}
+	if err := valueOneof(pivot.Values); err != nil {
+		return nil, err
 	}
 	if pivot.Source == nil {
 		//nolint:staticcheck // Google's own wording, kept verbatim
@@ -139,39 +146,58 @@ func validatePivot(raw json.RawMessage) (*gsheets.PivotTable, error) {
 			return nil, errors.New("Invalid requests[0].updateCells: No PivotValue.summarizeFunction specified.")
 		}
 	}
-	for _, v := range pivot.Values {
-		switch {
-		case (v.SourceColumnOffset == nil) == (v.Formula == ""):
-			return nil, errors.New("invalid PivotValue: set exactly one of sourceColumnOffset and formula")
-		case v.Formula != "" && !strings.HasPrefix(v.Formula, "="):
-			return nil, errors.New("invalid PivotValue: a formula starts with =")
-		case v.Formula != "" && v.SummarizeFunction != "SUM" && v.SummarizeFunction != "CUSTOM":
-			return nil, errors.New("invalid PivotValue: a formula is summarized by SUM or CUSTOM, not " + v.SummarizeFunction)
-		case v.Formula == "" && v.SummarizeFunction == "CUSTOM":
-			return nil, errors.New("invalid PivotValue: CUSTOM is only valid with a formula")
-		}
+	if err := checkValues(pivot.Values); err != nil {
+		return nil, err
 	}
-	ruled := map[int]bool{}
 	for _, g := range groups {
-		r := g.GroupRule
-		if r == nil {
-			continue
+		if r := g.GroupRule; r != nil {
+			if err := checkGroupRule(r); err != nil {
+				return nil, err
+			}
 		}
-		if err := checkGroupRule(r); err != nil {
-			return nil, err
-		}
-		if ruled[g.SourceColumnOffset] {
-			return nil, errors.New("invalid PivotGroupRule: only one PivotGroup with a group rule may be added for " +
-				"each column in the source data")
-		}
-		ruled[g.SourceColumnOffset] = true
 	}
 	for _, f := range pivot.Filters() {
 		if c := f.FilterCriteria; c != nil && c.Condition != nil && !filterConditionTypes[c.Condition.Type] {
-			return nil, errors.New("invalid PivotFilterCriteria: " + c.Condition.Type + " is not a filter condition")
+			return nil, errors.New("Invalid requests[0].updateCells: ConditionType '" + c.Condition.Type +
+				"' is not supported in filters.")
 		}
 	}
 	return &pivot, nil
+}
+
+// valueOneof is the request parser's refusal of a value that sets both
+// an offset and a formula, which comes before any other. The field named
+// is the one the request carries second, and this server's wire type
+// writes sourceColumnOffset first.
+func valueOneof(values []*gsheets.PivotValue) error {
+	for i, v := range values {
+		if v.SourceColumnOffset != nil && v.Formula != "" {
+			return errors.New("Invalid value at 'requests[0].update_cells.rows[0].values[0].pivot_table.values[" +
+				strconv.Itoa(i) + "]' (oneof), oneof field 'value' is already set. Cannot set 'formula'")
+		}
+	}
+	return nil
+}
+
+// checkValues holds each value to a column or a formula, and a formula to
+// the summaries it takes.
+func checkValues(values []*gsheets.PivotValue) error {
+	for _, v := range values {
+		switch {
+		case v.SourceColumnOffset == nil && v.Formula == "":
+			return errors.New("invalid PivotValue: set exactly one of sourceColumnOffset and formula")
+		case v.Formula != "" && !strings.HasPrefix(v.Formula, "="):
+			return errors.New("invalid PivotValue: a formula starts with =")
+		case v.Formula != "" && v.SummarizeFunction != "SUM" && v.SummarizeFunction != "CUSTOM":
+			return errors.New("Invalid requests[0].updateCells: Invalid summarizeFunction: " + v.SummarizeFunction +
+				`. Only "CUSTOM" or "SUM" are valid if PivotValue.calculatedField is set.`)
+		case v.Formula == "" && v.SummarizeFunction == "CUSTOM":
+			//nolint:staticcheck // Google's own wording, kept verbatim
+			return errors.New(`Invalid requests[0].updateCells: "CUSTOM" may not be used in ` +
+				`PivotValue.summarizeFunction unless PivotValue.calculatedField is set.`)
+		}
+	}
+	return nil
 }
 
 // checkGroupRule holds one rule to what the reference says of it.
@@ -189,9 +215,11 @@ func checkGroupRule(r *gsheets.PivotGroupRule) error {
 		_, err := manualGroups(r.ManualRule)
 		return err
 	case h != nil && h.Interval <= 0:
-		return errors.New("invalid HistogramRule: the interval must be positive")
+		//nolint:staticcheck // Google's own wording, kept verbatim
+		return errors.New("Invalid requests[0].updateCells: Histogram group rules require a positive value for interval.")
 	case h != nil && h.Start != nil && h.End != nil && *h.Start >= *h.End:
-		return errors.New("invalid HistogramRule: start must be less than end")
+		//nolint:staticcheck // Google's own wording, kept verbatim
+		return errors.New("Invalid requests[0].updateCells: Start must be less than end.")
 	case dt != nil && dateTimeLabel(dt.Type, 0) == nil:
 		return errors.New("Invalid value at 'date_time_rule.type': " + strconv.Quote(dt.Type))
 	}
@@ -229,7 +257,12 @@ func manualGroups(raw json.RawMessage) (map[string]string, error) {
 	names := map[string]bool{}
 	out := map[string]string{}
 	for _, g := range rule.Groups {
-		if g.GroupName == nil || g.GroupName.StringValue == nil {
+		switch {
+		case g.GroupName != nil && g.GroupName.NumberValue != nil:
+			//nolint:staticcheck // Google's own wording, kept verbatim
+			return nil, errors.New("Invalid requests[0].updateCells: Found a manual group name of type number. " +
+				"Manual group names must be strings.")
+		case g.GroupName == nil || g.GroupName.StringValue == nil:
 			return nil, errors.New("invalid ManualRuleGroup: the group name must be a string")
 		}
 		name := *g.GroupName.StringValue
@@ -362,7 +395,8 @@ func computePivot(d *Doc, pivot *gsheets.PivotTable) ([][]any, error) {
 		switch {
 		case name != "":
 		case v.Formula != "":
-			name = v.Formula
+			// Google draws a calculated value with no name under an empty
+			// heading (spike U1).
 		default:
 			name = summaryLabel(v.SummarizeFunction) + " of " + headingAt(headings, *v.SourceColumnOffset)
 		}
@@ -488,16 +522,19 @@ func bucketOf(source *Sheet, row, col int, rule *gsheets.PivotGroupRule) (string
 	return "", 0, false
 }
 
-// histogramBucket is the reference's example: start 25, interval 20 and
-// end 65 make "< 25", "25-45", "45-65" and "> 65". A value at the end
-// itself goes above it, and with no start the buckets count from zero;
-// both are beliefs the live run reads.
+// histogramBucket labels a value's bucket as Google drew it in spike U,
+// 2026-10-09: every 20 from 25 to 70 drew "< 25", "25 - 44", "45 - 64"
+// and "65 - 70", the last holding 70, the end itself; every 10 with no
+// start drew "20 - 29" and so on, counted from zero. A value past the
+// end is "> end", which nothing has drawn. The last number of a bucket
+// is one under the next one's first only for a whole interval, which is
+// all the spike sent.
 func histogramBucket(h *gsheets.HistogramRule, n float64) (string, float64) {
 	num := func(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
 	switch {
 	case h.Start != nil && n < *h.Start:
 		return "< " + num(*h.Start), math.Inf(-1)
-	case h.End != nil && n >= *h.End:
+	case h.End != nil && n > *h.End:
 		return "> " + num(*h.End), math.Inf(1)
 	}
 	base := 0.0
@@ -505,7 +542,17 @@ func histogramBucket(h *gsheets.HistogramRule, n float64) (string, float64) {
 		base = *h.Start
 	}
 	lo := base + math.Floor((n-base)/h.Interval)*h.Interval
-	return num(lo) + "-" + num(lo+h.Interval), lo
+	hi := lo + h.Interval
+	if h.Interval == math.Trunc(h.Interval) {
+		hi--
+	}
+	if h.End != nil && lo+h.Interval >= *h.End {
+		if lo >= *h.End && lo > base {
+			lo -= h.Interval
+		}
+		hi = *h.End
+	}
+	return num(lo) + " - " + num(hi), lo
 }
 
 // dateLabel is a date bucket's label and where it sorts.
