@@ -320,12 +320,26 @@ func (s *Service) tableOp(ctx context.Context, req RangeRequest, action string, 
 		if name == "" {
 			return nil, nil, Errorf("invalid", "a table needs name")
 		}
-		columns, typed, err := s.typedColumns(ctx, ref, props, rect, req.ColumnTypes, nil)
+		added := render.Applied{Kind: "table added", Value: name}
+		if len(req.ColumnTypes) == 0 {
+			return plan.TableAdd(name, props.SheetID, rect, nil), []render.Applied{added}, nil
+		}
+		table := rect.Clamp(extent(props))
+		_, header, err := s.readHeader(ctx, ref, props, table)
 		if err != nil {
 			return nil, nil, err
 		}
-		return plan.TableAdd(name, props.SheetID, rect, columns),
-			append([]render.Applied{{Kind: "table added", Value: name}}, typed...), nil
+		columns, typed, err := s.typedColumns(ctx, ref, props, rect, req.ColumnTypes, header)
+		if err != nil {
+			return nil, nil, err
+		}
+		named, err := nameTyped(header, table, columns)
+		if err != nil {
+			return nil, nil, err
+		}
+		applied := make([]render.Applied, 0, 1+len(typed)+len(named))
+		applied = append(append(append(applied, added), typed...), named...)
+		return plan.TableAdd(name, props.SheetID, rect, columns), applied, nil
 	}
 	found, err := matchOne("table", rect, rectsOf(sheet.Tables, func(t *gsheets.Table) *gsheets.GridRange { return t.Range }, props))
 	if err != nil {
@@ -349,7 +363,7 @@ func (s *Service) tableOp(ctx context.Context, req RangeRequest, action string, 
 		if err != nil {
 			return nil, nil, err
 		}
-		changed, typed, err := s.typedColumns(ctx, ref, props, rect, req.ColumnTypes, now.headings())
+		changed, typed, err := s.typedColumns(ctx, ref, props, rect, req.ColumnTypes, now.header)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -361,36 +375,21 @@ func (s *Service) tableOp(ctx context.Context, req RangeRequest, action string, 
 
 // typedColumns resolves column_types against a table's range: each
 // column, by letter or by header, to its place in the table, counted
-// from the table's first column.
-//
-// The header row is read only when a name is not a letter inside the
-// table and the caller has not read it already, so typing columns by
-// letter costs no read.
+// from the table's first column. header is the table's first row, read
+// by the caller.
 func (s *Service) typedColumns(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
-	rect a1.Rect, entries []string, headers map[string]int) ([]*gsheets.TableColumn, []render.Applied, error) {
+	rect a1.Rect, entries []string, header *grid.Grid) ([]*gsheets.TableColumn, []render.Applied, error) {
 
-	if len(entries) == 0 {
-		return nil, nil, nil
-	}
 	specs := make([]plan.ColumnSpec, 0, len(entries))
-	needHeaders := false
 	table := rect.Clamp(extent(props))
 	for _, entry := range entries {
 		spec, err := plan.ParseColumnType(entry)
 		if err != nil {
 			return nil, nil, Errorf("invalid", "%s", err)
 		}
-		if _, ok := columnOffset(spec.Column, table); !ok {
-			needHeaders = true
-		}
 		specs = append(specs, spec)
 	}
-	if needHeaders && headers == nil {
-		var err error
-		if headers, err = s.headerRow(ctx, ref, SheetRef{Props: props, Rect: table}); err != nil {
-			return nil, nil, err
-		}
-	}
+	headers := headings(header)
 	at := columnPlace{arg: "column_types", what: "the table"}
 	named := map[int]string{}
 	columns := make([]*gsheets.TableColumn, 0, len(specs))
@@ -462,18 +461,11 @@ type tableNow struct {
 	header  *grid.Grid
 }
 
-// readTable reads a table's columns and its header row as they are now,
-// and refuses a header cell that holds a formula or a smart chip.
-//
-// Fresh rather than from the card. The update sends the whole array
-// back, so a cached one would undo a change somebody made in between.
-//
-// The refusal is there because the update sends every column's name
-// (merge says why), and nothing Google publishes says whether a name
-// sent is written into the header cell. If it is, a formula there would
-// be replaced by the text it shows, and a chip by its text.
-func (s *Service) readTable(ctx context.Context, ref Reference, props *gsheets.SheetProperties, tableID string,
-	rect a1.Rect) (*tableNow, error) {
+// readHeader reads the first row of a table's range as it is now: the
+// text each cell shows, and whether it holds a formula or a smart chip.
+// The tables come in the same read, for an update to find its own.
+func (s *Service) readHeader(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
+	rect a1.Rect) (*gsheets.Spreadsheet, *grid.Grid, error) {
 
 	head := rect
 	head.LastRow = head.FirstRow
@@ -481,7 +473,28 @@ func (s *Service) readTable(ctx context.Context, ref Reference, props *gsheets.S
 		Fields: gapi.TableFields, Ranges: []string{a1.Format(props.Title, head)}, IncludeGridData: true,
 	})
 	if err != nil {
-		return nil, wrap(err)
+		return nil, nil, wrap(err)
+	}
+	data, _, _ := sheetData(sp, props.SheetID)
+	return sp, grid.Build(props.Title, props.SheetID, head, data, grid.AsFormatted), nil
+}
+
+// readTable reads a table's columns and its header row as they are now,
+// and refuses a header cell that holds a formula or a smart chip.
+//
+// Fresh rather than from the card. The update sends the whole array
+// back, so a cached one would undo a change somebody made in between.
+//
+// The refusal is there because the update sends every column's name
+// (merge says why), and Google writes a name sent into its header cell
+// as plain text (spike T Q4), which erases a chip (Q9) and would
+// replace a formula with the text it shows.
+func (s *Service) readTable(ctx context.Context, ref Reference, props *gsheets.SheetProperties, tableID string,
+	rect a1.Rect) (*tableNow, error) {
+
+	sp, header, err := s.readHeader(ctx, ref, props, rect)
+	if err != nil {
+		return nil, err
 	}
 	var table *gsheets.Table
 	for _, t := range sheetOf(sp, props.SheetID).Tables {
@@ -500,32 +513,87 @@ func (s *Service) readTable(ctx context.Context, ref Reference, props *gsheets.S
 		return nil, Errorf("not_found", "the table on %s covers %s since this call began; name it by that range",
 			a1.FormatRect(rect), a1.FormatRect(now))
 	}
-	data, _, _ := sheetData(sp, props.SheetID)
-	header := grid.Build(props.Title, props.SheetID, head, data, grid.AsFormatted)
-	for j, cell := range header.Cells[0] {
-		what, lost := "", ""
-		switch {
-		case cell.HasFormula():
-			what, lost = "a formula", "the formula"
-		case cell.Chip:
-			what, lost = "a smart chip (a person or a file link)", "the chip"
-		default:
-			continue
-		}
-		return nil, Errorf("blocked",
-			"the header cell %s of the table on %s holds %s. Changing a column type sends every column's "+
-				"name back, and whether Google writes a name into its header cell is unverified, so %s "+
-				"could be replaced by the text it shows. Replace %s with text first, or set the type in Sheets",
-			header.Address(0, j), a1.FormatRect(rect), what, lost, lost)
+	err = headerLoss(header, rect, func(int) bool { return true },
+		"Changing a column type sends every column's name back")
+	if err != nil {
+		return nil, err
 	}
 	return &tableNow{columns: table.ColumnProperties, header: header}, nil
 }
 
-// headings is the header row as typedColumns resolves a column name
+// nameTyped names each typed column of an add after its header cell's
+// text, and refuses a header cell the name would replace a formula or a
+// smart chip in.
+//
+// A typed column sent with no name has Google write "Column 1", "Column
+// 2" and so on into its header cell, over what was there (spike T Q1).
+// The name sent is the text the cell shows, so the header reads as it
+// did. An empty header cell gets one of Google's names, which takes
+// nothing; the result says so.
+func nameTyped(header *grid.Grid, table a1.Rect, columns []*gsheets.TableColumn) ([]render.Applied, error) {
+	typed := map[int]bool{}
+	for _, c := range columns {
+		typed[c.ColumnIndex] = true
+	}
+	err := headerLoss(header, table, func(j int) bool { return typed[j] },
+		"Typing a column sends its header's text as the column's name")
+	if err != nil {
+		return nil, err
+	}
+	var applied []render.Applied
+	for _, c := range columns {
+		if text := header.Cells[0][c.ColumnIndex].Display; text != "" {
+			c.ColumnName = text
+			continue
+		}
+		applied = append(applied, render.Applied{Kind: "empty header",
+			Value: header.Address(0, c.ColumnIndex) + `: Google writes a name such as "Column 1" into it`})
+	}
+	return applied, nil
+}
+
+// headerLoss refuses a header cell whose content a column name written
+// over it would lose: a formula, or a smart chip. Google writes a name
+// sent into its header cell as plain text (spike T Q4), and that erases
+// a person chip (Q9). named says which of the row's cells get a name.
+func headerLoss(header *grid.Grid, table a1.Rect, named func(int) bool, sends string) error {
+	var formulas, chips plan.Cells
+	for j, cell := range header.Cells[0] {
+		switch {
+		case !named(j):
+		case cell.HasFormula():
+			formulas.AddCell(header, 0, j)
+		case cell.Chip:
+			chips.AddCell(header, 0, j)
+		}
+	}
+	var held, lost []string
+	if formulas.Any() {
+		held = append(held, fmt.Sprintf("%s %s a formula", formulas, formulas.Verb("holds", "hold")))
+		lost = append(lost, formulas.Verb("the formula", "the formulas"))
+	}
+	if chips.Any() {
+		held = append(held, fmt.Sprintf("%s %s a smart chip (a person or a file link)", chips, chips.Verb("holds", "hold")))
+		lost = append(lost, chips.Verb("the chip", "the chips"))
+	}
+	if len(held) == 0 {
+		return nil
+	}
+	them := "it"
+	if formulas.Total+chips.Total > 1 {
+		them = "them"
+	}
+	return Errorf("blocked",
+		"in the header row of the table on %s, %s. %s, and Google writes each name into its header cell as "+
+			"plain text, so %s would be lost. Replace %s with text first, or set the type in Sheets",
+		a1.FormatRect(table), strings.Join(held, " and "), sends, strings.Join(lost, " and "), them)
+}
+
+// headings is a header row as typedColumns resolves a column name
 // against it.
-func (t *tableNow) headings() map[string]int {
-	texts := make([]string, 0, len(t.header.Cells[0]))
-	for _, cell := range t.header.Cells[0] {
+func headings(header *grid.Grid) map[string]int {
+	texts := make([]string, 0, len(header.Cells[0]))
+	for _, cell := range header.Cells[0] {
 		texts = append(texts, cell.Display)
 	}
 	return headingIndex(texts)
@@ -536,13 +604,14 @@ func (t *tableNow) headings() map[string]int {
 // name.
 //
 // The name is the one this read gave the column, or its header cell's
-// text where the read gave none. The mask names a list, which may be
-// replaced whole (§18), and whether an entry with no name then clears
-// its header is unverified. So every column gets an entry, a column the
-// read left out included, with no type where the read gave it none. A
-// name sent as read leaves every header showing the same text whichever
-// way Google treats it. A formula or a chip would lose what is under
-// its text, so readTable refused one.
+// text where the read gave none. Google refuses an entry with no name,
+// "Table header row cell must have a value" (spike T Q3), and writes a
+// name sent into the header cell (Q4); a name sent as read leaves the
+// header showing what it did. Google reads back an entry for every
+// column (Q1), so one the read left out is not expected; it is named by
+// its header all the same, with no type. The mask names a list, which
+// may be replaced whole (§18), so every column goes back. A formula or a
+// chip would lose what is under its text, so readTable refused one.
 func (t *tableNow) merge(changed []*gsheets.TableColumn) []*gsheets.TableColumn {
 	header := t.header.Cells[0]
 	byIndex := map[int]*gsheets.TableColumn{}

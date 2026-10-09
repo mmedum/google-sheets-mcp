@@ -587,8 +587,7 @@ func typedSheet(srv *sheetstest.Server) *sheetstest.Sheet {
 }
 
 // sentColumns is the column array the last batchUpdate carried, as JSON,
-// and the mask it went under. An add's array carries no names, which
-// each add test's expected JSON states.
+// and the mask it went under.
 func sentColumns(t *testing.T, srv *sheetstest.Server) (string, string) {
 	t.Helper()
 	var body string
@@ -617,7 +616,7 @@ func sentColumns(t *testing.T, srv *sheetstest.Server) (string, string) {
 
 // TestTableAddTypesTheNamedColumns is column_types on add: a column by
 // letter or by heading, counted from the table's first column, and only
-// the columns named.
+// the columns named, each with its header's text as its name.
 func TestTableAddTypesTheNamedColumns(t *testing.T) {
 	srv := sheetstest.Standard(t)
 	typedSheet(srv)
@@ -632,10 +631,10 @@ func TestTableAddTypesTheNamedColumns(t *testing.T) {
 		t.Fatalf("adding a typed table: %v", err)
 	}
 	columns, _ := sentColumns(t, srv)
-	const want = `[{"columnIndex":1,"columnType":"CURRENCY"},` +
-		`{"columnIndex":2,"columnType":"DROPDOWN","dataValidationRule":{"condition":{"type":"ONE_OF_LIST",` +
+	const want = `[{"columnIndex":1,"columnName":"Bractal","columnType":"CURRENCY"},` +
+		`{"columnIndex":2,"columnName":"Status","columnType":"DROPDOWN","dataValidationRule":{"condition":{"type":"ONE_OF_LIST",` +
 		`"values":[{"userEnteredValue":"Open"},{"userEnteredValue":"In progress"},{"userEnteredValue":"Done"}]}}},` +
-		`{"columnIndex":3,"columnType":"DOUBLE"}]`
+		`{"columnIndex":3,"columnName":"ID","columnType":"DOUBLE"}]`
 	if columns != want {
 		t.Errorf("columnProperties =\n%s\nwant\n%s", columns, want)
 	}
@@ -652,7 +651,7 @@ func TestTableAddTypesTheNamedColumns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const line = "Trennow -> 'Ürväl'!A1:D3 (Bractal currency, Status dropdown (Open, In progress, Done) and ID number)"
+	const line = "Trennow -> 'Ürväl'!A1:D3 (Trennow, Bractal currency, Status dropdown (Open, In progress, Done) and ID number)"
 	if !strings.Contains(card.Card, line) {
 		t.Errorf("the card does not say %q:\n%s", line, card.Card)
 	}
@@ -671,9 +670,110 @@ func TestTableColumnsCountFromTheTablesFirstColumn(t *testing.T) {
 		t.Fatalf("adding a typed table: %v", err)
 	}
 	columns, _ := sentColumns(t, srv)
-	const want = `[{"columnIndex":1,"columnType":"DATE"},{"columnIndex":2,"columnType":"BOOLEAN"}]`
+	const want = `[{"columnIndex":1,"columnName":"Status","columnType":"DATE"},` +
+		`{"columnIndex":2,"columnName":"ID","columnType":"BOOLEAN"}]`
 	if columns != want {
 		t.Errorf("columnProperties = %s, want %s", columns, want)
+	}
+}
+
+// TestTableAddKeepsTheHeaderRow is the header row after a typed add.
+// Google writes "Column 1", "Column 2" into the header cell of a typed
+// column sent with no name (spike T Q1), so the add names each one after
+// its header, and the header reads as it did.
+func TestTableAddKeepsTheHeaderRow(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	typedSheet(srv)
+	add := rangeReq(service.RangeTable, service.RangeAdd, "A1:D3")
+	add.Name = "Trennow"
+	add.ColumnTypes = []string{"Bractal currency", "D dropdown: Open, Done"}
+	if _, err := newService(t, srv).ManageRange(context.Background(), add); err != nil {
+		t.Fatalf("adding a typed table: %v", err)
+	}
+	sh := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet)
+	var got []string
+	for col := 1; col <= 4; col++ {
+		got = append(got, sh.At(1, col).FormattedValue)
+	}
+	if strings.Join(got, ", ") != "Trennow, Bractal, Status, ID" {
+		t.Errorf("the header row after the add reads %q", got)
+	}
+}
+
+// TestTableAddOverAnEmptyHeaderSaysGoogleNamesIt is a typed column whose
+// header cell is empty. There is no name to send, so Google writes one of
+// its own into the cell; nothing is lost, and the result says so.
+func TestTableAddOverAnEmptyHeaderSaysGoogleNamesIt(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	typedSheet(srv)
+	add := rangeReq(service.RangeTable, service.RangeAdd, "A1:E3")
+	add.Name = "Trennow"
+	add.ColumnTypes = []string{"E date"}
+	res, err := newService(t, srv).ManageRange(context.Background(), add)
+	if err != nil {
+		t.Fatalf("adding a typed table: %v", err)
+	}
+	if columns, _ := sentColumns(t, srv); columns != `[{"columnIndex":4,"columnType":"DATE"}]` {
+		t.Errorf("columnProperties = %s", columns)
+	}
+	want := []string{"table added Trennow", "column typed E date",
+		`empty header E1: Google writes a name such as "Column 1" into it`}
+	if strings.Join(res.Applied, "\n") != strings.Join(want, "\n") {
+		t.Errorf("applied = %q", res.Applied)
+	}
+}
+
+// TestTableAddIsRefusedOverAHeaderANameWouldReplace is a typed column
+// whose header cell holds a formula or a smart chip. The add sends the
+// text the cell shows as the column's name, and Google writes it into the
+// cell as plain text, which loses the formula or the chip. A column the
+// add does not type is sent no name, so what is in its header is not
+// held against it.
+func TestTableAddIsRefusedOverAHeaderANameWouldReplace(t *testing.T) {
+	chip := func() *gsheets.CellData {
+		c := sheetstest.Str("Jane Doe")
+		c.ChipRuns = []gsheets.ChipRun{{Chip: &gsheets.Chip{
+			PersonProperties: &gsheets.PersonProperties{Email: "janedoe@example.test"},
+		}}}
+		return c
+	}
+	for _, tc := range []struct {
+		name  string
+		cell  *gsheets.CellData
+		types []string
+		want  string
+	}{
+		{"a formula", sheetstest.Formula(`="Sta"&"tus"`, 0, "Status"), []string{"Status date"},
+			"[blocked] in the header row of the table on A1:D3, C1 holds a formula. Typing a column sends its " +
+				"header's text as the column's name, and Google writes each name into its header cell as plain " +
+				"text, so the formula would be lost. Replace it with text first, or set the type in Sheets"},
+		{"a chip", chip(), []string{"C date", "D number"},
+			"[blocked] in the header row of the table on A1:D3, C1 holds a smart chip (a person or a file link). " +
+				"Typing a column sends its header's text as the column's name, and Google writes each name into " +
+				"its header cell as plain text, so the chip would be lost. Replace it with text first, or set the " +
+				"type in Sheets"},
+		{"a chip in a column not typed", chip(), []string{"B date"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := sheetstest.Standard(t)
+			typedSheet(srv).Set(1, 3, tc.cell)
+			add := rangeReq(service.RangeTable, service.RangeAdd, "A1:D3")
+			add.Name = "Trennow"
+			add.ColumnTypes = tc.types
+			_, err := newService(t, srv).ManageRange(context.Background(), add)
+			if tc.want == "" {
+				if err != nil {
+					t.Errorf("refused: %v", err)
+				}
+				return
+			}
+			if err == nil || err.Error() != tc.want {
+				t.Errorf("error =\n%v\nwant\n%s", err, tc.want)
+			}
+			if batched(srv) {
+				t.Error("a refused add reached the wire")
+			}
+		})
 	}
 }
 
@@ -829,9 +929,9 @@ func TestTableUpdateIsRefusedOverAFormulaInTheHeader(t *testing.T) {
 		update.ColumnTypes = []string{"B currency"}
 		update.DryRun = dryRun
 		_, err := svc.ManageRange(ctx, update)
-		const want = "[blocked] the header cell C1 of the table on A1:D3 holds a formula. Changing a column type sends " +
-			"every column's name back, and whether Google writes a name into its header cell is unverified, so the " +
-			"formula could be replaced by the text it shows. Replace the formula with text first, or set the type in Sheets"
+		const want = "[blocked] in the header row of the table on A1:D3, C1 holds a formula. Changing a column type " +
+			"sends every column's name back, and Google writes each name into its header cell as plain text, so " +
+			"the formula would be lost. Replace it with text first, or set the type in Sheets"
 		if err == nil || err.Error() != want {
 			t.Errorf("dry_run=%v: error =\n%v\nwant\n%s", dryRun, err, want)
 		}
@@ -861,10 +961,9 @@ func TestTableUpdateIsRefusedOverAChipInTheHeader(t *testing.T) {
 	update := rangeReq(service.RangeTable, service.RangeUpdate, "A1:D3")
 	update.ColumnTypes = []string{"B currency"}
 	_, err := newService(t, srv).ManageRange(context.Background(), update)
-	const want = "[blocked] the header cell D1 of the table on A1:D3 holds a smart chip (a person or a file link). " +
-		"Changing a column type sends every column's name back, and whether Google writes a name into its header " +
-		"cell is unverified, so the chip could be replaced by the text it shows. Replace the chip with text first, " +
-		"or set the type in Sheets"
+	const want = "[blocked] in the header row of the table on A1:D3, D1 holds a smart chip (a person or a file " +
+		"link). Changing a column type sends every column's name back, and Google writes each name into its " +
+		"header cell as plain text, so the chip would be lost. Replace it with text first, or set the type in Sheets"
 	if err == nil || err.Error() != want {
 		t.Errorf("error =\n%v\nwant\n%s", err, want)
 	}

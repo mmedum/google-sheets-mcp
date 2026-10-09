@@ -604,8 +604,8 @@ func (d *driver) typedColumnSteps() []step {
 	headers := func(when string) step {
 		return step{
 			name: "the header cells read as written, " + when,
-			why: "an add sends no column name and an update sends each one as read; whether either rewrites " +
-				"the header row is unverified (§18)",
+			why: "Google writes a name sent into its header cell, and \"Column 1\" into a typed column's sent " +
+				"with none (§18); an add sends each typed column's header text and an update every column's",
 			tool: "read_range",
 			args: map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A50:D50", "show": "values"},
 			check: func(text string, _ map[string]any) error {
@@ -658,8 +658,8 @@ func (d *driver) typedColumnSteps() []step {
 		},
 		{
 			name: "a table typing three of its four columns, by heading and by letter",
-			why: "column_types sends only the columns named, with no names; whether Google takes a sparse " +
-				"columnProperties on add is unverified (§18), and this step fails if it does not",
+			why: "column_types sends only the columns named, each with its header's text as its name, which " +
+				"keeps Google from writing \"Column 1\" over the header (§18)",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": typedBand,

@@ -501,21 +501,54 @@ func addTable(d *Doc, req *gsheets.AddTableRequest) (*gsheets.Reply, bool, error
 	}
 	copied := *t
 	copied.TableID = "tbl" + strconv.Itoa(len(sh.Tables)+1)
-	// A column is named by its header cell where the request names none.
-	// A belief (§18): the reference's own example sends a name for every
-	// column it types.
-	copied.ColumnProperties = nil
+	sent := map[int]*gsheets.TableColumn{}
 	for _, c := range t.ColumnProperties {
-		column := *c
-		if column.ColumnName == "" {
-			if header := sh.At(rect.FirstRow, rect.FirstCol+c.ColumnIndex); header != nil {
-				column.ColumnName = header.FormattedValue
-			}
+		sent[c.ColumnIndex] = c
+	}
+	// Spike T Q1, 2026-10-09: an add typing columns 1 and 3 of four, with
+	// no names, read back an entry for every column. The two left out
+	// were named by their header cells. The two typed ones were named
+	// "Column 1" and "Column 2", counted along the typed columns sent
+	// with no name, and Google wrote those names into the header cells
+	// over "Amount" and "Status". A name sent is written into its header
+	// cell, as an update writes one (Q4).
+	copied.ColumnProperties = nil
+	unnamed := 0
+	for i := range rect.Cols() {
+		column := gsheets.TableColumn{ColumnIndex: i}
+		if c, ok := sent[i]; ok {
+			column = *c
+		}
+		header := sh.At(rect.FirstRow, rect.FirstCol+i)
+		switch {
+		case column.ColumnName != "":
+			writeHeader(sh, rect.FirstRow, rect.FirstCol+i, column.ColumnName)
+		case column.ColumnType != "":
+			unnamed++
+			column.ColumnName = "Column " + strconv.Itoa(unnamed)
+			writeHeader(sh, rect.FirstRow, rect.FirstCol+i, column.ColumnName)
+		case header != nil:
+			column.ColumnName = header.FormattedValue
 		}
 		copied.ColumnProperties = append(copied.ColumnProperties, &column)
 	}
 	sh.Tables = append(sh.Tables, &copied)
 	return &gsheets.Reply{AddTable: &gsheets.AddTableReply{Table: &copied}}, true, nil
+}
+
+// writeHeader writes a column's name into its header cell as plain
+// text, which is what Google does with a name it is sent: the text
+// stays and a smart chip goes (spike T Q4 and Q9). The cell's format and
+// note stay.
+func writeHeader(sh *Sheet, row, col int, name string) {
+	cell := sh.At(row, col)
+	if cell == nil {
+		sh.Set(row, col, Str(name))
+		return
+	}
+	text := Str(name)
+	cell.UserEnteredValue, cell.EffectiveValue, cell.FormattedValue = text.UserEnteredValue, text.EffectiveValue, name
+	cell.ChipRuns = nil
 }
 
 // columnTypes is the API's column type enum, chips included.

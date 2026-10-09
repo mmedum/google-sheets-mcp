@@ -824,15 +824,14 @@ value.
   The update sends an entry for every column of the table, and each
   carries its `columnName`, exactly as the same fresh read gave it, or
   the header cell's text where the read gave the column no entry; such
-  a column goes with no type. Replaced whole, a list whose entries had
-  no name might clear every header; a name sent as read leaves the
-  header as it is whichever way Google treats it. A header cell holding
-  a formula or a smart chip is the exception: the reference does not say
-  whether a name sent is written into the cell, and written, it would
-  replace the formula or the chip with the text it shows. So the fresh
-  read takes the header row as well, chips included, and the update is
-  refused while a header cell holds either. A rename alone sends no
-  columns and is not refused.
+  a column goes with no type. Google refuses an entry with no name, and
+  writes a name sent into its header cell as plain text (spike T, §18),
+  so a name sent as read leaves the header showing what it did. A
+  header cell holding a formula or a smart chip is the exception:
+  written over, the formula or the chip is lost. So the fresh read takes
+  the header row as well, chips included, and the update is refused
+  while a header cell holds either. A rename alone sends no columns and
+  is not refused.
 
   Typing a column boolean, on add or update, reads the cells under its
   header first and is refused while one holds anything other than TRUE
@@ -841,10 +840,18 @@ value.
   respectively"; what a checkbox does to a word already there is not
   said, and an unchecked box in its place would lose it with nothing
   said. An empty cell fills with FALSE, and the tool description says
-  so. An add still sends no names:
-  it names only the columns it types, and the header text is already in
-  the cells. `get_spreadsheet` shows the types in the spelling
-  `column_types` takes, `Status dropdown (Open, In progress, Done)`.
+  so.
+
+  An add names every column it types after its header cell's text,
+  read first with the same mask. A typed column sent with no name has
+  Google write "Column 1", "Column 2" and so on into its header cell,
+  over the heading that was there (spike T, §18). An empty header cell
+  has no text to send and gets one of those names, which takes nothing;
+  the result says so. The add is refused while the header of a column
+  it types holds a formula or a smart chip, as an update is. A column it
+  does not type is sent nothing. `get_spreadsheet` shows the types in
+  the spelling `column_types` takes, `Status dropdown (Open, In
+  progress, Done)`.
 
   **The conditional-format ops are here rather than on `format_cells`,
   which is a change from an earlier draft of this section.** A rule is

@@ -2,6 +2,7 @@ package sheetstest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -430,9 +431,17 @@ func TestTableColumnsAreChecked(t *testing.T) {
 				if err != nil {
 					t.Fatalf("refused: %v", err)
 				}
-				// Named from the header cell, since the request named none.
-				if len(stored) != 1 || stored[0].ColumnProperties[0].ColumnName != "Bractal" {
-					t.Errorf("the table was not stored with its column named: %+v", stored)
+				// As spike T Q1 read back: an entry for every column, the
+				// one left out named by its header, and the typed one sent
+				// with no name named "Column 1", over its header cell.
+				columns, _ := json.Marshal(stored[0].ColumnProperties)
+				const want = `[{"columnName":"Trennow"},{"columnIndex":1,"columnName":"Column 1","columnType":"DROPDOWN",` +
+					`"dataValidationRule":{"condition":{"type":"ONE_OF_LIST","values":[{"userEnteredValue":"Open"}]}}}]`
+				if string(columns) != want {
+					t.Errorf("stored columns =\n%s\nwant\n%s", columns, want)
+				}
+				if got := srv.Doc(FixtureID).Find(SecondSheet).At(1, 2).FormattedValue; got != "Column 1" {
+					t.Errorf("the header cell B1 reads %q, want Column 1", got)
 				}
 				return
 			}
