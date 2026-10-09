@@ -10,8 +10,8 @@ people. One binary, stdio, per-user OAuth, no hosted deployment. The
 design, its evidence log, the decided constraints and the phase plan live
 in `docs/architecture.md`. Read it before changing the tool surface, the
 addressing model or the write path. The server works inside a
-spreadsheet: files, folders, sharing, revisions and comment threads
-belong to a server built on the Drive API.
+spreadsheet: files, folders, sharing and revisions belong to a server
+built on the Drive API. Cell comments are here.
 
 ## Hard rules
 

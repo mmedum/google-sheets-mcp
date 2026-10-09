@@ -38,6 +38,9 @@ func (d *driver) writeAll() {
 	// Phase 4, also on a sheet of its own: it deletes a charted column
 	// to watch what the API does not say about it.
 	d.chartAll()
+	// Comments, on a sheet of their own: they insert and delete rows to
+	// watch where a thread goes.
+	d.commentAll()
 	sec("clear_values")
 	d.run(d.clearSteps()...)
 	sec("delete_sheet")
@@ -667,6 +670,52 @@ func (d *driver) dimensionSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet,
 				"action": "ungroup", "dimension": "rows", "band": "12:14",
+			},
+		},
+		{
+			name: "hide rows",
+			why:  "a hidden band shows nothing in the values, so the read has to say so",
+			tool: "edit_dimensions",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet,
+				"action": "hide", "dimension": "rows", "band": "12:13",
+			},
+		},
+		{
+			name: "and the read names them",
+			why:  "rowMetadata is asked for only by read_range's own mask",
+			tool: "read_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A10:B14", "show": "values",
+			},
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "hidden rows 12-13") {
+					return fmt.Errorf("the read does not name the hidden rows: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "show them again",
+			why:  "unhide sends hiddenByUser false, not an absent field",
+			tool: "edit_dimensions",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet,
+				"action": "unhide", "dimension": "rows", "band": "12:13",
+			},
+		},
+		{
+			name: "and the read no longer names them",
+			why:  "the other half",
+			tool: "read_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A10:B14", "show": "values",
+			},
+			check: func(text string, _ map[string]any) error {
+				if strings.Contains(text, "hidden rows") {
+					return fmt.Errorf("rows are still hidden after unhide: %s", text)
+				}
+				return nil
 			},
 		},
 		{

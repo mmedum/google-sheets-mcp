@@ -7,6 +7,7 @@ import (
 
 	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
 )
 
@@ -446,5 +447,44 @@ func TestCopyPasteIntoPivotOutputNamesThePivot(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "pivot table anchored at F1") {
 		t.Errorf("the refusal does not name the pivot:\n%s", err)
+	}
+}
+
+// A paste, a cut, a fill and a split each land on cells the caller never
+// named. A smart chip there reads as its text, so "not empty" alone would
+// not say that overwrite erases a person or a file link.
+func TestALandingOnASmartChipNamesIt(t *testing.T) {
+	for _, tc := range []struct {
+		action   string
+		rangeA1  string
+		row, col int
+		set      func(*service.TransformRequest)
+		want     string
+	}{
+		{service.TransformCopyPaste, "A1:B2", 10, 4, func(r *service.TransformRequest) { r.Destination = "D10" }, "D10 holds a smart chip"},
+		{service.TransformCutPaste, "A1:B2", 10, 4, func(r *service.TransformRequest) { r.Destination = "D10" }, "D10 holds a smart chip"},
+		{service.TransformAutoFill, "B3:B3", 4, 2, func(r *service.TransformRequest) { r.FillRows, r.FillLength = true, 2 }, "B4 holds a smart chip"},
+		{service.TransformTextToColumns, "A1:A2", 1, 2, func(r *service.TransformRequest) { r.Delimiter = "comma" }, "B1 holds a smart chip"},
+	} {
+		t.Run(tc.action, func(t *testing.T) {
+			srv := sheetstest.Standard(t)
+			sh := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet)
+			sh.Set(1, 1, sheetstest.Str("Quorbin,Vandel"))
+			chip := sheetstest.Str("Jane Doe")
+			chip.ChipRuns = []gsheets.ChipRun{{Chip: &gsheets.Chip{
+				PersonProperties: &gsheets.PersonProperties{Email: "janedoe@example.test"},
+			}}}
+			sh.Set(tc.row, tc.col, chip)
+
+			req := transformReq(tc.action, tc.rangeA1)
+			tc.set(&req)
+			_, err := newService(t, srv).Transform(context.Background(), req)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("%s onto a chip gave %v", tc.action, err)
+			}
+			if batched(srv) {
+				t.Fatal("a refused write reached the wire")
+			}
+		})
 	}
 }

@@ -51,16 +51,17 @@ func connect(t *testing.T, s *mcp.Server) *mcp.ClientSession {
 // The surface this phase ships. It is written out so a tool appearing or
 // disappearing is a decision somebody made rather than something that
 // happened.
-var readTools = []string{"find_in_spreadsheet", "get_spreadsheet", "read_formatting", "read_range", "search_spreadsheets"}
+var readTools = []string{"find_in_spreadsheet", "get_spreadsheet", "read_cell_comments", "read_formatting", "read_range", "search_spreadsheets"}
 
 // writeTools are registered unless the server is read-only;
 // destructiveTools need the destructive flag as well.
 var writeTools = []string{
 	"append_rows", "create_spreadsheet", "edit_dimensions", "format_cells",
-	"manage_anchor", "manage_chart", "manage_pivot_table", "manage_range", "manage_sheet", "transform_range", "write_values",
+	"manage_anchor", "manage_cell_comment", "manage_chart", "manage_pivot_table", "manage_range", "manage_sheet",
+	"transform_range", "write_values",
 }
 
-var destructiveTools = []string{"clear_values", "delete_data_source", "delete_dimensions", "delete_sheet"}
+var destructiveTools = []string{"clear_values", "delete_cell_comment", "delete_data_source", "delete_dimensions", "delete_sheet"}
 
 // connectedTools reach outside the spreadsheet and need
 // GSHEETS_ENABLE_DATA_SOURCES, which is also what asks for the third
@@ -131,6 +132,11 @@ func TestToolsNameEachOther(t *testing.T) {
 		{"format_cells", "manage_range"},
 		{"manage_range", "read_formatting"},
 		{"transform_range", "checkpoint"},
+		// A note and a comment both sit on a cell, so the comment read
+		// says where a note is, and the two comment tools name each other.
+		{"read_cell_comments", "include_notes"},
+		{"read_cell_comments", "manage_cell_comment"},
+		{"manage_cell_comment", "read_cell_comments"},
 	} {
 		if !strings.Contains(byName[pair[0]], pair[1]) {
 			t.Errorf("%s never mentions %s, so a model choosing between them has nothing to go on", pair[0], pair[1])

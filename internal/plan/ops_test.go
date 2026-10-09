@@ -244,6 +244,7 @@ func TestEachBuilderSetsOneUnionMember(t *testing.T) {
 		"AutoResizeDimensions": plan.AutoResizeDimensions(1, gsheets.DimensionColumns, 1, 2),
 		"GroupDimensions":      plan.GroupDimensions(1, gsheets.DimensionRows, 1, 2),
 		"UngroupDimensions":    plan.UngroupDimensions(1, gsheets.DimensionRows, 1, 2),
+		"HideDimension":        plan.HideDimension(1, gsheets.DimensionRows, 1, 2, true),
 	} {
 		raw, err := json.Marshal(req)
 		if err != nil {
@@ -255,6 +256,24 @@ func TestEachBuilderSetsOneUnionMember(t *testing.T) {
 		}
 		if len(members) != 1 {
 			t.Errorf("%s set %d union members: %s", name, len(members), raw)
+		}
+	}
+}
+
+// Unhiding sends hiddenByUser: false. Left out, the field would read as
+// "not set", which the mask then resets to the default anyway; sent, the
+// request says what it means.
+func TestHideDimensionSaysBothWays(t *testing.T) {
+	for hidden, want := range map[bool]string{
+		true:  `{"updateDimensionProperties":{"range":{"sheetId":1,"dimension":"ROWS","startIndex":1,"endIndex":3},"properties":{"hiddenByUser":true},"fields":"hiddenByUser"}}`,
+		false: `{"updateDimensionProperties":{"range":{"sheetId":1,"dimension":"ROWS","startIndex":1,"endIndex":3},"properties":{"hiddenByUser":false},"fields":"hiddenByUser"}}`,
+	} {
+		raw, err := json.Marshal(plan.HideDimension(1, gsheets.DimensionRows, 2, 3, hidden))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(raw) != want {
+			t.Errorf("hidden=%t:\n got %s\nwant %s", hidden, raw, want)
 		}
 	}
 }

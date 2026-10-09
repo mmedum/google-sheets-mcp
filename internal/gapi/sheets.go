@@ -29,16 +29,36 @@ const CardFields = "spreadsheetId," +
 	"dataSources(dataSourceId,sheetId,spec(bigQuery(projectId)))," +
 	"namedRanges"
 
+// TableFields is the field mask behind a table's columns, read fresh
+// before an update sends them back whole. The card has them too, but it
+// is cached, and a cached array sent back would undo a change somebody
+// made since.
+//
+// The header row comes in the same read, scoped by a range. The update
+// sends each column's name back, and refuses a header cell that holds a
+// formula, a smart chip or rich text, which a name written into it would
+// replace.
+const TableFields = "sheets(properties(sheetId),tables(tableId,range,columnProperties)," +
+	"data(startRow,startColumn,rowData(values(userEnteredValue,formattedValue,chipRuns,textFormatRuns))))"
+
 // GridFields is the field mask behind a read of cells. It asks for what
 // a values read cannot show: the entered value under a formatted one,
-// the note, the validation rule.
+// the note, the validation rule, the smart chips.
 //
 // userEnteredValue and effectiveValue are both here because a formula
 // and its result render identically, and the difference between them is
 // what the write guard is built on.
-const GridFields = sheetHead +
-	"data(startRow,startColumn,rowData(values(userEnteredValue,effectiveValue,formattedValue,note,dataValidation," +
-	"hyperlink,pivotTable(source)))))"
+const GridFields = sheetHead + "data(startRow,startColumn,rowData(values(" + cellFields + "))))"
+
+// ReadFields is GridFields plus which rows and columns a person hid,
+// for read_range: a hidden band is invisible in the values, and hiding
+// one is something edit_dimensions does.
+const ReadFields = sheetHead +
+	"data(startRow,startColumn,rowMetadata(hiddenByUser),columnMetadata(hiddenByUser),rowData(values(" + cellFields + "))))"
+
+// cellFields is what both masks read of each cell, written once so the
+// read and the write guard cannot see different cells.
+const cellFields = "userEnteredValue,effectiveValue,formattedValue,note,dataValidation,hyperlink,chipRuns,pivotTable(source)"
 
 // sheetHead is what every mask that reads cells asks for around them:
 // the sheet's identity and size, its merges, and its protected ranges.
@@ -50,6 +70,18 @@ const GridFields = sheetHead +
 const sheetHead = "spreadsheetId," +
 	"sheets(properties(sheetId,title,index,gridProperties),merges," +
 	"protectedRanges(protectedRangeId,range,description,warningOnly,requestingUserCanEdit),"
+
+// CommentFields is the field mask behind the comment tools: every
+// thread, and every sheet's anchors, which say which cell each thread is
+// on now. Google refuses it unless GetOptions.Comments asks for the
+// comments view (spike R). contentHtml is left out; content is the same
+// words as plain text.
+const CommentFields = "spreadsheetId,properties(title)," +
+	"sheets(properties(sheetId,title,index,gridProperties),commentAnchors(anchorId,range))," +
+	"comments(commentId,anchorId,status,plainTextQuote,headPost(" + postFields + "),replies(" + postFields + "))"
+
+// postFields is what CommentFields reads of each post, head and reply.
+const postFields = "postId,content,commentAction,assigneeEmail,author(displayName,me,anonymous),createTime,updateTime,deleted"
 
 // ChartFields is the field mask behind manage_chart.
 //
@@ -133,6 +165,9 @@ type GetOptions struct {
 	// IncludeGridData asks for cells. Without Ranges it would ask for
 	// every cell in the spreadsheet, so the two travel together.
 	IncludeGridData bool
+	// Comments asks for the comments view. Google omits comments without
+	// it, and refuses a mask that names them (spike R).
+	Comments bool
 }
 
 // GetSpreadsheet reads a spreadsheet's metadata, and its cells when the
@@ -152,6 +187,10 @@ func (c *Client) GetSpreadsheet(ctx context.Context, id string, o GetOptions) (*
 	if len(o.Ranges) == 0 && strings.Contains(o.Fields, "data(") {
 		return nil, fmt.Errorf("%w: the field mask asks for cell data and no range was given, which is the whole spreadsheet", ErrInvalid)
 	}
+	// Google answers this with a 400 (spike R); refusing it here says why.
+	if strings.Contains(o.Fields, "comment") && !o.Comments {
+		return nil, fmt.Errorf("%w: the field mask names comments and the read does not ask for the comments view", ErrInvalid)
+	}
 	v := url.Values{}
 	v.Set("fields", o.Fields)
 	for _, r := range o.Ranges {
@@ -159,6 +198,9 @@ func (c *Client) GetSpreadsheet(ctx context.Context, id string, o GetOptions) (*
 	}
 	if o.IncludeGridData {
 		v.Set("includeGridData", "true")
+	}
+	if o.Comments {
+		v.Set("commentsViewMode", "COMMENTS_VIEW_MODE_INCLUDED")
 	}
 	body, err := c.do(ctx, request{
 		op:          "spreadsheets.get",

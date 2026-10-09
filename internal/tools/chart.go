@@ -72,10 +72,12 @@ type ManagePivotTableInput struct {
 	Action      string `json:"action" jsonschema:"add, update, delete or list"`
 	Anchor      string `json:"anchor,omitempty" jsonschema:"the cell the pivot table's top-left corner sits on, such as F1. A pivot table has no id in the API, so this is its whole name: update and delete take the same anchor add was given"`
 
-	Source       string   `json:"source,omitempty" jsonschema:"the block of data to summarize, such as A1:C200. Its first row is read as headings"`
-	GroupRows    []string `json:"group_rows,omitempty" jsonschema:"the column(s) whose values become the rows of the summary, each a column letter inside source or a heading from its first row"`
-	GroupColumns []string `json:"group_columns,omitempty" jsonschema:"the column(s) whose values become the columns of the summary, named the same way"`
-	Values       []string `json:"values,omitempty" jsonschema:"what to work out for each group, as \"B sum\" or \"Units sum\", one per entry. Add \"as Total units\" to name the column. The summaries are sum, count, count_numbers, count_unique, average, max, min, median, product, stdev and var"`
+	Source       string   `json:"source,omitempty" jsonschema:"the block of data to summarize, such as A1:C200. Its first row is read as headings. On update, groups, values and filters not passed again keep their position, counted from the source's first column, so a new source that starts in another column, or is too narrow for them, is refused unless they are passed again. A calculated value names its columns by heading, and keeps none"`
+	GroupRows    []string `json:"group_rows,omitempty" jsonschema:"the column(s) whose values become the rows of the summary, each a column letter inside source or a heading from its first row. Add a rule to put the values in buckets: \"Date by year_month\" groups dates by second, minute, hour, hour_minute, hour_minute_ampm, day_of_week, day_of_year, day_of_month, day_month, month, quarter, year, year_month, year_quarter or year_month_day, and \"Age every 10 from 20 to 70\" groups numbers 10 at a time, from and to being optional. One rule per column"`
+	GroupColumns []string `json:"group_columns,omitempty" jsonschema:"the column(s) whose values become the columns of the summary, named the same way and taking the same rules"`
+	Values       []string `json:"values,omitempty" jsonschema:"what to work out for each group, as \"B sum\" or \"Units sum\", one per entry. Add \"as Total units\" to name the column. The summaries are sum, count, count_numbers, count_unique, average, max, min, median, product, stdev, stdevp, var and varp. An entry starting with = is a calculated value and needs a name: \"=SUM(Revenue)/SUM(Cost) as Margin\" uses the formula as written, and \"=Revenue-Cost sum as Margin\" works it out per row and sums it. The formula names columns by their headings"`
+	Filters      []string `json:"filters,omitempty" jsonschema:"which rows of the source to summarize, replacing every filter the pivot table has: \"Region show East, West\" keeps the rows whose value is listed, and \"Amount number_greater 100\" keeps the rows that meet a condition. The conditions are data_validation's, those a filter takes: number_greater, number_between (two values, separated by a comma), text_contains, date_after, blank, custom_formula and the rest of that family. date_before and date_after take a date, or one counted from today: today, yesterday, tomorrow, past_week, past_month or past_year. A column takes one show list and one condition, and both must hold"`
+	ClearFilters bool     `json:"clear_filters,omitempty" jsonschema:"for update: remove every filter, so the pivot table summarizes every row of its source"`
 	Layout       string   `json:"layout,omitempty" jsonschema:"horizontal puts several values side by side, vertical stacks them"`
 
 	Range  string `json:"range,omitempty" jsonschema:"for list: where to look. A pivot table has no index in the API, so a listing reads cells; the default is the whole sheet"`
@@ -93,13 +95,16 @@ func registerPivot(s *mcp.Server, d Deps) {
 			"as the data does, so every result reports what it covers right now. " +
 			"Anchor it clear of the source and of anything else — a write into the rectangle it draws stops the " +
 			"pivot table drawing until that cell is cleared again, and this server refuses an anchor inside the " +
-			"source, which Google accepts and turns into a circular reference.",
+			"source, which Google accepts and turns into a circular reference. " +
+			"list reports each pivot table's groups, values and filters in the spelling this tool takes, so they " +
+			"can be changed and sent back.",
 		Kind: Write,
 		Handle: func(ctx context.Context, in ManagePivotTableInput) (*service.PivotResult, error) {
 			return d.Service.ManagePivotTable(ctx, service.PivotRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Action: in.Action, Anchor: in.Anchor,
 				Source: in.Source, Rows: in.GroupRows, Columns: in.GroupColumns,
-				Values: in.Values, Layout: in.Layout, Range: in.Range, DryRun: in.DryRun,
+				Values: in.Values, Filters: in.Filters, ClearFilters: in.ClearFilters,
+				Layout: in.Layout, Range: in.Range, DryRun: in.DryRun,
 			})
 		},
 	})

@@ -37,7 +37,7 @@
 # replies against Drive's comment threads and reports every field of each
 # as missing from the other.
 sheets	Response	*	alias	Reply
-drive	Reply	*	unrelated	this server has no comment tools; its Reply is the Sheets batchUpdate response above
+drive	Reply	*	unrelated	Drive's comment reply; this server's comment tools use the Sheets API, and its Reply is the Sheets batchUpdate response above
 #
 # Data-source-backed cells and Looker.
 sheets	AutoResizeDimensionsRequest	dataSourceSheetDimensions	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
@@ -49,6 +49,7 @@ sheets	DataSourceSpec	looker	out	manage_data_source connects and refreshes a Big
 sheets	DataSourceSpec	parameters	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
 sheets	DimensionProperties	dataSourceColumnReference	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
 sheets	PivotGroup	dataSourceColumnReference	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
+sheets	PivotFilterSpec	dataSourceColumnReference	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
 sheets	PivotTable	dataExecutionStatus	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
 sheets	PivotTable	dataSourceId	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
 sheets	PivotValue	dataSourceColumnReference	out	manage_data_source connects and refreshes a BigQuery source and get_spreadsheet reports one; what is out is reading a data-source-backed cell, column reference or execution status back, and Looker, which no tool connects
@@ -96,11 +97,9 @@ sheets	Response	duplicateFilterView	out	a filter view is a saved per-person view
 sheets	Sheet	basicFilter	out	a filter view is a saved per-person view of a range, and the basic filter the one a sheet carries; find_in_spreadsheet and read_range read the cells themselves, and no tool creates, applies or reports either
 #
 # A criteria set no tool builds.
-sheets	ChartSpec	filterSpecs	out	format_cells, transform_range and manage_pivot_table take ranges and rules rather than a per-column criteria set, so nothing here builds one or reads one back
-sheets	PivotTable	criteria	out	format_cells, transform_range and manage_pivot_table take ranges and rules rather than a per-column criteria set, so nothing here builds one or reads one back
-sheets	PivotTable	filterSpecs	out	format_cells, transform_range and manage_pivot_table take ranges and rules rather than a per-column criteria set, so nothing here builds one or reads one back
-sheets	SetDataValidationRequest	filteredRowsIncluded	out	format_cells, transform_range and manage_pivot_table take ranges and rules rather than a per-column criteria set, so nothing here builds one or reads one back
-sheets	SlicerSpec	filterCriteria	out	format_cells, transform_range and manage_pivot_table take ranges and rules rather than a per-column criteria set, so nothing here builds one or reads one back
+sheets	ChartSpec	filterSpecs	out	format_cells and transform_range take ranges and rules rather than a per-column criteria set, so nothing here builds one for a chart, a slicer or a validation rule, or reads one back; a pivot table's filters are manage_pivot_table's, written as filterSpecs
+sheets	SetDataValidationRequest	filteredRowsIncluded	out	format_cells and transform_range take ranges and rules rather than a per-column criteria set, so nothing here builds one for a chart, a slicer or a validation rule, or reads one back; a pivot table's filters are manage_pivot_table's, written as filterSpecs
+sheets	SlicerSpec	filterCriteria	out	format_cells and transform_range take ranges and rules rather than a per-column criteria set, so nothing here builds one for a chart, a slicer or a validation rule, or reads one back; a pivot table's filters are manage_pivot_table's, written as filterSpecs
 #
 # Chart kinds this server cannot rebuild.
 sheets	ChartSpec	bubbleChart	out	manage_chart builds basic and pie charts; chartKind names the rest in the refusal that says so, reading the spec as a raw map rather than modeling it
@@ -164,17 +163,16 @@ sheets	TextFormat	foregroundColor	out	Sheets deprecated a flat Color in favor of
 sheets	Border	width	out	Border here is a cell border, which format_cells writes and read_formatting reports; width was deprecated in favor of style, which is the one modeled
 #
 # Sorting and grouping detail no tool sets.
-sheets	BandingProperties	footerColorStyle	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
-sheets	ChartData	columnReference	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
-sheets	ChartData	groupRule	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
-sheets	PivotGroup	groupLimit	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
-sheets	PivotGroup	groupRule	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
-sheets	PivotGroup	repeatHeadings	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
-sheets	PivotGroup	valueBucket	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
-sheets	PivotGroup	valueMetadata	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
-sheets	PivotValue	calculatedDisplayType	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
-sheets	SortSpec	backgroundColorStyle	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
-sheets	SortSpec	foregroundColorStyle	out	transform_range sorts by column and direction and manage_pivot_table groups by column; per-column colors, bucketing rules and repeated headings are refinements no tool offers
+sheets	BandingProperties	footerColorStyle	out	transform_range sorts by column and direction, and manage_pivot_table groups by column with an optional date or histogram rule; per-column colors, a chart's bucketing, group limits, sorting by a value, repeated headings and a value's "show as" are refinements no tool offers
+sheets	ChartData	columnReference	out	transform_range sorts by column and direction, and manage_pivot_table groups by column with an optional date or histogram rule; per-column colors, a chart's bucketing, group limits, sorting by a value, repeated headings and a value's "show as" are refinements no tool offers
+sheets	ChartData	groupRule	out	transform_range sorts by column and direction, and manage_pivot_table groups by column with an optional date or histogram rule; per-column colors, a chart's bucketing, group limits, sorting by a value, repeated headings and a value's "show as" are refinements no tool offers
+sheets	PivotGroup	groupLimit	out	transform_range sorts by column and direction, and manage_pivot_table groups by column with an optional date or histogram rule; per-column colors, a chart's bucketing, group limits, sorting by a value, repeated headings and a value's "show as" are refinements no tool offers
+sheets	PivotGroup	repeatHeadings	out	transform_range sorts by column and direction, and manage_pivot_table groups by column with an optional date or histogram rule; per-column colors, a chart's bucketing, group limits, sorting by a value, repeated headings and a value's "show as" are refinements no tool offers
+sheets	PivotGroup	valueBucket	out	transform_range sorts by column and direction, and manage_pivot_table groups by column with an optional date or histogram rule; per-column colors, a chart's bucketing, group limits, sorting by a value, repeated headings and a value's "show as" are refinements no tool offers
+sheets	PivotGroup	valueMetadata	out	transform_range sorts by column and direction, and manage_pivot_table groups by column with an optional date or histogram rule; per-column colors, a chart's bucketing, group limits, sorting by a value, repeated headings and a value's "show as" are refinements no tool offers
+sheets	PivotValue	calculatedDisplayType	out	transform_range sorts by column and direction, and manage_pivot_table groups by column with an optional date or histogram rule; per-column colors, a chart's bucketing, group limits, sorting by a value, repeated headings and a value's "show as" are refinements no tool offers
+sheets	SortSpec	backgroundColorStyle	out	transform_range sorts by column and direction, and manage_pivot_table groups by column with an optional date or histogram rule; per-column colors, a chart's bucketing, group limits, sorting by a value, repeated headings and a value's "show as" are refinements no tool offers
+sheets	SortSpec	foregroundColorStyle	out	transform_range sorts by column and direction, and manage_pivot_table groups by column with an optional date or histogram rule; per-column colors, a chart's bucketing, group limits, sorting by a value, repeated headings and a value's "show as" are refinements no tool offers
 #
 # Request and response members no tool builds.
 sheets	AutoFillRequest	range	out	not built by internal/plan, so nothing reads the reply either; the coverage record is where each of these is judged as capability
@@ -201,12 +199,8 @@ sheets	CellFormat	textDirection	out	read_formatting reports the formatting this 
 sheets	CellFormat	textRotation	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
 sheets	DimensionProperties	hiddenByFilter	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
 sheets	DimensionProperties	hiddenByUser	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
-sheets	GradientRule	maxpoint	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
-sheets	GradientRule	midpoint	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
-sheets	GradientRule	minpoint	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
 sheets	GridData	columnMetadata	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
 sheets	GridData	rowMetadata	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
-sheets	PivotValue	formula	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
 sheets	ProtectedRange	tableId	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
 sheets	SpreadsheetProperties	defaultFormat	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
 sheets	SpreadsheetProperties	importFunctionsExternalUrlAccessAllowed	out	read_formatting reports the formatting this server can also write; these are properties format_cells, manage_sheet and manage_range do not offer
@@ -221,6 +215,7 @@ sheets	TextFormat	link	out	read_formatting reports the formatting this server ca
 # so the alias costs nothing and keeps them compared.
 sheets	AddBandingResponse	*	alias	AddBandingReply
 sheets	AddChartResponse	*	alias	AddChartReply
+sheets	AddCommentReplyResponse	*	alias	AddCommentReplyReply
 sheets	AddDataSourceResponse	*	alias	AddDataSourceReply
 sheets	AddNamedRangeResponse	*	alias	AddNamedRangeReply
 sheets	AddProtectedRangeResponse	*	alias	AddProtectedRangeReply
@@ -233,6 +228,7 @@ sheets	DeleteDeveloperMetadataResponse	*	alias	DeleteDeveloperMetadataReply
 sheets	DeleteDuplicatesResponse	*	alias	DeleteDuplicatesReply
 sheets	DuplicateSheetResponse	*	alias	DuplicateSheetReply
 sheets	FindReplaceResponse	*	alias	FindReplaceReply
+sheets	InsertCommentResponse	*	alias	InsertCommentReply
 sheets	RefreshDataSourceResponse	*	alias	RefreshDataSourceReply
 sheets	TrimWhitespaceResponse	*	alias	TrimWhitespaceReply
 sheets	UpdateDeveloperMetadataResponse	*	alias	UpdateDeveloperMetadataReply
@@ -244,7 +240,6 @@ sheets	AddDimensionGroupRequest	*	alias	DimensionGroupRequest
 sheets	DeleteDimensionGroupRequest	*	alias	DimensionGroupRequest
 #
 sheets	TableColumnProperties	*	alias	TableColumn
-sheets	TableColumnProperties	dataValidationRule	out	no tool sets a validation rule on a table column; manage_range does validation by range
 #
 # The request-side types that exist to leave an id out. Aliasing one to
 # the schema it resembles would claim it models that schema and then ask
@@ -257,16 +252,12 @@ sheets	TableColumnProperties	dataValidationRule	out	no tool sets a validation ru
 -	NewChart	*	local	EmbeddedChart without chartId, for addChart
 -	NewSlicer	*	local	Slicer without slicerId, for addSlicer
 #
-# Comments, published by Sheets in 2026-09.
-sheets	BatchUpdateSpreadsheetRequest	commentsViewMode	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	BatchUpdateSpreadsheetResponse	commentUpdateState	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Request	addCommentReply	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Request	deleteComment	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Request	deleteCommentReply	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Request	insertComment	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Request	updateCommentPost	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Response	addCommentReply	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Response	insertComment	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Sheet	commentAnchors	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Spreadsheet	comments	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	Spreadsheet	commentsViewMode	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+#
+# Cell comments (spike R). The comment tools model what they show and act
+# on; these say what they leave.
+sheets	BatchUpdateSpreadsheetRequest	commentsViewMode	out	applies only with includeSpreadsheetInResponse, which this server never sets; a comment write reports Google's reply instead
+sheets	Spreadsheet	commentsViewMode	out	output only: it repeats the view the read asked for
+sheets	Post	contentHtml	out	the same words as content, as HTML; content is what the tools show and send
+sheets	Post	fromCopiedSpreadsheet	out	output only, and nothing a caller acts on: Google lets the author edit or delete a copied post as any other
+sheets	Post	fromImportedSpreadsheet	out	output only, and nothing a caller acts on: Google lets the author edit or delete an imported post as any other
+sheets	PostAuthor	user	out	a People API resource name; the display name and whether the post is the caller's are what the tools show

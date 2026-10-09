@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -227,10 +228,12 @@ func (s *Server) put(sh *Sheet, firstRow, firstCol int, values [][]any, input st
 			sh.Set(firstRow+i, firstCol+j, store(v, input))
 		}
 	}
-	return a1.Rect{
+	written := a1.Rect{
 		FirstRow: firstRow, FirstCol: firstCol,
 		LastRow: firstRow + len(values) - 1, LastCol: firstCol + width - 1,
 	}
+	headerWritten(sh, written)
+	return written
 }
 
 // updateResponse builds what a values write returns, including the
@@ -422,6 +425,17 @@ func (s *Server) spreadsheetsBatchUpdate(w http.ResponseWriter, r *http.Request)
 	// here carries one request, and waiting for the first that does not.
 	working := d.clone()
 	out := &gsheets.BatchUpdateSpreadsheetResponse{SpreadsheetID: d.ID}
+	comments := slices.ContainsFunc(in.Requests, isComment)
+	if comments {
+		out.CommentUpdateState = "ALL_SAVED"
+	}
+	if comments && d.CommentsFail {
+		// A 200 that saved nothing, which only the state admits.
+		s.mu.Unlock()
+		out.CommentUpdateState = gsheets.CommentUpdateAllFailed
+		writeJSON(w, out)
+		return
+	}
 	for _, req := range in.Requests {
 		reply, err := applyRequest(working, req)
 		if err != nil {
@@ -515,6 +529,7 @@ func (d *Doc) clone() *Doc {
 		copied.Charts = clonePointers(sh.Charts)
 		copied.Slicers = clonePointers(sh.Slicers)
 		copied.Conditional = append([]*gsheets.ConditionalFormatRule(nil), sh.Conditional...)
+		copied.CommentAnchors = cloneAnchors(sh.CommentAnchors)
 		out.Sheets[i] = &copied
 	}
 	// The entries and the locations inside them, because an anchor moves
@@ -522,6 +537,10 @@ func (d *Doc) clone() *Doc {
 	// a batch that failed halfway leave anchors where it put them.
 	out.Metadata = clonePointers(d.Metadata)
 	out.DataSources = clonePointers(d.DataSources)
+	out.Comments = make([]*gsheets.CommentThread, len(d.Comments))
+	for i, t := range d.Comments {
+		out.Comments[i] = cloneThread(t)
+	}
 	for _, md := range out.Metadata {
 		if md == nil || md.Location == nil {
 			continue
@@ -616,6 +635,9 @@ func applyRequest(d *Doc, req *gsheets.Request) (*gsheets.Reply, error) {
 	case req.UpdateSheetProperties != nil:
 		return updateProperties(d, req.UpdateSheetProperties)
 	}
+	if reply, handled, err := applyComment(d, req); handled {
+		return reply, err
+	}
 	if reply, handled, err := applyChart(d, req); handled {
 		return reply, err
 	}
@@ -655,11 +677,13 @@ func applyDimension(d *Doc, req *gsheets.Request) (*gsheets.Reply, error) {
 			// built to catch it.
 			shiftCells(sh, r, r.EndIndex-r.StartIndex)
 			shiftMetadata(d, r.SheetID, r.Dimension, r.StartIndex, r.EndIndex-r.StartIndex)
+			shiftCommentAnchors(sh, r.Dimension, r.StartIndex, r.EndIndex-r.StartIndex)
 		})
 	case req.DeleteDimension != nil:
 		return dimension(d, req.DeleteDimension.Range, func(sh *Sheet, r *gsheets.DimensionRange) {
 			deleteBand(sh, r)
 			shiftMetadata(d, r.SheetID, r.Dimension, r.StartIndex, r.StartIndex-r.EndIndex)
+			shiftCommentAnchors(sh, r.Dimension, r.StartIndex, r.StartIndex-r.EndIndex)
 			// The silent half: a chart reading the deleted columns keeps
 			// its place and loses its series, and the reply says nothing
 			// (spike L). The fake does it too, or the refusal this
@@ -672,6 +696,7 @@ func applyDimension(d *Doc, req *gsheets.Request) (*gsheets.Reply, error) {
 		return dimension(d, req.MoveDimension.Source, func(sh *Sheet, r *gsheets.DimensionRange) {
 			moveCells(sh, r, req.MoveDimension.DestinationIndex)
 			moveMetadata(d, r.SheetID, r.Dimension, r.StartIndex, r.EndIndex, req.MoveDimension.DestinationIndex)
+			moveCommentAnchors(sh, r.Dimension, r.StartIndex, r.EndIndex, req.MoveDimension.DestinationIndex)
 		})
 	case req.UpdateDimensionProperties != nil:
 		return dimension(d, req.UpdateDimensionProperties.Range, noCellChange)

@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -13,10 +14,11 @@ type PivotAct struct {
 	Anchor string
 	Sheet  string
 	Source string
-	// Groups and Values are what an add was asked for, in the caller's
-	// own words, so a result reads back what was written.
-	Groups []string
-	Values []string
+	// Groups, Values and Filters are what an add was asked for, in the
+	// caller's own words, so a result reads back what was written.
+	Groups  []string
+	Values  []string
+	Filters []string
 	// Changed names the arguments an update applied.
 	Changed []string
 	// Output is the rectangle the pivot draws right now, read after the
@@ -36,7 +38,12 @@ func (a PivotAct) Phrase() string {
 		if len(a.Values) > 0 {
 			summarizing = " summarizing " + JoinAnd(a.Values)
 		}
-		return fmt.Sprintf("add a pivot table at %s on %q over %s%s%s", a.Anchor, a.Sheet, a.Source, by, summarizing)
+		filtered := ""
+		if len(a.Filters) > 0 {
+			filtered = " filtered by " + JoinAnd(a.Filters)
+		}
+		return fmt.Sprintf("add a pivot table at %s on %q over %s%s%s%s", a.Anchor, a.Sheet, a.Source, by,
+			summarizing, filtered)
 	case "update":
 		return fmt.Sprintf("change the %s of the pivot table at %s on %q", JoinAnd(a.Changed), a.Anchor, a.Sheet)
 	default:
@@ -75,11 +82,16 @@ func PivotDone(a PivotAct) string {
 	return b.String()
 }
 
-// PivotRow is one line of a listing.
+// PivotRow is one pivot of a listing. Rows, Columns, Values and Filters
+// are in the spelling the tool takes.
 type PivotRow struct {
-	Anchor string
-	Source string
-	Output string
+	Anchor  string
+	Source  string
+	Output  string
+	Rows    []string
+	Columns []string
+	Values  []string
+	Filters []string
 }
 
 // PivotList renders the pivot tables found in a rectangle.
@@ -99,6 +111,26 @@ func PivotList(pivots []PivotRow, sheet, window string) string {
 			line += "  covering " + p.Output
 		}
 		b.WriteString(line + "\n")
+		for _, part := range []struct {
+			arg     string
+			entries []string
+		}{
+			{"group_rows", p.Rows}, {"group_columns", p.Columns}, {"values", p.Values}, {"filters", p.Filters},
+		} {
+			if len(part.entries) > 0 {
+				fmt.Fprintf(&b, "    %s %s\n", part.arg, quotedList(part.entries))
+			}
+		}
 	}
 	return b.String()
+}
+
+// quotedList is a list as the argument takes it, ["A", "B sum"], since an
+// entry may hold a comma.
+func quotedList(entries []string) string {
+	parts := make([]string, len(entries))
+	for i, e := range entries {
+		parts[i] = strconv.Quote(e)
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
 }

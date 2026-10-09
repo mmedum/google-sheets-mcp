@@ -5,6 +5,35 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-09
+
+### Added
+
+- `edit_dimensions` hides and unhides rows and columns, and `read_range` names the hidden rows and columns inside the range it read.
+- `read_cell_comments` lists the comment threads on a spreadsheet's cells, each on the cell it is on now, with its status, assignee and posts.
+- `manage_cell_comment` adds a comment to a cell, replies, edits a post, resolves and reopens. Google emails an assignee, without checking the address, and may notify an address the text names.
+- `manage_range` `conditional_format` takes `gradient`, a color scale of two or three points such as `["min #ffffff", "percentile 50 #ffd666", "max #57bb8a"]`. `read_formatting` reads a color scale back in the same spelling, where it used to say only "color gradient". A number is written the way the spreadsheet's locale writes it: under `de_DE`, `1,5`, since Google refuses `1.5`.
+- `manage_range` `table` takes `column_types` on add and update, such as `["B date", "Amount currency", "Status dropdown: Open, In progress, Done"]`, naming each column by letter or by its header. Each column keeps its header's text as its name; Google writes a name of its own, such as "Column 1", into an empty header cell, and the result says so. An update changes only the columns named and keeps every other column's type and dropdown list, and every header's text. Google writes a column's name into its header cell as plain text, so an add is refused while the header of a column it types holds a smart chip or rich text, such as a bold word, and an update while any header cell holds one of those or a formula. A boolean column shows checkboxes and fills its empty cells with FALSE; it is refused while a cell under its header holds anything but a TRUE or FALSE value, since Google turns a word, and even text reading TRUE, into FALSE. A dropdown column is refused while a cell under its header has a data validation rule of its own, naming the cells: Google replaces that rule with the table's list and says nothing. `get_spreadsheet` shows a table's column types in a spelling `column_types` takes back, a dropdown with its options in parentheses, where it used to show Google's names for them, such as `DOUBLE`.
+- `manage_pivot_table` groups by a rule, filters, and works out calculated values. A group such as `"Date by year_month"` buckets dates by a part of them, and `"Age every 10 from 20 to 70"` buckets numbers. `filters` keeps the rows to summarize, such as `"Region show East, West"`, `"Amount number_greater 100"` or `"Day date_after past_week"`, and replaces every filter the pivot table had; `clear_filters` removes them. A value starting with `=` is a calculated value and needs a name: `"=SUM(Revenue)/SUM(Cost) as Margin"` uses the formula as written, and `"=Revenue-Cost sum as Margin"` works it out per row and sums it. `list` reports each pivot table's `rows`, `columns`, `values` and `filters` in the same spelling, so they can be changed and sent back. A grouping made by hand in Sheets reads as `"Region by hand"`, and an update that leaves the groups out keeps it. `stdevp` and `varp` join the summaries.
+- `delete_cell_comment` deletes a comment thread or one reply. Like the other deletes it is registered only with `GSHEETS_ENABLE_DESTRUCTIVE=true`, needs `confirm`, and asks the person first. A thread or reply that is not there, such as one a repeat call already deleted, is reported gone and nothing is sent; Google answers an id it never had the same way, so a mistyped id reads as gone too.
+
+### Changed
+
+- `manage_range` `table` `add` is refused before anything is sent while a cell of the header row holds a formula, naming the cells, and a dry run says so. Google takes no table over one: "Formulas are not supported in a table header row."
+- A delete asks once in Claude Code, not twice. In a client that can ask the person, `delete_sheet`, `delete_dimensions`, `clear_values` and `delete_data_source` no longer carry the `requiresUserInteraction` mark; the server's own question, which shows what the write destroys, is the confirmation. To see only that question, add these four and the new `delete_cell_comment` to Claude Code's allow list. A Claude Code `Elicitation` hook that accepts now confirms these deletes by itself, `claude -p` included, where the mark used to refuse the call before it reached the server.
+
+### Fixed
+
+- `manage_range` `table` `add` says whether the table was added when Google answers with an internal error (HTTP 500) or no answer comes. It reads the spreadsheet's tables afterwards and reports the table added, or nothing added and the call safe to repeat; it used to say only that the add may have been applied. Google has been seen to fail every table add in a spreadsheet after several were taken, for a reason not known.
+- `write_values` refuses a formula into a table's header row, naming the cells. Google answered such a write with success and replaced the formula with a column name of its own, such as "Column 2".
+- `manage_pivot_table` `update` with a new `source` refuses one that would change what a kept group, value or filter reads, and names each. Each keeps its position counted from the source's first column. A source too narrow left a pivot that showed nothing for it, and Google accepted that. A source that starts in another column moved every kept one onto other data, with nothing said. Pass the groups, values and filters again to change the source anyway. A kept calculated value names its columns by heading, so it does not stop a new source.
+- The schema diff compares every input and output field at any depth against `testdata/schema-baseline.json`, the newest release's surface, and fails when that file is not the newest release's. It compared top-level fields against the last tag, so a lost nested output field passed. It fails on a field removed, an output that may return another type or be missing where it was required, and an input that takes fewer types or no longer takes a value it listed. An input that becomes nullable, or takes a number for an integer, passes. `make schema-baseline VERSION=vX.Y.Z` records the surface in a release commit.
+- A write over a smart chip (a person or a file link) says so before it erases it, and so do `transform_range` `copy_paste`, `cut_paste`, `auto_fill` and `text_to_columns` where they land. A chip reads as its text, and the refusal called the cell only "not empty"; `overwrite` erased the chip with nothing said.
+
+### Security
+
+- Built with Go 1.27.2, which fixes nine advisories in `net/http`, its HTTP/2 code, `crypto/tls` and `net/textproto` that `govulncheck` found reachable from this server.
+
 ## [3.0.2] - 2026-10-01
 
 ### Fixed
@@ -1304,7 +1333,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.2...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.2...v3.1.0
 [3.0.2]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v2.0.0...v3.0.0

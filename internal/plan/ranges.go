@@ -3,8 +3,10 @@ package plan
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
@@ -114,22 +116,147 @@ func Validation(sheetID int, rect a1.Rect, rule *gsheets.DataValidationRule) *gs
 	}}
 }
 
-// TableAdd makes a native table over a rectangle.
-func TableAdd(name string, sheetID int, rect a1.Rect) *gsheets.Request {
+// TableAdd makes a native table over a rectangle, with the column
+// types it was given. A column left out is Google's to type.
+func TableAdd(name string, sheetID int, rect a1.Rect, columns []*gsheets.TableColumn) *gsheets.Request {
 	return &gsheets.Request{AddTable: &gsheets.AddTableRequest{
-		Table: &gsheets.Table{Name: name, Range: rect.GridRange(sheetID)},
+		Table: &gsheets.Table{Name: name, Range: rect.GridRange(sheetID), ColumnProperties: columns},
 	}}
 }
 
-// TableRename gives a table a different name and leaves it where it is.
+// TableUpdate renames a table, retypes its columns, or both, and leaves
+// it where it is. An empty name keeps the name, and nil columns keep the
+// columns.
+//
+// columns is the whole array. The mask names columnProperties, a list,
+// which may be replaced whole (§18), and then a column left out of it
+// would lose its type and its dropdown.
 //
 // Moving a table through the same request was written and never
 // reachable: manage_range names a table by the range it covers, so a
 // move would be a call whose own identifier is what it is changing.
-func TableRename(id, name string) *gsheets.Request {
+func TableUpdate(id, name string, columns []*gsheets.TableColumn) *gsheets.Request {
+	var fields []string
+	if name != "" {
+		fields = append(fields, "name")
+	}
+	if columns != nil {
+		fields = append(fields, "columnProperties")
+	}
 	return &gsheets.Request{UpdateTable: &gsheets.UpdateTableRequest{
-		Table: &gsheets.Table{TableID: id, Name: name}, Fields: "name",
+		Table:  &gsheets.Table{TableID: id, Name: name, ColumnProperties: columns},
+		Fields: strings.Join(fields, ","),
 	}}
+}
+
+// ColumnSpec is one entry of column_types, parsed: the column as the
+// caller named it, and the type it gets.
+type ColumnSpec struct {
+	// Column is a letter or a header, as written. Which column of the
+	// table it is takes a read, so the service resolves it.
+	Column string
+	Type   string
+	// Rule is a dropdown's list, and nil for every other type.
+	Rule *gsheets.TableColumnDataValidationRule
+}
+
+// columnTypes are the column types a caller writes. Each is the API's
+// name lower-cased, except where columnTypeAPI says otherwise.
+var columnTypes = []string{"boolean", "currency", "date", "date_time", "dropdown", "number", "percent", "text", "time"}
+
+// columnTypeAPI are the API's spellings, where they differ from the
+// name a caller writes.
+var columnTypeAPI = map[string]string{"number": gsheets.ColumnDouble}
+
+// chipTypes are the smart chip column types. A read shows them; nothing
+// here writes one, so each is refused by name rather than as unknown.
+var chipTypes = []string{"files_chip", "people_chip", "finance_chip", "place_chip", "ratings_chip"}
+
+// ColumnTypeName is a column type in the spelling ParseColumnType takes,
+// so a type read back can be written again as it reads. A chip type
+// reads the same way, and is refused.
+func ColumnTypeName(apiType string) string {
+	for name, api := range columnTypeAPI {
+		if api == apiType {
+			return name
+		}
+	}
+	return strings.ToLower(apiType)
+}
+
+// columnEntry splits "<column> <type>" with optional options, after a
+// colon or in parentheses: "Status dropdown: Open, Done" as a caller
+// writes it, "Status dropdown (Open, Done)" as get_spreadsheet shows it.
+// The column is the shortest run of text the type can follow, so a
+// header with spaces in it, or with a type's name in it, still works:
+// "Due date date" is the column "Due date" typed as a date.
+var columnEntry = regexp.MustCompile(`(?i)^(.+?)\s+(` +
+	strings.Join(slices.Sorted(slices.Values(append(slices.Clone(columnTypes), chipTypes...))), "|") +
+	`)\s*(?::(.*)|\((.*)\))?$`)
+
+// ParseColumnType reads one entry of column_types: "B date", "Amount
+// currency", "Status dropdown: Open, In progress, Done".
+//
+// A dropdown's options are separated by commas, so an option with a
+// comma in it cannot be written here; data_validation with one_of_list
+// takes each option as its own value.
+func ParseColumnType(text string) (ColumnSpec, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ColumnSpec{}, fmt.Errorf("column_types has an empty entry")
+	}
+	m := columnEntry.FindStringSubmatchIndex(text)
+	if m == nil {
+		last := strings.LastIndexFunc(text, unicode.IsSpace)
+		if last < 0 {
+			return ColumnSpec{}, fmt.Errorf("column type %q needs a column and a type, such as \"B date\" or "+
+				"\"Amount currency\"", text)
+		}
+		return ColumnSpec{}, fmt.Errorf("column type %q ends in %q, which is not one of %s", text,
+			text[last+1:], strings.Join(columnTypes, ", "))
+	}
+	column := strings.TrimSpace(text[m[2]:m[3]])
+	name := strings.ToLower(text[m[4]:m[5]])
+	listed := ""
+	hasOptions := m[6] >= 0 || m[8] >= 0
+	switch {
+	case m[6] >= 0:
+		listed = text[m[6]:m[7]]
+	case m[8] >= 0:
+		listed = text[m[8]:m[9]]
+	}
+	if slices.Contains(chipTypes, name) {
+		return ColumnSpec{}, fmt.Errorf("column type %q asks for %s, a smart chip column, which this server "+
+			"shows and does not set", text, name)
+	}
+	spec := ColumnSpec{Column: column, Type: strings.ToUpper(name)}
+	if api, ok := columnTypeAPI[name]; ok {
+		spec.Type = api
+	}
+	if spec.Type != gsheets.ColumnDropdown {
+		if hasOptions {
+			return ColumnSpec{}, fmt.Errorf("column type %q gives %s options, and only a dropdown takes them", text, name)
+		}
+		return spec, nil
+	}
+	if !hasOptions {
+		return ColumnSpec{}, fmt.Errorf("column type %q needs its options after a colon, such as "+
+			"\"%s dropdown: Open, In progress, Done\"", text, column)
+	}
+	var options []string
+	for _, option := range strings.Split(listed, ",") {
+		option = strings.TrimSpace(option)
+		if option == "" {
+			return ColumnSpec{}, fmt.Errorf("column type %q has an empty option; options are separated by commas", text)
+		}
+		options = append(options, option)
+	}
+	cond, err := ParseCondition("one_of_list", options)
+	if err != nil {
+		return ColumnSpec{}, err
+	}
+	spec.Rule = &gsheets.TableColumnDataValidationRule{Condition: cond}
+	return spec, nil
 }
 
 // TableDelete removes the table and leaves the cells on the sheet.
@@ -141,7 +268,7 @@ func TableDelete(id string) *gsheets.Request {
 //
 // Rows, because that is what manage_range offers; §17a carries the
 // column form, which wants an argument on a tool that already takes
-// eighteen. BandingUpdate does take the axis, because a column banding
+// twenty-one. BandingUpdate does take the axis, because a column banding
 // made elsewhere can be recolored here and writing rowProperties onto
 // one leaves it carrying both sets, which the API rejects.
 func BandingAdd(sheetID int, rect a1.Rect, props *gsheets.BandingProperties) *gsheets.Request {
@@ -211,6 +338,100 @@ func Rule(sheetID int, rect a1.Rect, cond *gsheets.BooleanCondition, format *gsh
 		Ranges:      []*gsheets.GridRange{rect.GridRange(sheetID)},
 		BooleanRule: &gsheets.BooleanRule{Condition: cond, Format: format},
 	}
+}
+
+// Gradient builds a color scale over one rectangle, for the same reason
+// Rule exists: the request and the description share one value.
+func Gradient(sheetID int, rect a1.Rect, scale *gsheets.GradientRule) *gsheets.ConditionalFormatRule {
+	return &gsheets.ConditionalFormatRule{
+		Ranges:       []*gsheets.GridRange{rect.GridRange(sheetID)},
+		GradientRule: scale,
+	}
+}
+
+// pointTypes are the color-scale point types a caller writes.
+var pointTypes = map[string]string{
+	"min":        gsheets.PointMin,
+	"max":        gsheets.PointMax,
+	"number":     gsheets.PointNumber,
+	"percent":    gsheets.PointPercent,
+	"percentile": gsheets.PointPercentile,
+}
+
+// ParseGradient builds a color scale from two or three points, lowest
+// first, each "<type> [value] #hex": "min #ffffff", "percentile 50
+// #ffd666", "max #57bb8a".
+//
+// min and max take no value: they are the range's own lowest and
+// highest. number, percent and percentile need one, which is kept as
+// written, since the API takes it as text, it may be a formula, and a
+// number is read in the spreadsheet's locale: under de_DE, 1.5 is
+// refused and 1,5 taken (spike S, §18). Google takes min and max as a
+// midpoint too, so a scale read back from a sheet can be sent again; min
+// cannot be the last point, nor max the first.
+func ParseGradient(points []string) (*gsheets.GradientRule, error) {
+	if len(points) < 2 || len(points) > 3 {
+		return nil, fmt.Errorf("gradient takes two or three points, lowest first, such as "+
+			"[\"min #ffffff\", \"max #57bb8a\"]; it was given %d", len(points))
+	}
+	built := make([]*gsheets.InterpolationPoint, len(points))
+	for i, text := range points {
+		point, err := parsePoint(text)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case point.Type == gsheets.PointMax && i == 0:
+			return nil, fmt.Errorf("gradient point %q puts max first; max is the highest value in the range, so it "+
+				"goes in the middle or last", strings.TrimSpace(text))
+		case point.Type == gsheets.PointMin && i == len(points)-1:
+			return nil, fmt.Errorf("gradient point %q puts min last; min is the lowest value in the range, so it "+
+				"goes first or in the middle", strings.TrimSpace(text))
+		}
+		built[i] = point
+	}
+	scale := &gsheets.GradientRule{Minpoint: built[0], Maxpoint: built[len(built)-1]}
+	if len(built) == 3 {
+		scale.Midpoint = built[1]
+	}
+	return scale, nil
+}
+
+// parsePoint reads one "<type> [value] #hex". The value is everything
+// between the first word and the last, so a formula with spaces in it
+// survives.
+func parsePoint(text string) (*gsheets.InterpolationPoint, error) {
+	text = strings.TrimSpace(text)
+	first := strings.IndexFunc(text, unicode.IsSpace)
+	if first < 0 {
+		return nil, fmt.Errorf("gradient point %q needs a color at the end, such as \"max #57bb8a\"", text)
+	}
+	last := strings.LastIndexFunc(text, unicode.IsSpace)
+	name := strings.ToLower(text[:first])
+	value := strings.TrimSpace(text[first : last+1])
+	colorText := text[last+1:]
+
+	kind, ok := pointTypes[name]
+	if !ok {
+		return nil, fmt.Errorf("gradient point %q starts with %q, which is not min, max, number, percent or percentile",
+			text, text[:first])
+	}
+	color, err := ParseColor(colorText)
+	if err != nil || color == nil || !strings.HasPrefix(colorText, "#") {
+		return nil, fmt.Errorf("gradient point %q ends in %q, which is not a hex color such as #57bb8a", text, colorText)
+	}
+	switch {
+	case kind == gsheets.PointMin && value != "":
+		return nil, fmt.Errorf("gradient point %q gives min a value, and min takes none: it is the lowest value "+
+			"in the range. Write \"min %s\"", text, colorText)
+	case kind == gsheets.PointMax && value != "":
+		return nil, fmt.Errorf("gradient point %q gives max a value, and max takes none: it is the highest value "+
+			"in the range. Write \"max %s\"", text, colorText)
+	case kind != gsheets.PointMin && kind != gsheets.PointMax && value == "":
+		return nil, fmt.Errorf("gradient point %q needs a value between %s and the color, such as \"%s 50 %s\"",
+			text, name, name, colorText)
+	}
+	return &gsheets.InterpolationPoint{ColorStyle: color, Type: kind, Value: value}, nil
 }
 
 // RuleAdd inserts a conditional format rule at an index. Rules are

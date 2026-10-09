@@ -44,6 +44,9 @@ type Spreadsheet struct {
 	// reporting that a spreadsheet has one costs no scope and no consent
 	// (§17.6a).
 	DataSources []*DataSource `json:"dataSources,omitempty"`
+	// Comments are the cell comment threads. Google returns them only
+	// when the read asks for them with a comments view mode.
+	Comments []*CommentThread `json:"comments,omitempty"`
 }
 
 // SpreadsheetProperties are the file-wide settings.
@@ -66,6 +69,7 @@ type Sheet struct {
 	Slicers            []*Slicer                `json:"slicers,omitempty"`
 	BandedRanges       []*BandedRange           `json:"bandedRanges,omitempty"`
 	ConditionalFormats []*ConditionalFormatRule `json:"conditionalFormats,omitempty"`
+	CommentAnchors     []*CommentAnchor         `json:"commentAnchors,omitempty"`
 }
 
 // SheetProperties describe one tab.
@@ -103,6 +107,10 @@ type GridData struct {
 	StartRow    int        `json:"startRow,omitempty"`
 	StartColumn int        `json:"startColumn,omitempty"`
 	RowData     []*RowData `json:"rowData,omitempty"`
+	// RowMetadata and ColumnMetadata are one entry per row and column of
+	// the range, from its start, when the mask asks for them.
+	RowMetadata    []*DimensionProperties `json:"rowMetadata,omitempty"`
+	ColumnMetadata []*DimensionProperties `json:"columnMetadata,omitempty"`
 }
 
 // RowData is one row of a GridData. Trailing empty cells are omitted by
@@ -124,9 +132,34 @@ type CellData struct {
 	Note              string              `json:"note,omitempty"`
 	Hyperlink         string              `json:"hyperlink,omitempty"`
 	TextFormatRuns    []json.RawMessage   `json:"textFormatRuns,omitempty"`
-	ChipRuns          []json.RawMessage   `json:"chipRuns,omitempty"`
+	ChipRuns          []ChipRun           `json:"chipRuns,omitempty"`
 	PivotTable        json.RawMessage     `json:"pivotTable,omitempty"`
 	DataSourceFormula json.RawMessage     `json:"dataSourceFormula,omitempty"`
+}
+
+// ChipRun is one run of a cell's text. A read returns every run, and a
+// run that is plain text carries an empty Chip.
+type ChipRun struct {
+	StartIndex int64 `json:"startIndex,omitempty"`
+	Chip       *Chip `json:"chip,omitempty"`
+}
+
+// Chip is a smart chip: a person, or a link to a Google resource.
+type Chip struct {
+	PersonProperties   *PersonProperties   `json:"personProperties,omitempty"`
+	RichLinkProperties *RichLinkProperties `json:"richLinkProperties,omitempty"`
+}
+
+// PersonProperties is the person a chip names.
+type PersonProperties struct {
+	Email         string `json:"email,omitempty"`
+	DisplayFormat string `json:"displayFormat,omitempty"`
+}
+
+// RichLinkProperties is the resource a link chip points at.
+type RichLinkProperties struct {
+	URI      string `json:"uri,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
 }
 
 // ExtendedValue is the API's cell value union: exactly one field is set.
@@ -251,11 +284,43 @@ type Table struct {
 }
 
 // TableColumn is one column of a table.
+//
+// ColumnIndex counts from the table's first column, not the sheet's.
+// ColumnName is the header text. An add sends none, and an update sends
+// an entry for every column, each named as it read or by its header
+// cell, since whether a name left out clears the header is unverified
+// (§18). DataValidationRule is set on a dropdown column only.
 type TableColumn struct {
-	ColumnIndex int    `json:"columnIndex,omitempty"`
-	ColumnName  string `json:"columnName,omitempty"`
-	ColumnType  string `json:"columnType,omitempty"`
+	ColumnIndex        int                            `json:"columnIndex,omitempty"`
+	ColumnName         string                         `json:"columnName,omitempty"`
+	ColumnType         string                         `json:"columnType,omitempty"`
+	DataValidationRule *TableColumnDataValidationRule `json:"dataValidationRule,omitempty"`
 }
+
+// TableColumnDataValidationRule is a dropdown column's list. The
+// condition is ONE_OF_LIST, the only type the reference allows here.
+type TableColumnDataValidationRule struct {
+	Condition *BooleanCondition `json:"condition,omitempty"`
+}
+
+// Column types, as the API spells them. The five chip types are read
+// and shown; this server writes none of them.
+const (
+	ColumnText     = "TEXT"
+	ColumnDouble   = "DOUBLE"
+	ColumnCurrency = "CURRENCY"
+	ColumnPercent  = "PERCENT"
+	ColumnDate     = "DATE"
+	ColumnTime     = "TIME"
+	ColumnDateTime = "DATE_TIME"
+	ColumnBoolean  = "BOOLEAN"
+	ColumnDropdown = "DROPDOWN"
+	ColumnFiles    = "FILES_CHIP"
+	ColumnPeople   = "PEOPLE_CHIP"
+	ColumnFinance  = "FINANCE_CHIP"
+	ColumnPlace    = "PLACE_CHIP"
+	ColumnRatings  = "RATINGS_CHIP"
+)
 
 // BandedRange is alternating-color banding over a range. Exactly one
 // of the two property sets is used: banding runs down rows or across
@@ -361,11 +426,14 @@ type BatchUpdateSpreadsheetRequest struct {
 type BatchUpdateSpreadsheetResponse struct {
 	SpreadsheetID string   `json:"spreadsheetId,omitempty"`
 	Replies       []*Reply `json:"replies,omitempty"`
+	// CommentUpdateState says whether the batch's comment requests were
+	// saved: ALL_SAVED, ALL_FAILED_UNKNOWN_REASON, or NO_UPDATES_REQUESTED.
+	CommentUpdateState string `json:"commentUpdateState,omitempty"`
 }
 
-// Request is one member of the batchUpdate union. The API has 69; this
-// is the set phase 1 builds, and each later phase adds its own rather
-// than the whole union arriving as free-form maps.
+// Request is one member of the batchUpdate union. It holds the members
+// this server sends, not the whole union: each phase added its own
+// rather than the union arriving as free-form maps.
 //
 // Exactly one field is set. Nothing here accepts a raw map: a typed
 // builder is what stops a request being sent that no code has read.
@@ -435,6 +503,13 @@ type Request struct {
 	RefreshDataSource       *RefreshDataSourceRequest       `json:"refreshDataSource,omitempty"`
 	CancelDataSourceRefresh *CancelDataSourceRefreshRequest `json:"cancelDataSourceRefresh,omitempty"`
 	DeleteDataSource        *DeleteDataSourceRequest        `json:"deleteDataSource,omitempty"`
+
+	// Cell comments (spike R).
+	InsertComment      *InsertCommentRequest      `json:"insertComment,omitempty"`
+	AddCommentReply    *AddCommentReplyRequest    `json:"addCommentReply,omitempty"`
+	UpdateCommentPost  *UpdateCommentPostRequest  `json:"updateCommentPost,omitempty"`
+	DeleteComment      *DeleteCommentRequest      `json:"deleteComment,omitempty"`
+	DeleteCommentReply *DeleteCommentReplyRequest `json:"deleteCommentReply,omitempty"`
 }
 
 // Reply is one member of the reply union, in the same order as the
@@ -462,6 +537,9 @@ type Reply struct {
 
 	AddDataSource     *AddDataSourceReply     `json:"addDataSource,omitempty"`
 	RefreshDataSource *RefreshDataSourceReply `json:"refreshDataSource,omitempty"`
+
+	InsertComment   *InsertCommentReply   `json:"insertComment,omitempty"`
+	AddCommentReply *AddCommentReplyReply `json:"addCommentReply,omitempty"`
 }
 
 // NewSheetProperties is a sheet that does not exist yet.
@@ -565,10 +643,11 @@ type MoveDimensionRequest struct {
 	DestinationIndex int             `json:"destinationIndex"`
 }
 
-// DimensionProperties is a band's size. Hiding a row or a column is
-// phase 2's, and the field arrives with the code that sets it.
+// DimensionProperties is a band's size and whether a person hid it.
+// HiddenByUser is a pointer so that false, which unhides, is sent.
 type DimensionProperties struct {
-	PixelSize int `json:"pixelSize,omitempty"`
+	PixelSize    int   `json:"pixelSize,omitempty"`
+	HiddenByUser *bool `json:"hiddenByUser,omitempty"`
 }
 
 // UpdateDimensionPropertiesRequest resizes or hides a band.

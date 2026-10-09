@@ -78,6 +78,9 @@ var precommitOnly = map[string]string{
 		"only check that today's HEAD has a section for a tag that does not exist yet",
 	"release-tag": "runs at release time, holding the tag the workflow was started for against go.mod's " +
 		"major version; on a commit there is no tag to hold",
+	"schema-baseline": "runs in a release commit, recording the surface of the release being cut; on " +
+		"any other commit it refuses, since the build is not stamped as that release, and `schema-diff` " +
+		"is the half that runs on every commit",
 	"registry-publish": "runs after a release, printing the entry the publish workflow hands " +
 		"mcp-publisher; the hash it carries comes from the PUBLISHED checksums.txt, so there is nothing " +
 		"for it to read on a commit and nothing for it to assert about the code",

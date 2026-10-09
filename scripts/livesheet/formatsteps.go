@@ -32,6 +32,9 @@ func (d *driver) formatAll() {
 	d.run(d.readFormattingSteps()...)
 	sec("manage_range")
 	d.run(d.rangeSteps()...)
+	d.run(d.tableSteps()...)
+	d.typedTablesAll()
+	d.commaLocaleAll()
 	sec("transform_range")
 	d.run(d.transformSteps()...)
 }
@@ -252,7 +255,7 @@ func (d *driver) readFormattingSteps() []step {
 
 func (d *driver) rangeSteps() []step {
 	const named = "Livesheet_band"
-	return []step{
+	return append([]step{
 		{
 			name: "a dry run attaches nothing",
 			why:  "a preview that named a range would be a preview that wrote",
@@ -430,6 +433,93 @@ func (d *driver) rangeSteps() []step {
 				"kind": "conditional_format", "action": "delete", "index": 0,
 			},
 		},
+	}, d.colorScaleSteps()...)
+}
+
+// colorScaleSteps write a color scale with each of the midpoint types
+// the Sheets interface offers, number, percent and percentile, and read
+// it back. Spike S found Google takes min and max there too (§18).
+func (d *driver) colorScaleSteps() []step {
+	const percentile = "color scale: min #ffffff -> percentile 50 #ffd666 -> max #57bb8a"
+	const percent = "color scale: number 0 #ffffff -> percent 50 #ffd666 -> max #57bb8a"
+	const number = "color scale: min #ffffff -> number 10 #ffd666 -> percentile 90 #57bb8a"
+	return []step{
+		{
+			name: "a color scale with a percentile midpoint",
+			why:  "a gradient rule is a conditional format with no condition: its colors are in its points",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
+				"kind": "conditional_format", "action": "add", "index": 0,
+				"gradient": []any{"min #ffffff", "percentile 50 #ffd666", "max #57bb8a"},
+			},
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, percentile) {
+					return fmt.Errorf("the result does not describe the scale: %s", text)
+				}
+				return nil
+			},
+		},
+		d.readsBack("A5:C8", percentile),
+		{
+			name: "a percent midpoint replaces the scale whole",
+			why:  "an update sends the whole rule, so the old points must not survive it",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
+				"kind": "conditional_format", "action": "update", "index": 0,
+				"gradient": []any{"number 0 #ffffff", "percent 50 #ffd666", "max #57bb8a"},
+			},
+		},
+		d.readsBack("A5:C8", percent),
+		{
+			name: "a number midpoint",
+			why:  "the third midpoint type manage_range sends",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
+				"kind": "conditional_format", "action": "update", "index": 0,
+				"gradient": []any{"min #ffffff", "number 10 #ffd666", "percentile 90 #57bb8a"},
+			},
+		},
+		d.readsBack("A5:C8", number),
+		{
+			name: "the color scale is deleted by its index",
+			why:  "the table steps below count the rules over this band",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
+				"kind": "conditional_format", "action": "delete", "index": 0,
+			},
+		},
+	}
+}
+
+// readsBack is the read after a color-scale write. The result describes
+// the request; only a read says what Google stored, colorStyle or color.
+func (d *driver) readsBack(rangeA1, want string) step {
+	return d.readsBackFrom(d.spreadsheet, d.workSheet, rangeA1, want)
+}
+
+func (d *driver) readsBackFrom(spreadsheet, sheet, rangeA1, want string) step {
+	return step{
+		name: "read back as written: " + want,
+		why:  "the result describes the request; only a read says what Google stored",
+		tool: "read_formatting",
+		args: map[string]any{"spreadsheet": spreadsheet, "sheet": sheet, "range": rangeA1},
+		check: func(text string, _ map[string]any) error {
+			if !strings.Contains(text, want) {
+				return fmt.Errorf("the read does not say %q: %s", want, text)
+			}
+			return nil
+		},
+	}
+}
+
+// tableSteps are the table's add, rename and delete, and the rule a
+// delete takes with it.
+func (d *driver) tableSteps() []step {
+	return []step{
 		{
 			name: "a table over the band",
 			why:  "a table is a first-class object in the API and nothing else here creates one",
@@ -495,5 +585,323 @@ func (d *driver) rangeSteps() []step {
 				return nil
 			},
 		},
+	}
+}
+
+// The typed-column steps' spreadsheet, sheet and block, with a header
+// row.
+const (
+	typedSheet = "Vandel"
+	typedBand  = "A1:D4"
+)
+
+// typedTablesAll makes a spreadsheet of its own for the typed-column
+// steps. Spike T Q11 saw every table add in one spreadsheet answered
+// HTTP 500 after earlier ones were taken, for a reason not known (§18),
+// so the table steps before these could fail them.
+func (d *driver) typedTablesAll() {
+	d.run(step{
+		name: "a spreadsheet of its own for the typed table",
+		why:  "earlier table adds in a spreadsheet may be what makes Google fail a later one with a 500 (§18)",
+		tool: "create_spreadsheet",
+		args: map[string]any{"title": scratchTitle + " typed tables", "sheets": []any{typedSheet}},
+		check: func(_ string, s map[string]any) error {
+			id, _ := s["spreadsheet"].(string)
+			if id == "" {
+				return fmt.Errorf("no spreadsheet id came back")
+			}
+			d.typedTables = id
+			reg(id, "<typed-tables-spreadsheet>")
+			return nil
+		},
+	})
+	if d.typedTables == "" {
+		return
+	}
+	d.run(d.typedColumnSteps()...)
+}
+
+// typedColumnSteps type a table's columns on add, retype one on update,
+// and check that the rest, a dropdown's list included, survive the
+// round trip, the header cells with them. Google replaces the whole list
+// on update (spike T Q3b), so the update sends every column. A formula
+// into the header is refused, since Google would replace it, and so is a
+// dropdown over cells with a list of their own, which Google would drop
+// (spike T).
+// What a type does to the cells is partly unverified (§18), and the
+// steps print it.
+func (d *driver) typedColumnSteps() []step {
+	headers := func(when string) step {
+		return step{
+			name: "the header cells read as written, " + when,
+			why: "Google writes a name sent into its header cell, and \"Column 1\" into a typed column's sent " +
+				"with none (§18); an add sends each typed column's header text and an update every column's",
+			tool: "read_range",
+			args: map[string]any{"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "A1:D1", "show": "values"},
+			check: func(text string, _ map[string]any) error {
+				for _, want := range []string{"Item", "Amount", "Due", "Status"} {
+					if !strings.Contains(text, want) {
+						return fmt.Errorf("the header %q is gone %s: %s", want, when, text)
+					}
+				}
+				return nil
+			},
+		}
+	}
+	card := func(when string, want ...string) step {
+		return step{
+			name: "the card shows the column types " + when,
+			why:  "the card reads the types back in the spelling column_types takes",
+			tool: "get_spreadsheet",
+			args: map[string]any{"spreadsheet": d.typedTables},
+			check: func(text string, _ map[string]any) error {
+				for _, l := range strings.Split(text, "\n") {
+					if !strings.Contains(l, "LivesheetTyped") {
+						continue
+					}
+					line("     LOOK: %s", strings.TrimSpace(l))
+					for _, w := range want {
+						if !strings.Contains(l, w) {
+							return fmt.Errorf("the card's table line does not say %q: %s", w, l)
+						}
+					}
+					return nil
+				}
+				return fmt.Errorf("the card lists no table called LivesheetTyped:\n%s", text)
+			},
+		}
+	}
+	return []step{
+		{
+			name: "a block with a header row, for a typed table",
+			why:  "a header is how a column is named by text, and what a table write must leave alone",
+			tool: "write_values",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": typedBand, "input": "typed",
+				"values": [][]any{
+					{"Item", "Amount", "Due", "Status"},
+					{"Quorbin", "12.5", "2026-10-01", "Open"},
+					{"Skerry", "3", "2026-10-02", "Done"},
+					{"Nardle", "40", "2026-10-03", ""},
+				},
+			},
+		},
+		{
+			name: "a table typing three of its four columns, by heading and by letter",
+			why: "column_types sends only the columns named, each with its header's text as its name, which " +
+				"keeps Google from writing \"Column 1\" over the header (§18)",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": typedBand,
+				"kind": "table", "action": "add", "name": "LivesheetTyped",
+				"column_types": []any{"Amount number", "C date", "Status dropdown: Open, In progress, Done"},
+			},
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "Status dropdown (Open, In progress, Done)") {
+					return fmt.Errorf("the result does not describe the dropdown: %s", text)
+				}
+				return nil
+			},
+		},
+		card("after the add", "number", "date", "dropdown (Open, In progress, Done)"),
+		headers("after the add"),
+		{
+			name: "what a number type did to the cells under it",
+			why: "whether a type change rewrites a column's number format is unverified (§18); the " +
+				"transcript shows what the cells carry now",
+			tool: "read_formatting",
+			args: map[string]any{"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "B2:D4"},
+			check: func(text string, _ map[string]any) error {
+				line("     LOOK: %s", strings.Join(strings.Fields(text), " "))
+				return nil
+			},
+		},
+		{
+			name: "one column retyped, and the others sent back as they were",
+			why: "Google replaces the whole list, and one column sent alone takes every other column's type " +
+				"(§18), so the update reads the list and sends every column back, each with its name, since " +
+				"Google refuses an entry with none; the dropdown goes in the card's own spelling, and the card " +
+				"after it must show the change and the dropdown's list both",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": typedBand,
+				"kind": "table", "action": "update",
+				"column_types": []any{"Amount currency", "Status dropdown (Open, In progress, Done)"},
+			},
+		},
+		card("after the update", "currency", "date", "dropdown (Open, In progress, Done)"),
+		headers("after the update"),
+		{
+			name: "a formula into a table's header cell is refused",
+			why: "spike T: Google replaces a formula written there with a column name of its own and answers " +
+				"200, so the formula is lost with nothing said",
+			tool: "write_values",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "D1", "input": "typed",
+				"values": [][]any{{`="Sta"&"tus"`}}, "overwrite": true,
+			},
+			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "D1") || !strings.Contains(text, "table's header row") {
+					return fmt.Errorf("the refusal does not name the header cell: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "a boolean type over text is refused",
+			why: "a boolean column shows checkboxes, and Google turns a word already in one into FALSE " +
+				"(§18), so the update stops and names the cells",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": typedBand,
+				"kind": "table", "action": "update", "column_types": []any{"Item boolean"},
+			},
+			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "A2") || !strings.Contains(text, "TRUE or FALSE") {
+					return fmt.Errorf("the refusal does not name the cells: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "a block with a formula heading, beside the table",
+			why:  "a table over it is the next step's to refuse",
+			tool: "write_values",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "F1:G3", "input": "typed",
+				"values": [][]any{{`="Ite"&"m"`, "Cost"}, {"Quorbin", "4"}, {"Skerry", "5"}},
+			},
+		},
+		{
+			name: "a table over a formula heading is refused, though the column is not typed",
+			why: "spike T: Google takes no table over a formula in its header row, typed or not, so the add is " +
+				"refused before it is sent, naming the cell",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "F1:G3",
+				"kind": "table", "action": "add", "name": "LivesheetFormulaHead", "column_types": []any{"Cost number"},
+			},
+			expectError: "invalid",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "F1") || !strings.Contains(text, "Formulas are not supported in a table header row") {
+					return fmt.Errorf("the refusal does not name the cell and Google's reason: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "a block whose cells carry a list of their own, beside the table",
+			why:  "a dropdown typed over it is the next step's to refuse",
+			tool: "write_values",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "I1:J3", "input": "typed",
+				"values": [][]any{{"Item", "Pick"}, {"Quorbin", "x"}, {"Skerry", "y"}},
+			},
+		},
+		{
+			name: "a list on two of its cells",
+			why:  "a rule of the cells' own, which a table's dropdown would replace",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "J2:J3",
+				"kind": "data_validation", "action": "add", "condition": "one_of_list", "values": []any{"x", "y"},
+			},
+		},
+		{
+			name: "a dropdown typed over cells with a list of their own is refused",
+			why: "spike T: Google dropped a cell's own list when its column was typed dropdown, and said " +
+				"nothing (§18), so the add stops and names the cells",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "I1:J3",
+				"kind": "table", "action": "add", "name": "LivesheetOwnRules", "column_types": []any{"Pick dropdown: x, y"},
+			},
+			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "J2, J3") || !strings.Contains(text, "data validation rules of their own") {
+					return fmt.Errorf("the refusal does not name the cells and their rules: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "the typed table goes",
+			why:  "the band is left as the steps found it, values aside",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": typedBand,
+				"kind": "table", "action": "delete",
+			},
+		},
+	}
+}
+
+// commaLocaleAll writes a number point under a locale that writes a
+// decimal with a comma. Spike S found Google refuses 1.5 there and takes
+// 1,5 (§18); which value 1,5 colors from, only a person looking can say.
+// It needs a spreadsheet in that locale, so it makes one.
+func (d *driver) commaLocaleAll() {
+	d.run(step{
+		name: "a spreadsheet in a comma-decimal locale",
+		why:  "a color scale's number value is text, and only a spreadsheet in such a locale can say how it is read",
+		tool: "create_spreadsheet",
+		args: map[string]any{
+			"title":  scratchTitle + " comma locale",
+			"sheets": []any{"Grivet"},
+			"values": [][]any{{1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}},
+			"locale": "de_DE",
+		},
+		check: func(_ string, s map[string]any) error {
+			id, _ := s["spreadsheet"].(string)
+			if id == "" {
+				return fmt.Errorf("no spreadsheet id came back")
+			}
+			d.commaLocale = id
+			reg(id, "<comma-locale-spreadsheet>")
+			return nil
+		},
+	})
+	if d.commaLocale == "" {
+		return
+	}
+	d.run(d.commaLocaleSteps()...)
+	line("     LOOK: no reply says what de_DE read 1,5 as. In the comma-locale spreadsheet, column B scales")
+	line("     from 1,5 over 1 to 5. If its color first changes between 1 and 2, de_DE read it as one and")
+	line("     a half; record it in §18.")
+}
+
+func (d *driver) commaLocaleSteps() []step {
+	return []step{
+		{
+			name: "a number point written with a decimal point, under de_DE, is refused",
+			why: "manage_range sends the value as written, and spike S found Google refuses 1.5 where the " +
+				"locale writes one and a half as 1,5",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.commaLocale, "sheet": "Grivet", "range": "A1:A5",
+				"kind": "conditional_format", "action": "add", "index": 0,
+				"gradient": []any{"number 1.5 #ffffff", "max #57bb8a"},
+			},
+			expectError: "invalid",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "Invalid InterpolationPoint.value: 1.5") {
+					return fmt.Errorf("the refusal is not Google's for the value: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "the same point written with a decimal comma",
+			why:  "the spelling a person in that locale types, which spike S found Google takes",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.commaLocale, "sheet": "Grivet", "range": "B1:B5",
+				"kind": "conditional_format", "action": "add", "index": 0,
+				"gradient": []any{"number 1,5 #ffffff", "max #57bb8a"},
+			},
+		},
+		d.readsBackFrom(d.commaLocale, "Grivet", "B1:B5", "color scale: number 1,5 #ffffff -> max #57bb8a"),
 	}
 }

@@ -15,6 +15,17 @@ gate holds — `$schema` at a release tag rather than a branch, with a
 floor under `manifest_version`. Spikes L, M, N and P ran
 against a real account and §18 carries what they found.
 
+**Unreleased: the live driver ran on 2026-10-09 evening, 297 steps, none
+failed, one undetermined** — Drive's content index, as in earlier runs. The
+typed-table steps ran in a spreadsheet of their own and all passed. The
+header row read the same after a typed add and after an update. The
+refusals of a formula into a header, a boolean column over text and a
+table over a formula heading held against Google, and Google refused
+`1.5` under `de_DE`. Spike T's third run answered Q5b and Q7's
+whole-cell format, and saw Q11's 500s again. Owed: spike T Q12 and Q13,
+each run alone (§15), and a live run of the newer dropdown refusal
+(§16).
+
 **§17a.31 is closed, and closing it found a destructive hole in a
 shipped tool.** It was written as a cosmetic gap: `format_cells merge`
 and `clear_values` reach a pivot's cells and say nothing about it, the
@@ -139,9 +150,9 @@ protected ranges, data validation, tables, conditional formatting,
 sorting, and later charts, pivot tables and data sources. Out
 (**decided**): file management — folders, moving, sharing, trashing,
 copying files, revisions — which belongs to a server built on the Drive
-API, and comment threads, which live in that API and belong there too.
-A cell **note** is a Sheets field and is in scope; a **comment** is not
-(§17.5).
+API. Cell **comments** have been in scope since 2026-10-09: Sheets publishes them,
+anchored to cells, which Drive's comment API cannot do (§17.5). A cell
+**note** is a Sheets field and is in scope too.
 
 Tool names are chosen so a client can run this server beside the Drive
 and Docs ones without a collision: `search_spreadsheets` and `read_range`
@@ -154,7 +165,7 @@ here, where those say `search_files`, `search_documents`, `read_file`.
   `update_values`, `update_formulas`, `update_spreadsheet` and
   `insert_dimension`. `update_spreadsheet` is the raw `batchUpdate`
   passed straight through — Google's own page calls it "75+ update
-  types", where the discovery document has 69 — so the model composes
+  types", where the discovery document has 74 — so the model composes
   `GridRange` objects, with their zero-based half-open indices, by hand. It is remote HTTP, needs a
   **Web application** OAuth client, asks for four scopes
   (`spreadsheets`, `spreadsheets.readonly`, `drive.file`,
@@ -221,7 +232,7 @@ Sheets guides on 2026-09-05.
 | Constraint | Consequence |
 |---|---|
 | **There is no write guard.** Sheets v4 has no `writeControl`, no `requiredRevisionId` and no ETag: the string does not occur in the discovery document. Docs has one; Sheets does not. | Concurrency is the server's problem. A read hands out a **checkpoint** over the values it read; a write may require it and re-reads to compare (§6.3). It narrows the window and cannot close it, and the tool descriptions say so. |
-| **The whole surface is 17 methods.** One `spreadsheets.batchUpdate` carries a union of **69 request kinds**; `spreadsheets.values.*` carries the value paths. Power is in the union, not in the method list. | `internal/plan` compiles typed ops into union members. The model never writes a union member itself. |
+| **The whole surface is 17 methods.** One `spreadsheets.batchUpdate` carries a union of **74 request kinds** (revision 20260927); `spreadsheets.values.*` carries the value paths. Power is in the union, not in the method list. | `internal/plan` compiles typed ops into union members. The model never writes a union member itself. |
 | **A batch is atomic, and Google still will not promise the result.** The discovery document: "If any request is not valid then the entire request will fail and nothing will be applied … it is guaranteed that the updates in the request will be applied together atomically", followed by "Due to the collaborative nature of spreadsheets, it is not guaranteed that the spreadsheet will reflect exactly your changes after this completes … Your changes may be altered with respect to collaborator changes." | Ops are never split across batches: splitting costs quota and gives up atomicity. And the platform states in its own words why the checkpoint (§4.7) is best effort — Google does not claim a write survives a collaborator. |
 | **`GridRange` is zero-based and half-open; A1 is one-based and inclusive.** The discovery document is explicit: "All indexes are zero-based. Indexes are half open … Missing indexes indicate the range is unbounded on that side." `Sheet1!A1:A1` is `startRowIndex: 0, endRowIndex: 1`. | Index arithmetic lives in `internal/a1`. The model sees A1 notation only, which is also what the person sees on screen. |
 | **A1 quoting has three traps, and the third is narrower than the guide's wording but still a correctness bug.** Single quotes are required for sheet names with spaces or special characters (`'My Custom Sheet'!A:A`); `A1` without a sheet means cell A1 of the **first visible sheet** while `'A1'` means the whole sheet *named* A1; and the concepts guide says "if there's a named range titled `Sheet1`, then `Sheet1` refers to the named range and `'Sheet1'` refers to the sheet". **Measured (spike C, §18): that last rule applies only to a reference with no `!`.** A bare name resolves as a named range first; anything with a `!` reads its left side as a sheet title regardless. | `internal/a1` builds every range from a parsed sheet title and **always quotes it**, never by string concatenation, and a range is never sent with the sheet omitted. Quoting is load-bearing for the whole-sheet form this server sends (`'Data'` is the sheet, `Data` is the named range) and inert for `'Data'!A1:B2` — kept everywhere so no call site has to know which case it is in. |
@@ -245,9 +256,8 @@ Sheets guides on 2026-09-05.
 
 Undo anything — there is no trash for a deleted sheet, cleared cells or a
 dropped column, and version history is a UI feature the API cannot
-restore from; guard a write against a concurrent edit; anchor a comment
-to a cell (comments are Drive's, and a cell **note** is the Sheets
-equivalent); read or set a cell's *displayed* value without also reading
+restore from; guard a write against a concurrent edit; read or set a
+cell's *displayed* value without also reading
 its format; tell you why a formula produced an error beyond its error
 type; search a spreadsheet server-side (there is no query endpoint —
 `find_in_spreadsheet` reads and matches here); watch for changes.
@@ -328,8 +338,13 @@ value would silently destroy:
 - **a protected range** this account may not edit — refused before the
   request is built, with the protection named;
 - **a partially covered merge** — refused with the merged range named;
-- a cell carrying a **note**, **data validation** or a **chip** is
-  reported in the refusal, since those are invisible in a values read.
+- **a smart chip** (a person or a file link) — named in the refusal and
+  allowed by `overwrite`, because it reads as plain text and a value
+  write erases it: "Writing a new user_entered_value will erase previous
+  runs" (`CellData.chipRuns`, discovery 20260930). The same holds where
+  a paste, a cut, a fill or a split lands;
+- a cell carrying a **note** or **data validation** is reported as kept,
+  since those are invisible in a values read and survive a value write.
 
 `suggest`-style modes do not exist here: Sheets has no tracked changes.
 What stands in their place is `dry_run`, which reports the guard's
@@ -373,7 +388,7 @@ person needs a real one, `manage_range` can protect the range.
 `internal/gsheets` holds hand-written structs for the fields this server
 reads. `google.golang.org/api` is not a dependency: it drags in gRPC,
 OpenTelemetry and the cloud auth stack for a binary that needs JSON and
-HTTP. The 69-member request union is written as typed builders, not as
+HTTP. The request union is written as typed builders, not as
 free-form maps.
 
 ### 4.9 Results say what changed
@@ -414,7 +429,7 @@ internal/credentials/     refresh token: OS keyring → 0600 file under os.UserC
 internal/userconfig/      non-secret profile file: client_secret path, account email, token location, scopes
 internal/auth/            loopback OAuth (127.0.0.1:<random>, PKCE), scope sets (full / read-only)
 internal/gsheets/         Sheets API wire types: Spreadsheet, Sheet, GridData, CellData, ExtendedValue,
-                          the 69 Request union members and their responses. No dependencies
+                          the Request union members it sends and their responses. No dependencies
 internal/gapi/            raw REST client: client.go (retry, limiters, slog, host allowlist), sheets.go,
                           values.go, batch.go, drive.go (locate only), errors.go. No MCP imports
 internal/gapi/sheetstest/ an in-memory Sheets behind httptest: sheets, cells with formulas and errors,
@@ -431,7 +446,7 @@ internal/service/         orchestration: resolve references, read, write, struct
 internal/server/          SDK wiring; schema dump through an in-memory client session
 internal/tools/           one file per area: read.go, values.go, sheets.go, format.go, ranges.go,
                           transform.go, resources.go, tools.go
-internal/redact/          the one redactor every live driver prints through: ids, links, addresses
+internal/redact/          the one redactor every live driver prints through: ids, links, addresses, project numbers
 internal/livecover/       what "the driver covers the tool surface" means, so the static gate and the
                           driver itself cannot disagree about it
 internal/version/
@@ -458,7 +473,7 @@ Dependencies, all pinned: `modelcontextprotocol/go-sdk` v1.8.0 (with
 `zalando/go-keyring` v0.2.8, `golang.org/x/time` v0.15.0. Nothing else.
 
 Toolchain, current as of 2026-09-05 and matching the sibling servers:
-Go 1.27.1 (`go 1.27.1` in go.mod), go-sdk v1.8.0, golangci-lint v2.13.2, govulncheck
+Go 1.27.2 (`go 1.27.2` in go.mod), go-sdk v1.8.0, golangci-lint v2.14.0, govulncheck
 v1.7.0, go-licenses v1.6.0, gitleaks v8.30.1, GoReleaser v2.18.
 
 **Scaffolding first.** The Makefile, the gates, `.golangci.yml`, the CI,
@@ -704,7 +719,11 @@ acknowledgments the guard requires. The path is fixed:
 - `write_values`: `values` as rows of scalars, or `tsv` for bulk text;
   `input: typed | literal`; `overwrite`, `overwrite_formulas`. A write
   shorter than the previous contents leaves the tail alone and the result
-  says so (§2, `values.update` does not clear).
+  says so (§2, `values.update` does not clear). A formula into a table's
+  header row is refused, and nothing allows it: Google answers 200 and
+  replaces the formula with a column name of its own, such as "Column 2"
+  (spike T, §18). The tables come from the cached card, read only when a
+  formula is being written.
 - `append_rows`: appends after the table detected in the range,
   `insert: rows` (default) or `overwrite`, and reports the range Google
   actually chose.
@@ -749,7 +768,9 @@ value.
   non-empty cells, formulas and charts go with it, and the description
   points at `duplicate` first.
 - `edit_dimensions`: `action` — `insert`, `move`, `resize`,
-  `auto_resize`, `group`, `ungroup`, over rows or columns. `move`'s `to`
+  `auto_resize`, `group`, `ungroup`, `hide`, `unhide`, over rows or
+  columns. A hidden band shows nothing in the values, so `read_range`
+  names the hidden rows and columns inside what it read. `move`'s `to`
   is where the band ends up: the API reads its index against the sheet
   *before* the move, verified live, and the conversion is this server's.
 - `delete_dimensions`: gated, and needs `confirm: true`. Deleting a
@@ -790,8 +811,96 @@ value.
   it bold" costs one request and not two.
 - `manage_range`: things attached to a range — `named_range`,
   `protected_range`, `data_validation`, `table`, `banding` and
-  `conditional_format`, each with `add`, `update` and `delete`. A table's
-  dropdown column carries its `ONE_OF_LIST` rule, which the API requires.
+  `conditional_format`, each with `add`, `update` and `delete`.
+
+  **A table's columns are typed with `column_types`**, on add and on
+  update: one entry per column, `<column> <type>`, such as `B date`,
+  `Amount currency` or `Status dropdown: Open, In progress, Done`, the
+  options after a colon or in parentheses. The
+  column is a letter or its header's text; a letter outside the table
+  that a header spells, such as `ID`, means the header. The index sent
+  counts from the table's first column, as the API defines it. The types
+  are text, number (`DOUBLE`), currency, percent, date, time, date_time,
+  boolean and dropdown. A dropdown column carries its `ONE_OF_LIST` rule,
+  built by the same condition parser `data_validation` uses, with its
+  options split on commas; a list whose options hold commas is
+  `data_validation`'s job. The five smart chip types are shown on a read
+  and never written.
+
+  An add sends only the columns named. An update sends `updateTable`
+  with `fields=columnProperties`. That field is a list, and Google
+  replaces it whole: one column sent alone left every other column with
+  no type, and a dropdown with no list (spike T, §18). So the update
+  reads the table's columns fresh, changes the ones named, and sends
+  every column back. Fresh, because the card is cached, and a cached array
+  sent back would undo a change somebody made in between. This round
+  trip is why `dataValidationRule` is modeled: without it, every other
+  dropdown would lose its list.
+
+  The update sends an entry for every column of the table, and each
+  carries its `columnName`, exactly as the same fresh read gave it, or
+  the header cell's text where the read gave the column no entry; such
+  a column goes with no type. Google refuses an entry with no name, and
+  writes a name sent into its header cell as plain text (spike T, §18),
+  so a name sent as read leaves the header showing what it did. A
+  header cell holding a formula, a smart chip or rich text is the
+  exception: written over, the formula or the chip is lost, and so is
+  the formatting of part of the text, such as a bold word (spike T,
+  §18). So the fresh read takes the header row as well, chips and
+  `textFormatRuns` included, and the update is refused while a header
+  cell holds any of them. A run with an empty format formats nothing and
+  does not count. Google does not keep a formula written into a table's
+  header, `write_values` refuses one there, and Google takes no table
+  added over one, so the formula check is for a header made some other
+  way; it reads nothing more. A rename alone sends no columns and is not
+  refused.
+
+  Typing a column boolean, on add or update, reads the cells under its
+  header first and is refused while one holds anything but a TRUE or
+  FALSE value. Google turned a word, the text "TRUE" and an empty cell
+  into FALSE (spike T, §18), so a word is lost with nothing said, and
+  text that reads TRUE is not a true value. A TRUE or FALSE value stays,
+  on add and on update, and is let through. A number and a formula are
+  refused too, since nothing says they are kept. The refusal names the
+  cells and says to write TRUE or FALSE with `input` typed, which stores
+  a value rather than text. An empty cell becomes FALSE, and the tool
+  description says so.
+
+  Typing a column dropdown, on add or update, is refused while a cell
+  under its header has a data validation rule of its own. Google put the
+  table's list in place of a cell's own list and said nothing (spike T,
+  §18). The refusal names the cells and says to remove the rule with
+  `data_validation` `delete` first. The table's own list is not on its
+  cells, so a column already a dropdown is not refused over it. The
+  cells under every column typed boolean or dropdown come in one read,
+  after the header read, since a column named by its heading is known
+  only once the header is back. A column the update sends back unchanged
+  is not read.
+
+  An add reads the header row first, with the same mask, whether it
+  types a column or not. It is refused while any header cell holds a
+  formula: Google takes no table over one, "Formulas are not supported
+  in a table header row." (spike T, §18). Refused here, the cells are
+  named and a dry run says so. An add names every column it types after
+  its header cell's text. A typed column sent with no name has Google
+  write "Column 1", "Column 2" and so on into its header cell, over the
+  heading that was there (spike T, §18). An empty header cell has no
+  text to send and gets one of those names, which takes nothing; the
+  result says so. The add is refused while the header of a column it
+  types holds a smart chip or rich text, as an update is. A column it
+  does not type is sent nothing. `get_spreadsheet` shows the types in
+  the spelling `column_types` takes, `Status dropdown (Open, In
+  progress, Done)`.
+
+  An add Google answers with an HTTP 500, or with no reply at all, is
+  settled by a fresh read of the card, since a table has a name and a
+  range. Where a table of the name and range sent is there, the result
+  says Google answered with an error and the table was added. Where it
+  is not, the call is refused as `unavailable`, saying nothing was added
+  and the call can be repeated. Spike T saw Google fail every table add
+  in one spreadsheet after seven were taken, for a reason not known
+  (§18), so the refusal says a repeat may fail the same way. A read that
+  fails too leaves `ambiguous_outcome`.
 
   **The conditional-format ops are here rather than on `format_cells`,
   which is a change from an earlier draft of this section.** A rule is
@@ -810,6 +919,23 @@ value.
   conditional format rule is the one exception: the API identifies those
   by position in the sheet's list, so they take an `index`, which
   `read_formatting` reports beside each rule.
+
+  **A color scale is a conditional format rule too.** `gradient` takes
+  two or three points, lowest first, each
+  `<min|max|number|percent|percentile> [value] #hex`, in place of a
+  condition and a format, and is refused beside either. min and max
+  take no value, being the range's own lowest and highest. Google takes
+  either as the middle point too, so a scale read back from a sheet can
+  be sent again; min is never last, nor max first. A value is sent as
+  written, since the API takes it as text and it may be a formula. A
+  number is read in the spreadsheet's locale: under `de_DE` Google
+  refuses `1.5` and takes `1,5` (spike S, §18), and the tool description
+  says so. A point is sent with `colorStyle`
+  alone and read from either it or the deprecated `color`.
+  `read_formatting` reads a scale back in the spelling it was written in,
+  `color scale: min #ffffff -> percentile 50 #ffd666 -> max #57bb8a`,
+  with a theme color by name. An update replaces the whole rule, as it
+  does for a condition.
 
   A protection never blocks the request that lifts it. Anything else
   would be a trap rather than a guard.
@@ -894,6 +1020,57 @@ the whole output with it.
   the way hard rule 4 requires. It also **checks the offset against the
   source's width**, because an offset past the end is accepted with a
   200 and produces a pivot that means nothing.
+- **An update that changes the source checks what it keeps.** A group,
+  value or filter the update was not given keeps its offset, so it reads
+  the same position in the new source. That keeps its meaning only when
+  the new source starts at the same column of the same sheet, so a new
+  source that starts anywhere else is refused, naming what each kept
+  column would read instead. One that starts in the same place and is
+  too narrow is refused too, named in the old source's letters. The
+  caller passes the groups, values and filters again, or picks a source
+  that fits. A source is read on the anchor's sheet, so a pivot made in
+  the Sheets interface over another sheet keeps nothing across a new
+  source.
+- **Groups take a rule, in the same flat strings.** `Date by
+  year_month` is a `dateTimeRule`, its type the enum lower-cased, and
+  `Age every 10 from 20 to 70` a `histogramRule`, start and end
+  optional. The rule starts at the last ` by ` or ` every ` with
+  something after it, and an entry that is a heading whole is the
+  column, so a heading with either word in it can still be named. The
+  reference allows one group with a rule per source column, and Google
+  does not enforce it (§18), so this server does: the pivot as it will
+  be sent is checked, kept groups included, and two rules on one column
+  are refused with the reason. A grouping made by hand in Sheets
+  is kept by an update that leaves the groups out, and never written.
+  An update that keeps a calculated value keeps no column for it: the
+  formula names its columns by heading, so a new source moves nothing.
+- **Filters are `filters`, written as `filterSpecs`.** `Region show
+  East, West` is a list of values to show, and `Amount number_greater
+  100` a condition, with `manage_range`'s names for the ones the
+  discovery document says filters support. `date_before` and
+  `date_after` take a relative date as its word, `today` or `past_week`,
+  and send it as `relativeDate`; typed into a cell the word would be
+  text. A column takes one of each,
+  and then a value must be listed and meet the condition. `filters`
+  replaces every filter and `clear_filters` removes them. Both take the
+  deprecated `criteria` map out too: a response carries it beside
+  `filterSpecs`, and a pivot sent back with it alone would be filtered by
+  it again. `visibleByDefault` is not an argument. It is set on a
+  condition alone, because the reference says that with it false a value
+  must also be listed, and nothing is.
+- **A value starting with `=` is a calculated value.** It needs `as
+  <name>`. It is used as written (`CUSTOM`) unless it ends in `sum`, which
+  works it out per row and sums it; Google takes no other summary for a
+  formula. It is sent with no `sourceColumnOffset`, since the two are a
+  union. "Show as" (`calculatedDisplayType`) is not offered.
+- **`list` reads every rule back in the spelling the tool takes**:
+  `rows`, `columns`, `values` and `filters`, each column as its letter.
+  Sent back as they read, they make the same pivot. A grouping made by
+  hand reads as `<column> by hand`, which the tool refuses rather than
+  dropping, and a summary this server has no word for reads as Google's
+  word lower-cased. What the spelling cannot carry — a group's sort order
+  and label, a value's "show as" — is not in it, and passing that
+  argument again replaces it.
 - **An anchor inside the source is refused** before the request is
   built. The API accepts it and evaluates to `Circular dependency
   detected`.
@@ -1025,7 +1202,8 @@ whose reference mentions none of them.
 snake_case verb_noun, no dots. Claude Code prefixes `mcp__<server>__`.
 "Gated" means registered only with `GSHEETS_ENABLE_DESTRUCTIVE=true`, and
 each gated tool also requires `confirm: true` on the call and sets
-`_meta["anthropic/requiresUserInteraction"]`. `GSHEETS_READ_ONLY=true`
+`_meta["anthropic/requiresUserInteraction"]` for a client that cannot ask
+the person (§9a). `GSHEETS_READ_ONLY=true`
 registers only the readOnly rows and requests read-only scopes.
 
 | Tool | Purpose | Annotations | Phase |
@@ -1051,6 +1229,9 @@ registers only the readOnly rows and requests read-only scopes.
 | `manage_pivot_table` | Pivot tables on a range | — | 4 |
 | `manage_data_source` | Connected Sheets data sources: add, refresh, cancel a refresh, list | — | 4 |
 | `delete_data_source` | Gated: remove a data source, its sheet and everything on it | destructive | 4 |
+| `read_cell_comments` | Comment threads on cells: the cell each is on now, status, assignee, posts | readOnly | 2026-10 |
+| `manage_cell_comment` | add, reply, edit, resolve, reopen a comment thread; an assignee is emailed | openWorld | 2026-10 |
+| `delete_cell_comment` | Gated: delete a comment thread, or one reply | destructive | 2026-10 |
 
 There is deliberately no bulk tool that spans spreadsheets: one
 spreadsheet per call, so a wrong id costs one refusal rather than a
@@ -1071,7 +1252,7 @@ or a hash, and `net/url` would read each of those as structure and hand
 back a title with the end missing.
 
 **Registration.** One `Kind` per tool — read, write, idempotent write,
-destructive, connected — decides the annotations, whether read-only mode leaves the
+destructive, connected, notifying — decides the annotations, whether read-only mode leaves the
 tool registered, whether the client is asked to involve a person, and
 that the reply is rendered. Four rules kept by hand at twenty call sites
 is four ways to be quietly wrong. `Kind` is an enum over *which world a
@@ -1256,10 +1437,10 @@ a task is scored against a spreadsheet the harness built.
 
 `confirm: true` is an argument the model writes, and a persuaded model
 writes it too. So when the client can ask, the server asks the person
-itself, through MCP form elicitation, before six writes:
+itself, through MCP form elicitation, before seven writes:
 
-- `delete_sheet`, `delete_dimensions`, `clear_values` and
-  `delete_data_source`, always;
+- `delete_sheet`, `delete_dimensions`, `clear_values`,
+  `delete_data_source` and `delete_cell_comment`, always;
 - `manage_data_source` `add`, which runs a BigQuery query billed to the
   named Cloud project, now and on every refresh;
 - `manage_data_source` `refresh` with no `id`, which runs every source's
@@ -1278,7 +1459,14 @@ itself, through MCP form elicitation, before six writes:
 3. **No question possible.** A client that declares no form elicitation
    gets no question, and the arguments are the guard, as before.
    `GSHEETS_REQUIRE_PROMPT=true` refuses those writes as `[blocked]`
-   instead.
+   instead. Only such a client sees Claude Code's
+   `requiresUserInteraction` mark on the destructive tools, which always ask:
+   `tools/list` drops it when the request declares form elicitation, so
+   the person answers once, to the question that says what the write
+   destroys. `destructiveHint` stays, as the client's allow-listable
+   prompt. `claude -p` declares elicitation and answers `cancel`, so an
+   unattended delete is still `[blocked]`, unless an `Elicitation` hook
+   accepts for it.
 4. **A dry run never asks**, and needs no `confirm`.
 5. **What the question says.** The tool, the target and the consequence,
    in the server's words: the sheet, band or range and the spreadsheet,
@@ -1574,9 +1762,31 @@ itself, through MCP form elicitation, before six writes:
 - **Coverage floor** 80% per package, with the list **derived** from
   `go list ./internal/...` and exemptions named with reasons. A
   hand-written list silently stops covering new packages.
-- **Schema dump and diff** in CI against the last tag; a removed tool or
-  field, or a new required field, is breaking. A break fails the gate
-  unless the module path's major version is above the last tag's.
+- **Schema dump and diff** in CI against `testdata/schema-baseline.json`,
+  the surface of the CHANGELOG's newest release, recorded in that
+  release's commit by `make schema-baseline VERSION=vX.Y.Z`. Breaking,
+  at any depth (`threads[].cell` as much as `threads`): a tool, resource
+  or field removed; an input that takes fewer types than it did, or no
+  longer takes a value it listed; an output that may return a type it
+  did not, or may be missing where it was required; or an input newly
+  required where its parent was already there. Types are compared one
+  way, as JSON Schema 2020-12 reads them (§18): a list of types allows
+  any of them, an integer is a number, and no type or the schema `true`
+  is any type. So an input that becomes nullable or takes a number for
+  an integer breaks nobody, and an output that may now be null does.
+  An output that may carry a value it did not list, or an input newly
+  limited to a list, is named without failing: whether either breaks a
+  caller depends on what the server did before. A break fails the gate
+  unless the module path's major version is above the baseline's. The
+  gate also fails when the baseline is not the newest release's, and,
+  with nothing under `[Unreleased]`, when the build differs from it at
+  all, which proves a release commit recorded the baseline rather than
+  relabeling it. `schema-baseline` refuses a build stamped as another
+  version, a CHANGELOG with entries still unreleased, and a break unless
+  the release is a new major version. It used to build the last tag in a
+  worktree and compare top-level fields, so a lost nested output field
+  passed. The baseline was recorded from the v3.0.2 tag, whose dump
+  already carried output schemas and its version.
 - **Stdio smoke** without credentials, closing stdin the moment the last
   message is written, asserting a clean exit code — the SDK reports a
   closed session as JSON-RPC -32004 with the EOF only in the message
@@ -1685,7 +1895,7 @@ itself, through MCP form elicitation, before six writes:
 | Decision | Consequence in the design |
 |---|---|
 | Deployer-owned Cloud project and OAuth client; nothing internal in the repository | §9, §10, §12 |
-| Inside the spreadsheet only; files, sharing, revisions and comments are the Drive server's | §1, §7.4, §17.5 |
+| Inside the spreadsheet only; files, sharing and revisions are the Drive server's, and cell comments are here | §1, §7.4, §17.5 |
 | A1 is the contract; GridRange math is server-side | §4.1, §6.2, `internal/a1` |
 | Every read shows addresses | §4.2; the grid renderer, and no handle memory to go stale |
 | A write never destroys what it cannot see | §4.3; the guard, its acknowledgments, and the dry run |
@@ -1829,6 +2039,75 @@ forgotten. Results go into §18.
   written until this runs. The wording §17a.27 uses is spike M's finding
   about `values.update`, and nothing says a merge or a clear behaves the
   same way. Results in §18.
+- **R. Cell comments** (**run 2026-10-09**, before the comment tools
+  were built): what a read returns under a field mask, where a thread's
+  anchor goes when rows move, how an assignee reads back, what a bad id
+  answers, and whether a failed comment write is a 400 or a 200 that only
+  `commentUpdateState` admits. Results in §18.
+- **S. Color scales** (**run 2026-10-09**): what a scale sent with
+  `colorStyle` alone reads back as, which midpoint types are taken,
+  whether the refusals the fake makes are Google's, what a number value
+  means under a comma-decimal locale, and what a percent or percentile
+  value outside 0 to 100 does. Results in §18.
+- **T. Typed table columns** (**run three times, 2026-10-09**): whether a sparse
+  `columnProperties` is taken on add, whether a dropdown with no rule is
+  refused, whether an update with `fields=columnProperties` replaces the
+  whole array, whether a column name sent, or left out, rewrites the
+  header cell, what a type change does to a number format, a per-cell
+  validation and the cells of a boolean column, whether a header cell
+  can hold a formula and what an update sending the names as read does
+  to it, to a header in rich text and to a person chip, and whether an
+  entry with a name and no type is taken. Results in §18. It left four
+  answers owed: whether one column sent with its name replaces the
+  array, what a dropdown does to a per-cell list and a boolean column
+  to a word, what an update does to a header in rich text, and why the
+  live run's add of three typed columns was a 500. So it now sends Q3
+  again with a name (Q3b) and Q5 with names, prints every read whole,
+  asks what an add does to a formula header it does not type (Q10), and
+  bisects the 500 (Q11): the driver's own request on a plain sheet and
+  on one frozen as the driver's was, then each column type alone, all
+  with names and without. Q11 spaces its calls a second apart, since
+  Sheets allows 60 writes a minute per user; run it with `-only T`.
+  The second run answered Q3b: Google replaces the whole list. It
+  answered Q5: a boolean typing turns a word, the text TRUE and an empty
+  cell into FALSE; Q5b asks what it does to a TRUE or FALSE value, on
+  update and on add. It answered Q7 for rich text: a name sent as read
+  drops its runs; Q7 now asks the same of a whole-cell format. It
+  answered Q10: Google takes no table over a formula in its header row.
+  It answered Q11 without explaining it: the live run's add was taken,
+  and every add after the seventh table in the spreadsheet was a 500,
+  requests just taken included. So Q12 makes a fresh spreadsheet and
+  adds tables three seconds apart until one fails or twelve are taken,
+  then deletes one and tries the failed add again, at once and a minute
+  later, and a plain add last. It tells a count from timing. Owed, then:
+  Q5b, Q7's whole-cell format and Q12.
+  The third run answered Q5b: a TRUE or FALSE value stays under a
+  boolean typing, on update and on add, and an add turns a word and an
+  empty cell into FALSE, as an update does. So the refusal over text is
+  right, and a true or false value needs none. It answered Q7: a format
+  set on a whole header cell stays. Q11 did as before: on a new sheet,
+  the driver's add and four single types were taken, and every add after
+  those five was a 500. Q12 is not answered. Its first add met a 429 on
+  the per-minute write quota right after Q11, and a plain add after it
+  was taken, so a count is still not told from timing. It is a selector
+  of its own now: run `-only T12` alone, a minute after any other
+  spike's writes. Q13 came later, with the refusal of a dropdown over
+  cells with a rule of their own: run alone with `-only T13`, it asks
+  whether an update typing a column dropdown drops its cells' own lists,
+  as Q1's add did, and whether an update sending a dropdown column back
+  unchanged drops a list a cell in it was given since. Owed: Q12 and
+  Q13.
+- **U. Pivot grouping rules, filters and calculated values** (**run
+  2026-10-09**, two answers owed): what Google answers for each refusal
+  `manage_pivot_table` makes first — a value with an offset and a
+  formula, a formula averaged, two rules on one column, a histogram's
+  interval and bounds, a condition only data validation takes — what
+  labels a date and a histogram rule draw, what a condition alone shows
+  with `visibleByDefault` false and true, which filter forms a pivot
+  reads back with, whether a filter takes a relative date, and whether a
+  grouping made by hand survives being sent back with other values.
+  Results in §18. A 429 cut off two of U9's questions, an item in two
+  groups and two groups of one name; they stay in the spike.
 
 ## 16. Delivery phases
 
@@ -1954,7 +2233,7 @@ again), and both review passes ran with every finding fixed. Not tagged:
 `main` is the maintainer's.** `manage_chart`,
 `manage_pivot_table`, `manage_data_source`, each verified live before it
 is designed in detail. Then the discovery document is diffed against what
-the client calls, and every one of the 69 union members is either used or
+the client calls, and every union member is either used or
 listed here as deliberately out.
 
 **The diff, run 2026-09-07 against revision 20260831: 54 of the 69 are
@@ -2127,6 +2406,23 @@ refused `[not_found]` if it is still absent. The question is built only
 when it will be put or checked, so a client that cannot ask costs no
 extra read.
 
+**Unreleased: cell comments, color scales, typed table columns and pivot
+rules. Live run 2026-10-09 evening: 297 steps, 0 failed, 1
+undetermined**, the content search, undetermined in earlier phases too.
+The transcript was read. The typed-table steps ran in
+a spreadsheet of their own, so no earlier table add could draw Google's
+500 there, and every one passed: the add of three typed columns was
+taken, the header row read "Item", "Amount", "Due" and "Status" after
+the add and after the update, the update kept the dropdown's list, and
+the card showed the types. The refusals of a formula into a header, a
+boolean column over text and a table over a formula heading each came
+back as expected. Under `de_DE`, Google refused a color scale point of
+`1.5` and took `1,5`; which value `1,5` colors from is for a person to
+read in that spreadsheet. Owed before a release: a live run with the
+step added since, a dropdown typed over cells with a list of their own,
+which must be refused; spike T Q12 and Q13, each run alone (§15); and
+that reading of the comma-locale scale.
+
 ## 17. Open decisions
 
 None. The seven below were decided on 2026-09-05 and are kept here so
@@ -2148,6 +2444,13 @@ they are not reopened.
    comment thread is a Drive resource, reachable for any file through a
    server built on the Drive API. Revisit in phase 4 only if
    cell-anchored comments turn out to be reachable and useful.
+   **Amended 2026-10-09: comments are in.** Sheets published them in
+   2026-09 as five batchUpdate requests and a comments view on
+   `spreadsheets.get`, each thread anchored to a cell that it follows as
+   the sheet changes. Drive's comment API sees the same threads without
+   their cells (spike R, §18). The owner chose three tools:
+   `read_cell_comments`, `manage_cell_comment`, open-world because an
+   assignee is emailed, and `delete_cell_comment`, gated and asking.
 6. **No `drive.file`, no full `drive`.** `spreadsheets` plus
    `drive.readonly`; file management belongs to the Drive server.
    **Amended 2026-09-07 by §17.6a**, which adds a third scope for one
@@ -2177,7 +2480,7 @@ they are not reopened.
    accepted under the existing scopes, so `get_spreadsheet` reports that
    a spreadsheet is connected to a data source for every user, at no
    cost and no consent.
-7. **Go directive `go 1.27.1`**, matching the sibling servers.
+7. **Go directive `go 1.27.2`**, matching the sibling servers.
 8. **A tool result is not masked; the artifacts meant to be pasted are**
    (decided 2026-09-06, after the live run raised it). `read_range`
    returns cells and `search_spreadsheets` returns titles, ids and the
@@ -2323,7 +2626,7 @@ cannot be verified again yet.
    `rowProperties` onto one and leaving it carrying both sets, which the
    API rejects — but there is no way to create one here. It wants a
    `columns` argument, which is a fifth thing for a caller to get right
-   on a tool that already takes eighteen, and it is worth deciding
+   on a tool that already takes twenty-one, and it is worth deciding
    alongside entry 12 rather than before it. **Still open.**
 14. **`dry_run` is answered by three tools and refused by two.**
    `write_values` and phase 2's three previews come before the guard, for
@@ -2668,6 +2971,15 @@ cannot be verified again yet.
    a wide sheet can find an anchor the lookback reaches and then have
    its extent cut off above the write, and the refusal falls back to
    "not empty". §17a.27's stated give-up covers the first bound only.
+33. **On protocol 2026-07-28 a client can get neither the mark nor a
+   question.** Capabilities travel with each request there, so a client
+   can declare form elicitation to `tools/list` and none to
+   `tools/call`. The list then drops the mark from the destructive
+   tools, which always ask (§9a.3), and the call asks nothing. Found by review on
+   2026-10-09. **Left open**, because it gives a misbehaving client
+   nothing it lacked: such a client answers the server's question itself
+   and can accept without a person. `GSHEETS_REQUIRE_PROMPT=true` refuses
+   the call instead, since it reads the call's own capabilities.
 
 ### 17c. Where the profile and the guards follow the sibling servers
 
@@ -3203,6 +3515,8 @@ none of them.
 | A pivot's output is data, so a read sees it and the guard counts it | **Confirmed, and half of it matters**: the output cells carry an `effectiveValue` and **no `userEnteredValue`**, so the server's own grid mask sees ten non-empty cells over a four-group pivot and the guard refuses a write over them. It cannot say what they are: `GridFields` asks for no `pivotTable` field | The guard already fails closed here, which is the important half. `read_range` and the guard's refusal both gain the pivot's anchor, so "10 non-empty cells" becomes "the output of a pivot table anchored at E1" |
 | Writing into a pivot's output is refused, or destroys it | **Refuted both ways, and the truth is better**: `values.update` over one output cell returns 200 and collapses the whole pivot to `#REF!` at the anchor — "Array result was not expanded because it would overwrite data in F3" — and clearing that one cell brings the entire output back. The damage is total and completely reversible | The refusal says the pivot will stop drawing until the cell is cleared, which is true, rather than that the pivot will be destroyed, which is not. An `updateCells` over the **anchor** is a different act: it replaces the pivot outright and silently, and is the fourth silent destroy |
 | The API validates a pivot table it is given | **Refuted where it matters most**: a `sourceColumnOffset` of 9 against a three-column source is accepted with a 200. A missing `summarizeFunction`, a missing `sortOrder` and a missing source are each a clean 400 | `manage_pivot_table` checks every offset against the source's width before sending. An out-of-range offset is the one mistake a caller makes by counting from one |
+| An update's new source is checked the way an add's is (2026-10-09) | **Refuted in our own code**: only the columns an update was given were resolved against the new source. A group, value or filter it kept carried its old offset, and the row above says Google takes one past the edge with a 200 | An update with a new source refuses a kept offset past the new source's edge and names it in the old source's letters. A unit test per kind of kept column, and a live step that sends no write |
+| A kept offset means the same column in the new source (2026-10-09) | **Refuted by the discovery document's own definition**: `sourceColumnOffset` is "the column offset of the source range that this grouping is based on", where with a source of `C10:E15` "the offset `1` would refer to column `D`". A new source that starts one column along moves every kept offset one column along, onto other data, and nothing in the reply says so | An update whose new source starts in another column, or on another sheet, is refused while it keeps a column, naming what each would read instead. Passing the groups, values and filters again resolves them against the new source. Unit tests, and a live step that sends no write |
 | A pivot may be anchored anywhere the caller likes | **Refuted**: anchored inside its own source it is accepted with a 200 and evaluates to `Circular dependency detected`. The API does not refuse it and the reply says nothing | Refused before the request is built, by the same rectangle arithmetic the guard already does |
 | A pivot follows its source the way an anchor follows its row | **Refined**: deleting four of five source rows left the pivot alive, its source range shrunk with the delete, and its output reduced to a header and `Grand Total`. Silent, like the chart | `delete_dimensions` names intersecting pivots beside the charts and the anchors |
 | The scopes in §17.6 are enough for everything in §8 | **Refuted by the one tool that was never probed**: `addDataSource` under `spreadsheets` + `drive.readonly` returns `403 The request scopes are not sufficient for performing this operation. Please include bigquery.readonly scope`, and the reference says refreshing a BigQuery source needs it too. `refreshDataSource` and `cancelDataSourceRefresh` returned 200 here only because there was nothing to refresh, which proves nothing about a real source | §17.6 is reopened and amended: `bigquery.readonly` is requested, behind `GSHEETS_ENABLE_DATA_SOURCES`, so a user who will never own a BigQuery project is not asked to consent to one. See §17.6a |
@@ -3264,3 +3578,117 @@ verdict comes from a sibling server's evidence log.
 | A client that declares elicitation has a person to answer it | **Refuted, tier 2**: `claude -p` declares it and answers `cancel`; Codex under approval policy `never` with full access accepts a fieldless form | A refusal never says the person declined, and an unattended client cannot make these writes |
 | A client draws a question as plain text | **Refuted, tier 2**: VS Code builds the message as a `MarkdownString` | Spreadsheet text stands in a code span, and the server's own lines hold no Markdown |
 | A 503 proves an unrepeatable write never began, so it may be retried | **Refuted, tier 1**: Google's `google/rpc/code.proto` says of `UNAVAILABLE` that it is "not always safe to retry non-idempotent operations". Checked 2026-10-01 | An append, `batchUpdate`, `create` or `copyTo` retries only on 429. Any 5xx is `[ambiguous_outcome]`, and the class wins over the wrapped 429 |
+| A destructive tool should carry both `requiresUserInteraction` and the server's own question | **Refuted, tier 2**, 2026-10-09, after the owner was asked twice for one delete in another server built the same way. No source recommends two hard gates for one call: the spec puts confirmation on the client, GitHub's `delete_repository` and Supabase confirm with `destructiveHint` plus a form elicitation and set no mark, and Claude Code's documentation scopes the mark to "tools whose permission prompt is itself the point" | The mark is sent per client, present only when the request declares no form elicitation, on the destructive tools, which always ask. A typed confirmation, which would stop Codex accepting an empty form unseen, was offered and not chosen. A Claude Code `Elicitation` hook that accepts now confirms these deletes by itself, `claude -p` included, where the mark used to refuse the call before it reached the server |
+| golangci-lint v2.13.2 lints this module on Go 1.27.2 | **Refuted, tier 1**, 2026-10-09: Go 1.27.2 writes export data version 5 (`internal/pkgbits/version.go`, go.dev/issue/81188). v2.13.2 is built on `golang.org/x/tools` v0.49.0, which reads up to version 4, so the typecheck fails. v2.14.0, a final release of 2026-09-24, is built on x/tools v0.50.0, which reads version 5 | Go 1.27.2, and golangci-lint v2.14.0 in the Makefile and CI |
+| A package's coverage reads the same on Go 1.27.1 and 1.27.2 | **Refuted, tier 1**, 2026-10-09: 1.27.1's `cmd/cover` gave each piece of a block that a comment splits the statement count of the whole block, and 1.27.2 counts each piece's own (`mergeRangesWithinStatements`). The same tests read lower: the fake from 82.4% to 79.9%, and `cmd/` from 56.9% to 53.1% | No floor moved. A test of `format_cells` `unmerge`, which no test ran against the fake, puts the fake at 80.3% |
+| The schema diff holds every output field (53026dc, "schema-diff fails on a lost output field") | **Refuted in review, tier 1**, 2026-10-09: it compared each tool's top-level output properties with the last tag's, so dropping `threads[].cell` from `read_cell_comments` passed, and a retyped field passed at any depth | The diff walks every input and output field, `properties` and `items` alike, with its type, against a committed baseline of the newest release's surface, as a sibling server's gate does. The dump carries no `$ref`, `anyOf` or `oneOf` for the walk to miss; a boolean `items: true` reads as any type, as `{}` does |
+| A type change breaks a caller whichever way it goes | **Refuted, tier 1**, 2026-10-09, against JSON Schema 2020-12. Validation §6.1.1: with a list of types, "an instance validates successfully if its type matches any of the types indicated by the strings in the array", and `integer` "matches any number with a zero fractional part". §6.1.2: an instance passes `enum` "if its value is equal to one of the elements". Core §4.3.2: `true` passes "as if the empty schema {}", and `false` always fails | Types are compared one way: an input may take more and an output may return fewer, so `"boolean"` to `["null","boolean"]` passes an input and fails an output. The diff also fails an output field no longer required, and an input that no longer takes a value it listed, in a list's elements too. An output that may carry a value it did not list, and an input newly limited to a list, are named without failing. The current dump has no `enum` and no list of types; the checks hold the first one |
+
+**Spike R, run live 2026-10-09**, before the comment tools were built.
+`scripts/spikes/comments.go` against a scratch spreadsheet; the one
+assignee was the signed-in account. Tier 1.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| A read can name comments in its field mask | **Refuted without the comments view**: `400 Field mask may not contain comment-specific fields if comments are not requested`, with no `commentsViewMode` or with `OMITTED`. `INCLUDED` and, for the owner, `DEFAULT_FOR_CURRENT_ACCESS` work, nested masks included | `CommentFields` travels with `GetOptions.Comments`, and the client refuses the mask without it |
+| A thread says which cell it is on | **Partly**: it names an `anchorId`, and the sheet's `commentAnchors` map that to a one-cell range, which follows inserted rows | `threadRecords` joins the two and reports the cell as it is now; Google's order of threads is not positional, so they are sorted |
+| A thread goes with its row | **Refuted**: deleting the row collapses the anchor to an empty range, start equal to end, and the thread stays open | `cell_deleted`; a ranged read leaves such a thread out and says so. Google leaves zero indices out of its JSON, so a missing end reads as zero |
+| Resolving is idempotent | **Refuted**: resolving a resolved thread returns 200 and adds another `RESOLVE` post | resolve and reopen read the status first and send nothing when it is already there |
+| Google checks an assignee's address | **Refuted**: `nobody@example.invalid` was accepted with 200. Reassigning in a reply is a 400 on a thread whose first post has no assignee | `checkAssignee` refuses what is not one plain address, the description says a typo assigns the thread to nobody, and a reassignment on an unassigned thread is refused before it is sent |
+| A failed comment write is a 200 that only `commentUpdateState` admits | **Not seen**: a bad comment or post id was 404, a cell off the grid, an unknown sheet or empty text 400 with a clear message, and a batch holding one bad comment edit failed whole. Every success said `ALL_SAVED` | `ALL_FAILED_UNKNOWN_REASON` is still `[unavailable]` rather than a success |
+| A second delete answers 404 | **Confirmed**, for a thread and for a reply, the same 404 as an id that never existed; a deleted thread or reply is gone from the read | `delete_cell_comment` reports it gone, which is what was asked for. The read before the delete is where a repeat finds it missing, so nothing is sent or asked. An id the spreadsheet never had reads the same, and is reported gone too rather than `[not_found]`: nothing can tell the two apart, so the summary says it may be either. Google's own 404, when another delete races this one, is reported the same way |
+| Drive's comment API sees these threads | **Confirmed**: the same ids, Drive's `anchor` is the Sheets `anchorId`, and Drive shows no cell | Only this server can say where a thread is |
+
+Read from the discovery document (revision 20261005) and not probed,
+since the spike ran as one account: only a post's author may edit or
+delete it, and Google does not delete a reply that resolved, reopened or
+assigned the thread. The tools refuse those first, before anyone is
+asked. The same document says a post's text is handled as the Sheets
+editor handles it, "notifications" included, and the editor notifies an
+address a comment names; `manage_cell_comment` reports such addresses as
+ones Google may notify.
+
+Not probed: an account that may view but not comment (taken to be a
+403), the comments view under `spreadsheets.readonly`, comments on merged
+or hidden cells, whether a named address is notified, the 2048-unit
+limit, and what deleting a sheet does to its threads.
+
+**The comment tools' first live run, 2026-10-09.** The driver failed
+widely, and not at the comments: every read of cells was refused.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| The in-memory fake checks a field mask | **Refuted**: it read none. Writing the cell fields once for `GridFields` and `ReadFields`, earlier on this branch, left both masks one closing parenthesis over, and Google answered every read with a bare `400 Request contains an invalid argument.` while every unit test passed | The fake refuses an unbalanced mask as Google does, which fails a hundred tests on the old masks, and `TestFieldMasksAreBalanced` names the mask |
+| A thread's first post has an id of its own | **Refuted**: the head post's `postId` is the thread's `commentId` | Nothing relies on them differing; the first post is found by its position |
+| A post's `updateTime` moves only when its text is edited | **Refuted**: a reply that reassigned the thread moved the first post's `updateTime` | The field is `updated`, not `edited`, and the text says "updated" |
+
+The third run, after these fixes and a driver step that had carried an
+empty `post_id`, passed all 246 steps, and its transcript was read: an
+edit by `post_id` changed the reply and left the first comment, a
+thread whose row was deleted kept its posts and its assignee, and a
+deleted thread's replies went with it.
+
+**The filter rows of the API record, 2026-10-09**, read against the
+Sheets API's filters guide.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| Creating a filter view changes what everybody sees on opening the file (`addFilterView` in `testdata/api-coverage.tsv`) | **Refuted**: "A FilterView is a named filter that you can turn off and on whenever you like." What everybody sees is the basic filter, "the default filter that's applied whenever anyone views the spreadsheet" | The two reasons were swapped. `addFilterView`'s now says a view changes nobody else's view, and `setBasicFilter`'s that a basic filter changes everybody's. Both stay written off |
+
+**Color scales on `manage_range`, 2026-10-09**, read against the Sheets
+discovery document (revision 20261005) and the conditional formatting
+guide and samples, then put to Google by spike S on 2026-10-09. The
+verdicts quote what came back.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| A color scale's point carries its color in `color`, as the samples page writes it | **Refined**: `InterpolationPoint.color` is deprecated, "Use color_style", and `colorStyle` "takes precedence" where both are set. Spike S Q1: a scale sent with `colorStyle` alone reads back with both, `color` filled in from it | A point is sent with `colorStyle` alone and read from either, `colorStyle` first. A unit test reads each |
+| Google refuses a malformed color scale | **Verified, spike S Q3**: a number or percentile point with no value is `400 Invalid requests[0].addConditionalFormatRule: InterpolationPoint.value is required.` A scale with no maxpoint, and a point with no type, are both `400 ...: No interpolationPointType specified.` A rule with a `booleanRule` too is `400 Invalid value at 'requests[0].add_conditional_format_rule.rule' (oneof), oneof field 'rule' is already set. Cannot set 'gradientRule'`. A value on a min point is a 200, and reads back gone | `manage_range` refuses each before the request, and a value on min or max as well, since Google would drop it. The fake refuses each in Google's words and drops a min or max point's value. A rule of neither kind is still the fake's own refusal |
+| Any point type may be a midpoint | **Verified, spike S Q2**: number 3, percent 50, percentile 50, min and max are each taken as a midpoint, and read back as sent; min and max with no value | The parser takes min and max in the middle, so a scale read back from a sheet can be sent again. min is never last, nor max first, which nothing asked Google |
+| A percent or percentile value lies between 0 and 100 | **Refuted, spike S Q5**: percent 150, percentile 150 and percentile -10 are each a 200, and read back as written. The discovery document states no bound; it defines `PERCENT` as `NUMBER` at `=(MAX(FLATTEN(range)) * (value / 100)) + (MIN(FLATTEN(range)) * (1 - (value / 100)))` and `PERCENTILE` as `NUMBER` at `=PERCENTILE(FLATTEN(range), value / 100)` | `manage_range` sends the value as written and checks no range. The value may be a formula, which no parser here could bound |
+| A number value means the same in every locale | **Refuted, spike S Q4**: under `de_DE`, a number point of `1.5` is `400 Invalid requests[0].addConditionalFormatRule: Invalid InterpolationPoint.value: 1.5`, and `1,5` is a 200, stored as written. Which value `1,5` colors from no reply says | The value is sent as written, never rewritten, and the `gradient` description says a number is written the way the spreadsheet's locale writes it. The fake refuses a decimal point under `de_DE`, the one comma locale asked. The live driver expects the refusal of `1.5`, then writes `1,5`, and a person reads the colors. On the live run of 2026-10-09 evening, Google refused `1.5` and took `1,5`; the colors are still to be read |
+
+**Typed table columns on `manage_range`, 2026-10-09**, read against the
+Sheets discovery document (revision 20261005), the tables guide and the
+Sheets help on tables, then put to Google by spike T on 2026-10-09,
+three times. The verdicts quote what came back. §15 says which answers are
+still owed.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| A table column's index is the sheet's column index | **Refuted**: `columnIndex` is "relative to its position in the table and is not necessarily the same as the column index in the sheet" | `column_types` resolves a letter or a header against the table's range and sends the offset from its first column. A unit test over a table starting at B |
+| A dropdown column needs a `ONE_OF_LIST` rule, and no other type takes one | **Verified, spike T Q2**: a dropdown with no rule is `400 Invalid requests[0].addTable: Condition must be set for dropdown column type.`, and a `ONE_OF_LIST` rule on a `DOUBLE` column is `400 Invalid requests[0].addTable: Cannot set condition for non-dropdown column type.` | A dropdown always carries its list. The fake refuses both in Google's words. A rule that is not a list it refuses in its own, since nothing asked Google |
+| A sparse `columnProperties` is taken on add | **Verified, at a cost, spike T Q1**: `CURRENCY` on column 1 and `DROPDOWN` on column 3 of four, sent with no names, is a 200. Google named the two typed columns "Column 1" and "Column 2", counting the typed entries sent with no name, and wrote those names into their header cells, so "Amount" and "Status" were gone. The live run's add of three typed columns, number, date and dropdown, was taken by spike T's second run (Q11), and by `manage_range` on the live run of 2026-10-09 evening, each column named, in a spreadsheet of its own | An add sends each typed column with its header's text as its name (§7.5). The fake gives a typed entry with no name "Column N" and writes it into the header cell |
+| A table add Google has taken once is taken again | **Refuted, cause unknown, spike T Q11, second run**: on a new sheet of the spike's spreadsheet, the live run's add, number on B, date on C and a dropdown on D with no names, was a 200, and so were currency, number, date and text alone. Every add after those was `500 INTERNAL: Internal error encountered.` and made no table: percent, time, date-time, boolean and dropdown alone, all ten again with names, and the live run's add on a new sheet frozen as the driver's was. The spreadsheet held seven tables by then. The live run's add was a 500 after one table, added and deleted. Whether a count of tables, the time between adds or something else draws it is not known. The third run did the same: on a new sheet, the live run's add and currency, number, date and text alone were taken, and every add after those five was a 500, the spreadsheet holding eight tables by then. Q12, right after, met `429 RESOURCE_EXHAUSTED` on "Write requests per minute per user" on its first add, and a plain add a few seconds later was taken, which tells neither a count nor timing | On a 500, or a reply that never came, `manage_range` reads the card and says whether a table of the name and range sent is there: added, or nothing added and safe to repeat (§7.5). The live driver's typed-column steps make a spreadsheet of their own, and on the live run of 2026-10-09 evening their add was taken there. Owed: spike T Q12 adds tables three seconds apart in a fresh spreadsheet until one fails, then deletes one and tries again. It runs alone now, `-only T12`, a minute after any other spike's writes |
+| An update with `fields=columnProperties` replaces the whole array | **Verified, spike T Q3b, second run**: column 1 sent alone, named as read and typed `DATE`, over a table whose column 1 was `CURRENCY` and column 3 a dropdown of x, y and z, was a 200. Four entries read back: column 1 `DATE`, and the other three named by their headers with no type, the dropdown's list gone. Every update before it sent every column and read back four entries, not eight, so the list is not appended to either, whatever field_mask.proto says of a repeated field | The update reads the columns fresh and sends every one back. The fake replaces the whole list: a column left out keeps its header's text as its name and loses its type and list. A unit test holds the fake to Q3b, and the update's round trip test fails against it if the update sends fewer columns |
+| A column name sent, or left out, leaves the header cell alone | **Refuted, spike T Q1, Q3, Q4, Q5**: a name sent is written into its header cell; column 0 sent as "SPIKE-RENAMED" and A1 read "SPIKE-RENAMED" after. An update entry with no name is refused, `400 Invalid requests[0].updateTable: Table header row cell must have a value.`, for one column (Q3) and for every column (Q5). On add, a typed entry with no name has "Column N" written over its header (Q1) | An update sends every column's name as the same fresh read gave it, which Q6 shows is taken and leaves the header as it was. An add sends names too. The live run of 2026-10-09 evening read the header row unchanged after a typed add and after an update. The fake refuses an update entry with no name in Google's words, and writes a name sent into its header cell |
+| A name sent as read rewrites a header cell, if at all, with what it already shows | **Refuted for rich text, answered for a formula, spike T Q7, both runs**: `values.update` wrote a formula into B1, the header of a typed column, and answered 200. Google had already replaced it with "Column 2", B's place in the table, before any update, and the column took that name, in both runs. A table's header does not keep a formula written into it. C1 held "Flag" with its first two letters bold, read back as two `textFormatRuns`, the second with an empty format. An update sending every name as read, "Flag" included, left C1 holding "Flag" with no runs: the bold was gone. A format set on a whole header cell stays: A1, bold, italic and centered as a whole cell, read back the same after the update (third run). A number header was not asked | `write_values` refuses a formula into a table's header row (§7.3), as the live run of 2026-10-09 evening confirmed, and an add over one is refused (Q10, below), so no header written through the API holds one; the update's refusal over a formula header stays for one made some other way. An update is refused while any header cell holds rich text, and an add while the header of a column it types does; the header read asks for `textFormatRuns`, and a run counts only where it carries a format. The fake replaces a formula written into a header with "Column" and the column's place, and drops a header's runs when a name is written into it. It keeps the whole-cell format, as Google did. No refusal is needed for one |
+| A table may be added over a formula in its header row | **Refuted, spike T Q10**: F1 held a formula showing "Item", and G1 the text "Cost". An add over F1:G3 typing G alone, named "Cost", was `400 Invalid requests[0].addTable: Formulas are not supported in a table header row.`, and F1 kept its formula. The column with the formula was not typed | `manage_range` reads the header row before every table add, typed or not, and refuses a formula in any of its cells with Google's reason, naming the cells; a dry run says so too. The fake refuses in Google's words. The live driver writes a formula heading and expects the refusal, which the live run of 2026-10-09 evening got |
+| Google returns an entry for every column of a table | **Verified, spike T Q1**: after an add that sent two of four columns, four entries read back, each column left out named by its header cell, with no type. The first entry has no `columnIndex`, being 0 | The update's entry for a column the read left out stays, though it is not expected. The fake reads back an entry for every column |
+| An entry with a name and no type is taken | **Verified, spike T Q8**: column 0 sent as "Item" with no type, the rest as read, is a 200, and the header is unchanged | The update sends one only for a column a read gave no entry |
+| A name sent as read leaves a smart chip in a header cell | **Refuted, spike T Q9**: a person chip written into D1 renamed its column to the chip's text. An update sending every name as read then left D1 holding that text, with no `chipRuns`: the chip was erased | An update is refused while any header cell holds a chip, and an add while the header of a column it types does |
+| A type changes how a column is shown, not what its cells hold | **Refuted, spike T Q1 and Q5, both runs**: after the add typed column B `CURRENCY`, B2 kept its value, 1.5, and its number format `0.000`, set before, read back as `CURRENCY`. After the add typed column D a dropdown, D2 read back with no `dataValidation`: the per-cell list of x, y and z set before was gone. An update typing column C `BOOLEAN`, names sent, turned C2:C4, which held "maybe", nothing and the text "TRUE" written raw, into FALSE, FALSE and FALSE | A boolean column is refused over anything but a TRUE or FALSE value, text reading TRUE included, and the refusal says what Google does; the live run of 2026-10-09 evening got it over a column of words. The fake turns text and empty cells under a boolean typing into FALSE. A dropdown typing is refused while a cell under its header has a rule of its own, naming the cells, and the fake drops such a rule. D2 carried no rule after the add, the table's list included, so a column already a dropdown is not refused over it. The live driver sets a list on two cells and expects the refusal |
+| An update typing a column dropdown drops its cells' own rules, as an add does | **Unverified**: only an add was asked (Q1). Nor is it known whether an update that sends a dropdown column back unchanged drops a rule a cell in it was given since | `manage_range` refuses the update as it refuses the add, for the columns it types; a column sent back unchanged is not read. The fake drops the rules under every dropdown entry an update sends. Owed: spike T Q13 gives two cells of a table column lists of their own and types the column dropdown, then gives a cell of that dropdown column a list and sends every column back as read |
+| A TRUE or FALSE value is kept under a boolean typing | **Verified, spike T Q5b, third run**: J2:J4 held the values TRUE, FALSE and TRUE, read back as `boolValue`, not text. An update typing J `BOOLEAN`, both columns named, left them TRUE, FALSE and TRUE. An add over L1:M4 typing M `BOOLEAN`, named "Done", turned M2:M4, which held TRUE, "maybe" and nothing, into TRUE, FALSE and FALSE: an add does to a word and an empty cell what an update does | `manage_range` lets a TRUE or FALSE value through and refuses text, on add and on update, so the refusal over text is right and a true or false value needs none. The fake keeps a TRUE or FALSE value, and turns text and empty cells into FALSE, on add and on update |
+| A chip column read back is taken back unchanged | **Unverified, not asked**: the chip types are in the enum, and nothing says whether a request may carry one. Spike T made no chip column, so the array Q6 sent back carried none | `manage_range` never sets a chip type, and an update sends a chip column back as it read |
+
+**Pivot grouping rules, filters and calculated values on
+`manage_pivot_table`, 2026-10-09**, read against the Sheets discovery
+document (revision 20261005) and the pivot table reference page, then
+put to Google by spike U on 2026-10-09. The verdicts quote what came
+back. A per-user write quota cut off two of U9's questions with a 429,
+and they are still owed.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| A pivot value may carry a column and a formula | **Refuted by the reference, and by Google, spike U1**: `PivotValue` has "Union field `value` ... Exactly one value must be set", of `sourceColumnOffset`, `formula` and `dataSourceColumnReference`. Sent both: `400 Invalid value at 'requests[0].update_cells.rows[0].values[0].pivot_table.values[0]' (oneof), oneof field 'value' is already set. Cannot set 'sourceColumnOffset'` | `sourceColumnOffset` is a pointer, so a calculated value is sent without it and a column's offset of 0 is still sent. The fake refuses both in Google's words, naming the field the request carries second, and neither in its own |
+| A formula value takes any summary | **Refuted by the reference, and by Google, spike U1**: "If formula is set, the only supported values are SUM and CUSTOM. If sourceColumnOffset is set, then `CUSTOM` is not supported". A formula averaged: `400 Invalid requests[0].updateCells: Invalid summarizeFunction: AVERAGE. Only "CUSTOM" or "SUM" are valid if PivotValue.calculatedField is set.` `CUSTOM` on a column: `400 Invalid requests[0].updateCells: "CUSTOM" may not be used in PivotValue.summarizeFunction unless PivotValue.calculatedField is set.` A formula with no name, summed, is a 200, drawn under an empty heading | A calculated value is `CUSTOM` unless it ends in `sum`; another summary word, and `custom` on a column, are refused before the request, and so is a calculated value with no name, which would head its column with nothing. The fake refuses both in Google's words and draws an empty heading |
+| Two groups may carry a rule on one column | **Not enforced, spike U2**: the reference says "Only one PivotGroup with a group rule may be added for each column in the source data, though on any given column you may add both a PivotGroup that has a rule and a PivotGroup that does not". Google took two rules on one column with a 200, and a plain group beside a rule too. What it draws for two is not documented | Still refused before the request, kept groups and a grouping made by hand included, and the refusal says the reference forbids it and Google does not. The fake takes it, as Google did |
+| A histogram takes any interval and bounds | **Verified, spike U3**: an interval of 0 is `400 Invalid requests[0].updateCells: Histogram group rules require a positive value for interval.`, and start 70 with end 20 is `400 Invalid requests[0].updateCells: Start must be less than end.` A start of 0 is kept: the definition reads back `"histogramRule": {"interval": 10, "start": 0}` | `manage_pivot_table` refuses an interval of 0 or less and a start at or past the end, and sends a start of 0. The fake refuses both in Google's words |
+| A date or histogram rule draws the labels the reference shows | **Refined, spike U4**: `YEAR_MONTH` drew "2026-Jan", "2026-Feb" and "2026-Apr" under the heading "Day - Year-Month". Every 20 from 25 to 70 drew "< 25", "25 - 44", "45 - 64" and "65 - 70", with a value of 70, the end itself, in the last bucket, under "Grouped Age". Every 10 with no bounds drew "20 - 29" up to "70 - 79", counted from zero. The live run drew "60 - 70" for every 10 from 20 to 70 | Nothing here depends on a label. The fake draws Google's bucket labels, the end in the last bucket, and a value past the end as "> end", which nothing has drawn. It heads a group with the column's heading, where Google writes "Grouped Age"; nothing reads that. The live driver checks "2026-Jan", "20 - 29" and "60 - 70" |
+| A filter by condition alone shows what meets it | **Verified as the reference reads, spike U5**: a condition alone with `visibleByDefault` false showed nothing, only "Grand Total"; with it true it showed every value meeting it, East 100, North 300 and West 280 | A condition alone is sent with `visibleByDefault` true; a list, alone or with a condition, without it. The fake reads the reference literally |
+| A pivot filter takes every condition | **Refuted, spike U6**: `ONE_OF_LIST`, which the discovery document marks "Supported by data validation" alone, is `400 Invalid requests[0].updateCells: ConditionType 'ONE_OF_LIST' is not supported in filters.` | `filters` takes only the conditions the discovery document marks for filters, and refuses the eight it names that are data validation's alone: `text_is_email`, `text_is_url`, `date_on_or_before`, `date_on_or_after`, `date_between`, `date_is_valid`, `one_of_list` and `boolean`. The fake refuses each in Google's words, which only `ONE_OF_LIST` has been seen to get |
+| A pivot's filters are in `filterSpecs` | **Verified, spike U7**: `criteria` is "deprecated in favor of filter_specs"; "Both criteria and filter_specs are populated in responses. If both fields are specified in an update request, this field takes precedence". `filterSpecs` sent alone read back with `criteria` too, `criteria` alone with `filterSpecs` too, and a pivot sent with neither over one that had both read back with no filter | `filters` and `clear_filters` write `filterSpecs` and take `criteria` out. The clear needs both gone, since `criteria` left behind would bring the filters back; `filters` would not, and sends no stale `criteria` beside new `filterSpecs`. `list` reads `filterSpecs`, and `criteria` only where a pivot has none. The fake stores both, as a response carries them |
+| A date filter's relative date goes back as one | **Verified, spike U8**: `DATE_BEFORE` `TOMORROW` and `DATE_AFTER` `PAST_YEAR` are each a 200, read back as `relativeDate` in both filter forms, and the first kept all six rows | `list` writes one as its word lower-cased, such as `date_before tomorrow`, and `filters` reads the six words back as `relativeDate` on `date_before` and `date_after`. The fake does not evaluate a date filter |
+| An update that leaves the groups out keeps a grouping made by hand | **Verified, spike U9, two answers owed**: "Coast", East and West, drew Coast 450 and North 300, and the same rule sent back with Cost summed drew Coast 290 and North 100. A group named by a number is `400 Invalid requests[0].updateCells: Found a manual group name of type number. Manual group names must be strings.` An item in two groups, and two groups of one name, hit `429` and are unanswered | The update sends the rule back as it read. The fake refuses a group named by a number in Google's words, and an item in two groups or a name twice in its own, which spike U still asks |
+| A calculated value names its columns by heading | **Verified, spike U1**: `PivotFilterCriteria.condition` says "The source data of the pivot table can be referenced by column header name", and `PivotValue.formula` only that it "must start with an `=` character". `=Revenue-Cost` summed drew East 70, North 200 and West 90, which is each region's revenue less its cost | The formula is sent as written, and Google resolves its names. The fake evaluates headings, quoted where they hold a space, arithmetic and five functions, and refuses the rest by name. The live driver checks the SUM formula's total and prints the CUSTOM one |

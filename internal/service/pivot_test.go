@@ -199,6 +199,216 @@ func TestPivotUpdateRefusals(t *testing.T) {
 	}
 }
 
+// seedPivot anchors a pivot table at F1 on the first sheet exactly as
+// given, so a test can start from columns this server would not build.
+func seedPivot(t *testing.T, srv *sheetstest.Server, pivot string) {
+	t.Helper()
+	sh := srv.Doc(sheetstest.FixtureID).Find(sheetstest.FirstSheet)
+	if sh == nil {
+		t.Fatal("no first sheet")
+	}
+	sh.Set(1, 6, &gsheets.CellData{PivotTable: json.RawMessage(pivot)})
+}
+
+// The old sources the tests below start from, on the first sheet.
+const (
+	sourceAC = `"source":{"sheetId":0,"startRowIndex":0,"endRowIndex":6,"startColumnIndex":0,"endColumnIndex":3}`
+	sourceAD = `"source":{"sheetId":0,"startRowIndex":0,"endRowIndex":6,"startColumnIndex":0,"endColumnIndex":4}`
+)
+
+// TestPivotUpdateRefusesASourceTooNarrowForWhatItKeeps is the update
+// that changes source. A group, value or filter it was not given keeps
+// its offset, and Google accepts an offset past the new source's edge
+// with a 200 and a pivot that reads nothing there (spike M).
+func TestPivotUpdateRefusesASourceTooNarrowForWhatItKeeps(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		pivot string
+		req   service.PivotRequest
+		want  string
+	}{
+		{"a kept value",
+			`{` + sourceAC + `,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":2,"summarizeFunction":"SUM"}]}`,
+			service.PivotRequest{Source: "A1:B6"},
+			`[invalid] the new source 'Vandel'!A1:B6 is 2 columns wide, and the pivot table would keep values on C ` +
+				`from the old source 'Vandel'!A1:C6, past its right edge. Google accepts that and the pivot reads nothing ` +
+				`there. Pass values again, named against the new source, or choose a source at least 3 columns wide.`},
+		{"kept groups",
+			`{` + sourceAD + `,"rows":[{"sourceColumnOffset":3,"sortOrder":"ASCENDING"}],` +
+				`"columns":[{"sourceColumnOffset":2,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}]}`,
+			service.PivotRequest{Source: "A1:B6", Values: []string{"B sum"}},
+			`[invalid] the new source 'Vandel'!A1:B6 is 2 columns wide, and the pivot table would keep group_rows on D ` +
+				`and group_columns on C from the old source 'Vandel'!A1:D6, past its right edge. Google accepts that and ` +
+				`the pivot reads nothing there. Pass group_rows and group_columns again, named against the new source, ` +
+				`or choose a source at least 4 columns wide.`},
+		{"a kept filter",
+			`{` + sourceAD + `,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}],` +
+				`"filterSpecs":[{"columnOffsetIndex":3,"filterCriteria":{"visibleValues":["Skerry"]}}]}`,
+			service.PivotRequest{Source: "A1:C6", Rows: []string{"A"}, Values: []string{"B sum"}},
+			`[invalid] the new source 'Vandel'!A1:C6 is 3 columns wide, and the pivot table would keep filters on D ` +
+				`from the old source 'Vandel'!A1:D6, past its right edge. Google accepts that and the pivot reads nothing ` +
+				`there. Pass filters again, named against the new source, or choose a source at least 4 columns wide.`},
+		{"a kept filter in the older form",
+			`{` + sourceAD + `,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}],` +
+				`"criteria":{"3":{"visibleValues":["Skerry"]}}}`,
+			service.PivotRequest{Source: "A1:C6", Rows: []string{"A"}, Values: []string{"B sum"}},
+			`[invalid] the new source 'Vandel'!A1:C6 is 3 columns wide, and the pivot table would keep filters on D ` +
+				`from the old source 'Vandel'!A1:D6, past its right edge. Google accepts that and the pivot reads nothing ` +
+				`there. Pass filters again, named against the new source, or choose a source at least 4 columns wide.`},
+		// A pivot built in the Sheets interface over a whole sheet has no
+		// left edge, and its offsets count from column A.
+		{"a kept value under a whole-sheet source",
+			`{"source":{"sheetId":0},"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":3,"summarizeFunction":"SUM"}]}`,
+			service.PivotRequest{Source: "A1:C6"},
+			`[invalid] the new source 'Vandel'!A1:C6 is 3 columns wide, and the pivot table would keep values on D ` +
+				`from the old source 'Vandel', past its right edge. Google accepts that and the pivot reads nothing ` +
+				`there. Pass values again, named against the new source, or choose a source at least 4 columns wide.`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, svc := standard(t)
+			seedPivot(t, srv, tc.pivot)
+			tc.req.Spreadsheet = sheetstest.FixtureID
+			tc.req.Sheet = sheetstest.FirstSheet
+			tc.req.Action = service.PivotUpdate
+			tc.req.Anchor = "F1"
+			_, err := svc.ManagePivotTable(context.Background(), tc.req)
+			if err == nil {
+				t.Fatal("a source too narrow for the kept columns was accepted")
+			}
+			if err.Error() != tc.want {
+				t.Errorf("error =\n%v\nwant\n%s", err, tc.want)
+			}
+			for _, c := range srv.Calls() {
+				if c.Op == "spreadsheets.batchUpdate" {
+					t.Fatal("the request was sent")
+				}
+			}
+		})
+	}
+}
+
+// TestPivotUpdateRefusesASourceThatMovesWhatItKeeps is the update whose
+// new source starts somewhere else. Every kept offset counts from the
+// source's first column, so each one would read other data, and Google
+// has no way to know that is not what was meant.
+func TestPivotUpdateRefusesASourceThatMovesWhatItKeeps(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		pivot string
+		req   service.PivotRequest
+		want  string
+	}{
+		{"one column to the right",
+			`{` + sourceAC + `,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":2,"summarizeFunction":"SUM"}]}`,
+			service.PivotRequest{Source: "B1:D6"},
+			`[invalid] the new source 'Vandel'!B1:D6 starts at column B, and the old source 'Vandel'!A1:C6 at ` +
+				`column A. Each column the pivot table keeps counts from the source's first column, so group_rows ` +
+				`on A would read B and values on C would read D. Pass group_rows and values again, named against ` +
+				`the new source, or choose a source that starts at column A.`},
+		// What the update names again is left out: only the filter is
+		// kept, and the move pushes it past the new edge.
+		{"a kept filter moved past the edge",
+			`{` + sourceAD + `,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}],` +
+				`"filterSpecs":[{"columnOffsetIndex":3,"filterCriteria":{"visibleValues":["Skerry"]}}]}`,
+			service.PivotRequest{Source: "B1:D6", Rows: []string{"B"}, Values: []string{"C sum"}},
+			`[invalid] the new source 'Vandel'!B1:D6 starts at column B, and the old source 'Vandel'!A1:D6 at ` +
+				`column A. Each column the pivot table keeps counts from the source's first column, so filters ` +
+				`on D would read nothing, past its right edge. Pass filters again, named against the new source, ` +
+				`or choose a source that starts at column A.`},
+		// A pivot made in the Sheets interface sits on a sheet of its own
+		// and reads another. This tool reads a source on the anchor's
+		// sheet, so it cannot offer the old one back.
+		{"a source on another sheet",
+			`{"source":{"sheetId":1837,"startRowIndex":0,"endRowIndex":6,"startColumnIndex":0,"endColumnIndex":3},` +
+				`"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":2,"summarizeFunction":"SUM"}]}`,
+			service.PivotRequest{Source: "A1:C6", Rows: []string{"A"}},
+			`[invalid] the new source 'Vandel'!A1:C6 is on another sheet than the old source 'Ürväl'!A1:C6. ` +
+				`Each column the pivot table keeps counts from the source's first column, so values on 'Ürväl'!C ` +
+				`would read 'Vandel'!C. Pass values again, named against the new source.`},
+		{"an old source that cannot be read",
+			`{"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+				`"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}]}`,
+			service.PivotRequest{Source: "A1:C6"},
+			`[invalid] the pivot table's old source could not be read, so this server cannot tell what the ` +
+				`group_rows and values it keeps would read in the new source 'Vandel'!A1:C6. Pass group_rows and ` +
+				`values again, named against the new source.`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, svc := standard(t)
+			seedPivot(t, srv, tc.pivot)
+			tc.req.Spreadsheet = sheetstest.FixtureID
+			tc.req.Sheet = sheetstest.FirstSheet
+			tc.req.Action = service.PivotUpdate
+			tc.req.Anchor = "F1"
+			_, err := svc.ManagePivotTable(context.Background(), tc.req)
+			if err == nil {
+				t.Fatal("a source that moves the kept columns was accepted")
+			}
+			if err.Error() != tc.want {
+				t.Errorf("error =\n%v\nwant\n%s", err, tc.want)
+			}
+			for _, c := range srv.Calls() {
+				if c.Op == "spreadsheets.batchUpdate" {
+					t.Fatal("the request was sent")
+				}
+			}
+		})
+	}
+}
+
+// TestPivotUpdateTakesANewSourceThatFits is the other side of the same
+// check: what the update names again, and what still fits, goes through.
+func TestPivotUpdateTakesANewSourceThatFits(t *testing.T) {
+	kept := `{` + sourceAC + `,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+		`"values":[{"sourceColumnOffset":2,"summarizeFunction":"SUM"}]}`
+	for _, tc := range []struct {
+		name string
+		req  service.PivotRequest
+		want string
+	}{
+		// The last kept offset is the new source's last column.
+		{"the same width, more rows", service.PivotRequest{Source: "A1:C20"},
+			`{"sheetId":0,"startRowIndex":0,"endRowIndex":20,"startColumnIndex":0,"endColumnIndex":3}`},
+		{"the value given again", service.PivotRequest{Source: "A1:B6", Values: []string{"B sum"}},
+			`{"sheetId":0,"startRowIndex":0,"endRowIndex":6,"startColumnIndex":0,"endColumnIndex":2}`},
+		// A move keeps nothing it was not given, so naming both again is
+		// the way to take one.
+		{"a moved source with everything given again",
+			service.PivotRequest{Source: "B1:D6", Rows: []string{"B"}, Values: []string{"D sum"}},
+			`{"sheetId":0,"startRowIndex":0,"endRowIndex":6,"startColumnIndex":1,"endColumnIndex":4}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, svc := standard(t)
+			seedPivot(t, srv, kept)
+			tc.req.Spreadsheet = sheetstest.FixtureID
+			tc.req.Sheet = sheetstest.FirstSheet
+			tc.req.Action = service.PivotUpdate
+			tc.req.Anchor = "F1"
+			if _, err := svc.ManagePivotTable(context.Background(), tc.req); err != nil {
+				t.Fatalf("update: %v", err)
+			}
+			var stored struct {
+				Source json.RawMessage `json:"source"`
+			}
+			cell := srv.Doc(sheetstest.FixtureID).Find(sheetstest.FirstSheet).At(1, 6)
+			if cell == nil || json.Unmarshal(cell.PivotTable, &stored) != nil {
+				t.Fatal("no pivot table at F1 after the update")
+			}
+			if string(stored.Source) != tc.want {
+				t.Errorf("source = %s, want %s", stored.Source, tc.want)
+			}
+		})
+	}
+}
+
 // TestPivotDeleteTakesTheWholeOutput is the shape of the delete: there
 // is no deletePivotTable, and naming the field with an empty cell takes
 // every computed cell with it.
@@ -950,5 +1160,380 @@ func TestClearOfAnArrayFormulaDoesNotPromiseSurvival(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "does not remove") {
 		t.Errorf("the gate promises survival it cannot know about:\n%s", err)
+	}
+}
+
+// salesService is a fake with the sales block at A10:E16 of the second
+// sheet, widened for a pivot at H10. "Age" there is a heading that also
+// reads as a column letter, far outside the block.
+func salesService(t *testing.T) (*sheetstest.Server, *service.Service) {
+	t.Helper()
+	srv, svc := standard(t)
+	sh := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet)
+	sh.Props.GridProperties.ColumnCount = 20
+	sheetstest.SalesBlock(sh, 10)
+	return srv, svc
+}
+
+// salesPivot is a request against the sales block, anchored at H10.
+func salesPivot(action string) service.PivotRequest {
+	req := service.PivotRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Action: action, Anchor: "H10",
+	}
+	if action == service.PivotAdd {
+		req.Source = "A10:E16"
+	}
+	return req
+}
+
+// sentPivot is the pivot the last batchUpdate carried, as JSON.
+func sentPivot(t *testing.T, srv *sheetstest.Server) string {
+	t.Helper()
+	var body string
+	for _, c := range srv.Calls() {
+		if c.Op == "spreadsheets.batchUpdate" {
+			body = c.Body
+		}
+	}
+	var req gsheets.BatchUpdateSpreadsheetRequest
+	if err := json.Unmarshal([]byte(body), &req); err != nil || len(req.Requests) != 1 || req.Requests[0].UpdateCells == nil {
+		t.Fatalf("no pivot write was sent: %s", body)
+	}
+	return string(req.Requests[0].UpdateCells.Rows[0].Values[0].PivotTable)
+}
+
+// canonical is JSON with its keys in one order, for comparing two
+// pivots that differ only in how they were serialized.
+func canonical(t *testing.T, text string) string {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal([]byte(text), &v); err != nil {
+		t.Fatalf("not JSON: %s", text)
+	}
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+// richPivot is an add using every rule this tool writes: a date rule,
+// a histogram, a list to show and a condition, and both kinds of
+// calculated value.
+func richPivot() service.PivotRequest {
+	req := salesPivot(service.PivotAdd)
+	req.Rows = []string{"Day by year_month"}
+	req.Columns = []string{"Age every 10 from 20 to 70"}
+	req.Values = []string{"Revenue sum", "=Revenue-Cost sum as Margin", "=SUM(Revenue)/SUM(Cost) as Ratio"}
+	req.Filters = []string{"Region show East, West", "Revenue number_greater 50"}
+	return req
+}
+
+// richPivotJSON is what richPivot sends. A calculated value carries no
+// offset, since the two are a union Google refuses both of. A condition
+// alone is visible by default, the one way it shows what meets it.
+const richPivotJSON = `{"columns":[{"sourceColumnOffset":2,"showTotals":true,"sortOrder":"ASCENDING",` +
+	`"groupRule":{"histogramRule":{"interval":10,"start":20,"end":70}}}],` +
+	`"filterSpecs":[{"columnOffsetIndex":0,"filterCriteria":{"visibleValues":["East","West"]}},` +
+	`{"columnOffsetIndex":3,"filterCriteria":{"condition":{"type":"NUMBER_GREATER","values":[{"userEnteredValue":"50"}]},` +
+	`"visibleByDefault":true}}],` +
+	`"rows":[{"sourceColumnOffset":1,"showTotals":true,"sortOrder":"ASCENDING",` +
+	`"groupRule":{"dateTimeRule":{"type":"YEAR_MONTH"}}}],` +
+	`"source":{"sheetId":1837,"startRowIndex":9,"endRowIndex":16,"startColumnIndex":0,"endColumnIndex":5},` +
+	`"values":[{"sourceColumnOffset":3,"summarizeFunction":"SUM"},` +
+	`{"formula":"=Revenue-Cost","summarizeFunction":"SUM","name":"Margin"},` +
+	`{"formula":"=SUM(Revenue)/SUM(Cost)","summarizeFunction":"CUSTOM","name":"Ratio"}]}`
+
+func TestPivotAddSendsRulesFiltersAndCalculatedValues(t *testing.T) {
+	srv, svc := salesService(t)
+	res, err := svc.ManagePivotTable(context.Background(), richPivot())
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if got := sentPivot(t, srv); got != richPivotJSON {
+		t.Errorf("sent\n%s\nwant\n%s", got, richPivotJSON)
+	}
+	if want := "filtered by Region show East, West and Revenue number_greater 50"; !strings.Contains(res.Render(), want) {
+		t.Errorf("the result does not say %q:\n%s", want, res.Render())
+	}
+}
+
+// TestPivotListReadsTheRulesBackAsTheyAreWritten is the round trip list
+// promises: what it reports, sent back as it reads, is the same pivot.
+func TestPivotListReadsTheRulesBackAsTheyAreWritten(t *testing.T) {
+	srv, svc := salesService(t)
+	ctx := context.Background()
+	if _, err := svc.ManagePivotTable(ctx, richPivot()); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	list := salesPivot(service.PivotList)
+	list.Range = "H10:L30"
+	res, err := svc.ManagePivotTable(ctx, list)
+	if err != nil || len(res.Pivots) != 1 {
+		t.Fatalf("list: %v %+v", err, res)
+	}
+	got := res.Pivots[0]
+	want := service.PivotRecord{
+		Rows:    []string{"B by year_month"},
+		Columns: []string{"C every 10 from 20 to 70"},
+		Values:  []string{"D sum", "=Revenue-Cost sum as Margin", "=SUM(Revenue)/SUM(Cost) as Ratio"},
+		Filters: []string{"A show East, West", "D number_greater 50"},
+	}
+	for _, field := range []struct {
+		name      string
+		got, want []string
+	}{
+		{"rows", got.Rows, want.Rows}, {"columns", got.Columns, want.Columns},
+		{"values", got.Values, want.Values}, {"filters", got.Filters, want.Filters},
+	} {
+		if strings.Join(field.got, "|") != strings.Join(field.want, "|") {
+			t.Errorf("%s = %q, want %q", field.name, field.got, field.want)
+		}
+	}
+	for _, line := range []string{
+		`group_rows ["B by year_month"]`,
+		`filters ["A show East, West", "D number_greater 50"]`,
+	} {
+		if !strings.Contains(res.Render(), line) {
+			t.Errorf("the listing does not say %s:\n%s", line, res.Render())
+		}
+	}
+
+	update := salesPivot(service.PivotUpdate)
+	update.Rows, update.Columns, update.Values, update.Filters = got.Rows, got.Columns, got.Values, got.Filters
+	if _, err := svc.ManagePivotTable(ctx, update); err != nil {
+		t.Fatalf("sending the listing back: %v", err)
+	}
+	// The stored pivot carries criteria beside filterSpecs, as a
+	// response does, and its source in the stored key order; the update
+	// sends filterSpecs alone, and the same source.
+	if sent := sentPivot(t, srv); canonical(t, sent) != canonical(t, richPivotJSON) {
+		t.Errorf("the listing sent back is another pivot:\n%s\nwant\n%s", sent, richPivotJSON)
+	}
+}
+
+// TestPivotListReadsWhatOnlySheetsWrites is a pivot made in the Sheets
+// interface: a grouping by hand, a summary this server has no word for,
+// and filters in the older criteria map alone. Each is said, and the
+// hand grouping in words the parser refuses, so it is not lost quietly.
+func TestPivotListReadsWhatOnlySheetsWrites(t *testing.T) {
+	srv, svc := standard(t)
+	seedPivot(t, srv, `{`+sourceAC+`,`+
+		`"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING","groupRule":{"manualRule":{"groups":`+
+		`[{"groupName":{"stringValue":"Grouped"},"items":[{"stringValue":"Skerry"}]}]}}}],`+
+		`"values":[{"sourceColumnOffset":1,"summarizeFunction":"NONE","name":"Spread","calculatedDisplayType":"PERCENT_OF_GRAND_TOTAL"}],`+
+		`"criteria":{"2":{"visibleValues":["Skerry"]},"0":{"visibleByDefault":true,"condition":{"type":"TEXT_STARTS_WITH",`+
+		`"values":[{"userEnteredValue":"Sk"}]}}}}`)
+	res, err := svc.ManagePivotTable(context.Background(), service.PivotRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Action: service.PivotList, Range: "F1:H5",
+	})
+	if err != nil || len(res.Pivots) != 1 {
+		t.Fatalf("list: %v %+v", err, res)
+	}
+	p := res.Pivots[0]
+	if got := strings.Join(append(append(p.Rows, p.Values...), p.Filters...), "|"); got !=
+		"A by hand|B none as Spread|A text_starts_with Sk|C show Skerry" {
+		t.Errorf("read back as %q", got)
+	}
+}
+
+// TestPivotFiltersReplaceAndClearBothForms is the trap in the
+// reference: a response carries criteria beside filterSpecs, and a
+// request's filterSpecs win only where it sends both. So a write that
+// changes filters, or clears them, takes criteria out too.
+func TestPivotFiltersReplaceAndClearBothForms(t *testing.T) {
+	both := `{` + sourceAC + `,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+		`"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}],` +
+		`"filterSpecs":[{"columnOffsetIndex":2,"filterCriteria":{"visibleValues":["9"]}}],` +
+		`"criteria":{"2":{"visibleValues":["9"]}}}`
+	for _, tc := range []struct {
+		name string
+		edit func(*service.PivotRequest)
+		want string
+	}{
+		{"replaced", func(r *service.PivotRequest) { r.Filters = []string{"A show Skerry"} },
+			`"filterSpecs":[{"columnOffsetIndex":0,"filterCriteria":{"visibleValues":["Skerry"]}}]`},
+		{"cleared", func(r *service.PivotRequest) { r.ClearFilters = true }, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, svc := standard(t)
+			seedPivot(t, srv, both)
+			req := service.PivotRequest{
+				Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Action: service.PivotUpdate, Anchor: "F1",
+			}
+			tc.edit(&req)
+			if _, err := svc.ManagePivotTable(context.Background(), req); err != nil {
+				t.Fatalf("update: %v", err)
+			}
+			sent := sentPivot(t, srv)
+			if strings.Contains(sent, "criteria") {
+				t.Errorf("the update sent criteria, which would bring the old filters back: %s", sent)
+			}
+			if tc.want == "" && strings.Contains(sent, "filterSpecs") || tc.want != "" && !strings.Contains(sent, tc.want) {
+				t.Errorf("sent %s, want filters %q", sent, tc.want)
+			}
+		})
+	}
+}
+
+func TestPivotRuleAndFilterRefusals(t *testing.T) {
+	byHandInColumns := `{` + sourceAC + `,"rows":[{"sourceColumnOffset":1,"sortOrder":"ASCENDING"}],` +
+		`"columns":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING","groupRule":{"manualRule":{"groups":[]}}}],` +
+		`"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}]}`
+	for _, tc := range []struct {
+		name string
+		seed string // a pivot at F1 of the first sheet; "" for the sales block
+		edit func(*service.PivotRequest)
+		want string
+	}{
+		{"two rules on one column", "", func(r *service.PivotRequest) {
+			r.Rows, r.Values = []string{"Day by year", "Day by month"}, []string{"Revenue sum"}
+		}, "[invalid] column B is grouped by a rule twice. The Sheets reference allows one grouping rule per source " +
+			"column, though Google does not refuse a second. Group it once with a rule; a second group without one is allowed"},
+		{"a rule beside a kept one made by hand", byHandInColumns, func(r *service.PivotRequest) {
+			r.Rows = []string{"A by year"}
+		}, "[invalid] column A is grouped by a rule twice. The Sheets reference allows one grouping rule per source " +
+			"column, though Google does not refuse a second. Group it once with a rule; a second group without one is allowed"},
+		{"a group by hand", "", func(r *service.PivotRequest) {
+			r.Rows, r.Values = []string{"Region by hand"}, []string{"Revenue sum"}
+		}, `[invalid] "Region by hand" is a grouping made by hand in Sheets, which this tool cannot set; an update ` +
+			`that leaves the groups out keeps it`},
+		{"a calculated value with no name", "", func(r *service.PivotRequest) {
+			r.Rows, r.Values = []string{"Region"}, []string{"=Revenue-Cost sum"}
+		}, `[invalid] "=Revenue-Cost sum" is a calculated value, which needs a name: add "as <name>", such as ` +
+			`"=Revenue-Cost as Margin"`},
+		{"filters and clear_filters", sourceAC, func(r *service.PivotRequest) {
+			r.Filters, r.ClearFilters = []string{"A show Skerry"}, true
+		}, "[invalid] filters replaces the filters and clear_filters removes them; pass one of the two"},
+		{"clear_filters on add", "", func(r *service.PivotRequest) {
+			r.Rows, r.Values, r.ClearFilters = []string{"Region"}, []string{"Revenue sum"}, true
+		}, "[invalid] clear_filters removes the filters of a pivot table that exists, so it is for update"},
+		{"a filter outside the source", "", func(r *service.PivotRequest) {
+			r.Rows, r.Values, r.Filters = []string{"Region"}, []string{"Revenue sum"}, []string{"G show x"}
+		}, "[invalid] column G is outside the source A10:E16, so it is not a column this pivot table can read"},
+		{"two lists for one column", "", func(r *service.PivotRequest) {
+			r.Rows, r.Values = []string{"Region"}, []string{"Revenue sum"}
+			r.Filters = []string{"Region show East", "A show West"}
+		}, `[invalid] filters gives column A two of a kind, as "Region show East" and "A show West"; a column takes ` +
+			`one list of values to show and one condition`},
+		{"a condition only data validation takes", "", func(r *service.PivotRequest) {
+			r.Rows, r.Values, r.Filters = []string{"Region"}, []string{"Revenue sum"}, []string{"Region one_of_list East"}
+		}, `[invalid] filter "Region one_of_list East" uses one_of_list, which only data validation takes; a pivot ` +
+			`table filter takes blank, custom_formula, date_after, date_before, not_blank, number_between, number_eq, ` +
+			`number_greater, number_greater_eq, number_less, number_less_eq, number_not_between, number_not_eq, ` +
+			`text_contains, text_ends_with, text_eq, text_not_contains, text_starts_with`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, svc := salesService(t)
+			req := salesPivot(service.PivotAdd)
+			if tc.seed != "" {
+				seed := tc.seed
+				if seed == sourceAC {
+					seed = `{` + sourceAC + `,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+						`"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}]}`
+				}
+				seedPivot(t, srv, seed)
+				req = service.PivotRequest{
+					Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Action: service.PivotUpdate, Anchor: "F1",
+				}
+			}
+			tc.edit(&req)
+			_, err := svc.ManagePivotTable(context.Background(), req)
+			if err == nil || err.Error() != tc.want {
+				t.Errorf("error =\n%v\nwant\n%s", err, tc.want)
+			}
+			if batched(srv) {
+				t.Error("a refused pivot reached the wire")
+			}
+		})
+	}
+}
+
+// TestPivotUpdateTakesANewSourceWithItsFiltersReplaced is filters as an
+// argument: passed again, or cleared, they keep nothing at their old
+// offsets, so a new source too narrow for the old ones goes through.
+func TestPivotUpdateTakesANewSourceWithItsFiltersReplaced(t *testing.T) {
+	filtered := `{` + sourceAD + `,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],` +
+		`"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}],` +
+		`"filterSpecs":[{"columnOffsetIndex":3,"filterCriteria":{"visibleValues":["Skerry"]}}]}`
+	for name, edit := range map[string]func(*service.PivotRequest){
+		"filters again":   func(r *service.PivotRequest) { r.Filters = []string{"C number_greater 1"} },
+		"filters cleared": func(r *service.PivotRequest) { r.ClearFilters = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv, svc := standard(t)
+			seedPivot(t, srv, filtered)
+			req := service.PivotRequest{
+				Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Action: service.PivotUpdate,
+				Anchor: "F1", Source: "A1:C6",
+			}
+			edit(&req)
+			if _, err := svc.ManagePivotTable(context.Background(), req); err != nil {
+				t.Fatalf("update: %v", err)
+			}
+		})
+	}
+}
+
+// TestPivotGroupByAHeadingThatReadsAsARule is a heading with a rule's
+// words in it: named whole, it is the column, and no rule is sent.
+func TestPivotGroupByAHeadingThatReadsAsARule(t *testing.T) {
+	srv, svc := salesService(t)
+	srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Set(10, 5, sheetstest.Str("Paid by month"))
+	req := salesPivot(service.PivotAdd)
+	req.Rows, req.Values = []string{"Paid by month"}, []string{"Revenue sum"}
+	if _, err := svc.ManagePivotTable(context.Background(), req); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if sent := sentPivot(t, srv); !strings.Contains(sent, `"rows":[{"sourceColumnOffset":4,"showTotals":true,"sortOrder":"ASCENDING"}]`) {
+		t.Errorf("sent %s", sent)
+	}
+}
+
+// TestPivotHeadingThatIsAlsoALetter is "Age", which reads as the column
+// AGE, far outside the source. A letter outside the source is looked up
+// among the headings, so it has to read them.
+func TestPivotHeadingThatIsAlsoALetter(t *testing.T) {
+	srv, svc := salesService(t)
+	req := salesPivot(service.PivotAdd)
+	req.Rows, req.Values = []string{"Age every 10"}, []string{"D sum"}
+	if _, err := svc.ManagePivotTable(context.Background(), req); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if sent := sentPivot(t, srv); !strings.Contains(sent, `"rows":[{"sourceColumnOffset":2,`) {
+		t.Errorf("sent %s", sent)
+	}
+}
+
+// TestPivotUpdateKeepsACalculatedValueAcrossANewSource is a kept value
+// with no column: a calculated value names its columns inside the
+// formula, so a new source that starts elsewhere moves nothing of it.
+func TestPivotUpdateKeepsACalculatedValueAcrossANewSource(t *testing.T) {
+	srv, svc := standard(t)
+	seedPivot(t, srv, `{`+sourceAC+`,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING"}],`+
+		`"values":[{"formula":"=1","summarizeFunction":"CUSTOM","name":"One"}]}`)
+	if _, err := svc.ManagePivotTable(context.Background(), service.PivotRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Action: service.PivotUpdate,
+		Anchor: "F1", Source: "B1:D6", Rows: []string{"B"},
+	}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if sent := sentPivot(t, srv); !strings.Contains(sent, `"values":[{"formula":"=1","name":"One","summarizeFunction":"CUSTOM"}]`) {
+		t.Errorf("the calculated value was not kept: %s", sent)
+	}
+}
+
+// TestPivotUpdateKeepsAGroupingMadeByHand is what an update that leaves
+// the groups out promises: a grouping made in Sheets goes back as read.
+func TestPivotUpdateKeepsAGroupingMadeByHand(t *testing.T) {
+	srv, svc := standard(t)
+	manual := `{"groups":[{"groupName":{"stringValue":"Grouped"},"items":[{"stringValue":"Skerry"}]}]}`
+	seedPivot(t, srv, `{`+sourceAC+`,"rows":[{"sourceColumnOffset":0,"sortOrder":"ASCENDING","groupRule":`+
+		`{"manualRule":`+manual+`}}],"values":[{"sourceColumnOffset":1,"summarizeFunction":"SUM"}]}`)
+	if _, err := svc.ManagePivotTable(context.Background(), service.PivotRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Action: service.PivotUpdate,
+		Anchor: "F1", Values: []string{"C max"},
+	}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if sent := sentPivot(t, srv); !strings.Contains(sent, `"groupRule":{"manualRule":`+manual+`}`) {
+		t.Errorf("the grouping by hand was not kept: %s", sent)
 	}
 }

@@ -421,3 +421,45 @@ func TestDryRunPreviewsAWriteNothingCanAllow(t *testing.T) {
 		t.Errorf("the preview does not mention the protection:\n%s", res.Render())
 	}
 }
+
+// TestAFormulaIntoATableHeaderIsRefused is spike T Q7: Google replaces a
+// formula written into a table's header cell with a column name of its
+// own and reports the write a success. Nothing allows it, the dry run
+// says so, and text there, a formula under literal input and a formula
+// below the header are not held back.
+func TestAFormulaIntoATableHeaderIsRefused(t *testing.T) {
+	const want = `[blocked] C1 would hold a formula in a table's header row, where Google replaces it with a ` +
+		`column name of its own, such as "Column 2", and still reports the write a success. Write the heading as text`
+	srv := sheetstest.Standard(t)
+	seedTypedTable(srv)
+	svc := newService(t, srv)
+	ctx := context.Background()
+	write := func(rangeA1, input string, values [][]any, dryRun bool) (*service.WriteResult, error) {
+		return svc.Write(ctx, service.WriteRequest{
+			Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: rangeA1, Input: input,
+			Values: values, Overwrite: true, OverwriteFormulas: true, DryRun: dryRun,
+		})
+	}
+	if _, err := write("C1:D1", "typed", [][]any{{"=1+2", "Owner"}}, false); err == nil || err.Error() != want {
+		t.Errorf("error =\n%v\nwant\n%s", err, want)
+	}
+	if wrote(srv) {
+		t.Fatal("a refused write reached the fake")
+	}
+	preview, err := write("C1", "typed", [][]any{{"=1+2"}}, true)
+	if err != nil || !strings.Contains(preview.Render(), `C1 would hold a formula in a table's header row`) {
+		t.Errorf("the dry run does not say what stops it: %v\n%v", err, preview)
+	}
+	for _, ok := range []struct {
+		rangeA1, input string
+		values         [][]any
+	}{
+		{"C1", "typed", [][]any{{"Owner"}}},
+		{"C1", "literal", [][]any{{"=1+2"}}},
+		{"C2", "typed", [][]any{{"=1+2"}}},
+	} {
+		if _, err := write(ok.rangeA1, ok.input, ok.values, false); err != nil {
+			t.Errorf("%s %s %v was refused: %v", ok.input, ok.rangeA1, ok.values, err)
+		}
+	}
+}

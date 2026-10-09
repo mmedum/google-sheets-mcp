@@ -11,6 +11,7 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
 )
 
@@ -135,6 +136,31 @@ func TestGridClipsLongValuesAndSaysSo(t *testing.T) {
 	}
 }
 
+// A hidden row or column shows nothing in the values, so the footer
+// names it. Rows 2 and 4-6 and columns B and D:F are hidden here; row 9
+// is hidden but outside the read.
+func TestTheFooterNamesHiddenRowsAndColumns(t *testing.T) {
+	yes := true
+	h := &gsheets.DimensionProperties{HiddenByUser: &yes}
+	rowMeta := make([]*gsheets.DimensionProperties, 9)
+	for _, r := range []int{2, 4, 5, 6, 9} {
+		rowMeta[r-1] = h
+	}
+	colMeta := []*gsheets.DimensionProperties{nil, h, nil, h, h, h}
+	data := &gsheets.GridData{RowMetadata: rowMeta, ColumnMetadata: colMeta}
+	g := grid.Build("Vandel", 0, a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 6, LastRow: 8}, data, grid.AsRaw)
+	opts := render.GridOptions{}
+	footer := render.Footer(g, render.Grid(g, opts), opts)
+	for _, want := range []string{"hidden rows 2, 4-6", "hidden columns B, D:F"} {
+		if !strings.Contains(footer, want) {
+			t.Errorf("the footer lacks %q:\n%s", want, footer)
+		}
+	}
+	if strings.Contains(footer, "9") {
+		t.Errorf("the footer names row 9, outside the read:\n%s", footer)
+	}
+}
+
 func TestGridKeepsAlignmentThroughNewlines(t *testing.T) {
 	// A newline inside a cell would break every address below it.
 	data := &gsheets.GridData{RowData: []*gsheets.RowData{{Values: []*gsheets.CellData{
@@ -170,10 +196,52 @@ func TestCardGolden(t *testing.T) {
 			Name: sheetstest.FirstSheet, Range: "'Ürväl'!A1:B2",
 			Detail: "shares its name with a sheet; this server always quotes a sheet title, so the two stay apart",
 		}},
-		Tables:      []render.NamedItem{{Name: "Oblisk", Range: "'Vandel'!A1:D21", Detail: "Plimth TEXT and Nardle DOUBLE"}},
+		// Column types in the spelling manage_range takes, a dropdown's
+		// list and a chip included, and a column Google left unnamed.
+		Tables: []render.NamedItem{{Name: "Oblisk", Range: "'Vandel'!A1:F21", Detail: render.TableColumns([]*gsheets.TableColumn{
+			{ColumnIndex: 0, ColumnName: "Plimth", ColumnType: gsheets.ColumnText},
+			{ColumnIndex: 1, ColumnName: "Nardle", ColumnType: gsheets.ColumnDouble},
+			{ColumnIndex: 2, ColumnName: "Grivet", ColumnType: gsheets.ColumnDropdown,
+				DataValidationRule: &gsheets.TableColumnDataValidationRule{Condition: &gsheets.BooleanCondition{
+					Type: "ONE_OF_LIST", Values: []*gsheets.ConditionValue{{UserEnteredValue: "Open"}, {UserEnteredValue: "In progress"}},
+				}}},
+			{ColumnIndex: 3, ColumnName: "Oblisk", ColumnType: gsheets.ColumnDateTime},
+			{ColumnIndex: 4, ColumnName: "Skerry", ColumnType: gsheets.ColumnPeople},
+			{ColumnIndex: 5, ColumnType: gsheets.ColumnCurrency},
+		})}},
 		Protected:   []render.NamedItem{{Name: "heading row", Range: "'Vandel'!A1:D1", Detail: "you may not edit it"}},
 		FilterViews: []render.NamedItem{{Name: "Grivet over 500", Range: "'Vandel'!A1:D21"}},
 	}))
+}
+
+// TestAColumnTypeReadsBackAsItIsWritten is the promise the card makes:
+// every type manage_range writes, shown as the card shows it, is taken
+// back by column_types as the same type, a dropdown's list included.
+func TestAColumnTypeReadsBackAsItIsWritten(t *testing.T) {
+	list := &gsheets.TableColumnDataValidationRule{Condition: &gsheets.BooleanCondition{
+		Type: "ONE_OF_LIST", Values: []*gsheets.ConditionValue{{UserEnteredValue: "Open"}, {UserEnteredValue: "In progress"}},
+	}}
+	for _, kind := range []string{
+		gsheets.ColumnText, gsheets.ColumnDouble, gsheets.ColumnCurrency, gsheets.ColumnPercent, gsheets.ColumnDate,
+		gsheets.ColumnTime, gsheets.ColumnDateTime, gsheets.ColumnBoolean, gsheets.ColumnDropdown,
+	} {
+		column := &gsheets.TableColumn{ColumnType: kind}
+		if kind == gsheets.ColumnDropdown {
+			column.DataValidationRule = list
+		}
+		text := render.ColumnText("Amount", column)
+		got, err := plan.ParseColumnType(text)
+		if err != nil {
+			t.Errorf("%s reads as %q, which is refused: %v", kind, text, err)
+			continue
+		}
+		if got.Column != "Amount" || got.Type != kind || (got.Rule == nil) != (column.DataValidationRule == nil) {
+			t.Errorf("%q is taken back as column %q type %q rule %v", text, got.Column, got.Type, got.Rule)
+		}
+		if got.Rule != nil && len(got.Rule.Condition.Values) != 2 {
+			t.Errorf("%q is taken back with the options %v", text, got.Rule.Condition.Values)
+		}
+	}
 }
 
 func TestSeparated(t *testing.T) {

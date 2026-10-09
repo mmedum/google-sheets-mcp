@@ -34,6 +34,9 @@ type schemaDump struct {
 			Required   []string                   `json:"required"`
 			Properties map[string]json.RawMessage `json:"properties"`
 		} `json:"inputSchema"`
+		OutputSchema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		} `json:"outputSchema"`
 	} `json:"tools"`
 }
 
@@ -170,9 +173,13 @@ func staleness(bin string) error {
 }
 
 // dumpSchemas returns the raw dump and the parsed one, so a caller that
-// needs both does not run the binary twice.
+// needs both does not run the binary twice. It runs with nowhere to find
+// a setting, as the smoke test does, so a GSHEETS_ variable in the
+// maintainer's shell cannot change the surface a gate reads or records.
 func dumpSchemas(bin string) ([]byte, *schemaDump, error) {
-	out, err := exec.Command(bin, "--dump-schemas").Output()
+	cmd := exec.Command(bin, "--dump-schemas")
+	smokeEnv(cmd)
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s --dump-schemas: %w", bin, err)
 	}

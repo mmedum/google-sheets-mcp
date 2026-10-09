@@ -168,7 +168,7 @@ func chartNames(sh *gsheets.Sheet) []string {
 func tableItems(byID map[int]string, sh *gsheets.Sheet) []render.NamedItem {
 	out := make([]render.NamedItem, 0, len(sh.Tables))
 	for _, t := range sh.Tables {
-		out = append(out, render.NamedItem{Name: t.Name, Range: rangeText(byID, t.Range), Detail: columnTypes(t)})
+		out = append(out, render.NamedItem{Name: t.Name, Range: rangeText(byID, t.Range), Detail: render.TableColumns(t.ColumnProperties)})
 	}
 	return out
 }
@@ -207,17 +207,6 @@ func titleSet(titles []string) map[string]struct{} {
 		m[t] = struct{}{}
 	}
 	return m
-}
-
-func columnTypes(t *gsheets.Table) string {
-	if len(t.ColumnProperties) == 0 {
-		return ""
-	}
-	parts := make([]string, 0, len(t.ColumnProperties))
-	for _, c := range t.ColumnProperties {
-		parts = append(parts, c.ColumnName+" "+c.ColumnType)
-	}
-	return join(parts)
 }
 
 // rangeText renders a GridRange in A1, with its sheet quoted.

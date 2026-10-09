@@ -19,6 +19,13 @@ const (
 	ApostropheName = "Yalmic's Bractal"
 )
 
+// The fixture's comment threads, and the reply on the first.
+const (
+	FixtureCommentID      = "AAAAcommentMine"
+	FixtureReplyID        = "AAAApostReply"
+	FixtureOtherCommentID = "AAAAcommentTheirs"
+)
+
 // Fixture builds the standard spreadsheet: one sheet with headings,
 // numbers, a formula, an error cell, a note, a validation rule, a merge
 // and a protected range; a second sheet whose title is not ASCII; and a
@@ -141,6 +148,14 @@ func Fixture() (*Doc, *gapi.File) {
 			Range: a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 2, LastRow: 2}.GridRange(1837),
 		}},
 	}
+	// Two comment threads: one the signed-in account started, with a
+	// reply from somebody else, and a resolved one somebody else wrote.
+	mine := doc.AddComment(first, 2, 1, "Is this the unit cost or the total?", true)
+	mine.CommentID = FixtureCommentID
+	doc.Reply(mine, "Unit cost.", false).PostID = FixtureReplyID
+	theirs := doc.AddComment(first, 4, 2, "Grivet looks high.", false)
+	theirs.CommentID, theirs.Status = FixtureOtherCommentID, gsheets.CommentResolved
+	doc.Reply(theirs, "", false).CommentAction = gsheets.CommentResolve
 	file := &gapi.File{
 		ID: FixtureID, Name: doc.Title, MimeType: gapi.SpreadsheetMimeType,
 		CreatedTime: "2026-01-04T09:00:00.000Z", ModifiedTime: "2026-03-11T14:25:00.000Z",
@@ -223,4 +238,45 @@ func Standard(t *testing.T) *Server {
 	s.Add(Second())
 	s.AddFile(NotASpreadsheet())
 	return s
+}
+
+// SalesBlock writes the block the pivot rules are tested on, A<row> to
+// E<row+6>: a region, a date, an age, a revenue and a cost, with six
+// rows under the headings. The dates are serials shown as dates, which
+// is what a typed date is on the wire. "Age" is a heading that is also
+// a column letter, far outside the block.
+//
+//	Region  Day         Age  Revenue  Cost
+//	East    2026-01-01  23   100      60
+//	West    2026-02-01  37   200      150
+//	East    2026-02-02  41   50       10
+//	North   2026-01-01  68   300      100
+//	West    2026-04-01  55   80       40
+//	East    2026-04-02  29   20       30
+func SalesBlock(sh *Sheet, row int) {
+	for i, h := range []string{"Region", "Day", "Age", "Revenue", "Cost"} {
+		sh.Set(row, i+1, Str(h))
+	}
+	for i, r := range []struct {
+		region string
+		day    float64
+		date   string
+		age    float64
+		rev    float64
+		cost   float64
+	}{
+		{"East", 46023, "2026-01-01", 23, 100, 60},
+		{"West", 46054, "2026-02-01", 37, 200, 150},
+		{"East", 46055, "2026-02-02", 41, 50, 10},
+		{"North", 46023, "2026-01-01", 68, 300, 100},
+		{"West", 46113, "2026-04-01", 55, 80, 40},
+		{"East", 46114, "2026-04-02", 29, 20, 30},
+	} {
+		at := row + 1 + i
+		sh.Set(at, 1, Str(r.region))
+		sh.Set(at, 2, Num(r.day, r.date))
+		sh.Set(at, 3, Num(r.age, ""))
+		sh.Set(at, 4, Num(r.rev, ""))
+		sh.Set(at, 5, Num(r.cost, ""))
+	}
 }

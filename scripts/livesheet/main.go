@@ -335,14 +335,23 @@ type driver struct {
 	created    string
 	workSheet  string
 	checkpoint string
+	// commaLocale is the spreadsheet in a comma-decimal locale that the
+	// color-scale steps make, and typedTables the one the typed-column
+	// steps make.
+	commaLocale string
+	typedTables string
 	// The phase 4 objects, each learned from the reply that made it. A
 	// chart and a slicer are addressed by id and a pivot table by its
 	// anchor cell, so only the first two need carrying.
 	chartID       int
 	ownSheetChart int
 	slicerID      int
-	steps         int
-	failed        int
+	// The comment threads and the reply the comment steps made.
+	commentID  string
+	assignedID string
+	replyID    string
+	steps      int
+	failed     int
 	// undetermined counts steps the world would not let this run
 	// settle — Drive's full-text index has not caught up, say. They are
 	// neither passes nor failures: reporting one as a pass hides a

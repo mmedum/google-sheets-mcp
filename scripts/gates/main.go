@@ -16,6 +16,7 @@
 //	go run ./scripts/gates smoke ./google-sheets-mcp
 //	go run ./scripts/gates staleness ./google-sheets-mcp
 //	go run ./scripts/gates schema-diff ./google-sheets-mcp
+//	go run ./scripts/gates schema-baseline ./google-sheets-mcp
 //	go run ./scripts/gates api-coverage
 //	go run ./scripts/gates api-fields
 //	go run ./scripts/gates api-diff
@@ -33,7 +34,7 @@ import (
 func main() {
 	if len(os.Args) < 2 {
 		fail("usage: gates coverage PROFILE MIN | classes | leaks [history] | transcript | " +
-			"live-cover BIN | pins | smoke BIN | staleness BIN | schema-diff BIN | mcpb | " +
+			"live-cover BIN | pins | smoke BIN | staleness BIN | schema-diff BIN | schema-baseline BIN | mcpb | " +
 			"mcpb-pack VERSION [DIST] | api-coverage | api-fields | api-diff | schema-refetch | parity | " +
 			"release-notes VERSION [CHANGELOG] | release-tag TAG | precommit")
 	}
@@ -72,8 +73,11 @@ func main() {
 		check(smoke(binArg()), "stdio smoke")
 	case "staleness":
 		check(staleness(binArg()), "staleness")
-	case "schema-diff":
-		check(schemaDiff(binArg()), "schema diff")
+	case "schema-diff", "schema-baseline":
+		// One clause for the two, because this switch is at the
+		// cyclomatic limit: the diff runs on every commit, and the
+		// baseline is recorded in a release commit.
+		schemaCommand(os.Args[1], binArg())
 	case "mcpb":
 		check(mcpbGate(os.Stdout), "bundle manifest")
 	case "mcpb-pack":
@@ -129,6 +133,16 @@ func contractCommand(name string) bool {
 		return false
 	}
 	return true
+}
+
+// schemaCommand runs the schema diff, or records the release being cut
+// as its baseline.
+func schemaCommand(name, bin string) {
+	if name == "schema-baseline" {
+		check(writeBaseline(bin), "schema baseline")
+		return
+	}
+	check(schemaDiff(bin), "schema diff")
 }
 
 func tagArg() string {

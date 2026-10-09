@@ -94,6 +94,10 @@ func (a DimensionAct) Phrase() string {
 		return fmt.Sprintf("size %s on %q to fit their contents", b, a.Sheet)
 	case "group":
 		return fmt.Sprintf("group %s on %q", b, a.Sheet)
+	case "hide":
+		return fmt.Sprintf("hide %s on %q", b, a.Sheet)
+	case "unhide":
+		return fmt.Sprintf("show %s on %q again", b, a.Sheet)
 	default:
 		return fmt.Sprintf("ungroup %s on %q", b, a.Sheet)
 	}

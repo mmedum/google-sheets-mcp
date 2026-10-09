@@ -74,11 +74,17 @@ func (accepting) Ask(_ context.Context, build service.Build) error {
 	return err
 }
 
-// connect connects a client on protocol to a server over a fresh fake,
-// with one data source already connected. A nil p declares no
-// elicitation; opts adjust the client further. The fake's calls are
-// reset, so a test counts only its own.
+// connect connects a client on protocol, as join does, to a server from
+// serve.
 func connect(t *testing.T, cfg config.Config, protocol string, p *person, opts ...func(*mcp.ClientOptions)) (*mcp.ClientSession, *sheetstest.Server, string) {
+	t.Helper()
+	srv, fake, src := serve(t, cfg)
+	return join(t, srv, protocol, p, opts...), fake, src
+}
+
+// serve is a server over a fresh fake, with one data source already
+// connected. The fake's calls are reset, so a test counts only its own.
+func serve(t *testing.T, cfg config.Config) (*mcp.Server, *sheetstest.Server, string) {
 	t.Helper()
 	fake := sheetstest.Standard(t)
 	svc := service.New(service.Deps{API: fake.Client(), Config: cfg, Now: func() time.Time { return now() }})
@@ -89,7 +95,13 @@ func connect(t *testing.T, cfg config.Config, protocol string, p *person, opts .
 		t.Fatal(err)
 	}
 	fake.Reset()
-	srv := server.New(server.Deps{Service: svc, Config: cfg, Version: "test"})
+	return server.New(server.Deps{Service: svc, Config: cfg, Version: "test"}), fake, src.ID
+}
+
+// join connects one more client to srv. A nil p declares no
+// elicitation; opts adjust the client further.
+func join(t *testing.T, srv *mcp.Server, protocol string, p *person, opts ...func(*mcp.ClientOptions)) *mcp.ClientSession {
+	t.Helper()
 	ct, st := mcp.NewInMemoryTransports()
 	ss, err := srv.Connect(context.Background(), st, nil)
 	if err != nil {
@@ -109,7 +121,7 @@ func connect(t *testing.T, cfg config.Config, protocol string, p *person, opts .
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cs.Close() })
-	return cs, fake, src.ID
+	return cs
 }
 
 // askCase is a call that clears a tool's own guards and reaches its
@@ -141,6 +153,12 @@ var askCases = map[string]askCase{
 			"range": "A1:B3", "confirm": true},
 		op:    "values.clear",
 		shows: []string{"clear the values in `'" + sheetstest.SecondSheet + "'!A1:B3` of `Quorbin Skerry`", "Formatting"},
+	},
+	"delete_cell_comment": {
+		args: map[string]any{"spreadsheet": sheetstest.FixtureID, "comment_id": sheetstest.FixtureCommentID, "confirm": true},
+		op:   "spreadsheets.batchUpdate",
+		shows: []string{"delete_cell_comment: delete the comment thread on `'" + sheetstest.FirstSheet + "'!B3` of `Quorbin Skerry`?",
+			"It says: `Is this the unit cost or the total?`", "Its reply goes with it."},
 	},
 	"delete_data_source": {
 		args:  map[string]any{"spreadsheet": sheetstest.FixtureID, "confirm": true},
@@ -461,6 +479,23 @@ func TestAChangeAfterTheQuestionIsRefused(t *testing.T) {
 	}
 }
 
+// A comment edited between the question and the answer is another
+// question: the person confirmed what it said then.
+func TestACommentEditedAfterTheQuestionIsRefused(t *testing.T) {
+	cs, fake, _ := mrtr(t)
+	c := askCases["delete_cell_comment"]
+	first := callTool(t, cs, &mcp.CallToolParams{Name: "delete_cell_comment", Arguments: c.args})
+	if !first.NeedsInput() {
+		t.Fatalf("the first round did not ask: %s", text(first))
+	}
+	fake.Doc(sheetstest.FixtureID).Thread(sheetstest.FixtureCommentID).HeadPost.Content = "Changed meanwhile."
+	res := callTool(t, cs, &mcp.CallToolParams{Name: "delete_cell_comment", Arguments: c.args,
+		InputResponses: accepted, RequestState: first.RequestState})
+	if out := text(res); !res.IsError || !strings.Contains(out, "changed after the person was asked") || writes(fake, c.op) != 0 {
+		t.Errorf("%s; %d writes", out, writes(fake, c.op))
+	}
+}
+
 // A state that travels through the client expires; one that stays in
 // the process, before 2026-07-28, waits as long as the request does.
 func TestALateAnswerIsRefusedOnlyWhenTheStateTravels(t *testing.T) {
@@ -478,6 +513,54 @@ func TestALateAnswerIsRefusedOnlyWhenTheStateTravels(t *testing.T) {
 		res := callTool(t, cs, &mcp.CallToolParams{Name: "delete_sheet", Arguments: c.args})
 		if res.IsError || writes(fake, c.op) != 1 {
 			t.Errorf("%s: a slow accept in the process was refused: %s", protocol, text(res))
+		}
+	}
+}
+
+// A tool that asks the person before every write carries Claude Code's
+// requiresUserInteraction mark only for a client that cannot ask; with
+// both, the person would answer twice for one call. The list is the
+// four §9a asks before every write: a new name here needs a look at
+// whether it really asks every time.
+//
+// Every client lists from one server, the one that can ask first: a
+// mark dropped from the server's own tool rather than a copy would be
+// missing for the clients after it.
+func TestTheMarkIsForAClientThatCannotAsk(t *testing.T) {
+	marked := func(cs *mcp.ClientSession) []string {
+		t.Helper()
+		res, err := cs.ListTools(context.Background(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, tool := range res.Tools {
+			if tool.Meta["anthropic/requiresUserInteraction"] == true {
+				out = append(out, tool.Name)
+			}
+		}
+		slices.Sort(out)
+		return out
+	}
+	urlOnly := func(o *mcp.ClientOptions) {
+		o.Capabilities = &mcp.ClientCapabilities{
+			Elicitation: &mcp.ElicitationCapabilities{URL: &mcp.URLElicitationCapabilities{}},
+		}
+	}
+	all := "clear_values delete_cell_comment delete_data_source delete_dimensions delete_sheet"
+	for _, protocol := range protocols {
+		srv, _, _ := serve(t, everything(t))
+		if got := marked(join(t, srv, protocol, &person{action: "accept"})); len(got) != 0 {
+			t.Errorf("%s, a client that can ask: marked %v, want none", protocol, got)
+		}
+		cannot := map[string]*mcp.ClientSession{
+			"no elicitation":       join(t, srv, protocol, nil),
+			"URL elicitation only": join(t, srv, protocol, &person{action: "accept"}, urlOnly),
+		}
+		for name, cs := range cannot {
+			if got := strings.Join(marked(cs), " "); got != all {
+				t.Errorf("%s, a client with %s: marked %q, want %q", protocol, name, got, all)
+			}
 		}
 	}
 }

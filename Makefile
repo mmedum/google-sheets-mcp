@@ -21,7 +21,7 @@ GATES     ?= ./.gates
 # the standard library. Both passed for months in CI while `make check`
 # was broken locally, which is the wrong way round: this file's first
 # line promises the two are the same.
-GOLANGCI_LINT ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+GOLANGCI_LINT ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 GOVULNCHECK   ?= golang.org/x/vuln/cmd/govulncheck@v1.7.0
 GOLICENSES    ?= github.com/google/go-licenses@v1.6.0
 # The module path is zricethezav, not gitleaks: the project moved
@@ -141,8 +141,12 @@ schemas: build ## Dump the tool schemas
 	$(BIN) --dump-schemas > schemas.json
 
 .PHONY: schema-diff
-schema-diff: build gates ## Diff the tool schemas against the last tag
+schema-diff: build gates ## Diff the tool schemas against the newest release's recorded baseline
 	@$(GATES) schema-diff $(BIN)
+
+.PHONY: schema-baseline
+schema-baseline: build gates ## Record the release being cut as the baseline: VERSION=vX.Y.Z, in its release commit
+	@$(GATES) schema-baseline $(BIN)
 
 .PHONY: smoke
 smoke: build gates ## Drive the binary over stdio

@@ -44,6 +44,13 @@ type Failure struct {
 	Cut bool
 	// Delay holds the response back, for deadline tests.
 	Delay time.Duration
+	// Applied makes the request first and answers with the failure
+	// after: a write that landed though its reply said it failed, which
+	// is what an HTTP 500 cannot rule out.
+	Applied bool
+	// Pass answers the call as if nothing were injected, so a queue can
+	// fail a later call to an op and not an earlier one.
+	Pass bool
 }
 
 // Server is a fake Sheets and Drive behind httptest.
@@ -195,7 +202,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	}
 	s.record(Call{Method: r.Method, Op: op, Query: r.URL.Query(), Body: body})
 
-	if f, ok := s.failure(op); ok {
+	if f, ok := s.failure(op); ok && !f.Pass {
 		if f.Delay > 0 {
 			time.Sleep(f.Delay)
 		}
@@ -210,6 +217,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			panic("sheetstest: cannot hijack to cut the connection")
+		}
+		if f.Applied && handler != nil {
+			handler(httptest.NewRecorder(), r)
 		}
 		for k, vs := range f.Header {
 			for _, v := range vs {
@@ -296,7 +306,33 @@ func (s *Server) spreadsheetsGet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "this fake refuses an unmasked get, as this server refuses to send one")
 		return
 	}
+	// Google answers an unbalanced mask with this and nothing more. The
+	// fake read no mask at all once, and a mask one parenthesis over
+	// passed every unit test and failed every live read.
+	if !balanced(q.Get("fields")) {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "Request contains an invalid argument.")
+		return
+	}
 	out := docCard(d)
+	if strings.Contains(q.Get("fields"), "comment") {
+		switch q.Get("commentsViewMode") {
+		case "COMMENTS_VIEW_MODE_INCLUDED", "COMMENTS_VIEW_MODE_DEFAULT_FOR_CURRENT_ACCESS":
+		default:
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT",
+				"Field mask may not contain comment-specific fields if comments are not requested")
+			return
+		}
+		if d.CommentsDenied {
+			writeError(w, http.StatusForbidden, "PERMISSION_DENIED", "The caller does not have permission")
+			return
+		}
+		for _, t := range d.Comments {
+			out.Comments = append(out.Comments, cloneThread(t))
+		}
+		for i, sh := range d.Sheets {
+			out.Sheets[i].CommentAnchors = wireAnchors(sh.CommentAnchors)
+		}
+	}
 	grid := q.Get("includeGridData") == "true"
 	ranges := q["ranges"]
 	if grid {
@@ -624,4 +660,21 @@ func rpcFor(status int) string {
 		return "UNAVAILABLE"
 	}
 	return "INTERNAL"
+}
+
+// balanced says every parenthesis in a field mask closes, in order.
+func balanced(mask string) bool {
+	depth := 0
+	for _, r := range mask {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth < 0 {
+				return false
+			}
+		}
+	}
+	return depth == 0
 }

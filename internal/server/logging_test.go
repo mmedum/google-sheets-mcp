@@ -13,6 +13,7 @@ import (
 
 	"github.com/mmedum/google-sheets-mcp/v3/internal/config"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
 	"github.com/mmedum/google-sheets-mcp/v3/internal/tools"
 )
 
@@ -119,6 +120,12 @@ var toolCalls = map[string][]map[string]any{
 			"values": []any{searchTerm}, "message": searchTerm},
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
 			"kind": "named_range", "action": "delete", "name": searchTerm},
+		// A dropdown's options are cell content in a request body, and a
+		// heading the table lacks comes back in a refusal.
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
+			"kind": "table", "action": "add", "name": "Trennow", "column_types": []any{"B dropdown: " + searchTerm}},
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
+			"kind": "table", "action": "add", "name": "Trennow", "column_types": []any{searchTerm + " text"}},
 	},
 	"manage_anchor": {
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "2:2",
@@ -141,6 +148,12 @@ var toolCalls = map[string][]map[string]any{
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.FirstSheet, "action": "add",
 			"anchor": "F1", "source": "A1:C6", "group_rows": []any{"A"},
 			"values": []any{"B sum as " + searchTerm}},
+		// A filter's values and a formula are cell content in a request
+		// body, and come back in a listing.
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.FirstSheet, "action": "add",
+			"anchor": "H1", "source": "A1:C6", "group_rows": []any{"A"},
+			"values":  []any{"=SUM(Nardle) as " + searchTerm},
+			"filters": []any{"A show " + searchTerm, "B text_contains " + searchTerm}},
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.FirstSheet, "action": "list"},
 	},
 	// A query is the most sensitive thing this server ever sends: it is
@@ -149,6 +162,21 @@ var toolCalls = map[string][]map[string]any{
 		{"spreadsheet": sheetstest.FixtureID, "action": "add",
 			"project": "example-project", "query": "SELECT " + searchTerm},
 		{"spreadsheet": sheetstest.FixtureID, "action": "list"},
+	},
+	// A comment's text and its assignee are caller text in a request
+	// body, and a read hands back what collaborators wrote.
+	"read_cell_comments": {
+		{"spreadsheet": sheetstest.FixtureID, "include_resolved": true},
+		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.FirstSheet, "range": "A1:D6"},
+	},
+	"manage_cell_comment": {
+		{"spreadsheet": sheetstest.FixtureID, "action": "add", "sheet": sheetstest.SecondSheet, "cell": "B2",
+			"text": searchTerm, "assignee": searchTerm + "@example.com"},
+		{"spreadsheet": sheetstest.FixtureID, "action": "reply", "comment_id": sheetstest.FixtureCommentID, "text": searchTerm},
+	},
+	"delete_cell_comment": {
+		{"spreadsheet": sheetstest.FixtureID, "comment_id": sheetstest.FixtureCommentID, "dry_run": true},
+		{"spreadsheet": sheetstest.FixtureID, "comment_id": searchTerm, "confirm": true},
 	},
 	"delete_data_source": {
 		{"spreadsheet": sheetstest.FixtureID, "id": searchTerm, "confirm": true},
@@ -343,6 +371,15 @@ func forbiddenStrings(t *testing.T) []string {
 	}
 	for _, n := range doc.NamedRanges {
 		add(n.Name)
+	}
+	for _, c := range doc.Comments {
+		add(c.CommentID, c.PlainTextQuote)
+		for _, p := range append([]*gsheets.Post{c.HeadPost}, c.Replies...) {
+			add(p.Content, p.AssigneeEmail)
+			if p.Author != nil {
+				add(p.Author.DisplayName)
+			}
+		}
 	}
 	// A1 ranges are addresses, and an address says which part of
 	// somebody's spreadsheet was touched.

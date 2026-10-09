@@ -11,6 +11,7 @@
 package grid
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -69,6 +70,13 @@ type Cell struct {
 	// behind a guarded write does.
 	Computed  bool
 	Hyperlink string
+	// Chip says the cell holds a smart chip, a person or a file link. A
+	// values read shows only its text, and a value write erases it.
+	Chip bool
+	// RichText says part of the cell's text is formatted on its own,
+	// such as one word in bold. A values read shows only the text, and
+	// the text written back as plain text drops that formatting.
+	RichText bool
 
 	// Format is what the cell was explicitly given, and nil unless the
 	// read asked for it: a write's pre-read does not, and
@@ -140,6 +148,22 @@ type Grid struct {
 	DataRows  int
 	Merges    []a1.Rect
 	Protected []Protection
+	// HiddenRows and HiddenCols are the one-based rows and columns of
+	// Rect a person hid, when the read asked for them.
+	HiddenRows []int
+	HiddenCols []int
+}
+
+// hidden lists the one-based positions, from first, that a person hid
+// and that lie within [lo, hi].
+func hidden(meta []*gsheets.DimensionProperties, first, lo, hi int) []int {
+	var out []int
+	for i, m := range meta {
+		if n := first + i; m != nil && m.HiddenByUser != nil && *m.HiddenByUser && n >= lo && n <= hi {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // Formatted selects which of the API's renderings Display carries.
@@ -179,6 +203,8 @@ func Build(sheet string, sheetID int, rect a1.Rect, data *gsheets.GridData, form
 	// The response says where its own rectangle starts, which need not
 	// be where the request asked it to. The conversion is a1's.
 	rowOffset, colOffset := rect.OffsetOf(data.StartRow, data.StartColumn)
+	g.HiddenRows = hidden(data.RowMetadata, rect.FirstRow+rowOffset, rect.FirstRow, rect.LastRow)
+	g.HiddenCols = hidden(data.ColumnMetadata, rect.FirstCol+colOffset, rect.FirstCol, rect.LastCol)
 	for i, row := range data.RowData {
 		r := i + rowOffset
 		if r < 0 || r >= rows || row == nil {
@@ -213,6 +239,12 @@ func cell(cd *gsheets.CellData, formatted Formatted) Cell {
 	}
 	c.Pivot = len(cd.PivotTable) > 0
 	c.Computed = Computed(cd)
+	c.RichText = richText(cd.TextFormatRuns)
+	for _, run := range cd.ChipRuns {
+		if ch := run.Chip; ch != nil && (ch.PersonProperties != nil || ch.RichLinkProperties != nil) {
+			c.Chip = true
+		}
+	}
 	if v := cd.UserEnteredValue; v != nil && v.FormulaValue != nil {
 		c.Formula = *v.FormulaValue
 		c.Kind = KindFormula
@@ -249,6 +281,22 @@ func cell(cd *gsheets.CellData, formatted Formatted) Cell {
 		c.Display = cd.FormattedValue
 	}
 	return c
+}
+
+// richText reports whether a run of a cell's text carries a format. A run
+// with an empty one, which is how Google ends a bold word, changes
+// nothing on its own; a run that cannot be read counts, so a guard reading
+// this errs toward refusing.
+func richText(runs []json.RawMessage) bool {
+	for _, raw := range runs {
+		var run struct {
+			Format map[string]json.RawMessage `json:"format"`
+		}
+		if json.Unmarshal(raw, &run) != nil || len(run.Format) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // describeValidation summarizes a rule in a few words. The whole rule is

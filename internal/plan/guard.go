@@ -158,6 +158,9 @@ type Report struct {
 	// are counted in NonEmpty too: a formula is a non-empty cell.
 	NonEmpty Cells
 	Formulas Cells
+	// Chips are cells holding a smart chip, which a value write erases
+	// and a values read does not show. They are in NonEmpty too.
+	Chips Cells
 	// Notes and Validation are invisible in a values read and survive a
 	// value write, so they are reported as surviving: a rule that still
 	// applies to a value the caller has just replaced is worth knowing
@@ -180,6 +183,11 @@ type Report struct {
 	CrossSpreadsheet Cells
 	// TooLong are cells whose text is past MaxCellChars.
 	TooLong Cells
+	// TableHeaders are formulas being written into a table's header row.
+	// Google replaces each with a column name of its own, "Column 2" and
+	// the like, and still reports the write a success (spike T Q7), so
+	// the formula is lost with nothing said.
+	TableHeaders Cells
 	// Discarded are cells a merge would throw away. Sheets keeps the
 	// top-left value of a merge and drops the rest without saying so,
 	// which is the one formatting operation that loses data.
@@ -230,25 +238,7 @@ type Blocker struct {
 // caller who reads only the first line is not told to pass a flag that
 // would not have helped.
 func (r Report) Blockers(ack Ack) []Blocker {
-	var out []Blocker
-
-	for _, p := range r.Protected {
-		why := fmt.Sprintf("%s is protected", a1.FormatRect(p.Rect))
-		if p.Description != "" {
-			why += fmt.Sprintf(" (%q)", p.Description)
-		}
-		out = append(out, Blocker{Why: why + " and this account may not edit it"})
-	}
-	for _, m := range r.Merges {
-		out = append(out, Blocker{Why: fmt.Sprintf(
-			"%s is a merged range and the write covers only part of it; Sheets would apply the write to its top-left cell and drop the rest",
-			a1.FormatRect(m))})
-	}
-	if r.TooLong.Any() {
-		out = append(out, Blocker{Why: fmt.Sprintf(
-			"%s %s more than %d characters, which is the most one cell takes", r.TooLong,
-			r.TooLong.Verb("holds", "hold"), MaxCellChars)})
-	}
+	out := r.unallowable()
 
 	if r.Fetching.Any() && !ack.AllowExternalFormulas {
 		out = append(out, Blocker{
@@ -298,6 +288,15 @@ func (r Report) Blockers(ack Ack) []Blocker {
 			Allow: "overwrite_formulas (and overwrite)",
 		})
 	}
+	// Named before the plain non-empty finding, like a formula: a chip
+	// reads as its text, so "not empty" does not say what is lost.
+	if r.Chips.Any() && !ack.Overwrite {
+		out = append(out, Blocker{
+			Why: fmt.Sprintf("%s %s a smart chip (a person or a file link), which a value write erases",
+				r.Chips, r.Chips.Verb("holds", "hold")),
+			Allow: "overwrite",
+		})
+	}
 	if r.Pivots.Any() && !ack.Overwrite {
 		out = append(out, Blocker{
 			Why: fmt.Sprintf("%s %s a pivot table, and a write there replaces it and clears everything it draws",
@@ -329,6 +328,36 @@ func (r Report) Blockers(ack Ack) []Blocker {
 			Why:   fmt.Sprintf("%s %s not empty", r.NonEmpty, r.NonEmpty.Verb("is", "are")),
 			Allow: "overwrite",
 		})
+	}
+	return out
+}
+
+// unallowable are the refusals no acknowledgment opens, which Blockers
+// puts first.
+func (r Report) unallowable() []Blocker {
+	var out []Blocker
+	for _, p := range r.Protected {
+		why := fmt.Sprintf("%s is protected", a1.FormatRect(p.Rect))
+		if p.Description != "" {
+			why += fmt.Sprintf(" (%q)", p.Description)
+		}
+		out = append(out, Blocker{Why: why + " and this account may not edit it"})
+	}
+	for _, m := range r.Merges {
+		out = append(out, Blocker{Why: fmt.Sprintf(
+			"%s is a merged range and the write covers only part of it; Sheets would apply the write to its top-left cell and drop the rest",
+			a1.FormatRect(m))})
+	}
+	if r.TooLong.Any() {
+		out = append(out, Blocker{Why: fmt.Sprintf(
+			"%s %s more than %d characters, which is the most one cell takes", r.TooLong,
+			r.TooLong.Verb("holds", "hold"), MaxCellChars)})
+	}
+	if r.TableHeaders.Any() {
+		out = append(out, Blocker{Why: fmt.Sprintf(
+			"%s would hold a formula in a table's header row, where Google replaces it with a column name of "+
+				"its own, such as \"Column 2\", and still reports the write a success. Write the heading as text",
+			r.TableHeaders)})
 	}
 	return out
 }
@@ -393,6 +422,9 @@ func Check(g *grid.Grid, values [][]any, formulasEvaluated bool) Report {
 				r.NonEmpty.AddCell(g, i, j)
 			} else if !cell.Empty() {
 				r.NonEmpty.AddCell(g, i, j)
+			}
+			if cell.Chip {
+				r.Chips.AddCell(g, i, j)
 			}
 			if cell.Pivot {
 				r.Pivots.AddCell(g, i, j)
@@ -528,6 +560,41 @@ func CheckValues(r *Report, values [][]any, formulasEvaluated bool, label func(i
 	}
 }
 
+// CheckTableHeaders records the formulas a write would put in a table's
+// header row, given each table's header row on the sheet.
+//
+// Verified live (spike T Q7): values.update put a formula in a table's
+// header cell, answered 200, and the cell then held "Column 2", which
+// was also the column's new name. Nothing acknowledges this, since no
+// flag keeps the formula there.
+func CheckTableHeaders(r *Report, g *grid.Grid, values [][]any, formulasEvaluated bool, headers []a1.Rect) {
+	if !formulasEvaluated || len(headers) == 0 {
+		return
+	}
+	for i, row := range values {
+		for j, v := range row {
+			if !IsFormula(v) {
+				continue
+			}
+			r0, c0 := g.Rect.FirstRow+i, g.Rect.FirstCol+j
+			at := a1.Rect{FirstRow: r0, FirstCol: c0, LastRow: r0, LastCol: c0}
+			for _, h := range headers {
+				if h.Contains(at) {
+					r.TableHeaders.AddCell(g, i, j)
+					break
+				}
+			}
+		}
+	}
+}
+
+// IsFormula reports whether a value sent under typed input becomes a
+// formula: a string starting with "=".
+func IsFormula(v any) bool {
+	s, ok := v.(string)
+	return ok && strings.HasPrefix(strings.TrimSpace(s), "=")
+}
+
 // Position labels a cell by where it sits in the values array, for a
 // write whose destination the server cannot know in advance.
 func Position(i, j int) string {
@@ -618,11 +685,13 @@ func (r *Report) Merge(o Report) {
 	r.Computed = r.Computed || o.Computed
 	r.DrawnBy = append(r.DrawnBy, o.DrawnBy...)
 	r.Formulas.Merge(o.Formulas)
+	r.Chips.Merge(o.Chips)
 	r.Notes.Merge(o.Notes)
 	r.Validation.Merge(o.Validation)
 	r.Fetching.Merge(o.Fetching)
 	r.CrossSpreadsheet.Merge(o.CrossSpreadsheet)
 	r.TooLong.Merge(o.TooLong)
+	r.TableHeaders.Merge(o.TableHeaders)
 	r.Discarded.Merge(o.Discarded)
 	r.NoteReplaced.Merge(o.NoteReplaced)
 	r.Formatted.Merge(o.Formatted)

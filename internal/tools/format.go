@@ -61,20 +61,22 @@ type ManageRangeInput struct {
 	Kind        string `json:"kind" jsonschema:"named_range, protected_range, data_validation, table, banding or conditional_format"`
 	Action      string `json:"action" jsonschema:"add, update or delete"`
 
-	Name        string `json:"name,omitempty" jsonschema:"the name, for a named range or a table"`
-	Description string `json:"description,omitempty" jsonschema:"what a protected range is for, which is shown to anyone who tries to edit it"`
-	WarningOnly *bool  `json:"warning_only,omitempty" jsonschema:"for a protected range: true warns in the interface and refuses nothing over the API, false refuses edits from anyone but the owner. Leaving it out on an update leaves it as it is"`
+	Name        string   `json:"name,omitempty" jsonschema:"the name, for a named range or a table"`
+	ColumnTypes []string `json:"column_types,omitempty" jsonschema:"for table, on add or update: a type for each column named, as \"<column> <type>\", such as \"B date\", \"Amount currency\" or \"Status dropdown: Open, In progress, Done\". The column is a letter or the text of its header. The types are text, number, currency, percent, date, time, date_time, boolean and dropdown, whose options follow a colon, or sit in parentheses as get_spreadsheet shows them, separated by commas; for options with commas in them use kind data_validation with one_of_list instead. A boolean column shows checkboxes, and its empty cells fill with FALSE; it is refused over a cell holding anything but a TRUE or FALSE value, since Google turns a word, and text reading TRUE, into FALSE. A dropdown column is refused over a cell with a data validation rule of its own, which the table's list would replace. Each column keeps its header's text as its name, and Google writes a name of its own, such as Column 1, into an empty header cell. An update changes only the columns named and keeps the rest. Google takes no table over a formula in its header row, so an add is refused over one. A name is written into its header cell as plain text, so an add is also refused while the header of a column it types holds a smart chip or rich text such as a bold word, and an update while any header cell holds one of those or a formula. The smart chip types a read shows (people_chip and the like) cannot be set here"`
+	Description string   `json:"description,omitempty" jsonschema:"what a protected range is for, which is shown to anyone who tries to edit it"`
+	WarningOnly *bool    `json:"warning_only,omitempty" jsonschema:"for a protected range: true warns in the interface and refuses nothing over the API, false refuses edits from anyone but the owner. Leaving it out on an update leaves it as it is"`
 
 	Condition string   `json:"condition,omitempty" jsonschema:"the test, for data_validation and conditional_format: number_greater, number_between, text_contains, text_eq, one_of_list, date_after, blank, not_blank, custom_formula and the rest of that family"`
 	Values    []string `json:"values,omitempty" jsonschema:"what the condition tests against: one value for number_greater, two for number_between, the whole list for one_of_list, the formula for custom_formula"`
 	Strict    *bool    `json:"strict,omitempty" jsonschema:"for data_validation: true (the default) rejects a value the rule refuses, false only flags it"`
 	Message   string   `json:"message,omitempty" jsonschema:"for data_validation: the message shown when someone selects the cell"`
 
-	Color     string `json:"color,omitempty" jsonschema:"a hex color: the base shade for a banding, or the background a conditional_format rule applies"`
-	TextColor string `json:"text_color,omitempty" jsonschema:"for conditional_format: the text color the rule applies"`
-	Bold      *bool  `json:"bold,omitempty" jsonschema:"for conditional_format: whether the rule makes the text bold"`
-	Header    bool   `json:"header,omitempty" jsonschema:"for banding: give the first row a darker shade of the color"`
-	Index     int    `json:"index,omitempty" jsonschema:"for conditional_format: which rule, counted from zero in the order they are evaluated. read_formatting lists the rules with their indexes. On add it is where the new rule goes, so 0 makes it the first to be tried"`
+	Color     string   `json:"color,omitempty" jsonschema:"a hex color: the base shade for a banding, or the background a conditional_format rule applies"`
+	TextColor string   `json:"text_color,omitempty" jsonschema:"for conditional_format: the text color the rule applies"`
+	Bold      *bool    `json:"bold,omitempty" jsonschema:"for conditional_format: whether the rule makes the text bold"`
+	Gradient  []string `json:"gradient,omitempty" jsonschema:"for conditional_format: a color scale instead of a condition. Two or three points, lowest first, each \"<min|max|number|percent|percentile> [value] #hex\", such as [\"min #ffffff\", \"percentile 50 #ffd666\", \"max #57bb8a\"]. min and max take no value and may also be the middle point; min is never last, nor max first. A number is written the way the spreadsheet's locale writes it: 1,5 under de_DE, where Google refuses 1.5. Not with condition, values, color, text_color or bold"`
+	Header    bool     `json:"header,omitempty" jsonschema:"for banding: give the first row a darker shade of the color"`
+	Index     int      `json:"index,omitempty" jsonschema:"for conditional_format: which rule, counted from zero in the order they are evaluated. read_formatting lists the rules with their indexes. On add it is where the new rule goes, so 0 makes it the first to be tried"`
 
 	Overwrite bool `json:"overwrite,omitempty" jsonschema:"allow deleting a table that takes conditional format rules with it. Deleting a table removes every rule over its range, and nothing in Sheets brings them back"`
 	DryRun    bool `json:"dry_run,omitempty" jsonschema:"say what would change and send nothing"`
@@ -160,7 +162,8 @@ func registerFormat(s *mcp.Server, d Deps) {
 	add(s, d, Def[ManageRangeInput, *service.RangeResult]{
 		Name: "manage_range",
 		Description: "Add, update or delete the things attached to a range rather than written into it: a named range, " +
-			"a protected range, a data validation rule, a table, banding, or a conditional format rule. " +
+			"a protected range, a data validation rule, a table and its column types, banding, or a conditional format " +
+			"rule, which is a condition and a format or a color scale. " +
 			"An existing one is named by the range it covers, which has to match exactly — so you never need to fetch " +
 			"an id first, and a range matching several is refused with the list rather than picked from. A conditional " +
 			"format rule is the exception: the API identifies those by position, so they take index, which " +
@@ -172,9 +175,9 @@ func registerFormat(s *mcp.Server, d Deps) {
 			return d.Service.ManageRange(ctx, service.RangeRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range,
 				Kind: in.Kind, Action: in.Action,
-				Name: in.Name, Description: in.Description, WarningOnly: in.WarningOnly,
+				Name: in.Name, ColumnTypes: in.ColumnTypes, Description: in.Description, WarningOnly: in.WarningOnly,
 				Condition: in.Condition, Values: in.Values, Strict: in.Strict, Message: in.Message,
-				Color: in.Color, TextColor: in.TextColor, Bold: in.Bold, Header: in.Header,
+				Color: in.Color, TextColor: in.TextColor, Bold: in.Bold, Gradient: in.Gradient, Header: in.Header,
 				Index: in.Index, Overwrite: in.Overwrite, DryRun: in.DryRun,
 			})
 		},

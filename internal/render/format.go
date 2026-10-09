@@ -292,6 +292,9 @@ type Ops struct {
 	// cut left blank.
 	Shifted bool
 	Emptied string
+	// Answered is the error Google answered a write with, for a write a
+	// read afterwards found made all the same.
+	Answered string
 }
 
 // What a transform's reply counted. Three of the nine actions answer
@@ -351,6 +354,9 @@ func OpsDone(o Ops) string {
 	opLines(&b, o.Applied)
 	if sentence := o.Counted.Sentence(); sentence != "" {
 		fmt.Fprintf(&b, "%s\n", sentence)
+	}
+	if o.Answered != "" {
+		fmt.Fprintf(&b, "\n%s, and a read afterwards found the change made.\n", o.Answered)
 	}
 	opNotes(&b, o, "moved")
 	return b.String()
@@ -436,11 +442,46 @@ func RuleText(r *gsheets.ConditionalFormatRule) string {
 		style := StyleOf(r.BooleanRule.Format)
 		return ConditionText(r.BooleanRule.Condition) + " -> " + style.Describe()
 	case r.GradientRule != nil:
-		// Named rather than described in full. A gradient is three
-		// interpolation points, and a caller who wants them can read the
-		// rule; what matters here is that the color on a cell comes
-		// from a rule and not from the cell's own format.
-		return "color gradient"
+		return gradientText(r.GradientRule)
 	}
 	return "rule with no condition"
+}
+
+// gradientText describes a color scale in the spelling manage_range
+// takes, so a scale read back can be written again as it reads:
+// "color scale: min #ffffff -> percentile 50 #ffd666 -> max #57bb8a".
+func gradientText(g *gsheets.GradientRule) string {
+	var points []string
+	for _, p := range []*gsheets.InterpolationPoint{g.Minpoint, g.Midpoint, g.Maxpoint} {
+		if p != nil {
+			points = append(points, pointText(p))
+		}
+	}
+	if len(points) == 0 {
+		return "color scale"
+	}
+	return "color scale: " + strings.Join(points, " -> ")
+}
+
+// pointText is one point: its type, its value, and its color. The API
+// ignores a value on min and max, so none is shown there. A theme color
+// is named, having no hex.
+func pointText(p *gsheets.InterpolationPoint) string {
+	parts := []string{lower(p.Type)}
+	if p.Type == "" {
+		parts[0] = "unspecified"
+	}
+	if p.Value != "" && p.Type != gsheets.PointMin && p.Type != gsheets.PointMax {
+		parts = append(parts, p.Value)
+	}
+	// colorStyle wins where both are set; color is the deprecated field
+	// an older client may have written alone.
+	color := p.ColorStyle
+	if color == nil && p.Color != nil {
+		color = &gsheets.ColorStyle{RGBColor: p.Color}
+	}
+	if hex := HexColor(color); hex != "" {
+		parts = append(parts, hex)
+	}
+	return strings.Join(parts, " ")
 }

@@ -31,6 +31,8 @@ func TestDimensionActPhrasesEveryAction(t *testing.T) {
 		"auto_resize": `size rows 2:3 on "Vandel" to fit their contents`,
 		"group":       `group rows 2:3 on "Vandel"`,
 		"ungroup":     `ungroup rows 2:3 on "Vandel"`,
+		"hide":        `hide rows 2:3 on "Vandel"`,
+		"unhide":      `show rows 2:3 on "Vandel" again`,
 	} {
 		act := render.DimensionAct{Action: action, Sheet: "Vandel", Band: band, To: 7, Pixels: 120}
 		if got := act.Phrase(); got != want {

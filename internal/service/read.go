@@ -113,7 +113,7 @@ func (s *Service) Read(ctx context.Context, req ReadRequest) (*ReadResult, error
 	rangeA1 := a1.Format(sh.Title, window)
 
 	got, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{
-		Fields: gapi.GridFields, Ranges: []string{rangeA1}, IncludeGridData: true,
+		Fields: gapi.ReadFields, Ranges: []string{rangeA1}, IncludeGridData: true,
 	})
 	if err != nil {
 		return nil, wrap(err)

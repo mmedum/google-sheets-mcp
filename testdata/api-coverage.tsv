@@ -36,7 +36,7 @@ sheets	request	addChart	used	internal/plan builds it
 sheets	request	addConditionalFormatRule	used	internal/plan builds it
 sheets	request	addDataSource	used	internal/plan builds it
 sheets	request	addDimensionGroup	used	internal/plan builds it
-sheets	request	addFilterView	out	a saved view of somebody else's screen; the card reports the ones that exist, and creating one changes what everybody sees on opening the file
+sheets	request	addFilterView	out	a named filter each person turns on for themselves, which changes nobody else's view (Sheets filters guide); the card reports the ones that exist
 sheets	request	addNamedRange	used	internal/plan builds it
 sheets	request	addProtectedRange	used	internal/plan builds it
 sheets	request	addSheet	used	internal/plan builds it
@@ -76,7 +76,7 @@ sheets	request	pasteData	out	takes a delimited string and splits it; write_value
 sheets	request	randomizeRange	used	internal/plan builds it
 sheets	request	refreshDataSource	used	internal/plan builds it
 sheets	request	repeatCell	used	internal/plan builds it
-sheets	request	setBasicFilter	out	as addFilterView: a filter is a preference rather than data
+sheets	request	setBasicFilter	out	the filter applied whenever anyone views the sheet (Sheets filters guide), so setting one changes what everybody sees; a filter is a way of looking, not data
 sheets	request	setDataValidation	used	internal/plan builds it
 sheets	request	sortRange	used	internal/plan builds it
 sheets	request	textToColumns	used	internal/plan builds it
@@ -105,8 +105,8 @@ drive	method	drive.about.get	used	gapi.About, behind doctor and the profile's ac
 drive	method	drive.files.get	used	gapi.GetFile, behind resolving a title and the card's owner
 drive	method	drive.files.list	used	gapi.SearchSpreadsheets, behind search_spreadsheets
 drive	method	*	out	file management belongs to a server built on the Drive API (§1); this server holds drive.readonly and uses Drive to turn a title into an id and to read a file's owner and modified time, and nothing else
-sheets	request	addCommentReply	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	request	deleteComment	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	request	deleteCommentReply	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	request	insertComment	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
-sheets	request	updateCommentPost	out	comment threads belong to a server built on the Drive API, as the instructions say; this server keeps cell notes. Sheets published comments 2026-09
+sheets	request	addCommentReply	used	internal/plan builds it
+sheets	request	deleteComment	used	internal/plan builds it
+sheets	request	deleteCommentReply	used	internal/plan builds it
+sheets	request	insertComment	used	internal/plan builds it
+sheets	request	updateCommentPost	used	internal/plan builds it

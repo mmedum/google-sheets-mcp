@@ -10,8 +10,8 @@ import (
 )
 
 // The builders below are the only way a request reaches the batchUpdate
-// union. The API has 69 members; these are the ones phase 1 sends, and
-// each later phase adds its own.
+// union. They are the members this server sends, not the whole union;
+// each phase added its own.
 //
 // Typed rather than free-form maps (§4.8). A map would let a request be
 // sent that no code here has read, which is how a server ends up passing
@@ -162,6 +162,15 @@ func ResizeDimension(sheetID int, dimension string, first, last, pixels int) *gs
 		Range:      dimensionRange(sheetID, dimension, first, last),
 		Properties: &gsheets.DimensionProperties{PixelSize: pixels},
 		Fields:     "pixelSize",
+	}}
+}
+
+// HideDimension hides a band, or shows it again when hidden is false.
+func HideDimension(sheetID int, dimension string, first, last int, hidden bool) *gsheets.Request {
+	return &gsheets.Request{UpdateDimensionProperties: &gsheets.UpdateDimensionPropertiesRequest{
+		Range:      dimensionRange(sheetID, dimension, first, last),
+		Properties: &gsheets.DimensionProperties{HiddenByUser: &hidden},
+		Fields:     "hiddenByUser",
 	}}
 }
 

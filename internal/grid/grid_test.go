@@ -1,6 +1,7 @@
 package grid
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -160,6 +161,52 @@ func TestACellWithOnlyAnAnnotationIsEmpty(t *testing.T) {
 	}
 	if !cell(&gsheets.CellData{}, AsRaw).Empty() {
 		t.Error("a bare cell is not empty")
+	}
+}
+
+// A read returns every run of a cell's text, and a plain run carries an
+// empty chip, so a cell is a chip only where a run names a person or a
+// link.
+func TestACellWithASmartChip(t *testing.T) {
+	text := "@"
+	for _, tc := range []struct {
+		name string
+		runs []gsheets.ChipRun
+		want bool
+	}{
+		{"a person", []gsheets.ChipRun{{Chip: &gsheets.Chip{PersonProperties: &gsheets.PersonProperties{Email: "janedoe@example.com"}}}}, true},
+		{"a file link after text", []gsheets.ChipRun{{Chip: &gsheets.Chip{}}, {StartIndex: 4, Chip: &gsheets.Chip{RichLinkProperties: &gsheets.RichLinkProperties{URI: "https://docs.google.com/document/d/AAAAdoc1"}}}}, true},
+		{"plain runs only", []gsheets.ChipRun{{Chip: &gsheets.Chip{}}, {StartIndex: 3}}, false},
+	} {
+		c := cell(&gsheets.CellData{UserEnteredValue: &gsheets.ExtendedValue{StringValue: &text}, ChipRuns: tc.runs}, AsRaw)
+		if c.Chip != tc.want {
+			t.Errorf("%s: Chip = %t, want %t", tc.name, c.Chip, tc.want)
+		}
+	}
+}
+
+// A read returns a run for each stretch of a cell's text, and the stretch
+// after a bold word carries an empty format, so a cell is rich text only
+// where a run carries a format.
+func TestACellWithRichText(t *testing.T) {
+	text := "Flag"
+	for _, tc := range []struct {
+		name string
+		runs []string
+		want bool
+	}{
+		{"two letters bold", []string{`{"format":{"bold":true}}`, `{"startIndex":2,"format":{}}`}, true},
+		{"empty formats only", []string{`{"format":{}}`, `{"startIndex":2}`}, false},
+		{"no runs", nil, false},
+	} {
+		var runs []json.RawMessage
+		for _, r := range tc.runs {
+			runs = append(runs, json.RawMessage(r))
+		}
+		c := cell(&gsheets.CellData{UserEnteredValue: &gsheets.ExtendedValue{StringValue: &text}, TextFormatRuns: runs}, AsRaw)
+		if c.RichText != tc.want {
+			t.Errorf("%s: RichText = %t, want %t", tc.name, c.RichText, tc.want)
+		}
 	}
 }
 
