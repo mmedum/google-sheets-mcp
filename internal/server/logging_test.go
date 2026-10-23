@@ -185,8 +185,8 @@ var toolCalls = map[string][]map[string]any{
 		{"spreadsheet": sheetstest.FixtureID, "comment_id": searchTerm, "confirm": true},
 	},
 	"delete_data_source": {
-		{"spreadsheet": sheetstest.FixtureID, "id": searchTerm, "confirm": true},
-		{"spreadsheet": sheetstest.FixtureID, "id": searchTerm, "dry_run": true},
+		{"spreadsheet": sheetstest.FixtureID, "id": searchTerm, "sheet": searchTerm, "confirm": true},
+		{"spreadsheet": sheetstest.FixtureID, "id": searchTerm, "sheet": searchTerm, "dry_run": true},
 	},
 	"transform_range": {
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",

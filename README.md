@@ -237,7 +237,7 @@ Sheets scope; in read-only mode the read tools ask for
 | `clear_values` | Destructive, off by default: clear a range's values and keep its formatting, notes and validation rules | `spreadsheets` |
 | `delete_sheet` | Destructive, off by default: delete a sheet and everything on it, having counted what that is | `spreadsheets` |
 | `delete_cell_comment` | Destructive, off by default: delete a comment thread with its replies, or one reply. Resolving keeps it, and is usually what is wanted | `spreadsheets` |
-| `delete_data_source` | Destructive, off by default: delete a Connected Sheets data source, the sheet Google made for it, and everything on that sheet; Google unlinks what was built on the source. Needs no BigQuery scope, so it reaches a source somebody else connected | `spreadsheets` |
+| `delete_data_source` | Destructive, off by default: delete a Connected Sheets data source, the sheet Google made for it, and everything on that sheet; Google unlinks what was built on the source. The call names that sheet's title. Needs no BigQuery scope, so it reaches a source somebody else connected | `spreadsheets` |
 
 The five destructive tools are **not registered at all** unless
 `GSHEETS_ENABLE_DESTRUCTIVE=true`, and each still needs `confirm: true`

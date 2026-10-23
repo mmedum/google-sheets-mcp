@@ -29,6 +29,9 @@ type SourceRequest struct {
 	// refresh and delete need it; cancel_refresh takes every source when
 	// it is empty.
 	ID string
+	// Sheet is delete's witness: the title of the sheet the source made,
+	// which goes with it. Empty is refused unless the source has none.
+	Sheet string
 
 	// Confirm is required by delete, and by nothing else here. Deleting
 	// a data source removes the DATA_SOURCE sheet Google made for it and
@@ -202,12 +205,8 @@ func (s *Service) refreshSource(ctx context.Context, ref Reference, req SourceRe
 		if err != nil {
 			return nil, err
 		}
-		has := "it has none"
-		if ids := sourceIDs(sp); len(ids) > 0 {
-			has = "it has " + strings.Join(ids, ", ")
-		}
 		return nil, Errorf("invalid", "refresh needs id, the data source to run again; %s. Each refresh runs its "+
-			"query again, charged to the Cloud project behind it", has)
+			"query again, charged to the Cloud project behind it", sourcesHeld(sp))
 	}
 	act := render.SourceAct{Action: req.Action, ID: id}
 	if req.DryRun {
@@ -242,27 +241,37 @@ func (s *Service) refreshSource(ctx context.Context, ref Reference, req SourceRe
 
 // deleteSource removes a source, its sheet and the links to it.
 func (s *Service) deleteSource(ctx context.Context, ref Reference, req SourceRequest, res *SourceResult) (*SourceResult, error) {
-	id := strings.TrimSpace(req.ID)
-	if id == "" {
-		return nil, Errorf("invalid", "delete needs id, which manage_data_source list reports")
-	}
 	sp, err := s.card(ctx, ref.ID)
 	if err != nil {
 		return nil, err
 	}
+	// The refusals list the sources, since a server with only the
+	// destructive flag on has no manage_data_source to list them.
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
+		return nil, Errorf("invalid", "delete needs id, the data source to delete; %s", sourcesHeld(sp))
+	}
 	// Named before it goes, from the card: the delete takes a whole
 	// sheet with it, and the reply says nothing about what that was.
 	sheet, found := sourceSheet(sp, id)
-	if !found {
-		// Read again past the cache before saying so: a source connected
-		// in the last half minute is not on a cached card.
+	if !found || (req.Sheet != "" && req.Sheet != sheet) {
+		// Read again past the cache before refusing: a source connected,
+		// or its sheet renamed, in the last half minute is not on a
+		// cached card.
 		s.forget(ref.ID)
 		if sp, err = s.card(ctx, ref.ID); err != nil {
 			return nil, err
 		}
 		if sheet, found = sourceSheet(sp, id); !found {
-			return nil, Errorf("not_found", "this spreadsheet has no data source %q; manage_data_source list names them", id)
+			return nil, Errorf("not_found", "this spreadsheet has no data source %q; %s", id, sourcesHeld(sp))
 		}
+	}
+	// The witness is the title of the sheet that goes with the source,
+	// which a person recognizes in a client's prompt where an id is not
+	// (§9a.7). A dry run without it names the sheet.
+	if req.Sheet != "" && req.Sheet != sheet {
+		return nil, Errorf("conflict", "the data source %s %s, not %q; read it again before deleting it",
+			id, sourceSheetNow(sheet), req.Sheet)
 	}
 	act := render.SourceAct{Action: SourceDelete, ID: id, Sheet: sheet}
 	if req.DryRun {
@@ -277,6 +286,10 @@ func (s *Service) deleteSource(ctx context.Context, ref Reference, req SourceReq
 	if !s.cfg.EnableDestructive {
 		return nil, Errorf("unsupported",
 			"deleting a data source is off in this server; start it with GSHEETS_ENABLE_DESTRUCTIVE=true to turn it on")
+	}
+	if req.Sheet == "" && sheet != "" {
+		return nil, Errorf("invalid", "delete needs sheet, the title of the sheet the data source made, so the call "+
+			"names the tab that goes with it: the data source %s %s. Pass that", id, sourceSheetNow(sheet))
 	}
 	if !req.Confirm {
 		where := ""
@@ -298,13 +311,22 @@ func (s *Service) deleteSource(ctx context.Context, ref Reference, req SourceReq
 	return res, nil
 }
 
-// sourceIDs are the card's data source ids, as a refusal lists them.
-func sourceIDs(sp *gsheets.Spreadsheet) []string {
-	out := make([]string, 0, len(sp.DataSources))
-	for _, ds := range sp.DataSources {
-		out = append(out, strconv.Quote(ds.DataSourceID))
+// sourcesHeld lists the card's data sources for a refusal, each by its
+// id and the sheet it made.
+func sourcesHeld(sp *gsheets.Spreadsheet) string {
+	recs := sourceRecords(sp)
+	if len(recs) == 0 {
+		return "it has none"
 	}
-	return out
+	parts := make([]string, 0, len(recs))
+	for _, r := range recs {
+		part := strconv.Quote(r.ID)
+		if r.Sheet != "" {
+			part += fmt.Sprintf(" on the sheet %q", r.Sheet)
+		}
+		parts = append(parts, part)
+	}
+	return "it has " + strings.Join(parts, ", ")
 }
 
 // sourceSheet is the title of the sheet a data source made, and whether
@@ -317,6 +339,14 @@ func sourceSheet(sp *gsheets.Spreadsheet, id string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// sourceSheetNow says which sheet a source has, for a refusal.
+func sourceSheetNow(sheet string) string {
+	if sheet == "" {
+		return "has no sheet now"
+	}
+	return fmt.Sprintf("made the sheet %q", sheet)
 }
 
 // sourceRecords flattens the card's data sources.

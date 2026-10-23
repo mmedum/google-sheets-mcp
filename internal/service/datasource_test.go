@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
 )
 
@@ -168,7 +170,7 @@ func TestSourceRefreshNeedsAnID(t *testing.T) {
 			Spreadsheet: sheetstest.FixtureID, Action: service.SourceRefresh, DryRun: dry,
 		})
 		want := "[invalid] refresh needs id, the data source to run again; it has \"" + added.ID +
-			"\". Each refresh runs its query again, charged to the Cloud project behind it"
+			"\" on the sheet \"Data source 1\". Each refresh runs its query again, charged to the Cloud project behind it"
 		if err == nil || err.Error() != want {
 			t.Errorf("dry run %v: error = %v\nwant %s", dry, err, want)
 		}
@@ -207,7 +209,7 @@ func TestSourceDeleteNamesTheSheetItTakes(t *testing.T) {
 	// Unconfirmed first: the delete takes a sheet with it, so it is
 	// refused until the caller says so, and the refusal names the sheet.
 	_, err := svc.ManageDataSource(context.Background(), service.SourceRequest{
-		Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: added.ID,
+		Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: added.ID, Sheet: "Data source 1",
 	})
 	if err == nil {
 		t.Fatal("an unconfirmed delete went ahead")
@@ -217,7 +219,7 @@ func TestSourceDeleteNamesTheSheetItTakes(t *testing.T) {
 	}
 
 	res, err := svc.ManageDataSource(context.Background(), service.SourceRequest{
-		Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: added.ID, Confirm: true,
+		Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: added.ID, Sheet: "Data source 1", Confirm: true,
 	})
 	if err != nil {
 		t.Fatalf("delete: %v", err)
@@ -236,17 +238,96 @@ func TestSourceDeleteNamesTheSheetItTakes(t *testing.T) {
 	}
 }
 
+// TestSourceDeleteRefusals: a delete without an id, or with one the
+// spreadsheet does not have, is refused naming each source and its
+// sheet. With only the destructive flag on, manage_data_source is not
+// registered, and these refusals are where the ids come from.
 func TestSourceDeleteRefusals(t *testing.T) {
 	_, svc := destructive(t)
+	id := addSource(t, svc).ID
+	for _, tc := range []struct {
+		id, want string
+	}{
+		{"", `[invalid] delete needs id, the data source to delete; it has "` + id + `" on the sheet "Data source 1"`},
+		{"9999", `[not_found] this spreadsheet has no data source "9999"; it has "` + id + `" on the sheet "Data source 1"`},
+	} {
+		_, err := svc.ManageDataSource(context.Background(), service.SourceRequest{
+			Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: tc.id, Sheet: "Data source 1", Confirm: true,
+		})
+		if err == nil || err.Error() != tc.want {
+			t.Errorf("id %q: error = %v\nwant %s", tc.id, err, tc.want)
+		}
+	}
+}
+
+// TestADataSourceDeleteCarriesItsSheet holds delete_data_source's
+// witness (§9a.7): the title of the sheet that goes with the source,
+// which a client's prompt shows where an id means nothing to a person.
+// Leaving it out is refused naming it, and a title that is not the
+// source's sheet is refused, dry run or not. Nothing is sent either way.
+func TestADataSourceDeleteCarriesItsSheet(t *testing.T) {
+	srv, svc := destructive(t)
+	id := addSource(t, svc).ID
+	del := func(sheet string, dry bool) (*service.SourceResult, error) {
+		return svc.ManageDataSource(context.Background(), service.SourceRequest{
+			Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: id, Sheet: sheet,
+			Confirm: true, DryRun: dry,
+		})
+	}
+	srv.Reset()
+	missing := `[invalid] delete needs sheet, the title of the sheet the data source made, so the call names the ` +
+		`tab that goes with it: the data source ` + id + ` made the sheet "Data source 1". Pass that`
+	if _, err := del("", false); err == nil || err.Error() != missing {
+		t.Errorf("no sheet: error = %v\nwant %s", err, missing)
+	}
+	wrong := `[conflict] the data source ` + id + ` made the sheet "Data source 1", not "Data source 2"; read it ` +
+		`again before deleting it`
+	for _, dry := range []bool{false, true} {
+		if _, err := del("Data source 2", dry); err == nil || err.Error() != wrong {
+			t.Errorf("dry run %v, another sheet: error = %v\nwant %s", dry, err, wrong)
+		}
+	}
+	preview, err := del("", true)
+	if err != nil {
+		t.Fatalf("a dry run without the sheet: %v", err)
+	}
+	if want := "Dry run: nothing was sent. This would delete the data source " + id +
+		", and the sheet \"Data source 1\" Google made for it.\n"; preview.Render() != want {
+		t.Errorf("dry run = %q\nwant %q", preview.Render(), want)
+	}
+	for _, c := range srv.Calls() {
+		if c.Op == "spreadsheets.batchUpdate" {
+			t.Fatal("a refused or previewed delete sent a write")
+		}
+	}
+	if _, err := del("Data source 1", false); err != nil {
+		t.Fatalf("a delete naming its sheet: %v", err)
+	}
+	if len(srv.Doc(sheetstest.FixtureID).DataSources) != 0 {
+		t.Error("the source is still there after a delete naming its sheet")
+	}
+}
+
+// TestADataSourceWitnessIsReadPastTheCache: a sheet renamed since the
+// card was cached is compared as it stands, so the title the person sees
+// now is not refused as a conflict.
+func TestADataSourceWitnessIsReadPastTheCache(t *testing.T) {
+	srv, svc := destructive(t)
+	id := addSource(t, svc).ID
 	if _, err := svc.ManageDataSource(context.Background(), service.SourceRequest{
-		Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete,
-	}); err == nil || !strings.Contains(err.Error(), "id") {
-		t.Errorf("error = %v, want id named", err)
+		Spreadsheet: sheetstest.FixtureID, Action: service.SourceList,
+	}); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	sheetID := srv.Doc(sheetstest.FixtureID).DataSources[0].SheetID
+	if _, err := srv.Client().BatchUpdate(context.Background(), sheetstest.FixtureID,
+		&gsheets.BatchUpdateSpreadsheetRequest{Requests: []*gsheets.Request{plan.RenameSheet(sheetID, "Orders")}}); err != nil {
+		t.Fatalf("rename behind the server's back: %v", err)
 	}
 	if _, err := svc.ManageDataSource(context.Background(), service.SourceRequest{
-		Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: "9999", Confirm: true,
-	}); err == nil {
-		t.Error("a delete of a source that does not exist was accepted")
+		Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: id, Sheet: "Orders", Confirm: true,
+	}); err != nil {
+		t.Errorf("a delete naming the sheet's title now: %v", err)
 	}
 }
 

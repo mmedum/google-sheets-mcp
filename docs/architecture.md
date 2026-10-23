@@ -1580,6 +1580,18 @@ What stays is what holds on every client:
      still a clear.
    - An overwrite carries `expect_checkpoint`, the checkpoint of the
      cells it replaces (§7.3).
+   - `delete_data_source` takes `sheet`, the title of the sheet the
+     source made, beside its `id`: a data source id means nothing to a
+     person, and the tab is what goes. It is compared with the card,
+     read past the cache before a mismatch is refused `[conflict]`. A
+     dry run without it names the sheet. A call without `id`, or with
+     one the spreadsheet does not have, lists each source and its
+     sheet, since with only the destructive flag on nothing else lists
+     them.
+   - `connect_data_source` already carries what the question showed:
+     `project`, which is charged, and the `query` or the `table` it
+     runs. It changes nothing that exists, so there is nothing to read
+     and compare.
 8. **Every risky variant is its own tool, never an argument.** A client
    remembers its approval per tool, never per argument value, so a
    variant riding inside an approved tool goes unseen:

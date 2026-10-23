@@ -14,6 +14,8 @@ import (
 
 	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/server"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/tools"
@@ -391,5 +393,57 @@ func TestResourceNotFoundIsTheSpecifiedError(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(err.Error()), "not found") {
 		t.Errorf("err = %v, want the specification's resource-not-found", err)
+	}
+}
+
+// TestDeleteDataSourceTakesItsSheet: delete_data_source's schema
+// requires the title of the sheet that goes with the source, so a
+// client's prompt shows it, and the title reaches the service, so a
+// delete naming it goes through (§9a.7).
+func TestDeleteDataSourceTakesItsSheet(t *testing.T) {
+	s, fake := newServer(t, config.Config{EnableDestructive: true}, nil)
+	ctx := context.Background()
+	reply, err := fake.Client().BatchUpdate(ctx, sheetstest.FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*gsheets.Request{plan.AddDataSource("example-project", "SELECT 1")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := reply.Replies[0].AddDataSource.DataSource.DataSourceID
+	cs := connect(t, s)
+
+	list, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var required []string
+	for _, tool := range list.Tools {
+		if tool.Name != "delete_data_source" {
+			continue
+		}
+		raw, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var schema struct {
+			Required []string `json:"required"`
+		}
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatal(err)
+		}
+		required = schema.Required
+	}
+	if !slices.Contains(required, "sheet") {
+		t.Errorf("delete_data_source requires %v, not sheet", required)
+	}
+
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "delete_data_source", Arguments: map[string]any{
+		"spreadsheet": sheetstest.FixtureID, "id": id, "sheet": "Data source 1", "confirm": true,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Errorf("a delete naming its sheet was refused: %v", res.Content[0].(*mcp.TextContent).Text)
 	}
 }
