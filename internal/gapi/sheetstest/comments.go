@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 )
 
 // The fake's cell comments, written from spike R: what each request

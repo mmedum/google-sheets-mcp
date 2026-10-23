@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -133,5 +134,39 @@ func TestStatusLineIsTrue(t *testing.T) {
 	problems = statusLineIsTrue()
 	if len(problems) != 1 || !strings.Contains(problems[0], "reading nothing") {
 		t.Errorf("documents with no status line gave %v", problems)
+	}
+}
+
+// A permission rule names a registered tool, and every delete has one.
+func TestPermissionRulesAreTools(t *testing.T) {
+	deletes := []string{"clear_values", "delete_cell_comment", "delete_data_source", "delete_dimensions", "delete_sheet"}
+	registered := append([]string{"write_values"}, deletes...)
+	ok := `"mcp__google-sheets__delete_sheet", "mcp__google-sheets__delete_dimensions",
+		"mcp__google-sheets__clear_values", "mcp__google-sheets__delete_cell_comment",
+		"mcp__google-sheets__delete_data_source", "mcp__google-sheets__write_values"`
+	if got := permissionRulesAreTools(ok, registered, deletes); len(got) != 0 {
+		t.Errorf("a rule for every delete, each registered: %v", got)
+	}
+	renamed := strings.Replace(ok, "delete_sheet", "remove_sheet", 1)
+	want := []string{
+		"README.md gives a permission rule for remove_sheet, which the binary does not register",
+		"README.md gives no permission rule for delete_sheet, which deletes",
+	}
+	if got := permissionRulesAreTools(renamed, registered, deletes); !slices.Equal(got, want) {
+		t.Errorf("a rule for a tool that does not exist: %v", got)
+	}
+	repeated := strings.Repeat(`"mcp__google-sheets__clear_values" `, 5)
+	want = []string{
+		"README.md gives no permission rule for delete_cell_comment, which deletes",
+		"README.md gives no permission rule for delete_data_source, which deletes",
+		"README.md gives no permission rule for delete_dimensions, which deletes",
+		"README.md gives no permission rule for delete_sheet, which deletes",
+	}
+	if got := permissionRulesAreTools(repeated, registered, deletes); !slices.Equal(got, want) {
+		t.Errorf("one rule five times: %v", got)
+	}
+	want = []string{"the binary lists no tool that takes confirm; this check is not looking at the deletes"}
+	if got := permissionRulesAreTools(ok, registered, nil); !slices.Equal(got, want) {
+		t.Errorf("no deletes read: %v", got)
 	}
 }

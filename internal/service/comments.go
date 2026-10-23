@@ -10,10 +10,10 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
 )
 
 // Cell comments (spike R). A thread sits on one cell through an anchor

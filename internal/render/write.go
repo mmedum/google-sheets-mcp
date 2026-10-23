@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
 )
 
 // Coercion is one cell Google stored differently from how it was sent.
@@ -66,6 +66,9 @@ func WritePreview(w Write) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Dry run: nothing was sent. %d cell(s) would be written to %s.\n", w.Cells, w.Range)
 	fmt.Fprintf(&b, "The target holds %d non-empty cell(s), %d of them formulas.\n", w.Counts.NonEmpty, w.Counts.Formulas)
+	if w.Checkpoint != "" {
+		fmt.Fprintf(&b, "Its checkpoint is %s, which overwrite needs as expect_checkpoint.\n", w.Checkpoint)
+	}
 	// What would stop it, if anything. A preview that showed the region
 	// and not the refusal would send the caller to make a write that
 	// cannot go through.

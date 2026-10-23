@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
 )
 
 // Card is the spreadsheet card: what get_spreadsheet knows before any

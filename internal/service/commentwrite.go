@@ -5,10 +5,10 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
 )
 
 // ManageCommentRequest is what manage_cell_comment asks for.
@@ -280,11 +280,11 @@ func (r DeleteCommentResult) Render() string { return r.Summary }
 
 // DeleteComment answers delete_cell_comment: a whole thread, or one
 // reply. Registered only with GSHEETS_ENABLE_DESTRUCTIVE=true, it needs
-// confirm and asks the person, because Sheets cannot bring a deleted
-// comment back. Resolving keeps it, and is usually what is wanted.
+// confirm, because Sheets cannot bring a deleted comment back.
+// Resolving keeps it, and is usually what is wanted.
 //
 // A thread or a reply the read does not find is reported gone, which is
-// what a repeat delete asked for, and nothing is sent or asked. Google
+// what a repeat delete asked for, and nothing is sent. Google
 // answers a repeat and an id it never had with the same 404, and a read
 // shows neither (spike R), so a mistyped id reads as gone too; the
 // summary says it may be either.
@@ -314,7 +314,7 @@ func (s *Service) DeleteComment(ctx context.Context, req DeleteCommentRequest) (
 		}
 		target, res.PostID = &rec.Posts[i], postID
 	}
-	// Google's own refusals, said before the person is asked, and with
+	// Google's own refusals, said before anything is sent, and with
 	// the way out: only the author deletes, and a reply that changed the
 	// thread's status or assignee stays (the discovery document on
 	// deleteComment and deleteCommentReply).
@@ -337,15 +337,6 @@ func (s *Service) DeleteComment(ctx context.Context, req DeleteCommentRequest) (
 	if !req.Confirm {
 		return nil, Errorf("blocked", "deleting %s cannot be undone. Pass confirm to go ahead, or resolve the thread with "+
 			"manage_cell_comment, which keeps it", render.CommentTarget(view, postID))
-	}
-	sp, err := s.card(ctx, ref.ID)
-	if err != nil {
-		return nil, err
-	}
-	if err := ask(ctx, func() (render.Question, error) {
-		return render.AskDeleteComment(ref.ID, titleOf(sp), view, postID), nil
-	}); err != nil {
-		return nil, err
 	}
 	if _, err := s.commentBatch(ctx, ref.ID, plan.DeleteComment(rec.CommentID, postID)); err != nil {
 		// A repeat finds it gone (spike R): what was asked for is true.

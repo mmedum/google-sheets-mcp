@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
 )
 
 // The words for a structural change, in one place.
@@ -44,6 +44,16 @@ func (b Band) Start() string {
 	}
 	name, _ := a1.ColumnName(b.First)
 	return "column " + name
+}
+
+// A1 is the band as a band argument spells it: 2:5, or B:D.
+func (b Band) A1() string {
+	if b.Rows {
+		return fmt.Sprintf("%d:%d", b.First, b.Last)
+	}
+	first, _ := a1.ColumnName(b.First)
+	last, _ := a1.ColumnName(b.Last)
+	return first + ":" + last
 }
 
 // String renders a band the way it was given.

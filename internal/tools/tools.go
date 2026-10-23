@@ -5,8 +5,9 @@
 // Registration is one function rather than a convention, because four
 // rules kept by hand at twenty call sites are four ways to be quietly
 // wrong. One Kind per tool decides its annotations, whether read-only
-// mode keeps it, whether the client is asked to involve a person, and
-// that its reply is rendered rather than dumped as JSON.
+// mode keeps it, and that its reply is rendered rather than dumped as
+// JSON. The server asks the person nothing: per-call approval is the
+// client's (§9a).
 //
 // Registration gates the tool; the service gates the act. `confirm` and
 // the one gated action live in the service, where the caller can be told
@@ -22,8 +23,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
 )
 
 // Kind says which world a tool touches. It is an enum over that rather
@@ -68,9 +69,6 @@ type Deps struct {
 	Service *service.Service
 	Config  config.Config
 	Logger  *slog.Logger
-
-	// asking is this server's way to the person, made by Register.
-	asking *asking
 }
 
 // Register adds every tool the configuration allows.
@@ -78,8 +76,6 @@ func Register(s *mcp.Server, d Deps) {
 	if d.Logger == nil {
 		d.Logger = slog.New(slog.DiscardHandler)
 	}
-	d.asking = newAsking(d.Logger)
-	s.AddReceivingMiddleware(askFailures(d.asking), interactionHint(d.asking))
 	registerRead(s, d)
 	registerWrite(s, d)
 	registerFormat(s, d)
@@ -103,10 +99,21 @@ type Def[In any, Out service.Rendered] struct {
 	Name        string
 	Description string
 	Kind        Kind
-	// Asks puts the write to the person through the client before it is
-	// made, when the service reaches its question (§9a).
-	Asks   bool
-	Handle func(ctx context.Context, in In) (Out, error)
+	// Destroys marks an ordinary write that can take away what it lands
+	// on, by an argument: overwrite, a delete action, clear_format. It is
+	// guarded per call rather than gated, because what it removes is read
+	// and named first (§17c), and it says destructiveHint: true, because
+	// Codex and claude.ai decide their prompt by that hint (§9a). Only a
+	// Write or an IdempotentWrite may set it.
+	Destroys bool
+	// PromptEveryCall puts Claude Code's requiresUserInteraction mark on
+	// the tool, so Claude Code prompts on every call whatever the
+	// operator's rules say, and refuses the call where nobody can be
+	// asked. It is for the few tools whose prompt is itself the point: a
+	// delete Sheets cannot undo of something other objects depend on
+	// (§9a). Only a Destructive tool may set it.
+	PromptEveryCall bool
+	Handle          func(ctx context.Context, in In) (Out, error)
 }
 
 // add registers one tool if the configuration allows it.
@@ -124,46 +131,27 @@ func add[In any, Out service.Rendered](s *mcp.Server, d Deps, def Def[In, Out]) 
 		// and ignores it is a preview that wrote.
 		panic(fmt.Sprintf("tools: %s: %v", def.Name, err))
 	}
+	// The same reasoning as the dry run: a mark or a hint on the wrong
+	// kind of tool is a defect in this server, found when it starts.
+	if err := checkHints(def.Kind, def.Destroys, def.PromptEveryCall); err != nil {
+		panic(fmt.Sprintf("tools: %s: %v", def.Name, err))
+	}
 	if !allowed(def.Kind, d.Config) {
 		return
 	}
 	tool := &mcp.Tool{
 		Name:        def.Name,
 		Description: def.Description,
-		Annotations: annotationsFor(def.Kind),
+		Annotations: annotationsFor(def.Kind, def.Destroys),
 	}
-	if def.Kind == Destructive {
+	if def.PromptEveryCall {
 		tool.Meta = mcp.Meta{interactionKey: true}
 	}
-	if def.Asks {
-		d.asking.markAsks(def.Name)
-		tool.Description += asksNote
-		// Every destructive tool that asks, asks before every write
-		// (§9a), so the server's question can stand in for the mark.
-		if def.Kind == Destructive {
-			d.asking.markAlways(def.Name)
-		}
-	}
-	mcp.AddTool(s, tool, func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+	mcp.AddTool(s, tool, func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		var zero Out
-		var p *person
-		if def.Asks {
-			var err error
-			if ctx, p, err = d.asking.begin(ctx, req, def.Name, in, d.Config.RequirePrompt); err != nil {
-				return nil, zero, fail(err)
-			}
-		}
 		out, err := def.Handle(ctx, in)
-		if p != nil && p.asked != nil {
-			// The service stopped before its write; the question goes out.
-			setStage(ctx, stageWaiting)
-			return p.inputRequest(), zero, nil
-		}
 		if err != nil {
 			return nil, zero, fail(err)
-		}
-		if stageOf(ctx) == stageWriting {
-			setStage(ctx, stageWritten)
 		}
 		// Content is set here, always. Left unset the SDK fills it with
 		// the JSON of the output, which is the same bytes twice and the
@@ -210,25 +198,48 @@ func allowed(k Kind, cfg config.Config) bool {
 	}
 }
 
-func annotationsFor(k Kind) *mcp.ToolAnnotations {
+// annotationsFor is a kind's annotations. destroys says an ordinary
+// write can take away what it lands on, which makes its destructiveHint
+// true: readOnlyHint is what VS Code prompts by, and destructiveHint is
+// what Codex and claude.ai prompt by, so both are exact (§9a).
+func annotationsFor(k Kind, destroys bool) *mcp.ToolAnnotations {
 	no, yes := new(false), new(true)
+	hint := no
+	if destroys {
+		hint = yes
+	}
 	switch k {
 	case Read:
 		return &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: no}
 	case IdempotentWrite:
-		return &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: no, OpenWorldHint: no}
+		return &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: hint, OpenWorldHint: no}
 	case Destructive:
 		return &mcp.ToolAnnotations{DestructiveHint: yes, OpenWorldHint: no}
 	case Connected, Notifying:
 		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: yes}
 	default:
-		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: no}
+		return &mcp.ToolAnnotations{DestructiveHint: hint, OpenWorldHint: no}
 	}
 }
 
-// asksNote closes the description of every tool that asks the person.
-const asksNote = " When the client can, the server also asks the person before the write; a call they do not " +
-	"confirm is [blocked], and is not made again unless they ask."
+// interactionKey is Claude Code's mark for a tool it prompts for on
+// every call, even under an allow rule.
+const interactionKey = "anthropic/requiresUserInteraction"
+
+// checkHints refuses a hint on a kind it does not describe. Destroys is
+// for the ordinary writes; a Destructive tool says destructiveHint
+// already, and a read destroys nothing. The mark is only for a tool the
+// destructive flag registers: one Claude Code prompts for on every call
+// must not be reachable by default.
+func checkHints(k Kind, destroys, prompt bool) error {
+	if destroys && k != Write && k != IdempotentWrite {
+		return errors.New("only an ordinary write is marked as destroying by an argument")
+	}
+	if prompt && k != Destructive {
+		return errors.New("only a Destructive tool carries " + interactionKey)
+	}
+	return nil
+}
 
 // DryRunField is the name a write tool's preview flag must have.
 const DryRunField = "dry_run"

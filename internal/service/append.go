@@ -4,16 +4,10 @@ import (
 	"context"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
-)
-
-// Insert options as the caller spells them.
-const (
-	InsertRows      = "rows"
-	InsertOverwrite = "overwrite"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
 )
 
 // AppendRequest is what append_rows asks for.
@@ -29,17 +23,7 @@ type AppendRequest struct {
 	Values [][]any
 	TSV    string
 	Input  string
-	Insert string
-	// The acknowledgments, named as the tool names them.
-	Overwrite             bool
-	AllowExternalFormulas bool
-	DryRun                bool
-}
-
-// Ack is what the guard is told. An append has no formula
-// acknowledgment: it never writes over a cell it can read first.
-func (r AppendRequest) Ack() plan.Ack {
-	return plan.Ack{Overwrite: r.Overwrite, AllowExternalFormulas: r.AllowExternalFormulas}
+	DryRun bool
 }
 
 // AppendResult is append_rows' answer.
@@ -72,12 +56,13 @@ func (r AppendResult) Render() string { return r.Summary }
 // predicted. Verified live: values.append finds the contiguous block the
 // given range falls in and writes after that one, and reports it as
 // tableRange.
+//
+// It always inserts. OVERWRITE wrote over whatever followed the block,
+// which is chosen during the call, so no read could witness it; a write
+// over cells the caller knows is write_values, which reads them first
+// (§4.3).
 func (s *Service) Append(ctx context.Context, req AppendRequest) (*AppendResult, error) {
 	input, typed, err := parseInput(req.Input)
-	if err != nil {
-		return nil, err
-	}
-	insert, err := parseInsert(req.Insert)
 	if err != nil {
 		return nil, err
 	}
@@ -101,19 +86,11 @@ func (s *Service) Append(ctx context.Context, req AppendRequest) (*AppendResult,
 
 	// The value half of the guard only. There is no destination to read:
 	// Google picks it, and a guard that read the wrong rectangle would
-	// be worse than none, since it would report an all-clear.
+	// be worse than none, since it would report an all-clear. Inserting
+	// destroys nothing, so nothing else needs checking.
 	var report plan.Report
 	plan.CheckValues(&report, values, typed, plan.Position)
-	// OVERWRITE writes over whatever follows the block, and the server
-	// cannot see what that is until the call has been made. So it is
-	// acknowledged rather than checked, and the message says which of
-	// the two it is.
-	unacknowledged := ""
-	if insert == gapi.InsertOverwrite && !req.Overwrite {
-		unacknowledged = "insert=overwrite writes over the rows after the block Google finds, and which rows those " +
-			"are is decided during the call, so this server cannot read them first and tell you what is there. " +
-			"Pass overwrite to accept that, or use insert=rows, which inserts and destroys nothing"
-	}
+	ack := s.ack(false, false)
 
 	rangeA1 := a1.Format(sh.Props.Title, sh.Rect)
 	res := &AppendResult{
@@ -121,29 +98,23 @@ func (s *Service) Append(ctx context.Context, req AppendRequest) (*AppendResult,
 		Sheet:       sh.Props.Title,
 		Rows:        len(values),
 		Cells:       len(values) * len(values[0]),
-		Shifted:     insert == gapi.InsertRows,
+		Shifted:     true,
 	}
 	// The preview answers before the guard refuses, so a caller told to
 	// use dry_run gets a preview rather than the same refusal again.
 	if req.DryRun {
 		res.DryRun = true
-		blockers := blockerLines(report, req.Ack())
-		if unacknowledged != "" {
-			blockers = append(blockers, unacknowledged)
-		}
 		res.Summary = render.AppendPreview(render.Append{
-			Rows: res.Rows, Cells: res.Cells, Searched: rangeA1, Inserting: res.Shifted, Blockers: blockers,
+			Rows: res.Rows, Cells: res.Cells, Searched: rangeA1, Inserting: res.Shifted,
+			Blockers: blockerLines(report, ack),
 		})
 		return res, nil
 	}
-	if err := refuse(report, req.Ack()); err != nil {
+	if err := refuse(report, ack); err != nil {
 		return nil, err
 	}
-	if unacknowledged != "" {
-		return nil, Errorf("blocked", "%s", unacknowledged)
-	}
 
-	got, err := s.api.AppendValues(ctx, ref.ID, rangeA1, values, gapi.WriteOptions{Input: input, Insert: insert})
+	got, err := s.api.AppendValues(ctx, ref.ID, rangeA1, values, gapi.WriteOptions{Input: input, Insert: gapi.InsertRows})
 	if err != nil {
 		return nil, wrap(err)
 	}
@@ -166,17 +137,4 @@ func (s *Service) Append(ctx context.Context, req AppendRequest) (*AppendResult,
 		Coerced: coercionLines(res.Coerced), Formulas: res.Formulas,
 	})
 	return res, nil
-}
-
-// parseInsert closes the insert enum. rows is the default because it
-// destroys nothing: verified live, INSERT_ROWS makes room and pushes
-// what is below further down, while OVERWRITE consumes whatever follows.
-func parseInsert(v string) (string, error) {
-	switch v {
-	case "", InsertRows:
-		return gapi.InsertRows, nil
-	case InsertOverwrite:
-		return gapi.InsertOverwrite, nil
-	}
-	return "", Errorf("invalid", "insert %q is not rows or overwrite", v)
 }

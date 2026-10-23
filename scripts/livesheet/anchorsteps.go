@@ -321,10 +321,25 @@ func (d *driver) anchorRemovalSteps() []step {
 			expectError: "invalid",
 		},
 		{
-			name:   "confirmed, the delete takes it",
-			why:    "the count in the refusal has to be what actually happens, not a warning nobody checked",
-			tool:   "delete_dimensions",
-			answer: "accept",
+			name: "a delete through an anchor is refused, naming the band",
+			why:  "the call names the rows it deletes, so the client's prompt shows them rather than a label (§9a)",
+			tool: "delete_dimensions",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": anchorSheet,
+				"dimension": "rows", "band": "anchor:third row", "confirm": true,
+			},
+			expectError: "invalid",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "points at rows 12:12") || !strings.Contains(text, "Pass band 12:12") {
+					return fmt.Errorf("the refusal does not name the band the anchor stands for: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "confirmed, the delete takes it",
+			why:  "the count in the refusal has to be what actually happens, not a warning nobody checked",
+			tool: "delete_dimensions",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": anchorSheet,
 				"dimension": "rows", "band": "12:12", "confirm": true,

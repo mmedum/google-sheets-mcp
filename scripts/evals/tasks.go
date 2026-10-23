@@ -175,7 +175,7 @@ func Tasks(f Fixture) []Task {
 			Trace: func(r *Run) error {
 				// The cell is empty, so nothing needed acknowledging.
 				// A model that sent overwrite anyway sends it always.
-				return r.didNotAcknowledgeUnasked("overwrite", "overwrite_formulas", "allow_external_formulas")
+				return r.didNotAcknowledgeUnasked("overwrite", "overwrite_formulas")
 			},
 			MaxCalls: 6,
 		},

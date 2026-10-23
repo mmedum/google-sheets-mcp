@@ -3,11 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
 )
 
 // Data source actions.
@@ -24,9 +25,40 @@ type SourceRequest struct {
 	Spreadsheet string
 	Action      string
 	// ID is the spreadsheet-scoped data source id, which list reports.
-	// Empty means every source, for refresh and cancel_refresh only.
-	ID string
+	// refresh needs it; cancel_refresh takes every source when it is
+	// empty.
+	ID     string
+	DryRun bool
+}
 
+// DeleteSourceRequest is what delete_data_source asks for.
+//
+// Its own request, as it is its own tool: manage_data_source carries no
+// confirm and no witness, so the delete is not one of its actions.
+type DeleteSourceRequest struct {
+	Spreadsheet string
+	ID          string
+	// Sheet is the witness: the title of the sheet the source made,
+	// which goes with it. Empty is refused unless the source has none.
+	Sheet string
+	// Confirm is required. Deleting a data source removes the
+	// DATA_SOURCE sheet Google made for it and everything on it —
+	// strictly more than delete_sheet does, and what it removes cannot be
+	// got back without re-running a billed query. Registration gates the
+	// tool and the service gates the act (§8), so the confirm lives here,
+	// where the caller can be told what they are agreeing to.
+	Confirm bool
+	DryRun  bool
+}
+
+// ConnectRequest is what connect_data_source asks for.
+//
+// Its own request, as it is its own tool: connecting starts a BigQuery
+// query billed to a Cloud project, now and on every refresh, and a
+// client that remembers its approval of manage_data_source for a refresh
+// would otherwise carry that approval to a new query unseen (§9a).
+type ConnectRequest struct {
+	Spreadsheet string
 	// Project is the Cloud project the queries are charged to.
 	Project string
 	Query   string
@@ -34,16 +66,7 @@ type SourceRequest struct {
 	Dataset      string
 	Table        string
 	TableProject string
-
-	// Confirm is required by delete, and by nothing else here. Deleting
-	// a data source removes the DATA_SOURCE sheet Google made for it and
-	// everything on it — strictly more than delete_sheet does, and what
-	// it removes cannot be got back without re-running a billed query.
-	// Registration gates the tool and the service gates the act (§8), so
-	// the confirm lives here, where the caller can be told what they are
-	// agreeing to.
-	Confirm bool
-	DryRun  bool
+	DryRun       bool
 }
 
 // SourceRecord is one data source, as a listing reports it.
@@ -72,9 +95,9 @@ func (r SourceResult) Render() string { return r.Summary }
 
 // ManageDataSource answers manage_data_source.
 //
-// Everything but list needs the bigquery.readonly scope, and the tool is
-// registered only with GSHEETS_ENABLE_DATA_SOURCES so that scope is
-// asked for at login (§17.6a). list is the exception on purpose: the
+// refresh and cancel_refresh need the bigquery.readonly scope, and the
+// tool is registered only with GSHEETS_ENABLE_DATA_SOURCES so that scope
+// is asked for at login (§17.6a). list is the exception on purpose: the
 // card's mask carries dataSources under the ordinary scopes, so
 // get_spreadsheet reports a connected source for every user.
 //
@@ -91,14 +114,16 @@ func (s *Service) ManageDataSource(ctx context.Context, req SourceRequest) (*Sou
 	case SourceList:
 		return s.listSources(ctx, ref, res)
 	case SourceAdd:
-		return s.addSource(ctx, ref, req, res)
+		return nil, Errorf("invalid", "connecting a data source is connect_data_source, its own tool, since it "+
+			"starts a query billed to a Cloud project")
 	case SourceRefresh, SourceCancel:
 		return s.refreshSource(ctx, ref, req, res)
 	case SourceDelete:
-		return s.deleteSource(ctx, ref, req, res)
+		return nil, Errorf("invalid", "deleting a data source is delete_data_source, its own tool, since it takes "+
+			"the source's sheet with it")
 	}
 	return nil, Errorf("invalid",
-		"action %q is not one of add, refresh, cancel_refresh or list", req.Action)
+		"action %q is not one of refresh, cancel_refresh or list", req.Action)
 }
 
 // listSources reads the card, which carries the sources whatever the
@@ -113,50 +138,48 @@ func (s *Service) listSources(ctx context.Context, ref Reference, res *SourceRes
 	return res, nil
 }
 
-// addSource connects a BigQuery query or table.
-func (s *Service) addSource(ctx context.Context, ref Reference, req SourceRequest, res *SourceResult) (*SourceResult, error) {
+// ConnectDataSource answers connect_data_source: it connects a BigQuery
+// query or table, which runs the query, billed to the project named.
+// Like refresh it needs the bigquery.readonly scope, and its tool is
+// registered only with GSHEETS_ENABLE_DATA_SOURCES (§17.6a).
+func (s *Service) ConnectDataSource(ctx context.Context, req ConnectRequest) (*SourceResult, error) {
+	ref, err := s.Resolve(ctx, req.Spreadsheet)
+	if err != nil {
+		return nil, err
+	}
+	res := &SourceResult{Spreadsheet: ref.ID, Action: SourceAdd}
 	project := strings.TrimSpace(req.Project)
 	if project == "" {
 		return nil, Errorf("invalid",
-			"add needs project, a BigQuery-enabled Cloud project with a billing account attached. "+
+			"connecting needs project, a BigQuery-enabled Cloud project with a billing account attached. "+
 				"Every query this source runs is charged to it")
 	}
 	query := strings.TrimSpace(req.Query)
 	table := strings.TrimSpace(req.Table)
+	dataset := strings.TrimSpace(req.Dataset)
 	switch {
 	case query != "" && table != "":
 		return nil, Errorf("invalid", "query and table are two ways to say the same thing; pass one")
 	case query == "" && table == "":
-		return nil, Errorf("invalid", "add needs query, some SQL to run, or table, a BigQuery table to connect whole")
-	case table != "" && strings.TrimSpace(req.Dataset) == "":
+		return nil, Errorf("invalid", "connecting needs query, some SQL to run, or table, a BigQuery table to connect whole")
+	case table != "" && dataset == "":
 		return nil, Errorf("invalid", "a table needs dataset, the BigQuery dataset it is in")
 	}
 
-	act := render.SourceAct{Action: SourceAdd, Project: project, Query: query, Table: table, Dataset: req.Dataset}
+	tableProject := strings.TrimSpace(req.TableProject)
+	if tableProject == "" {
+		tableProject = project
+	}
+	act := render.SourceAct{Action: SourceAdd, Project: project, Query: query, Table: table, Dataset: dataset,
+		TableProject: tableProject}
 	if req.DryRun {
 		res.DryRun = true
 		res.Summary = render.SourcePreview(act)
 		return res, nil
 	}
 	op := plan.AddDataSource(project, query)
-	whole := ""
 	if table != "" {
-		tableProject := strings.TrimSpace(req.TableProject)
-		if tableProject == "" {
-			tableProject = project
-		}
-		dataset := strings.TrimSpace(req.Dataset)
 		op = plan.AddDataSourceTable(project, tableProject, dataset, table)
-		whole = tableProject + "." + dataset + "." + table
-	}
-	if err := ask(ctx, func() (render.Question, error) {
-		sp, err := s.card(ctx, ref.ID)
-		if err != nil {
-			return render.Question{}, err
-		}
-		return render.AskAddSource(ref.ID, titleOf(sp), project, query, whole), nil
-	}); err != nil {
-		return nil, err
 	}
 	reply, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{op},
@@ -179,8 +202,22 @@ func (s *Service) addSource(ctx context.Context, ref Reference, req SourceReques
 }
 
 // refreshSource starts or stops a refresh.
+//
+// A refresh names its source. Refreshing every source runs every query
+// again, each billed, and reaching that by leaving id out would put it
+// inside the approval a client remembers for a refresh of one (§9a).
+// Canceling every refresh stops billing rather than starting it, so
+// cancel_refresh still takes every source when id is left out.
 func (s *Service) refreshSource(ctx context.Context, ref Reference, req SourceRequest, res *SourceResult) (*SourceResult, error) {
 	id := strings.TrimSpace(req.ID)
+	if req.Action == SourceRefresh && id == "" {
+		sp, err := s.card(ctx, ref.ID)
+		if err != nil {
+			return nil, err
+		}
+		return nil, Errorf("invalid", "refresh needs id, the data source to run again; %s. Each refresh runs its "+
+			"query again, charged to the Cloud project behind it", sourcesHeld(sp))
+	}
 	act := render.SourceAct{Action: req.Action, ID: id}
 	if req.DryRun {
 		res.DryRun = true
@@ -190,19 +227,6 @@ func (s *Service) refreshSource(ctx context.Context, ref Reference, req SourceRe
 	op := plan.RefreshDataSource(id)
 	if req.Action == SourceCancel {
 		op = plan.CancelDataSourceRefresh(id)
-	}
-	if req.Action == SourceRefresh && id == "" {
-		// Refreshing every source runs every query again, each billed
-		// (§9a). One source the caller named asks nothing.
-		if err := ask(ctx, func() (render.Question, error) {
-			sp, err := s.card(ctx, ref.ID)
-			if err != nil {
-				return render.Question{}, err
-			}
-			return render.AskRefreshAll(ref.ID, titleOf(sp), len(sp.DataSources)), nil
-		}); err != nil {
-			return nil, err
-		}
 	}
 	reply, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{op},
@@ -225,29 +249,45 @@ func (s *Service) refreshSource(ctx context.Context, ref Reference, req SourceRe
 	return res, nil
 }
 
-// deleteSource removes a source, its sheet and the links to it.
-func (s *Service) deleteSource(ctx context.Context, ref Reference, req SourceRequest, res *SourceResult) (*SourceResult, error) {
-	id := strings.TrimSpace(req.ID)
-	if id == "" {
-		return nil, Errorf("invalid", "delete needs id, which manage_data_source list reports")
+// DeleteDataSource answers delete_data_source: it removes a source, its
+// sheet and the links to it. It needs no BigQuery scope (§7.6).
+func (s *Service) DeleteDataSource(ctx context.Context, req DeleteSourceRequest) (*SourceResult, error) {
+	ref, err := s.Resolve(ctx, req.Spreadsheet)
+	if err != nil {
+		return nil, err
 	}
+	res := &SourceResult{Spreadsheet: ref.ID, Action: SourceDelete}
 	sp, err := s.card(ctx, ref.ID)
 	if err != nil {
 		return nil, err
 	}
+	// The refusals list the sources, since a server with only the
+	// destructive flag on has no manage_data_source to list them.
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
+		return nil, Errorf("invalid", "delete needs id, the data source to delete; %s", sourcesHeld(sp))
+	}
 	// Named before it goes, from the card: the delete takes a whole
 	// sheet with it, and the reply says nothing about what that was.
 	sheet, found := sourceSheet(sp, id)
-	if !found {
-		// Read again past the cache before saying so: a source connected
-		// in the last half minute is not on a cached card.
+	if !found || (req.Sheet != "" && req.Sheet != sheet) {
+		// Read again past the cache before refusing: a source connected,
+		// or its sheet renamed, in the last half minute is not on a
+		// cached card.
 		s.forget(ref.ID)
 		if sp, err = s.card(ctx, ref.ID); err != nil {
 			return nil, err
 		}
 		if sheet, found = sourceSheet(sp, id); !found {
-			return nil, Errorf("not_found", "this spreadsheet has no data source %q; manage_data_source list names them", id)
+			return nil, Errorf("not_found", "this spreadsheet has no data source %q; %s", id, sourcesHeld(sp))
 		}
+	}
+	// The witness is the title of the sheet that goes with the source,
+	// which a person recognizes in a client's prompt where an id is not
+	// (§9a.7). A dry run without it names the sheet.
+	if req.Sheet != "" && req.Sheet != sheet {
+		return nil, Errorf("conflict", "the data source %s %s, not %q; read it again before deleting it",
+			id, sourceSheetNow(sheet), req.Sheet)
 	}
 	act := render.SourceAct{Action: SourceDelete, ID: id, Sheet: sheet}
 	if req.DryRun {
@@ -263,6 +303,10 @@ func (s *Service) deleteSource(ctx context.Context, ref Reference, req SourceReq
 		return nil, Errorf("unsupported",
 			"deleting a data source is off in this server; start it with GSHEETS_ENABLE_DESTRUCTIVE=true to turn it on")
 	}
+	if req.Sheet == "" && sheet != "" {
+		return nil, Errorf("invalid", "delete needs sheet, the title of the sheet the data source made, so the call "+
+			"names the tab that goes with it: the data source %s %s. Pass that", id, sourceSheetNow(sheet))
+	}
 	if !req.Confirm {
 		where := ""
 		if sheet != "" {
@@ -271,11 +315,6 @@ func (s *Service) deleteSource(ctx context.Context, ref Reference, req SourceReq
 		return nil, Errorf("blocked",
 			"deleting the data source %s removes it%s, and getting it back means re-running the query it was "+
 				"built from. Pass confirm to go ahead", id, where)
-	}
-	if err := ask(ctx, func() (render.Question, error) {
-		return render.AskDeleteSource(ref.ID, titleOf(sp), id, sheet), nil
-	}); err != nil {
-		return nil, err
 	}
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{plan.DeleteDataSource(id)},
@@ -288,6 +327,24 @@ func (s *Service) deleteSource(ctx context.Context, ref Reference, req SourceReq
 	return res, nil
 }
 
+// sourcesHeld lists the card's data sources for a refusal, each by its
+// id and the sheet it made.
+func sourcesHeld(sp *gsheets.Spreadsheet) string {
+	recs := sourceRecords(sp)
+	if len(recs) == 0 {
+		return "it has none"
+	}
+	parts := make([]string, 0, len(recs))
+	for _, r := range recs {
+		part := strconv.Quote(r.ID)
+		if r.Sheet != "" {
+			part += fmt.Sprintf(" on the sheet %q", r.Sheet)
+		}
+		parts = append(parts, part)
+	}
+	return "it has " + strings.Join(parts, ", ")
+}
+
 // sourceSheet is the title of the sheet a data source made, and whether
 // the card has that source at all.
 func sourceSheet(sp *gsheets.Spreadsheet, id string) (string, bool) {
@@ -298,6 +355,14 @@ func sourceSheet(sp *gsheets.Spreadsheet, id string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// sourceSheetNow says which sheet a source has, for a refusal.
+func sourceSheetNow(sheet string) string {
+	if sheet == "" {
+		return "has no sheet now"
+	}
+	return fmt.Sprintf("made the sheet %q", sheet)
 }
 
 // sourceRecords flattens the card's data sources.

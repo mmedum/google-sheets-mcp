@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
 	"golang.org/x/oauth2"
 )
 

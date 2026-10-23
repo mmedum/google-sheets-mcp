@@ -3,11 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
 )
 
 // ClearRequest is what clear_values asks for.
@@ -83,6 +84,25 @@ func clearNotes(g *grid.Grid, counts grid.Counts, past bool) string {
 		"they %s only if whatever draws them was in the range too.", counts.Computed, verb, dep)
 }
 
+// namesItsRange refuses a clear whose call does not name the cells it
+// takes: an omitted range, which means the whole sheet, and an anchor,
+// which resolves when the call runs. The client's prompt shows the
+// call's arguments, so they carry what goes (§9a). The refusal names
+// the range either one stands for now.
+func namesItsRange(rangeA1 string, at area) error {
+	rng := strings.TrimSpace(rangeA1)
+	whole := a1.Format(at.props.Title, at.rect)
+	switch {
+	case rng == "":
+		return Errorf("invalid", "clear_values needs range, so the call names what goes: the whole of %q is %s. "+
+			"Pass that to clear all of it", at.props.Title, whole)
+	case strings.HasPrefix(rng, AnchorPrefix):
+		return Errorf("invalid", "clear_values takes the range itself, not an anchor, so the call names what goes: "+
+			"%s points at %s now. Pass that range", rng, whole)
+	}
+	return nil
+}
+
 // Clear empties a range's values and leaves its formatting.
 //
 // Registered only with GSHEETS_ENABLE_DESTRUCTIVE=true and still needs
@@ -92,6 +112,9 @@ func clearNotes(g *grid.Grid, counts grid.Counts, past bool) string {
 func (s *Service) Clear(ctx context.Context, req ClearRequest) (*ClearResult, error) {
 	at, err := s.locateRect(ctx, req.Spreadsheet, req.Sheet, req.Range)
 	if err != nil {
+		return nil, err
+	}
+	if err := namesItsRange(req.Range, at); err != nil {
 		return nil, err
 	}
 	ref, props, full := at.ref, at.props, at.rect
@@ -144,16 +167,6 @@ func (s *Service) Clear(ctx context.Context, req ClearRequest) (*ClearResult, er
 				"Pass confirm to go ahead, or dry_run to see what is there",
 			res.Range, counts.Removable(), counts.Formulas,
 			clearNotes(before, counts, false))
-	}
-	if err := ask(ctx, func() (render.Question, error) {
-		sp, err := s.card(ctx, ref.ID)
-		if err != nil {
-			return render.Question{}, err
-		}
-		return render.AskClear(ref.ID, titleOf(sp), res.Range,
-			render.Contents{Cells: counts.Removable(), Formulas: counts.Formulas, Pivots: counts.Pivots}), nil
-	}); err != nil {
-		return nil, err
 	}
 	if _, err := s.api.ClearValues(ctx, ref.ID, res.Range); err != nil {
 		return nil, wrap(err)

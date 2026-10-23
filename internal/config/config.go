@@ -78,32 +78,61 @@ type Config struct {
 	// and a Sheets server whose login screen asks for BigQuery is asking
 	// most of its users to grant access to a product they do not have.
 	EnableDataSources bool
-	// RequirePrompt refuses the writes that ask the person when the
-	// client cannot ask, rather than letting the call's own arguments
-	// stand in for the person.
-	RequirePrompt    bool
-	MaxCells         int
-	MaxChars         int
-	HTTPTimeout      time.Duration
-	WriteTimeout     time.Duration
-	ClientSecretPath string
+	// AllowExternalFormulas lets a write create a formula that reaches
+	// outside the spreadsheet: IMPORTXML, IMPORTDATA, IMPORTHTML,
+	// IMPORTFEED, IMAGE and HYPERLINK fetch a URL from Google's servers,
+	// and IMPORTRANGE pulls in another spreadsheet. Off by default, and
+	// the operator's to set rather than an argument: a model persuaded to
+	// write one would set the argument too (§7.3).
+	AllowExternalFormulas bool
+	MaxCells              int
+	MaxChars              int
+	HTTPTimeout           time.Duration
+	WriteTimeout          time.Duration
+	ClientSecretPath      string
 }
 
 // Settings holds the raw string values before validation. Flags and the
 // environment both feed it; Build turns it into a Config.
 type Settings struct {
-	Profile           string
-	LogLevel          string
-	LogFormat         string
-	ReadOnly          string
-	EnableDestructive string
-	EnableDataSources string
-	RequirePrompt     string
-	MaxCells          string
-	MaxChars          string
-	HTTPTimeout       string
-	WriteTimeout      string
-	ClientSecretPath  string
+	Profile               string
+	LogLevel              string
+	LogFormat             string
+	ReadOnly              string
+	EnableDestructive     string
+	EnableDataSources     string
+	AllowExternalFormulas string
+	MaxCells              string
+	MaxChars              string
+	HTTPTimeout           string
+	WriteTimeout          string
+	ClientSecretPath      string
+	// removed are the settings a release took out, as the environment
+	// gives them, read only to refuse one still set.
+	removed map[string]string
+}
+
+// removedSettings are the settings a release took out, each with what to
+// do instead. Off is still accepted. On, or a value that is not a
+// boolean, is refused at start: ignored, it would quietly allow what its
+// owner set it to stop.
+var removedSettings = []struct{ key, instead string }{
+	{"REQUIRE_PROMPT", "leave " + EnvPrefix + "ENABLE_DESTRUCTIVE and " + EnvPrefix +
+		"ENABLE_DATA_SOURCES off for a client that runs with nobody watching"},
+}
+
+// removedSet refuses each removed setting that is set to anything but
+// off.
+func (s *Settings) removedSet() []error {
+	var errs []error
+	for _, r := range removedSettings {
+		if on, err := parseBool(r.key, s.removed[r.key]); err == nil && !on {
+			continue
+		}
+		errs = append(errs, fmt.Errorf("%w: %s%s was removed: the server no longer asks the person, and the client's "+
+			"own approval decides each call. Unset it, and %s", ErrInvalid, EnvPrefix, r.key, r.instead))
+	}
+	return errs
 }
 
 // Define registers one flag per setting on fs. Each flag defaults to the
@@ -113,7 +142,10 @@ type Settings struct {
 // The staleness gate reads these def() calls to learn the setting names,
 // so the documentation cannot fall behind a setting added here.
 func Define(fs *flag.FlagSet, env func(string) string) *Settings {
-	s := &Settings{}
+	s := &Settings{removed: map[string]string{}}
+	for _, r := range removedSettings {
+		s.removed[r.key] = env(EnvPrefix + r.key)
+	}
 	def := func(p *string, name, key, fallback, usage string) {
 		v := env(EnvPrefix + key)
 		if v == "" {
@@ -126,9 +158,9 @@ func Define(fs *flag.FlagSet, env func(string) string) *Settings {
 	def(&s.LogFormat, "log-format", "LOG_FORMAT", string(LogText), "log format: text, json")
 	def(&s.ReadOnly, "read-only", "READ_ONLY", "false", "register only read tools and request read-only scopes")
 	def(&s.EnableDestructive, "enable-destructive", "ENABLE_DESTRUCTIVE", "false", "register the destructive tools; each still needs confirm on the call")
-	def(&s.EnableDataSources, "enable-data-sources", "ENABLE_DATA_SOURCES", "false", "register manage_data_source and ask for the bigquery.readonly scope at login")
-	def(&s.RequirePrompt, "require-prompt", "REQUIRE_PROMPT", "false",
-		"refuse the writes that ask the person when the client cannot ask them")
+	def(&s.EnableDataSources, "enable-data-sources", "ENABLE_DATA_SOURCES", "false", "register manage_data_source and connect_data_source, and ask for the bigquery.readonly scope at login")
+	def(&s.AllowExternalFormulas, "allow-external-formulas", "ALLOW_EXTERNAL_FORMULAS", "false",
+		"let a write create IMPORTXML, IMPORTDATA, IMPORTHTML, IMPORTFEED, IMAGE, HYPERLINK or IMPORTRANGE")
 	def(&s.MaxCells, "max-cells", "MAX_CELLS", strconv.Itoa(DefaultMaxCells), "default cell budget for a read")
 	def(&s.MaxChars, "max-chars", "MAX_CHARS", strconv.Itoa(DefaultMaxChars), "default character budget for a read")
 	def(&s.HTTPTimeout, "http-timeout", "HTTP_TIMEOUT", "60s", "per-attempt timeout for a read")
@@ -175,9 +207,10 @@ func (s *Settings) Build() (Config, error) {
 	if c.EnableDestructive, err = parseBool("enable-destructive", s.EnableDestructive); err != nil {
 		errs = append(errs, err)
 	}
-	if c.RequirePrompt, err = parseBool("require-prompt", s.RequirePrompt); err != nil {
+	if c.AllowExternalFormulas, err = parseBool("allow-external-formulas", s.AllowExternalFormulas); err != nil {
 		errs = append(errs, err)
 	}
+	errs = append(errs, s.removedSet()...)
 
 	if c.MaxCells, err = parseCount("max-cells", s.MaxCells, DefaultMaxCells, MaxMaxCells); err != nil {
 		errs = append(errs, err)

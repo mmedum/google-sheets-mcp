@@ -21,6 +21,8 @@ func (d *driver) writeAll() {
 	d.run(d.sheetSteps()...)
 	sec("write_values")
 	d.run(d.writeSteps()...)
+	d.withSetting("GSHEETS_ALLOW_EXTERNAL_FORMULAS=true", d.externalSteps()...)
+	d.run(d.afterExternalSteps()...)
 	d.checkpointSteps()
 	sec("append_rows")
 	d.run(d.appendSteps()...)
@@ -297,20 +299,37 @@ func (d *driver) writeSteps() []step {
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1",
 				"values": [][]any{{"Vandel"}}, "overwrite": true, "dry_run": true,
 			},
-			check: func(text string, _ map[string]any) error {
+			check: func(text string, s map[string]any) error {
 				if !strings.Contains(text, "nothing was sent") || !strings.Contains(text, "non-empty") {
 					return fmt.Errorf("the preview does not describe the target: %s", text)
+				}
+				if ck, _ := s["checkpoint"].(string); !strings.Contains(text, "Its checkpoint is "+ck+
+					", which overwrite needs as expect_checkpoint") {
+					return fmt.Errorf("the preview does not give the checkpoint overwrite needs: %s", text)
 				}
 				return nil
 			},
 		},
 		{
-			name: "acknowledged, the write goes through",
+			name:        "overwrite without the checkpoint of what it replaces is refused",
+			why:         "overwrite carries a decision about what was read, so it is held to what was read (§4.7)",
+			tool:        "write_values",
+			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1", "values": [][]any{{"Vandel"}}, "overwrite": true},
+			expectError: "invalid",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "overwrite needs expect_checkpoint") || !strings.Contains(text, "!A1 reads ck_") {
+					return fmt.Errorf("the refusal does not hand over the checkpoint: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "acknowledged with its witness, the write goes through",
 			why:  "the guard refuses until it is told to allow, and then it allows",
 			tool: "write_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1",
-				"values": [][]any{{"Vandel"}}, "overwrite": true,
+				"values": [][]any{{"Vandel"}}, "overwrite": true, "expect_checkpoint": fromDryRun,
 			},
 		},
 		{
@@ -366,11 +385,12 @@ func (d *driver) writeSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "D1",
 				"values": [][]any{{float64(3)}}, "overwrite": true, "overwrite_formulas": true,
+				"expect_checkpoint": fromDryRun,
 			},
 		},
 		{
 			name: "a formula that reaches outside is refused",
-			why:  "IMPORTRANGE pulls another spreadsheet's data in and embeds its id",
+			why:  "IMPORTRANGE pulls another spreadsheet's data in and embeds its id, and only the operator allows it",
 			tool: "write_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "F1",
@@ -378,19 +398,27 @@ func (d *driver) writeSteps() []step {
 			},
 			expectError: "blocked",
 			check: func(text string, _ map[string]any) error {
-				if !strings.Contains(text, "allow_external_formulas") {
-					return fmt.Errorf("the refusal does not name the way through: %s", text)
+				if !strings.Contains(text, "unless the person running it sets GSHEETS_ALLOW_EXTERNAL_FORMULAS") ||
+					strings.Contains(text, "pass ") {
+					return fmt.Errorf("the refusal offers an argument, or does not name the setting: %s", text)
 				}
 				return nil
 			},
 		},
+	}
+}
+
+// externalSteps run against a server the operator started with
+// GSHEETS_ALLOW_EXTERNAL_FORMULAS, which no argument stands in for.
+func (d *driver) externalSteps() []step {
+	return []step{
 		{
-			name: "acknowledged, it is written and named",
-			why:  "the gate is an acknowledgment, not a ban: the caller decides and is told what they wrote",
+			name: "with the operator's setting, it is written and named",
+			why:  "the gate is the operator's, not a ban: the caller is told what they wrote",
 			tool: "write_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "F1",
-				"values": [][]any{{d.importFormula()}}, "allow_external_formulas": true,
+				"values": [][]any{{d.importFormula()}},
 			},
 			check: func(_ string, s map[string]any) error {
 				if f, _ := s["formulas_created"].([]any); len(f) != 1 {
@@ -399,6 +427,12 @@ func (d *driver) writeSteps() []step {
 				return nil
 			},
 		},
+	}
+}
+
+// afterExternalSteps need the formula externalSteps wrote.
+func (d *driver) afterExternalSteps() []step {
+	return []step{
 		{
 			// An IMPORTRANGE at a spreadsheet nobody has authorized
 			// shows #REF!, so this cell holds a formula that evaluated
@@ -426,7 +460,7 @@ func (d *driver) writeSteps() []step {
 			tool: "write_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A20:C22",
-				"values": [][]any{{"Trennow"}}, "overwrite": true,
+				"values": [][]any{{"Trennow"}}, "overwrite": true, "expect_checkpoint": fromDryRun,
 			},
 			check: func(text string, s map[string]any) error {
 				tail, _ := s["tail_left"].(string)
@@ -518,37 +552,15 @@ func (d *driver) appendSteps() []step {
 			},
 		},
 		{
-			name:        "overwrite needs acknowledging",
-			why:         "the destination is decided during the call, so the server cannot read it first",
-			tool:        "append_rows",
-			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:C1", "values": [][]any{{"x"}}, "insert": "overwrite"},
-			expectError: "blocked",
-		},
-		{
-			name: "acknowledged, it overwrites what follows",
-			why:  "the two insert modes differ in what they destroy, and the caller chooses",
-			tool: "append_rows",
-			args: map[string]any{
-				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:C1",
-				"tsv": "Vandel\t21\t22", "input": "typed", "insert": "overwrite", "overwrite": true,
-			},
-			check: func(text string, s map[string]any) error {
-				if shifted, _ := s["rows_below_shifted"].(bool); shifted {
-					return fmt.Errorf("an overwriting append claimed rows moved")
-				}
-				if !strings.Contains(text, "Appended") {
-					return fmt.Errorf("the summary does not say what happened: %s", text)
-				}
-				return nil
-			},
-		},
-		{
+			// Bulk text and the input option, in a dry run: a second real
+			// append would insert another row and move every band the
+			// steps below assert about.
 			name: "a dry run says it cannot name the destination",
 			why:  "a preview that named a destination it cannot know would be a preview that guessed",
 			tool: "append_rows",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:C1",
-				"values": [][]any{{"Skerry"}}, "dry_run": true,
+				"tsv": "Vandel\t21\t22", "input": "typed", "dry_run": true,
 			},
 			check: func(text string, _ map[string]any) error {
 				if !strings.Contains(text, "cannot name the destination") {
@@ -558,12 +570,20 @@ func (d *driver) appendSteps() []step {
 			},
 		},
 		{
-			name: "an appended formula that reaches outside",
+			name: "an appended formula that reaches outside is refused",
 			why:  "the gate applies wherever values are written, not only where a rectangle is named",
 			tool: "append_rows",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:C1",
-				"values": [][]any{{d.importFormula()}}, "allow_external_formulas": true,
+				"values": [][]any{{d.importFormula()}},
+			},
+			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "row 1, column 1 of the values") ||
+					!strings.Contains(text, "GSHEETS_ALLOW_EXTERNAL_FORMULAS") {
+					return fmt.Errorf("the refusal does not name the value and the setting: %s", text)
+				}
+				return nil
 			},
 		},
 	}
@@ -605,6 +625,7 @@ func (d *driver) dimensionSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A2:A3",
 				"values": [][]any{{"MovedFirst"}, {"MovedSecond"}}, "overwrite": true, "overwrite_formulas": true,
+				"expect_checkpoint": fromDryRun,
 			},
 		},
 		{
@@ -755,6 +776,7 @@ func (d *driver) deleteDimensionSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A30:B31",
 				"values": [][]any{{"Yalmic", "=2+2"}, {"Bractal", float64(9)}}, "overwrite": true,
+				"expect_checkpoint": fromDryRun,
 			},
 		},
 		{
@@ -791,10 +813,9 @@ func (d *driver) deleteDimensionSteps() []step {
 			},
 		},
 		{
-			name:   "confirmed, it deletes",
-			why:    "a gate that never opens is a tool nobody can use",
-			tool:   "delete_dimensions",
-			answer: "accept",
+			name: "confirmed, it deletes",
+			why:  "a gate that never opens is a tool nobody can use",
+			tool: "delete_dimensions",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet,
 				"dimension": "rows", "band": "30:31", "confirm": true,
@@ -816,6 +837,7 @@ func (d *driver) clearSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A40:B41",
 				"values": [][]any{{"Quorbin", "=1+1"}, {"Skerry", float64(2)}}, "overwrite": true,
+				"expect_checkpoint": fromDryRun,
 			},
 		},
 		{
@@ -839,6 +861,19 @@ func (d *driver) clearSteps() []step {
 			},
 		},
 		{
+			name:        "a clear that leaves its range out is refused, naming the whole sheet",
+			why:         "the call names what goes, so the client's prompt shows it rather than an empty argument (§9a)",
+			tool:        "clear_values",
+			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "confirm": true},
+			expectError: "invalid",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "clear_values needs range") || !strings.Contains(text, "Pass that to clear all of it") {
+					return fmt.Errorf("the refusal does not name the whole sheet's range: %s", text)
+				}
+				return nil
+			},
+		},
+		{
 			name: "without confirm it refuses",
 			why:  "Sheets cannot undo a clear",
 			tool: "clear_values",
@@ -857,10 +892,9 @@ func (d *driver) clearSteps() []step {
 			},
 		},
 		{
-			name:   "confirmed, it clears the values and keeps the rest",
-			why:    "the API keeps formatting, notes and validation rules, and the result says so",
-			tool:   "clear_values",
-			answer: "accept",
+			name: "confirmed, it clears the values and keeps the rest",
+			why:  "the API keeps formatting, notes and validation rules, and the result says so",
+			tool: "clear_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A40:B41", "confirm": true,
 			},
@@ -912,25 +946,10 @@ func (d *driver) deleteSteps() []step {
 			},
 		},
 		{
-			name:        "declined by the person, the sheet stays",
-			why:         "§9a: confirm is the model's word, and the person is asked as well",
-			tool:        "delete_sheet",
-			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "confirm": true},
-			answer:      "decline",
-			expectError: "blocked",
-			check: func(text string, _ map[string]any) error {
-				if !strings.Contains(text, "not confirmed by the person") {
-					return fmt.Errorf("the refusal is not the person's: %s", text)
-				}
-				return nil
-			},
-		},
-		{
-			name:   "confirmed, the sheet goes",
-			why:    "and the result lists what is left, so the next call can name one",
-			tool:   "delete_sheet",
-			answer: "accept",
-			args:   map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "confirm": true},
+			name: "confirmed, the sheet goes",
+			why:  "and the result lists what is left, so the next call can name one",
+			tool: "delete_sheet",
+			args: map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "confirm": true},
 			check: func(_ string, s map[string]any) error {
 				if cells, _ := s["cells"].(float64); cells < 1 {
 					return fmt.Errorf("the deletion reported %v cell(s) on a sheet this run filled", cells)

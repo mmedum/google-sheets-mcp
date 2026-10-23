@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
 )
 
 // What transform_range does.
@@ -67,14 +67,13 @@ type TransformRequest struct {
 	Paste       string
 	Transpose   bool
 
+	// Overwrite and OverwriteFormulas open the guard over the cells the
+	// action reads first, and either needs ExpectCheckpoint, the witness
+	// of those cells (§4.7).
 	Overwrite         bool
 	OverwriteFormulas bool
+	ExpectCheckpoint  string
 	DryRun            bool
-}
-
-// Ack is what the guard is told.
-func (r TransformRequest) Ack() plan.Ack {
-	return plan.Ack{Overwrite: r.Overwrite, OverwriteFormulas: r.OverwriteFormulas}
 }
 
 // TransformResult is transform_range's answer.
@@ -87,7 +86,10 @@ type TransformResult struct {
 	Destination string   `json:"destination,omitempty" jsonschema:"where a copy or a cut landed"`
 	Changed     int      `json:"changed,omitempty" jsonschema:"what the API reported afterwards: cells changed, rows removed, occurrences replaced"`
 	Applied     []string `json:"applied,omitempty"`
-	DryRun      bool     `json:"dry_run,omitempty"`
+	// Checkpoint is over the cells the guard read, on a dry run: what an
+	// overwrite of them needs as its witness.
+	Checkpoint string `json:"checkpoint,omitempty" jsonschema:"on a dry run, the checkpoint of the cells the action reads before it writes (where a copy or fill lands, where a split spills, or the formulas a replacement rewrites), which overwrite needs as expect_checkpoint"`
+	DryRun     bool   `json:"dry_run,omitempty"`
 }
 
 // Render is the text half.
@@ -138,9 +140,24 @@ func (s *Service) Transform(ctx context.Context, req TransformRequest) (*Transfo
 		res.Destination = a1.Format(t.destSheet.Title, t.destination)
 	}
 
-	report, err := s.transformGuard(ctx, req, ref, props, rect, t)
+	ack := s.ack(req.Overwrite, req.OverwriteFormulas)
+	report, read, err := s.transformGuard(ctx, req, ref, props, rect, t, ack)
 	if err != nil {
 		return nil, err
+	}
+	// The witness is over what the guard read, which is all an
+	// overwrite here can replace. An action that reads nothing first has
+	// nothing to compare.
+	var seen witness
+	switch {
+	case read != nil:
+		seen = witness{checkpoint: grid.Checkpoint(ref.ID, read), where: a1.Format(read.Sheet, read.Rect)}
+		if err := checkpointMatches(req.ExpectCheckpoint, ref.ID, read, read.Rect); err != nil {
+			return nil, err
+		}
+	case req.ExpectCheckpoint != "":
+		return nil, Errorf("invalid", "%s reads no cells before it writes, so there is no checkpoint to compare; "+
+			"leave expect_checkpoint out", req.Action)
 	}
 	view := render.Ops{
 		Range: res.Range, Applied: []render.Applied{t.applied},
@@ -148,12 +165,22 @@ func (s *Service) Transform(ctx context.Context, req TransformRequest) (*Transfo
 	}
 	if req.DryRun {
 		res.DryRun = true
-		view.Blockers = blockerLines(report, req.Ack())
+		res.Checkpoint = seen.checkpoint
+		view.Blockers = blockerLines(report, ack)
+		if read != nil {
+			view.Blockers = seen.previewBlockers(report, ack, req.ExpectCheckpoint)
+		}
+		view.Checkpoint, view.Read = seen.checkpoint, seen.where
 		res.Summary = render.OpsPreview(view)
 		return res, nil
 	}
-	if err := refuse(report, req.Ack()); err != nil {
+	if err := refuseWitnessed(report, ack, seen); err != nil {
 		return nil, err
+	}
+	if read != nil {
+		if err := seen.holds(ack, req.ExpectCheckpoint); err != nil {
+			return nil, err
+		}
 	}
 	got, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{t.op},
@@ -424,18 +451,20 @@ func sortColumnsInside(specs []*gsheets.SortSpec, rect a1.Rect) error {
 	return nil
 }
 
-// transformGuard reads what the action would destroy.
+// transformGuard reads what the action would destroy, and returns the
+// cells it read, which an overwrite's witness is over; nil when it read
+// none.
 //
 // Three shapes of destination, and each is read only when the action has
 // one: a paste lands on cells the caller never named, a split spills
 // into the columns to its right, and a replacement inside formulas
 // rewrites what a cell computes rather than what it shows.
 func (s *Service) transformGuard(ctx context.Context, req TransformRequest, ref Reference,
-	props *gsheets.SheetProperties, rect a1.Rect, t transform,
-) (plan.Report, error) {
+	props *gsheets.SheetProperties, rect a1.Rect, t transform, ack plan.Ack,
+) (plan.Report, *grid.Grid, error) {
 	card, err := s.card(ctx, ref.ID)
 	if err != nil {
-		return plan.Report{}, err
+		return plan.Report{}, nil, err
 	}
 	sheet := sheetOf(card, props.SheetID)
 	report := plan.CheckDestination(&grid.Grid{
@@ -447,31 +476,48 @@ func (s *Service) transformGuard(ctx context.Context, req TransformRequest, ref 
 	switch req.Action {
 	case TransformCopyPaste, TransformCutPaste, TransformAutoFill:
 		if t.destSheet == nil {
-			return report, nil
+			return report, nil, nil
 		}
 		if err := readable(t.destination, "the destination is read first to say what it would replace"); err != nil {
-			return plan.Report{}, err
+			return plan.Report{}, nil, err
 		}
-		return s.landingReport(ctx, target{ref: ref, props: t.destSheet, rect: t.destination},
-			report, req.Ack())
+		// A copy or a fill makes new formulas from the ones it copies,
+		// each reading the cells beside it, so the operator's setting
+		// covers them as it covers a formula written as text. A cut moves
+		// a formula rather than making another.
+		if carriesFormulas(req) && !ack.AllowExternalFormulas {
+			if err := readable(rect, "the source is read first for a formula that reaches outside the spreadsheet"); err != nil {
+				return plan.Report{}, nil, err
+			}
+			source, err := s.readTarget(ctx, target{ref: ref, props: props, rect: rect})
+			if err != nil {
+				return plan.Report{}, nil, err
+			}
+			plan.CheckCarried(&report, source)
+		}
+		return s.landingReport(ctx, target{ref: ref, props: t.destSheet, rect: t.destination}, report, ack)
 
 	case TransformTextToColumns:
-		return s.splitGuard(ctx, ref, props, rect, t.delimiter, report, req.Ack())
+		return s.splitGuard(ctx, ref, props, rect, t.delimiter, report, ack)
 
 	case TransformFindReplace:
+		// Whatever the replacement lands in, a formula that reaches
+		// outside the spreadsheet is the operator's to allow, as it is
+		// for every other write (§7.3).
+		plan.CheckReplacement(&report, req.Replace)
 		if !req.InFormulas {
-			return report, nil
+			return report, nil, nil
 		}
 		// The same cap the paste branch has. Without it a find_replace
 		// with in_formulas over a whole sheet — which is what an
 		// unbounded range clamps to — reads every cell on it to find the
 		// formulas.
 		if err := readable(rect, "the range is read first to find the formulas in it"); err != nil {
-			return plan.Report{}, err
+			return plan.Report{}, nil, err
 		}
 		source, err := s.readTarget(ctx, target{ref: ref, props: props, rect: rect})
 		if err != nil {
-			return plan.Report{}, err
+			return plan.Report{}, nil, err
 		}
 		// Only the formulas. A replacement inside formula text changes
 		// what the cell computes, which is the invisible half of this
@@ -484,9 +530,27 @@ func (s *Service) transformGuard(ctx context.Context, req TransformRequest, ref 
 				}
 			}
 		}
-		return report, nil
+		// What each formula becomes, since a rewrite can assemble a
+		// formula that reaches outside from parts of one already there.
+		plan.CheckFormulaRewrites(&report, source, req.Find, req.Replace, plan.FindReplaceOptions{
+			MatchCase: req.MatchCase, MatchEntireCell: req.MatchEntireCell, Regex: req.Regex,
+		})
+		return report, source, nil
 	}
-	return report, nil
+	return report, nil, nil
+}
+
+// carriesFormulas says whether an action makes new formulas from the ones
+// in its range: a fill, and a copy of everything or of formulas.
+func carriesFormulas(req TransformRequest) bool {
+	switch req.Action {
+	case TransformAutoFill:
+		return true
+	case TransformCopyPaste:
+		paste, err := plan.ParsePaste(req.Paste)
+		return err == nil && (paste == gsheets.PasteNormal || paste == gsheets.PasteFormula)
+	}
+	return false
 }
 
 // splitGuard reads the columns a text_to_columns would spill into.
@@ -497,10 +561,10 @@ func (s *Service) transformGuard(ctx context.Context, req TransformRequest, ref 
 // that is what it is doing.
 func (s *Service) splitGuard(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
 	rect a1.Rect, delimiter plan.Delimiter, report plan.Report, ack plan.Ack,
-) (plan.Report, error) {
+) (plan.Report, *grid.Grid, error) {
 	_, cols := extent(props)
 	if rect.LastCol >= cols {
-		return report, nil
+		return report, nil, nil
 	}
 	// The source is read only when the delimiter is known, because that
 	// is the only branch that looks at it. With Google detecting the
@@ -509,11 +573,11 @@ func (s *Service) splitGuard(ctx context.Context, ref Reference, props *gsheets.
 	width := splitWindow
 	if delimiter.Sep != "" {
 		if err := readable(rect, "the column is read first to see how far the split would reach"); err != nil {
-			return plan.Report{}, err
+			return plan.Report{}, nil, err
 		}
 		source, err := s.readTarget(ctx, target{ref: ref, props: props, rect: rect})
 		if err != nil {
-			return plan.Report{}, err
+			return plan.Report{}, nil, err
 		}
 		width = 0
 		for _, row := range source.Cells {
@@ -524,7 +588,7 @@ func (s *Service) splitGuard(ctx context.Context, ref Reference, props *gsheets.
 		if width == 0 {
 			// Nothing in the column holds the delimiter, so the split
 			// lands nowhere but where it started.
-			return report, nil
+			return report, nil, nil
 		}
 	}
 	spill := a1.Rect{
@@ -535,7 +599,8 @@ func (s *Service) splitGuard(ctx context.Context, ref Reference, props *gsheets.
 }
 
 // landingReport reads the cells an action would land on and folds what
-// it finds into the findings over the source.
+// it finds into the findings over the source. It returns the cells it
+// read, which an overwrite's witness is over.
 //
 // One place for the sequence, because two actions land somewhere the
 // caller never named — a paste and a split's spill — and they did the
@@ -543,15 +608,15 @@ func (s *Service) splitGuard(ctx context.Context, ref Reference, props *gsheets.
 // and the one most easily forgotten is the last: naming the pivot table
 // a refusal is really about.
 func (s *Service) landingReport(ctx context.Context, dest target, report plan.Report,
-	ack plan.Ack) (plan.Report, error) {
+	ack plan.Ack) (plan.Report, *grid.Grid, error) {
 
 	landing, err := s.readTarget(ctx, dest)
 	if err != nil {
-		return plan.Report{}, err
+		return plan.Report{}, nil, err
 	}
 	out := merged(report, plan.Check(landing, nil, false))
 	s.pivotsBehind(ctx, dest, &out, ack)
-	return out, nil
+	return out, landing, nil
 }
 
 // merged folds the findings over a destination into the findings over

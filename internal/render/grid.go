@@ -16,8 +16,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
 )
 
 // Show selects what a read puts in each cell.

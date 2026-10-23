@@ -5,7 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
 )
 
 // AnchorInput scopes a call to manage_anchor.
@@ -28,8 +28,9 @@ func registerAnchor(s *mcp.Server, d Deps) {
 			"so. An anchor does not — it follows its row through inserts, deletes, moves and sorts, so " +
 			"anchor:invoice totals still reads the same row a week later. Deleting the row itself takes the anchor " +
 			"with it. " +
-			"Pass anchor:<name> anywhere a range or band argument is taken, in this tool and every other one; A1 " +
-			"keeps working everywhere, so an anchor is a convenience and never a requirement. " +
+			"Pass anchor:<name> anywhere a range or band argument is taken, in this tool and every other one but " +
+			"delete_dimensions and clear_values, which take the rows or range itself so the call names what goes; " +
+			"A1 keeps working everywhere, so an anchor is a convenience and never a requirement. " +
 			"action=add creates one and refuses a name already in use, move points an existing one somewhere else, " +
 			"remove deletes the label and leaves the data alone, and list shows every anchor in the spreadsheet. " +
 			"Anchors are stored in the spreadsheet itself, so they outlive this session and are visible to anything " +

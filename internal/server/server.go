@@ -13,9 +13,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/tools"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/tools"
 )
 
 // Name is the MCP server name.
@@ -37,15 +37,17 @@ const instructions = "Google Sheets tools that work inside one spreadsheet. " +
 	"Writing is guarded: write_values reads the target first and refuses to overwrite anything non-empty without " +
 	"overwrite, or a formula without overwrite_formulas as well, naming the cells each time. Sheets has no undo, so " +
 	"take a refusal as information rather than an obstacle, and use dry_run when you are not sure what is there. " +
+	"overwrite carries a decision the person made, not a way past a refusal: if a write is refused and the person " +
+	"has not said to replace what is there, report what the refusal named and stop. An overwrite also needs " +
+	"expect_checkpoint, which the refusal and dry_run give, so that what it replaces is what was read. " +
 	"input=typed parses as a person typing, so 007 becomes 7 and a date becomes a serial; every value Google changes " +
 	"is named in the result, and input=literal stores exactly what you send. " +
 	"append_rows lands where Google decides and reports it; write_values is the one to use when you know the " +
 	"addresses. " +
 	"Files, folders, sharing and revisions are not here: they belong to a server built on the Drive API. Comments on " +
 	"cells are here, through read_cell_comments and manage_cell_comment, and so is a cell note, which is a Sheets field. " +
-	"Before deleting a sheet, rows, columns, a comment or a data source, clearing values, connecting BigQuery, or refreshing " +
-	"every data source, the server also asks the person through the client when it can; a call they did not " +
-	"confirm is [blocked], and is not made again unless they ask."
+	"The tools that delete are registered only when the person running the server allows them, and each needs " +
+	"confirm: pass it only when the person asked for that delete."
 
 // Deps are what the server needs.
 type Deps struct {

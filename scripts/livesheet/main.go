@@ -36,6 +36,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"strings"
@@ -44,11 +45,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/auth"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/credentials"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/livecover"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/userconfig"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/credentials"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/livecover"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/userconfig"
 )
 
 func main() {
@@ -158,7 +159,7 @@ func run(ctx context.Context, bin, profile string, keep bool) error {
 	}
 	defer stop()
 
-	d := &driver{ctx: ctx, session: session, spreadsheet: id, firstSheet: firstSheet,
+	d := &driver{ctx: ctx, session: session, bin: bin, profile: profile, spreadsheet: id, firstSheet: firstSheet,
 		secondSheet: secondSheet, secondSheetID: secondID, title: title, owner: owner,
 		since: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)}
 	d.runAll()
@@ -167,7 +168,7 @@ func run(ctx context.Context, bin, profile string, keep bool) error {
 	coverErr := d.coverage()
 
 	sec("Result")
-	line("%d question(s) put to the person, %d declined", answerer.asked, answerer.declined)
+	line("%d question(s) put to the person; the server asks nobody, so each was a failure", person.asked)
 	line("%d step(s), %d failed, %d undetermined", d.steps, d.failed, d.undetermined)
 	if coverErr != nil {
 		line("")
@@ -222,20 +223,22 @@ func tokenSource(ctx context.Context, profile string) (oauth2.TokenSource, error
 }
 
 // startServer runs the built binary and connects to it as a client, the
-// way a real host does.
-func startServer(ctx context.Context, bin, profile string) (*mcp.ClientSession, func(), error) {
+// way a real host does. settings are more GSHEETS_ variables, as an
+// operator would set them.
+func startServer(ctx context.Context, bin, profile string, settings ...string) (*mcp.ClientSession, func(), error) {
 	cmd := exec.CommandContext(ctx, bin)
 	// The destructive tools are registered for the run: they are part of
 	// the surface and a driver that could not call them would leave the
 	// two most dangerous tools untested.
 	cmd.Env = append(cmd.Environ(),
 		"GSHEETS_PROFILE="+profile, "GSHEETS_LOG_LEVEL=warn", "GSHEETS_ENABLE_DESTRUCTIVE=true")
+	cmd.Env = append(cmd.Env, settings...)
 	cmd.Stderr = os.Stderr
-	// The driver declares form elicitation, so the server asks it before
-	// each write that asks the person (§9a), the way a client with a
-	// person at it would be asked.
+	// The driver declares form elicitation, as a client with a person at
+	// it would, and the server asks nobody (§9a): any question it puts
+	// fails the step that made the call.
 	client := mcp.NewClient(&mcp.Implementation{Name: "livesheet", Version: "0"},
-		&mcp.ClientOptions{ElicitationHandler: answerer.handle})
+		&mcp.ClientOptions{ElicitationHandler: person.handle})
 	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect to %s: %w", bin, err)
@@ -273,54 +276,37 @@ type step struct {
 	// anything. This is the half that catches a call which succeeded and
 	// told the truth about nothing.
 	check func(text string, structured map[string]any) error
-	// answer is what the person answers the server's question on this
-	// step, which must then be asked; empty accepts any question.
-	answer string
 }
 
-// person is who the server asks before a write Sheets cannot undo
-// (§9a). It prints every question into the transcript and accepts,
-// unless a step has queued another answer.
-type person struct {
-	// next is the answer to the next question, accept when empty; that
-	// question spends it.
-	next     string
-	asked    int
-	declined int
-}
+// fromDryRun stands for expect_checkpoint in a step's arguments. run
+// replaces it with the checkpoint a dry run of the same call gives, which
+// is what a caller passing overwrite carries (§4.7). The option is still
+// written in the step, where the coverage gate reads it.
+const fromDryRun = "ck_from_a_dry_run"
 
-// answerer is the run's person, one per process like the session.
-var answerer = &person{}
+// asker is the run's client-side person. The server asks nobody (§9a),
+// so it prints any question into the transcript and declines it, and the
+// step that made the call fails.
+type asker struct{ asked int }
 
-func (p *person) handle(_ context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+// person is the run's one, like the session.
+var person = &asker{}
+
+func (p *asker) handle(_ context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
 	p.asked++
-	a := p.next
-	p.next = ""
-	if a == "" {
-		a = "accept"
-	}
-	if a != "accept" {
-		p.declined++
-	}
-	line("     the server asked the person:")
+	line("     the server asked the person, which it must not:")
 	for _, l := range strings.Split(strings.TrimSpace(req.Params.Message), "\n") {
 		if l != "" {
 			line("       %s", l)
 		}
 	}
-	line("     the person answered: %s", a)
-	res := &mcp.ElicitResult{Action: a}
-	if a == "accept" {
-		// The question's form has no fields (§9a): the accept is the
-		// answer.
-		res.Content = map[string]any{}
-	}
-	return res, nil
+	return &mcp.ElicitResult{Action: "decline"}, nil
 }
 
 type driver struct {
 	ctx           context.Context
 	session       *mcp.ClientSession
+	bin, profile  string
 	spreadsheet   string
 	firstSheet    string
 	secondSheet   string
@@ -421,16 +407,19 @@ func (d *driver) runAll() {
 func (d *driver) run(steps ...step) {
 	for _, s := range steps {
 		d.steps++
-		before := answerer.asked
-		answerer.next = s.answer
-		text, structured, err := d.call(s.tool, s.args)
-		answerer.next = ""
+		before := person.asked
+		args, err := d.witnessed(s.tool, s.args)
+		if err != nil {
+			d.fail(s, "the dry run for the checkpoint failed: %v", err)
+			continue
+		}
+		text, structured, err := d.call(s.tool, args)
 		switch {
 		case err != nil:
 			d.fail(s, "the call itself failed: %v", err)
 			continue
-		case s.answer != "" && answerer.asked == before:
-			d.fail(s, "the server did not ask the person, and this step answers %s", s.answer)
+		case person.asked != before:
+			d.fail(s, "the server asked the person; it asks nobody, and the client decides")
 			continue
 		case s.expectError != "" && !strings.HasPrefix(text, "["+s.expectError+"]"):
 			d.fail(s, "expected a [%s] refusal, got: %s", s.expectError, firstLine(text))
@@ -445,6 +434,50 @@ func (d *driver) run(steps ...step) {
 		}
 		d.pass(s, text)
 	}
+}
+
+// witnessed is a step's arguments with fromDryRun replaced by the
+// checkpoint a dry run of the same call gives, the way a caller passing
+// overwrite gets the witness it needs. Arguments without it come back
+// as they are.
+func (d *driver) witnessed(tool string, args map[string]any) (map[string]any, error) {
+	if args["expect_checkpoint"] != fromDryRun {
+		return args, nil
+	}
+	dry := maps.Clone(args)
+	delete(dry, "expect_checkpoint")
+	dry["dry_run"] = true
+	_, structured, err := d.call(tool, dry)
+	if err != nil {
+		return nil, err
+	}
+	ck, _ := structured["checkpoint"].(string)
+	if !strings.HasPrefix(ck, "ck_") {
+		return nil, fmt.Errorf("the dry run gave no checkpoint")
+	}
+	line("     expect_checkpoint %s, from a dry run of the same call", ck)
+	out := maps.Clone(args)
+	out["expect_checkpoint"] = ck
+	return out, nil
+}
+
+// withSetting runs steps against a second server, started as an operator
+// would start it with one more setting, and goes back to the first. A
+// setting is the operator's, outside the conversation, so no argument
+// can stand in for it.
+func (d *driver) withSetting(setting string, steps ...step) {
+	session, stop, err := startServer(d.ctx, d.bin, d.profile, setting)
+	if err != nil {
+		d.steps++
+		d.fail(step{name: "start a server with " + setting, why: "the steps below need it"}, "%v", err)
+		return
+	}
+	defer stop()
+	line("     (a second server, started with %s)", setting)
+	first := d.session
+	d.session = session
+	defer func() { d.session = first }()
+	d.run(steps...)
 }
 
 // runCheck runs one step's check and turns a panic in it into a failed

@@ -117,13 +117,43 @@ func (d *driver) transformSteps() []step {
 			},
 		},
 		{
-			name: "acknowledged, it goes through",
+			name:        "acknowledged without the checkpoint of what it reads, it is refused",
+			why:         "an overwrite is held to the cells the guard read, and the refusal hands that checkpoint over (§4.7)",
+			tool:        "transform_range",
+			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:F1", "action": "find_replace", "find": "Zzzznomatch", "replace": "x", "in_formulas": true, "overwrite": true, "overwrite_formulas": true},
+			expectError: "invalid",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "overwrite needs expect_checkpoint") || !strings.Contains(text, "!A1:F1 reads ck_") {
+					return fmt.Errorf("the refusal does not hand over the checkpoint of the range: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "acknowledged with its witness, it goes through",
 			why:  "the guard refuses until it is told to allow, and then it allows",
 			tool: "transform_range",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:F1",
 				"action": "find_replace", "find": "Zzzznomatch", "replace": "x",
-				"in_formulas": true, "overwrite": true, "overwrite_formulas": true,
+				"in_formulas": true, "overwrite": true, "overwrite_formulas": true, "expect_checkpoint": fromDryRun,
+			},
+		},
+		{
+			name: "a replacement that would write a formula reaching outside is refused",
+			why:  "a formula that fetches a URL is the operator's to allow, wherever a write puts it, and no argument lifts it",
+			tool: "transform_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:F1",
+				"action": "find_replace", "find": "Zzzznomatch", "replace": `=IMAGE("https://example.test/x")`,
+				"overwrite": true, "overwrite_formulas": true,
+			},
+			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "the replacement text would hold a formula that fetches a URL") {
+					return fmt.Errorf("the refusal does not name the replacement: %s", text)
+				}
+				return nil
 			},
 		},
 		{
@@ -206,6 +236,7 @@ func (d *driver) transformSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "B31:B32",
 				"action": "auto_fill", "fill_rows": true, "fill_length": 2, "overwrite": true,
+				"expect_checkpoint": fromDryRun,
 			},
 		},
 		{

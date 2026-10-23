@@ -1,6 +1,6 @@
-module github.com/mmedum/google-sheets-mcp/v3
+module github.com/mmedum/google-sheets-mcp/v4
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/google/jsonschema-go v0.4.3

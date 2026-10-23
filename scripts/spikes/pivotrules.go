@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
 )
 
 // spikeU asks Google what manage_pivot_table refuses before sending, or

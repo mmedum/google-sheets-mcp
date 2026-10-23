@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
 )
 
 // API is the part of the Google client this package uses. An interface

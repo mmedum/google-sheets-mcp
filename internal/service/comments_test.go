@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
 )
 
 // batchBodies is every batchUpdate the fake received, as sent.
@@ -404,7 +404,7 @@ func TestACommentGoogleDidNotSaveIsAnError(t *testing.T) {
 
 func deleteComment(svc *service.Service, req service.DeleteCommentRequest) (*service.DeleteCommentResult, error) {
 	req.Spreadsheet = sheetstest.FixtureID
-	return svc.DeleteComment(accepted(), req)
+	return svc.DeleteComment(context.Background(), req)
 }
 
 func TestDeleteCommentNeedsConfirm(t *testing.T) {
@@ -534,8 +534,7 @@ func TestARepeatDeleteIsReportedGone(t *testing.T) {
 				}
 				req.PostID, says = mine.PostID, fmt.Sprintf(tc.says, mine.PostID)
 			}
-			asked := 0
-			ctx := service.WithAsker(context.Background(), askCounter{&asked})
+			ctx := context.Background()
 			if _, err := svc.DeleteComment(ctx, req); err != nil {
 				t.Fatalf("the first delete: %v", err)
 			}
@@ -547,20 +546,11 @@ func TestARepeatDeleteIsReportedGone(t *testing.T) {
 			if !res.Deleted || !res.Gone || res.Summary != says {
 				t.Errorf("result = %+v\nsummary %q\nwant    %q", res, res.Summary, says)
 			}
-			if len(batchBodies(srv)) != sent || asked != 1 {
-				t.Errorf("the repeat sent %d batches and asked %d times in all", len(batchBodies(srv))-sent, asked)
+			if len(batchBodies(srv)) != sent {
+				t.Errorf("the repeat sent %d batches", len(batchBodies(srv))-sent)
 			}
 		})
 	}
-}
-
-// askCounter counts the questions it is asked and accepts each.
-type askCounter struct{ n *int }
-
-func (a askCounter) Ask(_ context.Context, build service.Build) error {
-	*a.n++
-	_, err := build()
-	return err
 }
 
 // A column deleted under a thread leaves it on no cell, as a row does.
@@ -661,8 +651,7 @@ func TestRepliesGoogleKeepsAreRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := len(batchBodies(srv))
-	asked := 0
-	ctx := service.WithAsker(context.Background(), askCounter{&asked})
+	ctx := context.Background()
 	for _, tc := range []struct {
 		post string
 		says string
@@ -680,25 +669,24 @@ func TestRepliesGoogleKeepsAreRefused(t *testing.T) {
 	if classOf(err) != "invalid" || !strings.Contains(err.Error(), "has no text to edit") {
 		t.Errorf("editing a resolve: %v", err)
 	}
-	if n := len(batchBodies(srv)) - before; n != 0 || asked != 0 {
-		t.Errorf("%d batches sent and %d questions asked for refusals", n, asked)
+	if n := len(batchBodies(srv)) - before; n != 0 {
+		t.Errorf("%d batches sent for refusals", n)
 	}
 }
 
-// Google's refusals come before the question, so the person is never
-// asked to confirm a delete Google would refuse.
-func TestARefusedDeleteAsksNobody(t *testing.T) {
-	_, svc := destructive(t)
-	asked := 0
-	ctx := service.WithAsker(context.Background(), askCounter{&asked})
+// Google's refusals come before anything is sent, so a delete Google
+// would refuse is refused here with the way out, and one it allows goes.
+func TestARefusedDeleteSendsNothing(t *testing.T) {
+	srv, svc := destructive(t)
+	ctx := context.Background()
 	_, err := svc.DeleteComment(ctx, service.DeleteCommentRequest{Spreadsheet: sheetstest.FixtureID,
 		CommentID: sheetstest.FixtureOtherCommentID, Confirm: true})
-	if classOf(err) != "forbidden" || asked != 0 {
-		t.Errorf("err = %v, asked %d", err, asked)
+	if classOf(err) != "forbidden" || len(batchBodies(srv)) != 0 {
+		t.Errorf("err = %v, %d batches sent", err, len(batchBodies(srv)))
 	}
 	if _, err := svc.DeleteComment(ctx, service.DeleteCommentRequest{Spreadsheet: sheetstest.FixtureID,
-		CommentID: sheetstest.FixtureCommentID, Confirm: true}); err != nil || asked != 1 {
-		t.Errorf("a delete Google allows: %v, asked %d", err, asked)
+		CommentID: sheetstest.FixtureCommentID, Confirm: true}); err != nil || len(batchBodies(srv)) != 1 {
+		t.Errorf("a delete Google allows: %v, %d batches sent", err, len(batchBodies(srv)))
 	}
 }
 

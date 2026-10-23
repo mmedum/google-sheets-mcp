@@ -5,7 +5,7 @@ import (
 	"encoding/csv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
 )
 
 // Rows flattens a grid into strings, one slice per row, for the machine

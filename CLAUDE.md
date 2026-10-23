@@ -57,7 +57,8 @@ built on the Drive API. Cell comments are here.
    non-English account. No tool defaults a sheet, and no description uses
    `Sheet1` as an example.
 6. **A write never destroys what it cannot see.** Non-empty cells need
-   `overwrite`; formulas need `overwrite_formulas` as well; protected
+   `overwrite`, with `expect_checkpoint` as its witness; formulas need
+   `overwrite_formulas` as well; protected
    ranges and partial merges are refused before the request is built.
    Sheets has no undo, so a gate here is the only one there is.
 7. **Coercion is reported, never hidden.** The caller chooses `typed` or
@@ -71,7 +72,10 @@ built on the Drive API. Cell comments are here.
    extend `internal/gsheets`. No code is imported from any other project.
 10. **Destructive tools are unregistered** unless
     `GSHEETS_ENABLE_DESTRUCTIVE=true`, and each still needs
-    `confirm: true` on the call.
+    `confirm: true` on the call. The server asks the person nothing:
+    the client approves each call, by annotations that are exact, and a
+    risky variant is its own tool, never an argument
+    (`docs/architecture.md` §9a).
 11. **Branches and commits.** `main` is released code and is never pushed
     to directly, release commits included. Work on a short topic branch.
     Commit at the end of every phase with a message that says what and

@@ -592,7 +592,7 @@ func (d *driver) pivotSteps() []step {
 			tool: "write_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "I3",
-				"values": [][]any{{"over the pivot"}}, "overwrite": true,
+				"values": [][]any{{"over the pivot"}}, "overwrite": true, "expect_checkpoint": fromDryRun,
 			},
 		},
 		{
@@ -613,10 +613,9 @@ func (d *driver) pivotSteps() []step {
 			},
 		},
 		{
-			name:   "clearing the cell brings all of it back",
-			why:    "the damage is total and reversible, and a refusal that said otherwise would be scaremongering",
-			tool:   "clear_values",
-			answer: "accept",
+			name: "clearing the cell brings all of it back",
+			why:  "the damage is total and reversible, and a refusal that said otherwise would be scaremongering",
+			tool: "clear_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "I3", "confirm": true,
 			},
@@ -874,10 +873,9 @@ func (d *driver) chartLossSteps() []step {
 			},
 		},
 		{
-			name:   "the confirmed delete says what it did to the chart",
-			why:    "Google's reply mentions none of this, so the result is the only place it is said",
-			tool:   "delete_dimensions",
-			answer: "accept",
+			name: "the confirmed delete says what it did to the chart",
+			why:  "Google's reply mentions none of this, so the result is the only place it is said",
+			tool: "delete_dimensions",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "dimension": "columns", "band": "B:B",
 				"confirm": true,

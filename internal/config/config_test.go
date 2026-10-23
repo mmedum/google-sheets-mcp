@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"log/slog"
 	"strings"
@@ -154,6 +155,47 @@ func TestLogLevelSlog(t *testing.T) {
 	} {
 		if got := level.Slog(); got != want {
 			t.Errorf("%q.Slog() = %v, want %v", level, got, want)
+		}
+	}
+}
+
+// GSHEETS_REQUIRE_PROMPT went with the server's question. Set to
+// anything but off, the server refuses to start rather than quietly
+// allow what its owner set it to stop; off, or unset, it is ignored.
+// Its flag is gone.
+func TestRemovedRequirePrompt(t *testing.T) {
+	for v, refused := range map[string]bool{"true": true, "1": true, "maybe": true, "false": false, "0": false, "": false} {
+		s, err := settings(map[string]string{EnvPrefix + "REQUIRE_PROMPT": v})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = s.Build()
+		if got := err != nil; got != refused || (refused && !errors.Is(err, ErrInvalid)) {
+			t.Errorf("GSHEETS_REQUIRE_PROMPT=%q: err = %v, want refused %v", v, err, refused)
+		}
+		if refused && !strings.Contains(err.Error(), "GSHEETS_REQUIRE_PROMPT was removed") {
+			t.Errorf("GSHEETS_REQUIRE_PROMPT=%q: the refusal does not name it: %v", v, err)
+		}
+	}
+	if _, err := settings(nil, "-require-prompt"); err == nil {
+		t.Error("the removed -require-prompt flag was accepted")
+	}
+}
+
+// Formulas that reach outside the spreadsheet are the operator's to
+// allow, and off unless they say so.
+func TestExternalFormulasAreOffUnlessTheOperatorSaysSo(t *testing.T) {
+	for env, want := range map[string]bool{"": false, "false": false, "true": true} {
+		s, err := settings(map[string]string{EnvPrefix + "ALLOW_EXTERNAL_FORMULAS": env})
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := s.Build()
+		if err != nil {
+			t.Fatalf("Build: %v", err)
+		}
+		if c.AllowExternalFormulas != want {
+			t.Errorf("GSHEETS_ALLOW_EXTERNAL_FORMULAS=%q: %v, want %v", env, c.AllowExternalFormulas, want)
 		}
 	}
 }

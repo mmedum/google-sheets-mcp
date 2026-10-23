@@ -77,7 +77,7 @@ func TestEveryExemptionHasARealReason(t *testing.T) {
 // the distinction is the point: an option nobody sends is a gap in the
 // driver, and a tool nobody can call is a limit of the account.
 func TestAToolCanBeExcusedWholesale(t *testing.T) {
-	tools := []Tool{{Name: "manage_data_source", Options: []string{"action", "project"}}}
+	tools := []Tool{{Name: "connect_data_source", Options: []string{"spreadsheet", "project"}}}
 	r := Check(map[string]map[string]bool{}, tools)
 	if len(r.NoCaller) != 0 {
 		t.Errorf("NoCaller = %v, want the excused tool left out of it", r.NoCaller)

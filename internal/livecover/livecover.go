@@ -39,12 +39,15 @@ var Undrivable = map[string]string{
 // schema dump. What it is not is proven against Google, and saying so
 // here is better than a step that fakes a pass.
 var UndrivableTools = map[string]string{
-	"manage_data_source": "Connected Sheets needs a BigQuery-enabled Cloud project with billing attached, and " +
+	"connect_data_source": "Connected Sheets needs a BigQuery-enabled Cloud project with billing attached, and " +
 		"addDataSource needs the bigquery.readonly scope this server asks for only under " +
-		"GSHEETS_ENABLE_DATA_SOURCES. Spike N sent every call in the tool and recorded what came back (§18); " +
+		"GSHEETS_ENABLE_DATA_SOURCES. Spike N sent addDataSource and recorded what came back (§18); " +
 		"driving it for real would charge somebody's project on every run",
-	"delete_data_source": "there is nothing to delete: the driver cannot create a data source, for the reason " +
-		"manage_data_source cannot be driven. Spike N sent deleteDataSource live and recorded the reply — a 400 " +
+	"manage_data_source": "there is nothing to refresh or list: the driver cannot connect a data source, for the " +
+		"reason connect_data_source cannot be driven. Spike N sent every call in the tool and recorded what came " +
+		"back (§18)",
+	"delete_data_source": "there is nothing to delete: the driver cannot connect a data source, for the reason " +
+		"connect_data_source cannot be driven. Spike N sent deleteDataSource live and recorded the reply — a 400 " +
 		"naming the id, which is also how §18 knows this call needs no BigQuery scope",
 }
 

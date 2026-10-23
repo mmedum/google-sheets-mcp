@@ -114,12 +114,24 @@ func build(ctx context.Context, bin string) (Fixture, func(), error) {
 	// normalizes to D21:E21 — so the zero and the formula landed the
 	// wrong way round, the formula referred to itself, and the task told
 	// the model to diagnose an error in a cell holding a plain 0.
-	if _, err := call("write_values", map[string]any{
+	//
+	// It replaces a formula, so it carries the checkpoint of what it
+	// replaces, from a dry run of the same write (§4.7).
+	errorWrite := map[string]any{
 		"spreadsheet": f.ID, "sheet": f.Sheet, "range": f.ErrorCell + ":E21",
 		"values":             [][]any{{"=C21/E21", 0}},
 		"overwrite":          true,
 		"overwrite_formulas": true,
-	}); err != nil {
+		"dry_run":            true,
+	}
+	dry, err := call("write_values", errorWrite)
+	if err != nil {
+		closeSession()
+		return Fixture{}, nil, err
+	}
+	delete(errorWrite, "dry_run")
+	errorWrite["expect_checkpoint"] = dry["checkpoint"]
+	if _, err := call("write_values", errorWrite); err != nil {
 		closeSession()
 		return Fixture{}, nil, err
 	}

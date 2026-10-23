@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/redact"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/redact"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
 )
 
 // SearchRequest is what search_spreadsheets asks for.

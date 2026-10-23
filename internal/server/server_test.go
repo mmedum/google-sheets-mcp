@@ -12,11 +12,13 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/server"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/tools"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/server"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/tools"
 )
 
 func newServer(t *testing.T, cfg config.Config, log *slog.Logger) (*mcp.Server, *sheetstest.Server) {
@@ -39,7 +41,15 @@ func connect(t *testing.T, s *mcp.Server) *mcp.ClientSession {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ss.Close() })
-	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+	// The client can ask the person, and the server asks nobody (§9a):
+	// every tool the logging test drives is called through this client,
+	// so a question from any of them fails the test that made the call.
+	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, &mcp.ClientOptions{
+		ElicitationHandler: func(_ context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+			t.Errorf("the server asked the person: %q", req.Params.Message)
+			return &mcp.ElicitResult{Action: "decline"}, nil
+		},
+	})
 	cs, err := client.Connect(ctx, ct, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +76,7 @@ var destructiveTools = []string{"clear_values", "delete_cell_comment", "delete_d
 // connectedTools reach outside the spreadsheet and need
 // GSHEETS_ENABLE_DATA_SOURCES, which is also what asks for the third
 // scope at login.
-var connectedTools = []string{"manage_data_source"}
+var connectedTools = []string{"connect_data_source", "manage_data_source"}
 
 // allTools is the surface this phase ships, which is what the schema
 // dump carries.
@@ -383,5 +393,55 @@ func TestResourceNotFoundIsTheSpecifiedError(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(err.Error()), "not found") {
 		t.Errorf("err = %v, want the specification's resource-not-found", err)
+	}
+}
+
+// TestADeleteLeftUnnamedIsTheServersRefusal: an argument a delete
+// refuses to go without is still optional in the schema, so a call
+// without it reaches the server's refusal, which says what to pass, and
+// not the SDK's schema error, which says nothing. With only the
+// destructive flag on, delete_data_source's refusal is the one place the
+// sources are listed. The witness, once given, reaches the service.
+func TestADeleteLeftUnnamedIsTheServersRefusal(t *testing.T) {
+	s, fake := newServer(t, config.Config{EnableDestructive: true}, nil)
+	ctx := context.Background()
+	reply, err := fake.Client().BatchUpdate(ctx, sheetstest.FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*gsheets.Request{plan.AddDataSource("example-project", "SELECT 1")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := reply.Replies[0].AddDataSource.DataSource.DataSourceID
+	cs := connect(t, s)
+	call := func(name string, args map[string]any) (string, bool) {
+		t.Helper()
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return res.Content[0].(*mcp.TextContent).Text, res.IsError
+	}
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{"delete_data_source", map[string]any{"spreadsheet": sheetstest.FixtureID, "sheet": "Data source 1", "confirm": true},
+			`[invalid] delete needs id, the data source to delete; it has "` + id + `" on the sheet "Data source 1"`},
+		{"delete_data_source", map[string]any{"spreadsheet": sheetstest.FixtureID, "id": id, "confirm": true},
+			`[invalid] delete needs sheet, the title of the sheet the data source made, so the call names the tab ` +
+				`that goes with it: the data source ` + id + ` made the sheet "Data source 1". Pass that`},
+		{"clear_values", map[string]any{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "confirm": true},
+			`[invalid] clear_values needs range, so the call names what goes: the whole of "Ürväl" is 'Ürväl'!A1:H50. ` +
+				`Pass that to clear all of it`},
+	} {
+		if text, _ := call(tc.name, tc.args); text != tc.want {
+			t.Errorf("%s %v:\n got %s\nwant %s", tc.name, tc.args, text, tc.want)
+		}
+	}
+	if text, isErr := call("delete_data_source", map[string]any{
+		"spreadsheet": sheetstest.FixtureID, "id": id, "sheet": "Data source 1", "confirm": true,
+	}); isErr {
+		t.Errorf("a delete naming its sheet was refused: %s", text)
 	}
 }
