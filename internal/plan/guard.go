@@ -16,9 +16,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 )
 
 // MaxCellChars is the longest string one cell holds.
@@ -30,15 +30,25 @@ import (
 // whole write refused with a message that names none of them.
 const MaxCellChars = 50000
 
-// Ack are the acknowledgments the caller passed. Each one exists
-// because the thing it permits is invisible in a values read: a formula
-// renders as its result, and a formula that fetches a URL renders as
-// whatever came back.
+// Ack are the acknowledgments a write carries. Each one exists because
+// the thing it permits is invisible in a values read: a formula renders
+// as its result, and a formula that fetches a URL renders as whatever
+// came back.
+//
+// Overwrite and OverwriteFormulas are the caller's. AllowExternalFormulas
+// is the operator's, GSHEETS_ALLOW_EXTERNAL_FORMULAS, and no argument
+// sets it: a model persuaded to write such a formula would pass the
+// argument too, so the refusal offers none (§7.3).
 type Ack struct {
 	Overwrite             bool
 	OverwriteFormulas     bool
 	AllowExternalFormulas bool
 }
+
+// externalSetting is what allows a formula that reaches outside the
+// spreadsheet, named in the refusal so a person reading it knows where
+// the choice lives.
+const externalSetting = "GSHEETS_ALLOW_EXTERNAL_FORMULAS"
 
 // maxNamed is how many addresses a finding lists before it starts
 // counting instead. Enough to go and look at, short enough to read.
@@ -240,18 +250,20 @@ type Blocker struct {
 func (r Report) Blockers(ack Ack) []Blocker {
 	out := r.unallowable()
 
+	// No Allow: no argument lifts these. They are the operator's to
+	// allow, outside the conversation.
 	if r.Fetching.Any() && !ack.AllowExternalFormulas {
 		out = append(out, Blocker{
 			Why: fmt.Sprintf("%s would hold a formula that fetches a URL from Google's servers, "+
-				"which can carry this spreadsheet's own data in its query string", r.Fetching),
-			Allow: "allow_external_formulas",
+				"which can carry this spreadsheet's own data in its query string, and this server does not write "+
+				"one unless the person running it sets %s", r.Fetching, externalSetting),
 		})
 	}
 	if r.CrossSpreadsheet.Any() && !ack.AllowExternalFormulas {
 		out = append(out, Blocker{
 			Why: fmt.Sprintf("%s would hold an IMPORTRANGE, which pulls another spreadsheet's data into this one "+
-				"and embeds that spreadsheet's id", r.CrossSpreadsheet),
-			Allow: "allow_external_formulas",
+				"and embeds that spreadsheet's id, and this server does not write one unless the person running "+
+				"it sets %s", r.CrossSpreadsheet, externalSetting),
 		})
 	}
 
@@ -557,6 +569,21 @@ func CheckValues(r *Report, values [][]any, formulasEvaluated bool, label func(i
 				r.CrossSpreadsheet.Add(at)
 			}
 		}
+	}
+}
+
+// CheckReplacement records a find_replace whose replacement names a
+// formula that reaches outside the spreadsheet. Where the text lands is
+// not known before the call, and whether a value it lands in becomes a
+// formula has not been probed, so it is checked whatever the
+// replacement searches, and labeled as the replacement rather than by a
+// cell.
+func CheckReplacement(r *Report, replace string) {
+	if externalFetch.MatchString(replace) {
+		r.Fetching.Add("the replacement text")
+	}
+	if externalRange.MatchString(replace) {
+		r.CrossSpreadsheet.Add("the replacement text")
 	}
 }
 

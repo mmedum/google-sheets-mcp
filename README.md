@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/mmedum/google-sheets-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mmedum/google-sheets-mcp/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/mmedum/google-sheets-mcp?sort=semver)](https://github.com/mmedum/google-sheets-mcp/releases/latest)
-[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/google-sheets-mcp/v3.svg)](https://pkg.go.dev/github.com/mmedum/google-sheets-mcp/v3)
+[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/google-sheets-mcp/v4.svg)](https://pkg.go.dev/github.com/mmedum/google-sheets-mcp/v4)
 [![License: Apache 2.0](https://img.shields.io/github/license/mmedum/google-sheets-mcp)](./LICENSE)
 
 Google Sheets as MCP tools. Read and write ranges without destroying the formulas underneath.
@@ -24,7 +24,8 @@ is rarely the whole cell: underneath it there may be a formula, a
 different stored type, or a note. So the writes here are guarded rather
 than trusting. `write_values` reads the target first and refuses to
 overwrite anything non-empty without `overwrite`, or a formula without
-`overwrite_formulas` as well, naming the cells each time; every value
+`overwrite_formulas` as well, naming the cells each time, and an
+overwrite carries the checkpoint of what it replaces; every value
 Google's parser changes on the way in is reported back to you.
 
 It also does the index arithmetic. Ranges are A1 throughout, sheet titles
@@ -39,7 +40,7 @@ Comments on cells are here, and so are cell **notes**.
 Reading, writing, formatting, the objects attached to a range,
 `gsheets://` resources, durable anchors, charts, pivot tables,
 Connected Sheets data sources and cell comments all work.
-The twenty-four tools, their
+The twenty-five tools, their
 arguments and the fields they return are stable: a breaking change needs a
 major version, and a gate compares every commit against the newest release's recorded surface. It has been driven by one MCP
 client, which is what to know before trusting it in a second. The history
@@ -48,7 +49,7 @@ is §16 of [`docs/architecture.md`](docs/architecture.md).
 ## Install
 
 ```bash
-go install github.com/mmedum/google-sheets-mcp/v3/cmd/google-sheets-mcp@latest
+go install github.com/mmedum/google-sheets-mcp/v4/cmd/google-sheets-mcp@latest
 ```
 
 Or take an archive from the
@@ -114,7 +115,7 @@ reasons. In short, and in the order `doctor` checks things in:
 
    | Scope | What it is for |
    |---|---|
-   | `https://www.googleapis.com/auth/bigquery.readonly` | `manage_data_source`, and only with `GSHEETS_ENABLE_DATA_SOURCES=true` |
+   | `https://www.googleapis.com/auth/bigquery.readonly` | `connect_data_source` and `manage_data_source`, and only with `GSHEETS_ENABLE_DATA_SOURCES=true` |
 
    `login` asks for it only when that setting is on, so leaving it off
    means the consent screen is exactly the two scopes above. Google
@@ -200,13 +201,13 @@ Every setting is a `GSHEETS_*` environment variable with a flag of the
 same name, listed in [`docs/configuration.md`](docs/configuration.md).
 The three worth knowing now: `GSHEETS_READ_ONLY=true` requests read-only
 scopes and registers only the read tools,
-`GSHEETS_ENABLE_DESTRUCTIVE=true` registers the three tools that remove
+`GSHEETS_ENABLE_DESTRUCTIVE=true` registers the five tools that remove
 things, and `GSHEETS_PROFILE` lets one machine hold a work account and a
 personal one.
 
 ## Tools
 
-Twenty-four tools. Everything but `search_spreadsheets` needs only the
+Twenty-five tools. Everything but `search_spreadsheets` needs only the
 Sheets scope; in read-only mode the read tools ask for
 `spreadsheets.readonly` instead.
 
@@ -218,15 +219,16 @@ Sheets scope; in read-only mode the read tools ask for
 | `search_spreadsheets` | Find a spreadsheet by part of its title, by text inside it, by owner or by when it changed. The only Drive call this server makes | `drive.readonly` |
 | `find_in_spreadsheet` | Search one spreadsheet for text or an RE2 pattern and get back A1 addresses, saying whether each match was in a value, in the formula under it, or in a note beside it | `spreadsheets` |
 | `create_spreadsheet` | A new spreadsheet, optionally with extra sheets and seed values. Returns its card, including the id every later call needs | `spreadsheets` |
-| `write_values` | Write a rectangle, refusing first anything the write would destroy that you cannot see, then reporting every value Google stored differently from how it was sent | `spreadsheets` |
-| `append_rows` | Add rows after a block of data and report where they actually landed — Google decides the destination, and the same sheet given different ranges appends in different places | `spreadsheets` |
+| `write_values` | Write a rectangle, refusing first anything the write would destroy that you cannot see, then reporting every value Google stored differently from how it was sent. An overwrite carries the checkpoint of what it replaces | `spreadsheets` |
+| `append_rows` | Add rows after a block of data and report where they actually landed — Google decides the destination, and the same sheet given different ranges appends in different places. It inserts, so it never writes over a row | `spreadsheets` |
 | `format_cells` | Number format, font, colors, borders, alignment, wrapping, merges and notes, applied in one atomic batch. A merge, a clear and a note are the three that take something away, and each is refused until acknowledged | `spreadsheets` |
 | `manage_range` | Add, update or delete what is attached to a range: a named range, a protected range, a validation rule, a table and the types of its columns, banding, or a conditional format rule or color scale. Existing ones are named by the range they cover, not by an id | `spreadsheets` |
 | `transform_range` | Sort, replace, trim, de-duplicate, split, shuffle, fill, copy or move a range — the operations that move data without you naming its new address, so each reads what it would land on first | `spreadsheets` |
-| `manage_anchor` | Label a row, column or sheet so it can be found again after the spreadsheet has been edited around it. An anchor follows its row through inserts, deletes, moves and sorts, where an A1 address goes stale the moment somebody inserts a row. Pass `anchor:<name>` anywhere a range or band is taken, including the two tools that delete rows | `spreadsheets` |
+| `manage_anchor` | Label a row, column or sheet so it can be found again after the spreadsheet has been edited around it. An anchor follows its row through inserts, deletes, moves and sorts, where an A1 address goes stale the moment somebody inserts a row. Pass `anchor:<name>` anywhere a range or band is taken, except in `delete_dimensions` and `clear_values`, which take the rows or range itself so the call shows what goes | `spreadsheets` |
 | `manage_chart` | Add, update, move, delete or list charts and slicers. A chart floats above the grid, so adding one overwrites nothing, and its data is named in A1, one range per series. A listing reports which charts have lost their series — what deleting a charted column does, and what nothing in Sheets tells you | `spreadsheets` |
 | `manage_pivot_table` | Add, update, delete or list pivot tables, with groups by date or number ranges, filters and calculated values. Columns are named in A1 or by their heading, never by counting, and every result reports the rectangle the table covers right now: the size is computed from the data rather than chosen. A listing reads every rule back in the spelling the tool takes | `spreadsheets` |
-| `manage_data_source` | Off by default: connect a BigQuery data source through Connected Sheets, refresh it, cancel a refresh, or list what is connected. `get_spreadsheet` already says whether a spreadsheet has one, with no extra scope | `spreadsheets`, `bigquery.readonly` |
+| `connect_data_source` | Off by default: connect a BigQuery query or table through Connected Sheets. Google makes a sheet for it and runs the query, charged to the Cloud project you name, now and on every refresh | `spreadsheets`, `bigquery.readonly` |
+| `manage_data_source` | Off by default: refresh one Connected Sheets data source, cancel a refresh, or list what is connected. `get_spreadsheet` already says whether a spreadsheet has one, with no extra scope | `spreadsheets`, `bigquery.readonly` |
 | `read_cell_comments` | The comment threads on a spreadsheet's cells: the cell each is on now, open or resolved, who it is assigned to, and every post. A thread follows its cell as rows move, and one whose row was deleted is still listed, without a cell | `spreadsheets` |
 | `manage_cell_comment` | Comment on a cell, reply, edit a post, resolve or reopen. Google emails an assignee, and may notify an address the text names, which is how this server reaches someone outside the spreadsheet | `spreadsheets` |
 | `manage_sheet` | Add, rename, duplicate, copy to another spreadsheet, hide, unhide, reorder, resize, freeze or color a sheet | `spreadsheets` |
@@ -235,26 +237,54 @@ Sheets scope; in read-only mode the read tools ask for
 | `clear_values` | Destructive, off by default: clear a range's values and keep its formatting, notes and validation rules | `spreadsheets` |
 | `delete_sheet` | Destructive, off by default: delete a sheet and everything on it, having counted what that is | `spreadsheets` |
 | `delete_cell_comment` | Destructive, off by default: delete a comment thread with its replies, or one reply. Resolving keeps it, and is usually what is wanted | `spreadsheets` |
-| `delete_data_source` | Destructive, off by default: delete a Connected Sheets data source, the sheet Google made for it, and everything on that sheet. Needs no BigQuery scope, so it reaches a source somebody else connected | `spreadsheets` |
+| `delete_data_source` | Destructive, off by default: delete a Connected Sheets data source, the sheet Google made for it, and everything on that sheet; Google unlinks what was built on the source. Needs no BigQuery scope, so it reaches a source somebody else connected | `spreadsheets` |
 
 The five destructive tools are **not registered at all** unless
 `GSHEETS_ENABLE_DESTRUCTIVE=true`, and each still needs `confirm: true`
 on the call.
 
-When your client supports MCP elicitation, the server also asks you
-itself before those five, before connecting a BigQuery data source, and
-before refreshing every data source at once. Only your Accept lets the
-write go ahead; anything else is `[blocked]`. A client that cannot ask
-gets no question, unless `GSHEETS_REQUIRE_PROMPT=true`, which refuses
-those writes instead.
+`connect_data_source` and `manage_data_source` are not registered either,
+unless `GSHEETS_ENABLE_DATA_SOURCES=true` — and that setting is also what
+makes `login` ask for a third scope. It is off by default because
+Connected Sheets needs a Cloud project with BigQuery enabled and billing
+attached before it does anything, and a spreadsheet server whose consent
+screen asks for BigQuery is asking most people to grant access to a
+product they do not have.
 
-`manage_data_source` is not registered either, unless
-`GSHEETS_ENABLE_DATA_SOURCES=true` — and that setting is also what makes
-`login` ask for a third scope. It is off by default because Connected
-Sheets needs a Cloud project with BigQuery enabled and billing attached
-before it does anything, and a spreadsheet server whose consent screen
-asks for BigQuery is asking most people to grant access to a product they
-do not have.
+### Approving calls
+
+Your MCP client approves each call; the server does not ask you itself.
+claude.ai and Codex prompt for the tools marked destructive: the five
+deletes, and the six writes that can take away what they land on
+(`write_values`, `transform_range`, `format_cells`, `manage_range`,
+`manage_chart` and `manage_pivot_table`). VS Code prompts for every tool
+that writes. In Claude Code, `delete_data_source` asks on every call
+whatever your rules say, since it takes a sheet and unlinks everything
+built on the source, and Sheets cannot undo it. For the rest, list the
+calls you want to approve one by one under `permissions.ask` in your
+settings, with the name you gave the server in place of `google-sheets`.
+For example, the writes that delete, start a billed query, or can email
+someone:
+
+```json
+{
+  "permissions": {
+    "ask": [
+      "mcp__google-sheets__delete_sheet", "mcp__google-sheets__delete_dimensions",
+      "mcp__google-sheets__clear_values", "mcp__google-sheets__delete_cell_comment",
+      "mcp__google-sheets__delete_data_source", "mcp__google-sheets__connect_data_source",
+      "mcp__google-sheets__manage_cell_comment"
+    ]
+  }
+}
+```
+
+If you followed 3.1.0's advice and put the deletes on your allow list,
+move them to `ask`: the server's own question is gone, so an allowed
+delete now runs with nobody asked. A client that runs with nobody
+watching can make every write its settings register, so leave
+`GSHEETS_ENABLE_DESTRUCTIVE` and `GSHEETS_ENABLE_DATA_SOURCES` off for
+one.
 
 ### Resources
 
@@ -276,7 +306,10 @@ the API, so a refusal before the request is built is the only guard there
 is. Overwriting anything non-empty needs `overwrite`; overwriting a
 formula needs `overwrite_formulas` as well, because a formula and its
 result look identical in a read. Each refusal names the cells and the
-argument that would allow it.
+argument that would allow it. An overwrite also needs
+`expect_checkpoint`, the checkpoint of the cells it replaces, which the
+refusal and a dry run give: a collaborator's edit after that read makes
+the write a `[conflict]` rather than something replaced unseen.
 
 The same guard covers everything phase 2 added, and each of these was
 found to be a silent loss rather than assumed to be one:
@@ -298,6 +331,16 @@ found to be a silent loss rather than assumed to be one:
   before it takes them.
 
 Beyond the guard:
+
+- **Formulas that reach outside are the operator's call.** `IMPORTXML`,
+  `IMPORTDATA`, `IMPORTHTML`, `IMPORTFEED`, `IMAGE` and `HYPERLINK` make
+  Google fetch a URL, and `IMPORTRANGE` pulls in another spreadsheet.
+  Every write refuses them unless the server was started with
+  `GSHEETS_ALLOW_EXTERNAL_FORMULAS=true`; no argument lifts it.
+- **The gated deletes name what they take.** `delete_dimensions` takes
+  the rows or columns, and `clear_values` the range, in A1: not an
+  anchor and never left out, so the call your client shows says what
+  goes.
 
 - **Coercion is reported, never hidden.** `input: typed` parses as a
   person typing, so `007` becomes `7` and `2026-09-05` becomes a date.

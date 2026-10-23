@@ -5,7 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
 )
 
 // CreateInput is what create_spreadsheet takes.
@@ -29,11 +29,10 @@ type WriteInput struct {
 	TSV         string  `json:"tsv,omitempty" jsonschema:"the same values as tab-separated text, one row per line. Give this or values, not both"`
 	Input       string  `json:"input,omitempty" jsonschema:"typed (default) parses as a person typing: 007 becomes 7, 1-2 becomes a date, =A1+1 becomes a formula. literal stores exactly what you send, which is what a product code or a leading-zero identifier needs. Every value Google changes is named in the result"`
 
-	Overwrite             bool `json:"overwrite,omitempty" jsonschema:"allow the write over cells that are not empty. Without it a write into occupied cells is refused with their addresses"`
-	OverwriteFormulas     bool `json:"overwrite_formulas,omitempty" jsonschema:"allow the write over cells holding formulas, which a value write replaces with plain values. Needs overwrite as well: a formula and its result look identical in a read, so this one is asked for separately"`
-	AllowExternalFormulas bool `json:"allow_external_formulas,omitempty" jsonschema:"allow writing IMPORTXML, IMPORTDATA, IMPORTHTML, IMPORTFEED, IMAGE, HYPERLINK or IMPORTRANGE. The first six take an arbitrary URL that Google fetches from its own servers; IMPORTRANGE pulls another spreadsheet's data into this one"`
+	Overwrite         bool `json:"overwrite,omitempty" jsonschema:"allow the write over cells that are not empty, carrying the person's decision to replace them. Without it a write into occupied cells is refused with their addresses. Needs expect_checkpoint"`
+	OverwriteFormulas bool `json:"overwrite_formulas,omitempty" jsonschema:"allow the write over cells holding formulas, which a value write replaces with plain values. Needs overwrite as well: a formula and its result look identical in a read, so this one is asked for separately"`
 
-	ExpectCheckpoint string `json:"expect_checkpoint,omitempty" jsonschema:"a checkpoint from a read_range of this same range; the write is refused if the cells changed since. Best effort — Sheets has no atomic guard — so a protected range is the real one"`
+	ExpectCheckpoint string `json:"expect_checkpoint,omitempty" jsonschema:"the checkpoint of the cells the write covers, as a refusal, a dry run or a read_range of that same rectangle gives it; the write is refused if they changed since. Required with overwrite. Best effort — Sheets has no atomic guard — so a protected range is the real one"`
 	DryRun           bool   `json:"dry_run,omitempty" jsonschema:"report what the write would find and change, and send nothing"`
 }
 
@@ -45,11 +44,8 @@ type AppendInput struct {
 	Values      [][]any `json:"values,omitempty" jsonschema:"rows of scalars, all the same length"`
 	TSV         string  `json:"tsv,omitempty" jsonschema:"the same rows as tab-separated text. Give this or values, not both"`
 	Input       string  `json:"input,omitempty" jsonschema:"typed (default) or literal, as in write_values"`
-	Insert      string  `json:"insert,omitempty" jsonschema:"rows (default) inserts, so nothing is overwritten and everything below moves down. overwrite writes over whatever follows the block and needs overwrite as well"`
 
-	Overwrite             bool `json:"overwrite,omitempty" jsonschema:"required for insert=overwrite. The destination is chosen during the call, so this server cannot read it first and tell you what is there"`
-	AllowExternalFormulas bool `json:"allow_external_formulas,omitempty" jsonschema:"allow appending formulas that reach outside the spreadsheet, as in write_values"`
-	DryRun                bool `json:"dry_run,omitempty" jsonschema:"report what would be appended and send nothing"`
+	DryRun bool `json:"dry_run,omitempty" jsonschema:"report what would be appended and send nothing"`
 }
 
 // SheetInput is what manage_sheet takes.
@@ -84,7 +80,7 @@ type DeleteDimensionsInput struct {
 	Spreadsheet string `json:"spreadsheet" jsonschema:"a spreadsheet id, any docs.google.com/spreadsheets URL, or an exact title"`
 	Sheet       string `json:"sheet,omitempty" jsonschema:"the sheet to act on, by title or numeric sheet id"`
 	Dimension   string `json:"dimension" jsonschema:"rows or columns"`
-	Band        string `json:"band" jsonschema:"which ones, in A1: 2:5 for rows, B:D for columns. It must agree with dimension. anchor:<name> works here too, and resolves to whatever row or column that label points at now"`
+	Band        string `json:"band" jsonschema:"which ones, in A1: 2:5 for rows, B:D for columns. It must agree with dimension. Not an anchor: the call names what goes, and manage_anchor list says where an anchor points"`
 	Confirm     bool   `json:"confirm,omitempty" jsonschema:"required: Sheets cannot undo this"`
 	DryRun      bool   `json:"dry_run,omitempty" jsonschema:"report what would go with them and delete nothing"`
 }
@@ -93,7 +89,7 @@ type DeleteDimensionsInput struct {
 type ClearInput struct {
 	Spreadsheet string `json:"spreadsheet" jsonschema:"a spreadsheet id, any docs.google.com/spreadsheets URL, or an exact title"`
 	Sheet       string `json:"sheet,omitempty" jsonschema:"the sheet title exactly as get_spreadsheet reports it, or its numeric sheet id"`
-	Range       string `json:"range,omitempty" jsonschema:"the range to clear, or omitted for the whole sheet"`
+	Range       string `json:"range" jsonschema:"the range to clear, in A1, such as B2:D40. Not an anchor, and never left out: the call names what goes. For the whole sheet, name its whole extent, which get_spreadsheet gives"`
 	Confirm     bool   `json:"confirm,omitempty" jsonschema:"required: Sheets cannot undo a clear"`
 	DryRun      bool   `json:"dry_run,omitempty" jsonschema:"report what is there and clear nothing"`
 }
@@ -132,19 +128,21 @@ func registerWrite(s *mcp.Server, d Deps) {
 			"identical in a read), if it is not empty, if it is protected, or if the write cuts across a merged range. " +
 			"A formula into a table's header row is refused outright: Google replaces it with a column name of its own. " +
 			"Each refusal names the cells and the argument that would allow it. Sheets has no undo, so this is the only " +
-			"guard there is. " +
+			"guard there is. overwrite carries the person's decision to replace what is there, not a way past a " +
+			"refusal, and it needs expect_checkpoint, which the refusal gives. " +
+			"A formula that fetches a URL, or IMPORTRANGE, is refused unless the person running the server allows them. " +
 			"After writing it asks Google for the stored values back and names every one it changed: with input=typed, " +
 			"007 becomes 7 and 2026-09-05 becomes a date serial that still displays as a date. " +
 			"The range says where to start; the values decide the rectangle. A range larger than the values leaves the " +
 			"rest as it was, and the result says so. Use dry_run first when you are not sure what is there.",
-		Kind: Write,
+		Kind:     Write,
+		Destroys: true,
 		Handle: func(ctx context.Context, in WriteInput) (*service.WriteResult, error) {
 			return d.Service.Write(ctx, service.WriteRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range,
 				Values: in.Values, TSV: in.TSV, Input: in.Input,
 				Overwrite: in.Overwrite, OverwriteFormulas: in.OverwriteFormulas,
-				AllowExternalFormulas: in.AllowExternalFormulas,
-				ExpectCheckpoint:      in.ExpectCheckpoint, DryRun: in.DryRun,
+				ExpectCheckpoint: in.ExpectCheckpoint, DryRun: in.DryRun,
 			})
 		},
 	})
@@ -155,17 +153,14 @@ func registerWrite(s *mcp.Server, d Deps) {
 			"Google decides the destination: it finds the contiguous block your range falls in and writes below that " +
 			"one, so the same sheet given a cell in the first block and given the whole sheet appends in different " +
 			"places. The result names the block it found and the range it wrote. " +
-			"insert=rows is the default and destroys nothing — it inserts, and everything below moves down, so an " +
-			"address or a checkpoint from before the call no longer points where it did. insert=overwrite writes over " +
-			"whatever follows and needs overwrite, because the destination is not knowable before the call. " +
-			"Use write_values when you know the addresses you want.",
+			"It inserts rows and destroys nothing: everything below moves down, so an address or a checkpoint from " +
+			"before the call no longer points where it did. " +
+			"Use write_values when you know the addresses you want, including to write over rows that are there.",
 		Kind: Write,
 		Handle: func(ctx context.Context, in AppendInput) (*service.AppendResult, error) {
 			return d.Service.Append(ctx, service.AppendRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range,
-				Values: in.Values, TSV: in.TSV, Input: in.Input, Insert: in.Insert,
-				Overwrite: in.Overwrite, AllowExternalFormulas: in.AllowExternalFormulas,
-				DryRun: in.DryRun,
+				Values: in.Values, TSV: in.TSV, Input: in.Input, DryRun: in.DryRun,
 			})
 		},
 	})
@@ -213,9 +208,9 @@ func registerWrite(s *mcp.Server, d Deps) {
 			"Counts what is there first and says so, because nothing in Sheets brings it back. " +
 			"Everything after the band moves up, so a checkpoint or an address from before the call no longer points " +
 			"where it did. " +
+			"The band is A1, not an anchor, so the call names what goes. " +
 			"To make room rather than remove it, or to hide a band, use edit_dimensions. confirm is required.",
 		Kind: Destructive,
-		Asks: true,
 		Handle: func(ctx context.Context, in DeleteDimensionsInput) (*service.DimensionResult, error) {
 			return d.Service.EditDimensions(ctx, service.DimensionRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Action: service.DimDelete,
@@ -230,10 +225,10 @@ func registerWrite(s *mcp.Server, d Deps) {
 			"Reads the range first and says how many cells it would remove and how many are formulas, so the " +
 			"confirmation is informed. A cell showing a value nobody typed is not one it removes, and a cell a " +
 			"pivot table is anchored at takes the whole table and everything it draws; both are named. " +
+			"The range is A1 and always given, never an anchor, so the call names what goes. " +
 			"Sheets cannot undo it, so confirm is required and dry_run shows what is there. " +
 			"To replace values rather than remove them, use write_values.",
 		Kind: Destructive,
-		Asks: true,
 		Handle: func(ctx context.Context, in ClearInput) (*service.ClearResult, error) {
 			return d.Service.Clear(ctx, service.ClearRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range,
@@ -249,7 +244,6 @@ func registerWrite(s *mcp.Server, d Deps) {
 			"Consider manage_sheet duplicate first, or manage_sheet hide, which keeps the sheet and takes it out of " +
 			"the way. confirm is required.",
 		Kind: Destructive,
-		Asks: true,
 		Handle: func(ctx context.Context, in DeleteSheetInput) (*service.DeleteSheetResult, error) {
 			return d.Service.DeleteSheet(ctx, service.DeleteSheetRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Confirm: in.Confirm, DryRun: in.DryRun,

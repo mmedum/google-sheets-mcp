@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/auth"
 )
 
 var (
@@ -129,6 +129,7 @@ func staleness(bin string) error {
 	if extra := difference(documented, registered); len(extra) > 0 {
 		problems = append(problems, "README's tool table names tools that are not registered: "+strings.Join(extra, ", "))
 	}
+	problems = append(problems, permissionRulesAreTools(string(readme), registered)...)
 
 	cfg, err := os.ReadFile("internal/config/config.go")
 	if err != nil {
@@ -170,6 +171,29 @@ func staleness(bin string) error {
 	fmt.Printf("%d tools documented, %d settings documented, %d document(s) checked for dead paths\n",
 		len(registered), len(keys), len(docPaths))
 	return nil
+}
+
+// permissionRule is a Claude Code permission rule for one of this
+// server's tools, under the server name the README uses.
+var permissionRule = regexp.MustCompile(`"mcp__google-sheets__([a-z0-9_]+)"`)
+
+// permissionRulesAreTools holds the README's Claude Code permission rules
+// to the registered tools. A rule for a tool that does not exist matches
+// nothing, so the person it was meant to ask is never asked. It also
+// holds that there are rules at all, since §9a sends the reader to them:
+// a README that lost its block would pass a check over its names.
+func permissionRulesAreTools(readme string, registered []string) []string {
+	rules := permissionRule.FindAllStringSubmatch(readme, -1)
+	if len(rules) < 5 {
+		return []string{fmt.Sprintf("README.md gives %d Claude Code permission rule(s); the deletes alone are five", len(rules))}
+	}
+	var problems []string
+	for _, m := range rules {
+		if !slices.Contains(registered, m[1]) {
+			problems = append(problems, "README.md gives a permission rule for "+m[1]+", which the binary does not register")
+		}
+	}
+	return problems
 }
 
 // dumpSchemas returns the raw dump and the parsed one, so a caller that

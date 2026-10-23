@@ -22,7 +22,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
 )
 
 // shown are the string fields whose values the outline prints: enums,

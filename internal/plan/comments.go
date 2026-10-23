@@ -1,8 +1,8 @@
 package plan
 
 import (
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 )
 
 // InsertComment starts a comment thread on one cell. cell is the cell as

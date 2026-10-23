@@ -374,14 +374,6 @@ func (d *driver) commentDeleteSteps() []step {
 			expectError: "blocked",
 		},
 		{
-			name:        "declined, the thread stays",
-			why:         "only the person's accept lets a delete through (§9a)",
-			tool:        "delete_cell_comment",
-			args:        map[string]any{"spreadsheet": d.spreadsheet, "comment_id": d.assignedID, "confirm": true},
-			answer:      "decline",
-			expectError: "blocked",
-		},
-		{
 			name: "delete the thread",
 			why:  "the whole thread goes with its first comment",
 			tool: "delete_cell_comment",

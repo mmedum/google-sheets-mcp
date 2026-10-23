@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
 )
 
 // evaluated and literal are the two input options, as the guard sees
@@ -200,8 +200,10 @@ func TestExternalFormulasAreGated(t *testing.T) {
 	if !strings.Contains(got, "IMPORTRANGE") || !strings.Contains(got, "B1") {
 		t.Errorf("an IMPORTRANGE was not gated: %q", got)
 	}
-	if strings.Count(got, "allow_external_formulas") != 2 {
-		t.Errorf("the two risks were not named separately: %q", got)
+	// Two findings, each naming the operator's setting and offering no
+	// argument: a model persuaded to write one would pass that too.
+	if strings.Count(got+" ;;", "unless the person running it sets GSHEETS_ALLOW_EXTERNAL_FORMULAS| ;;") != 2 {
+		t.Errorf("the two risks were not each refused without an argument: %q", got)
 	}
 	if n := len(r.Blockers(plan.Ack{AllowExternalFormulas: true})); n != 0 {
 		t.Errorf("the acknowledgment left %d blocker(s)", n)

@@ -21,13 +21,20 @@ announces itself rather than on the first call.
 | `GSHEETS_LOG_LEVEL` | `-log-level` | `info` | `debug`, `info`, `warn` or `error`. Logs go to stderr; stdout carries JSON-RPC frames and nothing else. |
 | `GSHEETS_LOG_FORMAT` | `-log-format` | `text` | `text` or `json`. |
 | `GSHEETS_READ_ONLY` | `-read-only` | `false` | Requests read-only scopes and registers only the read tools. This is a real restriction rather than a label: with `spreadsheets.readonly` the API itself refuses the data-filter methods and both developer-metadata reads. |
-| `GSHEETS_ENABLE_DESTRUCTIVE` | `-enable-destructive` | `false` | Registers `delete_sheet`, `delete_dimensions`, `clear_values`, `delete_data_source` and `delete_cell_comment` at all. Each still needs `confirm: true` on the call, and each counts what it would take before it asks. Sheets has no undo and the API cannot restore version history, so leaving this off is the safe default. |
-| `GSHEETS_ENABLE_DATA_SOURCES` | `-enable-data-sources` | `false` | Registers `manage_data_source`, and makes `login` ask for `https://www.googleapis.com/auth/bigquery.readonly` as well. Connected Sheets cannot be reached without that scope: Google refuses `addDataSource` with "Please include bigquery.readonly scope". Off by default because most people running a spreadsheet server have no BigQuery project, and asking them to consent to one on every login would be the wrong default. Turning it on means logging in again, since the token already stored does not carry the new scope — `doctor` says which scopes it has. `get_spreadsheet` reports whether a spreadsheet has a data source whatever this is set to. |
-| `GSHEETS_REQUIRE_PROMPT` | `-require-prompt` | `false` | Refuse the writes that ask the person when the client cannot ask them, instead of letting the call's own arguments stand in. |
+| `GSHEETS_ENABLE_DESTRUCTIVE` | `-enable-destructive` | `false` | Registers `delete_sheet`, `delete_dimensions`, `clear_values`, `delete_data_source` and `delete_cell_comment` at all. Each still needs `confirm: true` on the call, and each counts what it would take before it goes. Sheets has no undo and the API cannot restore version history, so leaving this off is the safe default. |
+| `GSHEETS_ENABLE_DATA_SOURCES` | `-enable-data-sources` | `false` | Registers `connect_data_source` and `manage_data_source`, and makes `login` ask for `https://www.googleapis.com/auth/bigquery.readonly` as well. Connected Sheets cannot be reached without that scope: Google refuses `addDataSource` with "Please include bigquery.readonly scope". Off by default because most people running a spreadsheet server have no BigQuery project, and asking them to consent to one on every login would be the wrong default. Turning it on means logging in again, since the token already stored does not carry the new scope — `doctor` says which scopes it has. `get_spreadsheet` reports whether a spreadsheet has a data source whatever this is set to. |
+| `GSHEETS_ALLOW_EXTERNAL_FORMULAS` | `-allow-external-formulas` | `false` | Lets a write create `IMPORTXML`, `IMPORTDATA`, `IMPORTHTML`, `IMPORTFEED`, `IMAGE`, `HYPERLINK` or `IMPORTRANGE`. The first six make Google fetch a URL from its own servers, which can carry the spreadsheet's data in its query string; `IMPORTRANGE` pulls another spreadsheet the account can read into this one. Off, every write refuses them, and no argument lifts that: a model persuaded to write one would pass the argument too. |
 | `GSHEETS_MAX_CELLS` | `-max-cells` | `5000` | The default cell budget for a read; a call may ask for less, or for up to 50000. Applied before the request, so an open-ended range never becomes an unbounded fetch. |
 | `GSHEETS_MAX_CHARS` | `-max-chars` | `20000` | The default character budget for a rendering; up to 400000. |
 | `GSHEETS_HTTP_TIMEOUT` | `-http-timeout` | `60s` | Per attempt on a read. |
 | `GSHEETS_WRITE_TIMEOUT` | `-write-timeout` | `180s` | For a write. It matches the 180 seconds Sheets itself allows a request to run before it times out, so a slow batch is the platform working rather than this server hanging. |
+
+`GSHEETS_REQUIRE_PROMPT` and `-require-prompt` were removed with the
+server's question to the person: your client approves each call. Set to anything but `false`, the server refuses to start rather
+than ignore it, since ignoring it would quietly allow what it was set to
+stop. Unset it, and leave `GSHEETS_ENABLE_DESTRUCTIVE` and
+`GSHEETS_ENABLE_DATA_SOURCES` off for a client that runs with nobody
+watching.
 
 Operational flags: `--version` prints the version and exits;
 `--dump-schemas` prints the tool schemas as JSON and exits, which is what

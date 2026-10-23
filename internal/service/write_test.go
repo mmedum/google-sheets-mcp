@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
 )
 
 // wrote reports whether a value write reached the fake.
@@ -72,7 +72,7 @@ func TestWriteRefusesWhatItWouldDestroy(t *testing.T) {
 			name: "formulas need their own acknowledgment",
 			req: service.WriteRequest{
 				Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "D2:D3",
-				Values: [][]any{{float64(1)}, {float64(2)}}, Overwrite: true, OverwriteFormulas: false, AllowExternalFormulas: false,
+				Values: [][]any{{float64(1)}, {float64(2)}}, Overwrite: true, OverwriteFormulas: false,
 			},
 			want: []string{"[blocked]", "D2", "formulas", "overwrite_formulas"},
 		},
@@ -80,7 +80,7 @@ func TestWriteRefusesWhatItWouldDestroy(t *testing.T) {
 			name: "a protected range cannot be acknowledged away",
 			req: service.WriteRequest{
 				Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "A1:B1",
-				Values: [][]any{{"x", "y"}}, Overwrite: true, OverwriteFormulas: true, AllowExternalFormulas: false,
+				Values: [][]any{{"x", "y"}}, Overwrite: true, OverwriteFormulas: true,
 			},
 			want:    []string{"[blocked]", "protected", "heading row"},
 			notWant: "pass overwrite",
@@ -89,7 +89,7 @@ func TestWriteRefusesWhatItWouldDestroy(t *testing.T) {
 			name: "a partial merge is refused with the merge named",
 			req: service.WriteRequest{
 				Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "A26:B26",
-				Values: [][]any{{"x", "y"}}, Overwrite: true, OverwriteFormulas: true, AllowExternalFormulas: false,
+				Values: [][]any{{"x", "y"}}, Overwrite: true, OverwriteFormulas: true,
 			},
 			want: []string{"[blocked]", "merged", "A26:C26"},
 		},
@@ -99,7 +99,8 @@ func TestWriteRefusesWhatItWouldDestroy(t *testing.T) {
 				Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "E5",
 				Values: [][]any{{`=IMPORTXML("https://example.test/","//p")`}},
 			},
-			want: []string{"[blocked]", "fetches a URL", "allow_external_formulas"},
+			want:    []string{"[blocked]", "fetches a URL", "unless the person running it sets GSHEETS_ALLOW_EXTERNAL_FORMULAS"},
+			notWant: "pass ",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -125,9 +126,10 @@ func TestWriteRefusesWhatItWouldDestroy(t *testing.T) {
 
 func TestWriteWithBothAcknowledgmentsGoesThrough(t *testing.T) {
 	srv, svc := standard(t)
+	read := readCheckpoint(t, svc, sheetstest.FirstSheet, "D2:D3")
 	res, err := svc.Write(context.Background(), service.WriteRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "D2:D3",
-		Values: [][]any{{float64(1)}, {float64(2)}}, Overwrite: true, OverwriteFormulas: true, AllowExternalFormulas: false,
+		Values: [][]any{{float64(1)}, {float64(2)}}, Overwrite: true, OverwriteFormulas: true, ExpectCheckpoint: read,
 	})
 	if err != nil {
 		t.Fatalf("Write: %v", err)
@@ -145,7 +147,7 @@ func TestDryRunSendsNothing(t *testing.T) {
 	srv, svc := standard(t)
 	res, err := svc.Write(context.Background(), service.WriteRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "A1:B1",
-		Values: [][]any{{"x", "y"}}, Overwrite: true, OverwriteFormulas: true, AllowExternalFormulas: false, DryRun: true,
+		Values: [][]any{{"x", "y"}}, Overwrite: true, OverwriteFormulas: true, DryRun: true,
 	})
 	if err != nil {
 		t.Fatalf("Write: %v", err)
@@ -316,6 +318,119 @@ func TestValuesAndTSVTogetherAreRefused(t *testing.T) {
 	}
 }
 
+// witnessed is req with the checkpoint of the cells it would replace,
+// from a dry run of the same call, as a caller passing overwrite carries
+// it.
+func witnessed(t *testing.T, svc *service.Service, req service.WriteRequest) service.WriteRequest {
+	t.Helper()
+	dry := req
+	dry.DryRun = true
+	res, err := svc.Write(context.Background(), dry)
+	if err != nil {
+		t.Fatalf("a dry run for the checkpoint: %v", err)
+	}
+	req.ExpectCheckpoint = res.Checkpoint
+	return req
+}
+
+// readCheckpoint is the checkpoint read_range gives a rectangle, which is
+// what an overwrite of exactly that rectangle is held to.
+func readCheckpoint(t *testing.T, svc *service.Service, sheet, rng string) string {
+	t.Helper()
+	read, err := svc.Read(context.Background(), service.ReadRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheet, Range: rng,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(read.Checkpoint, "ck_") {
+		t.Fatalf("read_range gave no checkpoint: %q", read.Checkpoint)
+	}
+	return read.Checkpoint
+}
+
+// overwrite carries the person's decision to replace what was read, so
+// it is held to what was read: without expect_checkpoint it is refused,
+// and the refusal hands over the checkpoint of the cells as this call
+// read them, the same one read_range gives that rectangle. Nothing is
+// written until it comes back.
+func TestOverwriteNeedsTheCheckpointOfWhatItReplaces(t *testing.T) {
+	srv, svc := standard(t)
+	ctx := context.Background()
+	ck := readCheckpoint(t, svc, sheetstest.SecondSheet, "A1:B1")
+	for _, req := range []service.WriteRequest{
+		{Overwrite: true},
+		{Overwrite: true, OverwriteFormulas: true},
+	} {
+		req.Spreadsheet, req.Sheet, req.Range, req.Values = sheetstest.FixtureID, sheetstest.SecondSheet, "A1:B1",
+			[][]any{{"x", "y"}}
+		_, err := svc.Write(ctx, req)
+		want := "[invalid] overwrite needs expect_checkpoint, so that what it replaces is what was read: 'Ürväl'!A1:B1 " +
+			"reads " + ck + " now. Pass that, and a change there before the write is refused"
+		if err == nil || err.Error() != want {
+			t.Errorf("overwrite %v, overwrite_formulas %v:\n got %v\nwant %s", req.Overwrite, req.OverwriteFormulas, err, want)
+		}
+	}
+	if wrote(srv) {
+		t.Fatal("an overwrite with no witness reached the wire")
+	}
+	if _, err := svc.Write(ctx, service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "A1:B1",
+		Values: [][]any{{"x", "y"}}, Overwrite: true, ExpectCheckpoint: ck,
+	}); err != nil || !wrote(srv) {
+		t.Errorf("with the checkpoint: %v, wrote %v", err, wrote(srv))
+	}
+}
+
+// The guard's refusal of occupied cells says what to pass with
+// overwrite, and a dry run gives the same checkpoint, so neither needs a
+// second read.
+func TestARefusalAndADryRunGiveTheCheckpoint(t *testing.T) {
+	_, svc := standard(t)
+	ctx := context.Background()
+	ck := readCheckpoint(t, svc, sheetstest.SecondSheet, "A1:B1")
+	req := service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "A1:B1", Values: [][]any{{"x", "y"}},
+	}
+	_, err := svc.Write(ctx, req)
+	if err == nil || !strings.Contains(err.Error(), "; pass overwrite to allow it. Pass expect_checkpoint "+ck+
+		" with it: that is 'Ürväl'!A1:B1 as this call read it, and a change there before the write is refused. ") {
+		t.Errorf("refusal = %v", err)
+	}
+	req.DryRun = true
+	res, err := svc.Write(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Checkpoint != ck || !strings.Contains(res.Render(), "Its checkpoint is "+ck+
+		", which overwrite needs as expect_checkpoint.\n") {
+		t.Errorf("dry run checkpoint %q, want %q:\n%s", res.Checkpoint, ck, res.Render())
+	}
+}
+
+// A formula that reaches outside the spreadsheet is the operator's to
+// allow, not the caller's: with GSHEETS_ALLOW_EXTERNAL_FORMULAS it is
+// written, and named in the result.
+func TestTheOperatorAllowsExternalFormulas(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	cfg, err := settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.AllowExternalFormulas = true
+	svc := service.New(service.Deps{API: srv.Client(), Config: cfg})
+	res, err := svc.Write(context.Background(), service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "E5",
+		Values: [][]any{{`=IMPORTXML("https://example.test/","//p")`}},
+	})
+	if err != nil {
+		t.Fatalf("the operator allowed it and it was refused: %v", err)
+	}
+	if len(res.Formulas) != 1 || res.Formulas[0] != "E5" {
+		t.Errorf("formulas created = %v, want [E5]", res.Formulas)
+	}
+}
+
 // A checkpoint narrows the window between a read and a write. It cannot
 // close it, and the refusal says which of the two things went wrong.
 func TestCheckpointGuardsTheWrite(t *testing.T) {
@@ -330,7 +445,7 @@ func TestCheckpointGuardsTheWrite(t *testing.T) {
 	// Matching: the write goes through.
 	if _, err := svc.Write(ctx, service.WriteRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "A1:B1",
-		Values: [][]any{{"x", "y"}}, Overwrite: true, OverwriteFormulas: true, AllowExternalFormulas: false, ExpectCheckpoint: read.Checkpoint,
+		Values: [][]any{{"x", "y"}}, Overwrite: true, OverwriteFormulas: true, ExpectCheckpoint: read.Checkpoint,
 	}); err != nil {
 		t.Fatalf("a matching checkpoint refused the write: %v", err)
 	}
@@ -338,7 +453,7 @@ func TestCheckpointGuardsTheWrite(t *testing.T) {
 	srv.Reset()
 	_, err = svc.Write(ctx, service.WriteRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "A1:B1",
-		Values: [][]any{{"p", "q"}}, Overwrite: true, OverwriteFormulas: true, AllowExternalFormulas: false, ExpectCheckpoint: read.Checkpoint,
+		Values: [][]any{{"p", "q"}}, Overwrite: true, OverwriteFormulas: true, ExpectCheckpoint: read.Checkpoint,
 	})
 	if err == nil || !strings.HasPrefix(err.Error(), "[conflict]") {
 		t.Fatalf("a stale checkpoint gave %v", err)
@@ -435,10 +550,14 @@ func TestAFormulaIntoATableHeaderIsRefused(t *testing.T) {
 	svc := newService(t, srv)
 	ctx := context.Background()
 	write := func(rangeA1, input string, values [][]any, dryRun bool) (*service.WriteResult, error) {
-		return svc.Write(ctx, service.WriteRequest{
+		req := service.WriteRequest{
 			Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: rangeA1, Input: input,
 			Values: values, Overwrite: true, OverwriteFormulas: true, DryRun: dryRun,
-		})
+		}
+		if !dryRun {
+			req = witnessed(t, svc, req)
+		}
+		return svc.Write(ctx, req)
 	}
 	if _, err := write("C1:D1", "typed", [][]any{{"=1+2", "Owner"}}, false); err == nil || err.Error() != want {
 		t.Errorf("error =\n%v\nwant\n%s", err, want)

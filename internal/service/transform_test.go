@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
 )
 
 func transformReq(action, rangeA1 string) service.TransformRequest {
@@ -113,8 +113,106 @@ func TestReplacingInsideFormulasNeedsAcknowledging(t *testing.T) {
 	}
 
 	req.Overwrite, req.OverwriteFormulas = true, true
-	if _, err := svc.Transform(context.Background(), req); err != nil {
+	if _, err := svc.Transform(context.Background(), transformWitnessed(t, svc, req)); err != nil {
 		t.Errorf("the acknowledgments did not allow it: %v", err)
+	}
+}
+
+// transformWitnessed is req with the checkpoint of the cells its guard
+// reads, from a dry run of the same call.
+func transformWitnessed(t *testing.T, svc *service.Service, req service.TransformRequest) service.TransformRequest {
+	t.Helper()
+	dry := req
+	dry.DryRun = true
+	res, err := svc.Transform(context.Background(), dry)
+	if err != nil {
+		t.Fatalf("a dry run for the checkpoint: %v", err)
+	}
+	if res.Checkpoint == "" {
+		t.Fatal("the dry run gave no checkpoint")
+	}
+	req.ExpectCheckpoint = res.Checkpoint
+	return req
+}
+
+// An overwrite here replaces cells the caller never named, so it is held
+// to the cells the guard read: where a split spills, here. Without
+// expect_checkpoint it is refused with the checkpoint, the guard's own
+// refusal and the dry run hand it over, and a change to those cells
+// after it was read is a conflict.
+func TestATransformOverwriteIsHeldToWhatItRead(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	svc := newService(t, srv)
+	ctx := context.Background()
+	doc := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet)
+	doc.Set(1, 1, sheetstest.Str("Quorbin,Vandel"))
+	req := transformReq(service.TransformTextToColumns, "A1:A2")
+	req.Delimiter = "comma"
+
+	dry := req
+	dry.DryRun = true
+	preview, err := svc.Transform(ctx, dry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ck := preview.Checkpoint
+	if !strings.Contains(preview.Render(), "'Ürväl'!B1:B2 reads "+ck+" now, which overwrite needs as expect_checkpoint.\n") {
+		t.Errorf("the dry run does not give the checkpoint:\n%s", preview.Render())
+	}
+	if _, err := svc.Transform(ctx, req); err == nil || !strings.Contains(err.Error(),
+		"; pass overwrite to allow it. Pass expect_checkpoint "+ck+" with it: that is 'Ürväl'!B1:B2 as this call read it") {
+		t.Errorf("the guard's refusal = %v", err)
+	}
+	req.Overwrite = true
+	want := "[invalid] overwrite needs expect_checkpoint, so that what it replaces is what was read: 'Ürväl'!B1:B2 " +
+		"reads " + ck + " now. Pass that, and a change there before the write is refused"
+	if _, err := svc.Transform(ctx, req); err == nil || err.Error() != want {
+		t.Errorf("an overwrite with no witness:\n got %v\nwant %s", err, want)
+	}
+	if batched(srv) {
+		t.Fatal("a refused split reached the wire")
+	}
+	doc.Set(1, 2, sheetstest.Str("Skerry"))
+	req.ExpectCheckpoint = ck
+	if _, err := svc.Transform(ctx, req); err == nil || !strings.HasPrefix(err.Error(), "[conflict]") {
+		t.Errorf("a stale witness gave %v", err)
+	}
+	if batched(srv) {
+		t.Fatal("a split over changed cells reached the wire")
+	}
+}
+
+// An action that reads nothing before it writes has no checkpoint to
+// compare, so one passed to it is refused rather than ignored.
+func TestATransformThatReadsNothingTakesNoCheckpoint(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	req := transformReq(service.TransformTrim, "A1:B3")
+	req.ExpectCheckpoint = "ck_0123456789ab"
+	_, err := newService(t, srv).Transform(context.Background(), req)
+	if err == nil || err.Error() != "[invalid] trim_whitespace reads no cells before it writes, so there is no "+
+		"checkpoint to compare; leave expect_checkpoint out" {
+		t.Errorf("error = %v", err)
+	}
+}
+
+// A replacement that would write a formula reaching outside the
+// spreadsheet is refused as any other write's is, whether or not it
+// searches formulas, and no argument lifts it.
+func TestAReplacementCannotWriteAnExternalFormula(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	svc := newService(t, srv)
+	for _, inFormulas := range []bool{false, true} {
+		req := transformReq(service.TransformFindReplace, "A1:B3")
+		req.Find, req.Replace, req.InFormulas = "Plimth", `=IMPORTXML("https://example.test/","//p")`, inFormulas
+		req.Overwrite, req.OverwriteFormulas = true, true
+		_, err := svc.Transform(context.Background(), req)
+		if err == nil || !strings.HasPrefix(err.Error(), "[blocked] the replacement text would hold a formula that "+
+			"fetches a URL from Google's servers") || strings.Contains(err.Error(), "pass ") {
+			t.Errorf("in_formulas %v: %v", inFormulas, err)
+		}
+	}
+	if batched(srv) {
+		t.Fatal("a refused replacement reached the wire")
 	}
 }
 
@@ -181,7 +279,7 @@ func TestTextToColumnsGuardsWhatIsToTheRight(t *testing.T) {
 	}
 
 	req.Overwrite = true
-	if _, err := svc.Transform(context.Background(), req); err != nil {
+	if _, err := svc.Transform(context.Background(), transformWitnessed(t, svc, req)); err != nil {
 		t.Fatalf("overwrite did not allow the split: %v", err)
 	}
 	if got := *srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).At(1, 2).EffectiveValue.StringValue; got != "Vandel" {

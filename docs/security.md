@@ -126,10 +126,26 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
   may treat as untrusted, and a host in an auto-approve permission mode
   runs an annotated tool without prompting anybody — so every gate is
   server-side. Client-side approval is not one of the layers here.
+- **The server asks the person nothing.** Your client approves each
+  call, by its own rules: the README gives Claude Code `permissions.ask`
+  rules for the writes that delete, start a billed query or can email
+  someone. `destructiveHint` is true on the deletes and on the six writes
+  that can take away what they land on, and `readOnlyHint` only on the
+  reads, so a client that prompts by either prompts where it should.
+  `delete_data_source` alone carries Claude Code's
+  `requiresUserInteraction` mark: it takes a sheet and unlinks what was
+  built on the source.
+- **The model never widens its own reach.** No tool changes this
+  server's settings, turns on a tool or lifts a refusal; only whoever
+  starts the server does, outside the conversation. A test walks every
+  package the tools reach and holds that none can write the profile,
+  the credentials, a file or the environment.
 - **A write never destroys what it cannot see.** Anything
   non-empty needs `overwrite`; a formula needs `overwrite_formulas` as
   well; a protected range or a partially covered merge is refused before
-  the request is built, with the obstacle named in A1. Sheets has no
+  the request is built, with the obstacle named in A1. An overwrite
+  carries `expect_checkpoint`, the checkpoint of the cells it replaces,
+  so a change after they were read is a conflict rather than lost. Sheets has no
   undo and the API cannot restore version history, so this is the only
   guard there is. A formula that evaluated to an error is still a
   formula and still needs the second acknowledgment: a live run found
@@ -143,8 +159,10 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
   by a machine the person cannot see. `IMPORTRANGE` is the other
   direction — it takes a spreadsheet URL and cannot exfiltrate, but it
   pulls any spreadsheet the signed-in account can read into this one.
-  Both need `allow_external_formulas: true`, for those two different
-  reasons, and every formula a write creates is named in the result.
+  Every write refuses both, for those two different reasons, unless
+  whoever starts the server sets `GSHEETS_ALLOW_EXTERNAL_FORMULAS=true`.
+  It used to be an argument, which a model persuaded to write one would
+  have passed too. Every formula a write creates is named in the result.
 - **Content is data, never instructions.** A read returns what the cells
   hold and the server never acts on it. Formulas are shown rather than
   resolved, so an injected one is visible instead of hidden behind its

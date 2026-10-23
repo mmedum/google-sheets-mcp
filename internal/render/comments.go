@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
 )
 
 // Comment is one cell comment thread, as the comment tools show it.
@@ -322,32 +322,4 @@ func CommentNotThere(commentID, postID string) string {
 	}
 	return fmt.Sprintf("This spreadsheet has no comment thread %s now, so nothing was sent: it is already gone, or "+
 		"it was never one of this spreadsheet's. read_cell_comments lists the threads it has.\n", commentID)
-}
-
-// AskDeleteComment asks before delete_cell_comment.
-func AskDeleteComment(spreadsheetID, spreadsheet string, c Comment, postID string) Question {
-	what := "the comment thread on " + quoted(c.where(), quotedLen)
-	text := ""
-	if len(c.Posts) > 0 {
-		text = c.Posts[0].Text
-	}
-	if postID != "" {
-		what = "a reply in the comment thread on " + quoted(c.where(), quotedLen)
-		for _, p := range c.Posts {
-			if p.ID == postID {
-				text = p.Text
-			}
-		}
-	}
-	head := fmt.Sprintf("delete_cell_comment: delete %s of %s?", what, quoted(spreadsheet, quotedLen))
-	lines := []string{head, excerpt("It says", text)}
-	switch replies := len(c.Posts) - 1; {
-	case postID != "" || replies == 0:
-	case replies == 1:
-		lines = append(lines, "Its reply goes with it.")
-	default:
-		lines = append(lines, fmt.Sprintf("Its %d replies go with it.", replies))
-	}
-	lines = append(lines, "Sheets cannot undo it. Resolving the thread keeps it.")
-	return ask(lines, head, spreadsheetID, c.ID, postID, text)
 }

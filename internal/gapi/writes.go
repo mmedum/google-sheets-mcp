@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 )
 
 // Value input options, as the API spells them. The server never
@@ -20,11 +20,10 @@ const (
 	InputRaw         = "RAW"
 )
 
-// Insert options for an append.
-const (
-	InsertRows      = "INSERT_ROWS"
-	InsertOverwrite = "OVERWRITE"
-)
+// InsertRows is the one insert option an append sends. OVERWRITE writes
+// over whatever follows the block Google finds, which no read before the
+// call can witness, so it is not offered (§7.3).
+const InsertRows = "INSERT_ROWS"
 
 // WriteOptions are what every value write carries.
 type WriteOptions struct {

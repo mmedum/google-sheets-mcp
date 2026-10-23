@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
 )
 
 type fakeOut struct {
@@ -115,57 +116,145 @@ func TestRegistrationGatesAreServerSide(t *testing.T) {
 }
 
 func TestAnnotationsFollowTheKind(t *testing.T) {
-	read := annotationsFor(Read)
+	read := annotationsFor(Read, false)
 	if !read.ReadOnlyHint || !read.IdempotentHint || read.OpenWorldHint == nil || *read.OpenWorldHint {
 		t.Errorf("read annotations = %+v", read)
 	}
-	write := annotationsFor(Write)
+	write := annotationsFor(Write, false)
 	if write.ReadOnlyHint || write.DestructiveHint == nil || *write.DestructiveHint {
 		t.Errorf("write annotations = %+v", write)
 	}
-	idem := annotationsFor(IdempotentWrite)
+	idem := annotationsFor(IdempotentWrite, false)
 	if !idem.IdempotentHint || idem.DestructiveHint == nil || *idem.DestructiveHint {
 		t.Errorf("idempotent annotations = %+v", idem)
 	}
-	destructive := annotationsFor(Destructive)
+	// An ordinary write that can take away what it lands on says so,
+	// because Codex and claude.ai prompt by destructiveHint, and stays
+	// an ordinary write otherwise.
+	for _, k := range []Kind{Write, IdempotentWrite} {
+		a := annotationsFor(k, true)
+		if a.ReadOnlyHint || a.DestructiveHint == nil || !*a.DestructiveHint || a.IdempotentHint != (k == IdempotentWrite) {
+			t.Errorf("kind %v destroying by an argument: annotations = %+v", k, a)
+		}
+	}
+	destructive := annotationsFor(Destructive, false)
 	if destructive.DestructiveHint == nil || !*destructive.DestructiveHint {
 		t.Errorf("destructive annotations = %+v", destructive)
 	}
 	// A Kind that reaches outside the spreadsheet, whose open-world hint
 	// is true. That distinction is the reason it is a Kind rather than a
 	// flag on an existing one, and Notifying below is the other.
-	connected := annotationsFor(Connected)
+	connected := annotationsFor(Connected, false)
 	if connected.OpenWorldHint == nil || !*connected.OpenWorldHint {
 		t.Errorf("connected annotations = %+v", connected)
 	}
 	// A comment can email its assignee, which reaches a person outside
 	// the spreadsheet; it destroys nothing.
-	notifying := annotationsFor(Notifying)
+	notifying := annotationsFor(Notifying, false)
 	if notifying.OpenWorldHint == nil || !*notifying.OpenWorldHint || notifying.DestructiveHint == nil ||
 		*notifying.DestructiveHint || notifying.ReadOnlyHint {
 		t.Errorf("notifying annotations = %+v", notifying)
 	}
 	for _, k := range []Kind{Read, Write, IdempotentWrite, Destructive} {
-		if a := annotationsFor(k); a.OpenWorldHint == nil || *a.OpenWorldHint {
+		if a := annotationsFor(k, false); a.OpenWorldHint == nil || *a.OpenWorldHint {
 			t.Errorf("kind %v claims an open world; only Connected and Notifying reach one", k)
 		}
 	}
 }
 
-func TestDestructiveToolsAskForAPerson(t *testing.T) {
-	s := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil)
-	d := Deps{Config: config.Config{EnableDestructive: true}}
-	add(s, d, Def[withDryRun, fakeOut]{Name: "dangerous", Kind: Destructive,
-		Handle: func(context.Context, withDryRun) (fakeOut, error) { return fakeOut{}, nil }})
+// TestOnlyDeleteDataSourcePrompts holds the marked set (§9a). Claude
+// Code prompts for a marked tool on every call and refuses it where
+// nobody can be asked. delete_data_source takes its sheet and unlinks
+// every object built on the source, which Sheets cannot undo; every
+// other delete removes one thing, often many times in a row, and the
+// operator's own rules decide those.
+func TestOnlyDeleteDataSourcePrompts(t *testing.T) {
+	var got []string
+	tools := surface(t)
+	for name, tool := range tools {
+		if tool.Meta[interactionKey] == true {
+			got = append(got, name)
+		}
+	}
+	slices.Sort(got)
+	if want := []string{"delete_data_source"}; !slices.Equal(got, want) {
+		t.Errorf("tools carrying %s = %v, want %v", interactionKey, got, want)
+	}
+}
 
+// TestTheHintsAreExact holds the two annotations a client prompts by
+// (§9a). VS Code prompts on every tool without readOnlyHint, so only the
+// reads carry it. Codex and claude.ai prompt by destructiveHint, so it
+// is on every tool that can take something away: the five deletes, and
+// the six ordinary writes that can by an argument.
+func TestTheHintsAreExact(t *testing.T) {
+	var readOnly, destructive []string
+	for name, tool := range surface(t) {
+		a := tool.Annotations
+		if a.ReadOnlyHint {
+			readOnly = append(readOnly, name)
+		}
+		if a.DestructiveHint != nil && *a.DestructiveHint {
+			destructive = append(destructive, name)
+		}
+	}
+	slices.Sort(readOnly)
+	slices.Sort(destructive)
+	if want := []string{"find_in_spreadsheet", "get_spreadsheet", "read_cell_comments", "read_formatting",
+		"read_range", "search_spreadsheets"}; !slices.Equal(readOnly, want) {
+		t.Errorf("readOnlyHint on %v, want %v", readOnly, want)
+	}
+	if want := []string{"clear_values", "delete_cell_comment", "delete_data_source", "delete_dimensions",
+		"delete_sheet", "format_cells", "manage_chart", "manage_pivot_table", "manage_range", "transform_range",
+		"write_values"}; !slices.Equal(destructive, want) {
+		t.Errorf("destructiveHint on %v, want %v", destructive, want)
+	}
+}
+
+// A hint on a kind it does not describe is a defect found when the
+// server starts: the mark only on a tool the destructive flag registers,
+// and destroying by an argument only on an ordinary write.
+func TestAHintOnTheWrongKindPanics(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		def  Def[withDryRun, fakeOut]
+	}{
+		{"the mark on a write", Def[withDryRun, fakeOut]{Name: "w", Kind: Write, PromptEveryCall: true}},
+		{"the mark on a connected tool", Def[withDryRun, fakeOut]{Name: "c", Kind: Connected, PromptEveryCall: true}},
+		{"destroys on a destructive tool", Def[withDryRun, fakeOut]{Name: "d", Kind: Destructive, Destroys: true}},
+		{"destroys on a notifying tool", Def[withDryRun, fakeOut]{Name: "n", Kind: Notifying, Destroys: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Error("registered without a panic")
+				}
+			}()
+			s := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil)
+			add(s, Deps{Config: FullSurface(config.Config{})}, tc.def)
+		})
+	}
+	// The kinds each hint is for register.
+	s := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil)
+	d := Deps{Config: FullSurface(config.Config{})}
+	add(s, d, Def[withDryRun, fakeOut]{Name: "marked", Kind: Destructive, PromptEveryCall: true})
+	add(s, d, Def[withDryRun, fakeOut]{Name: "destroys", Kind: IdempotentWrite, Destroys: true})
+	if got := listTools(t, s); len(got) != 2 {
+		t.Errorf("registered %d of the two", len(got))
+	}
+}
+
+// surface is every tool the full surface registers, as a client lists it.
+func surface(t *testing.T) map[string]*mcp.Tool {
+	t.Helper()
+	cfg := FullSurface(config.Config{})
+	s := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+	Register(s, Deps{Service: service.New(service.Deps{Config: cfg}), Config: cfg})
 	tools := listTools(t, s)
-	tool, ok := tools["dangerous"]
-	if !ok {
-		t.Fatal("the destructive tool was not registered with the flag set")
+	if len(tools) < 20 {
+		t.Fatalf("the full surface lists %d tools; this check is not looking at a server", len(tools))
 	}
-	if tool.Meta["anthropic/requiresUserInteraction"] != true {
-		t.Errorf("meta = %v; a client should be asked to involve a person", tool.Meta)
-	}
+	return tools
 }
 
 func TestFailFormatsTheClass(t *testing.T) {

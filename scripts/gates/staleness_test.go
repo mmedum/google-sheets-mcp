@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -133,5 +134,25 @@ func TestStatusLineIsTrue(t *testing.T) {
 	problems = statusLineIsTrue()
 	if len(problems) != 1 || !strings.Contains(problems[0], "reading nothing") {
 		t.Errorf("documents with no status line gave %v", problems)
+	}
+}
+
+// A permission rule names a registered tool, and the README has them.
+func TestPermissionRulesAreTools(t *testing.T) {
+	registered := []string{"clear_values", "delete_cell_comment", "delete_data_source", "delete_dimensions", "delete_sheet"}
+	ok := `"mcp__google-sheets__delete_sheet", "mcp__google-sheets__delete_dimensions",
+		"mcp__google-sheets__clear_values", "mcp__google-sheets__delete_cell_comment",
+		"mcp__google-sheets__delete_data_source"`
+	if got := permissionRulesAreTools(ok, registered); len(got) != 0 {
+		t.Errorf("five rules for five registered tools: %v", got)
+	}
+	renamed := strings.Replace(ok, "delete_sheet", "remove_sheet", 1)
+	want := []string{"README.md gives a permission rule for remove_sheet, which the binary does not register"}
+	if got := permissionRulesAreTools(renamed, registered); !slices.Equal(got, want) {
+		t.Errorf("a rule for a tool that does not exist: %v", got)
+	}
+	want = []string{"README.md gives 0 Claude Code permission rule(s); the deletes alone are five"}
+	if got := permissionRulesAreTools("no block at all", registered); !slices.Equal(got, want) {
+		t.Errorf("a README without rules: %v", got)
 	}
 }

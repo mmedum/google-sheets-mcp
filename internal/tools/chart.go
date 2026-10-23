@@ -5,7 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
 )
 
 // ManageChartInput is what manage_chart takes.
@@ -49,7 +49,8 @@ func registerChart(s *mcp.Server, d Deps) {
 			"moved and deleted, and says so rather than being rebuilt as something else. " +
 			"list is worth calling first: it reports each chart's id, what it reads, and whether it has lost its " +
 			"series, which is what deleting a charted column does and what nothing in Sheets tells you.",
-		Kind: Write,
+		Kind:     Write,
+		Destroys: true,
 		Handle: func(ctx context.Context, in ManageChartInput) (*service.ChartResult, error) {
 			return d.Service.ManageChart(ctx, service.ChartRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Action: in.Action,
@@ -98,7 +99,8 @@ func registerPivot(s *mcp.Server, d Deps) {
 			"source, which Google accepts and turns into a circular reference. " +
 			"list reports each pivot table's groups, values and filters in the spelling this tool takes, so they " +
 			"can be changed and sent back.",
-		Kind: Write,
+		Kind:     Write,
+		Destroys: true,
 		Handle: func(ctx context.Context, in ManagePivotTableInput) (*service.PivotResult, error) {
 			return d.Service.ManagePivotTable(ctx, service.PivotRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Action: in.Action, Anchor: in.Anchor,

@@ -2,15 +2,16 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
 )
 
 // Input options as the caller spells them. The server never substitutes
@@ -33,19 +34,21 @@ type WriteRequest struct {
 	Input  string
 	// The acknowledgments the guard requires, named as the tool names
 	// them. Plain fields rather than plan's own type, so the tool layer
-	// describes the arguments and the service translates.
-	Overwrite             bool
-	OverwriteFormulas     bool
-	AllowExternalFormulas bool
-	ExpectCheckpoint      string
-	DryRun                bool
+	// describes the arguments and the service translates. Either one
+	// needs ExpectCheckpoint, the witness of what it replaces.
+	Overwrite         bool
+	OverwriteFormulas bool
+	ExpectCheckpoint  string
+	DryRun            bool
 }
 
-// Ack is what the guard is told.
-func (r WriteRequest) Ack() plan.Ack {
+// ack is what the guard is told: the caller's two acknowledgments, and
+// the operator's setting for a formula that reaches outside the
+// spreadsheet, which no argument carries (§7.3).
+func (s *Service) ack(overwrite, overwriteFormulas bool) plan.Ack {
 	return plan.Ack{
-		Overwrite: r.Overwrite, OverwriteFormulas: r.OverwriteFormulas,
-		AllowExternalFormulas: r.AllowExternalFormulas,
+		Overwrite: overwrite, OverwriteFormulas: overwriteFormulas,
+		AllowExternalFormulas: s.cfg.AllowExternalFormulas,
 	}
 }
 
@@ -66,7 +69,7 @@ type WriteResult struct {
 	Sheet       string `json:"sheet"`
 	Range       string `json:"range" jsonschema:"the range actually written, in A1 with the sheet quoted"`
 	Cells       int    `json:"cells" jsonschema:"how many cells the write covered"`
-	Checkpoint  string `json:"checkpoint,omitempty" jsonschema:"a checkpoint over what was just written, to hand to a later write"`
+	Checkpoint  string `json:"checkpoint,omitempty" jsonschema:"after a write, a checkpoint over what was just written, to hand to a later write; after a dry run, over what the target holds now, which overwrite needs as expect_checkpoint"`
 	// Coerced, Formulas and Lost are the three things a caller cannot see
 	// from the values they sent.
 	Coerced  []Coercion `json:"coerced,omitempty" jsonschema:"cells Google stored differently from how they were sent"`
@@ -110,6 +113,7 @@ func (s *Service) Write(ctx context.Context, req WriteRequest) (*WriteResult, er
 	if err := checkpointMatches(req.ExpectCheckpoint, tgt.ref.ID, before, tgt.rect); err != nil {
 		return nil, err
 	}
+	ack := s.ack(req.Overwrite, req.OverwriteFormulas)
 
 	report := plan.Check(before, values, typed)
 	headers, err := s.tableHeaders(ctx, tgt, values, typed)
@@ -120,7 +124,7 @@ func (s *Service) Write(ctx context.Context, req WriteRequest) (*WriteResult, er
 	// Only where the guard has already refused, and it reads to answer,
 	// so it goes here rather than inside the guard: plan is a pure
 	// function over what was read.
-	s.pivotsBehind(ctx, tgt, &report, req.Ack())
+	s.pivotsBehind(ctx, tgt, &report, ack)
 	res := &WriteResult{
 		Spreadsheet: tgt.ref.ID,
 		Sheet:       tgt.props.Title,
@@ -129,6 +133,9 @@ func (s *Service) Write(ctx context.Context, req WriteRequest) (*WriteResult, er
 		Kept:        report.Keeps(),
 		TailLeft:    tailLeft(tgt),
 	}
+	// What an overwrite is held to, which the dry run and the refusal
+	// both give.
+	seen := witness{checkpoint: grid.Checkpoint(tgt.ref.ID, before), where: res.Range}
 	// The preview comes before the refusal, not after it.
 	//
 	// The refusal's own last sentence is "dry_run shows what would change
@@ -139,17 +146,21 @@ func (s *Service) Write(ctx context.Context, req WriteRequest) (*WriteResult, er
 	if req.DryRun {
 		res.DryRun = true
 		res.Grid = renderRegion(before)
+		res.Checkpoint = seen.checkpoint
 		res.Summary = render.WritePreview(render.Write{
 			Range: res.Range, Cells: res.Cells, Kept: res.Kept, TailLeft: res.TailLeft,
-			Grid: res.Grid,
+			Grid: res.Grid, Checkpoint: res.Checkpoint,
 			// From the report rather than a second walk of the grid: it
 			// counted the same cells a moment ago.
 			Counts:   grid.Counts{NonEmpty: report.NonEmpty.Total, Formulas: report.Formulas.Total},
-			Blockers: blockerLines(report, req.Ack()),
+			Blockers: blockerLines(report, ack),
 		})
 		return res, nil
 	}
-	if err := refuse(report, req.Ack()); err != nil {
+	if err := refuseWitnessed(report, ack, seen); err != nil {
+		return nil, err
+	}
+	if err := seen.holds(ack, req.ExpectCheckpoint); err != nil {
 		return nil, err
 	}
 
@@ -372,6 +383,34 @@ func blockerLines(r plan.Report, ack plan.Ack) []string {
 // about the formulas and not the protection would pass a flag and be
 // refused again.
 func refuse(r plan.Report, ack plan.Ack) error {
+	return refuseWitnessed(r, ack, witness{})
+}
+
+// witness is what an overwrite is held to: the checkpoint of the cells
+// it would replace, as this call read them, and where they are.
+type witness struct {
+	checkpoint string
+	where      string
+}
+
+// holds refuses an overwrite that carries no witness (§4.7).
+//
+// overwrite and overwrite_formulas replace whatever the cells hold when
+// the write lands, which after a refusal may be a collaborator's edit
+// nobody read. expect_checkpoint binds them to what was read, and the
+// refusal hands over the checkpoint this call read, so no second read
+// is needed.
+func (w witness) holds(ack plan.Ack, expect string) error {
+	if (!ack.Overwrite && !ack.OverwriteFormulas) || expect != "" {
+		return nil
+	}
+	return Errorf("invalid", "overwrite needs expect_checkpoint, so that what it replaces is what was read: %s reads %s "+
+		"now. Pass that, and a change there before the write is refused", w.where, w.checkpoint)
+}
+
+// refuseWitnessed is refuse for a write an overwrite can open, which
+// hands over the checkpoint that overwrite needs as its witness.
+func refuseWitnessed(r plan.Report, ack plan.Ack, w witness) error {
 	blockers := r.Blockers(ack)
 	if len(blockers) == 0 {
 		return nil
@@ -388,6 +427,10 @@ func refuse(r plan.Report, ack plan.Ack) error {
 		lines = append(lines, line)
 	}
 	msg := strings.Join(lines, ". ")
+	if allowable && w.checkpoint != "" {
+		msg += fmt.Sprintf(". Pass expect_checkpoint %s with it: that is %s as this call read it, and a change there "+
+			"before the write is refused", w.checkpoint, w.where)
+	}
 	if allowable {
 		msg += ". dry_run shows what would change without sending anything"
 	}

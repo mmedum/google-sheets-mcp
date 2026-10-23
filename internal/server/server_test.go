@@ -12,11 +12,11 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/server"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/tools"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/server"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/tools"
 )
 
 func newServer(t *testing.T, cfg config.Config, log *slog.Logger) (*mcp.Server, *sheetstest.Server) {
@@ -39,7 +39,15 @@ func connect(t *testing.T, s *mcp.Server) *mcp.ClientSession {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ss.Close() })
-	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+	// The client can ask the person, and the server asks nobody (§9a):
+	// every tool the logging test drives is called through this client,
+	// so a question from any of them fails the test that made the call.
+	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, &mcp.ClientOptions{
+		ElicitationHandler: func(_ context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+			t.Errorf("the server asked the person: %q", req.Params.Message)
+			return &mcp.ElicitResult{Action: "decline"}, nil
+		},
+	})
 	cs, err := client.Connect(ctx, ct, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +74,7 @@ var destructiveTools = []string{"clear_values", "delete_cell_comment", "delete_d
 // connectedTools reach outside the spreadsheet and need
 // GSHEETS_ENABLE_DATA_SOURCES, which is also what asks for the third
 // scope at login.
-var connectedTools = []string{"manage_data_source"}
+var connectedTools = []string{"connect_data_source", "manage_data_source"}
 
 // allTools is the surface this phase ships, which is what the schema
 // dump carries.

@@ -5,7 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
 )
 
 // ReadCommentsInput scopes a call to read_cell_comments.
@@ -83,7 +83,6 @@ func registerComments(s *mcp.Server, d Deps) {
 			"dry_run shows what would go. A thread or reply that is not there is reported gone, and nothing is sent: " +
 			"Google cannot tell one already deleted from an id it never had.",
 		Kind: Destructive,
-		Asks: true,
 		Handle: func(ctx context.Context, in DeleteCommentInput) (*service.DeleteCommentResult, error) {
 			return d.Service.DeleteComment(ctx, service.DeleteCommentRequest{
 				Spreadsheet: in.Spreadsheet, CommentID: in.CommentID, PostID: in.PostID, Confirm: in.Confirm, DryRun: in.DryRun,

@@ -5,6 +5,30 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- `connect_data_source` connects a BigQuery query or table through Connected Sheets, as `manage_data_source` `add` did, with `GSHEETS_ENABLE_DATA_SOURCES=true`. Your client's approval of `manage_data_source` no longer covers starting a new billed query.
+- `GSHEETS_ALLOW_EXTERNAL_FORMULAS` lets a write create `IMPORTXML`, `IMPORTDATA`, `IMPORTHTML`, `IMPORTFEED`, `IMAGE`, `HYPERLINK` or `IMPORTRANGE`. It is off by default.
+- `transform_range` takes `expect_checkpoint`, and a dry run of it or of `write_values` returns the `checkpoint` an overwrite needs.
+
+### Changed
+
+- **Breaking:** the server no longer asks you before a write; your MCP client approves each call. claude.ai and Codex prompt for the tools marked destructive, VS Code for every tool that writes, and in Claude Code an `ask` rule per tool does it, as the README shows. Registration, `confirm: true`, the guards and `dry_run` are unchanged. A client that runs with nobody watching can now make every write its settings register, so leave `GSHEETS_ENABLE_DESTRUCTIVE` and `GSHEETS_ENABLE_DATA_SOURCES` off for one.
+- **Breaking:** if you followed 3.1.0 and put `delete_sheet`, `delete_dimensions`, `clear_values`, `delete_data_source` and `delete_cell_comment` on Claude Code's allow list, move them to `permissions.ask`. With the server's question gone, an allowed delete runs with nobody asked.
+- **Breaking:** only `delete_data_source` carries Claude Code's `requiresUserInteraction` mark, since it takes a sheet and Google unlinks what was built on the source. Claude Code asks on every such call whatever your rules say, and refuses it in a run that cannot ask (`-p`, dontAsk). The other four deletes no longer carry it.
+- `write_values`, `transform_range`, `format_cells`, `manage_range`, `manage_chart` and `manage_pivot_table` say `destructiveHint: true`, since an argument can take away what they land on, so Codex and claude.ai prompt for them.
+- **Breaking:** `overwrite` and `overwrite_formulas` on `write_values` and `transform_range` need `expect_checkpoint`, the checkpoint of the cells they replace. Without it the call is refused `[invalid]` with that checkpoint, which the guard's refusal and a dry run also give. A change to those cells after that read is `[conflict]`.
+- **Breaking:** `manage_data_source` no longer connects a data source; use `connect_data_source`. `refresh` needs `id`: refreshing every source by leaving `id` out is refused, listing the ids. `cancel_refresh` still takes every source without one.
+- **Breaking:** `delete_dimensions` refuses an `anchor:` band, and `clear_values` an `anchor:` range or no range at all, each naming the band or range it stands for now, so the call your client shows says what goes. `range` is required on `clear_values`; a whole sheet named in A1 still clears.
+- **Breaking:** `write_values` and `append_rows` no longer take `allow_external_formulas`. A formula that reaches outside the spreadsheet is written only when the server is started with `GSHEETS_ALLOW_EXTERNAL_FORMULAS=true`, by these, by `create_spreadsheet`'s seed values and by a `transform_range` `find_replace` replacement.
+- **Breaking:** `append_rows` no longer takes `insert` or `overwrite`, and always inserts. Use `write_values` to write over rows you know.
+- The server's instructions say that `overwrite` carries a decision you made, not a way past a refusal.
+- **Breaking:** the Go module path is now `github.com/mmedum/google-sheets-mcp/v4`, as Go requires for a new major version; install with `go install github.com/mmedum/google-sheets-mcp/v4/cmd/google-sheets-mcp@latest`.
+
+### Removed
+
+- **Breaking:** `GSHEETS_REQUIRE_PROMPT` and `-require-prompt`. Set to anything but false, the server refuses to start rather than ignore it; unset it.
+
 ## [3.1.2] - 2026-10-10
 
 ### Changed

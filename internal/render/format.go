@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 )
 
 // The formatting half of the renderer: how a cell's format is put into
@@ -295,6 +295,10 @@ type Ops struct {
 	// Answered is the error Google answered a write with, for a write a
 	// read afterwards found made all the same.
 	Answered string
+	// Checkpoint is over the cells a preview read first, at Read, which
+	// an overwrite of them needs as its witness.
+	Checkpoint string
+	Read       string
 }
 
 // What a transform's reply counted. Three of the nine actions answer
@@ -372,6 +376,9 @@ func OpsPreview(o Ops) string {
 		for _, line := range o.Blockers {
 			fmt.Fprintf(&b, "  %s\n", line)
 		}
+	}
+	if o.Checkpoint != "" {
+		fmt.Fprintf(&b, "\n%s reads %s now, which overwrite needs as expect_checkpoint.\n", o.Read, o.Checkpoint)
 	}
 	opNotes(&b, o, "would move")
 	return b.String()

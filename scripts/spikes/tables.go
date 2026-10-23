@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
 )
 
 // spikeT answers what the reference leaves open about a table's typed

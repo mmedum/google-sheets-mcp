@@ -96,6 +96,7 @@ func (d *driver) formatSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": mergeBand,
 				"values": [][]any{{"Quorbin", "Vandel"}}, "input": "literal", "overwrite": true,
+				"expect_checkpoint": fromDryRun,
 			},
 		},
 		{

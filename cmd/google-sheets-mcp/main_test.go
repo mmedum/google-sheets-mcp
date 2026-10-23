@@ -14,10 +14,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/auth"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/userconfig"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/version"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/userconfig"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/version"
 )
 
 // This package is the whole command-line surface — login, logout,

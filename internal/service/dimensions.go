@@ -4,11 +4,11 @@ import (
 	"context"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
 )
 
 // Dimension actions.
@@ -97,6 +97,13 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 	if err := bandFits(band, props); err != nil {
 		return nil, err
 	}
+	if req.Action == DimDelete && strings.HasPrefix(strings.TrimSpace(req.Band), AnchorPrefix) {
+		// The call names what it deletes, so the client's prompt shows the
+		// rows rather than a label that resolves when the call runs (§9a).
+		b := render.Band{Rows: band.Rows(), First: band.First, Last: band.Last}
+		return nil, Errorf("invalid", "delete_dimensions takes the band itself, not an anchor, so the call names "+
+			"what goes: %s points at %s on %q now. Pass band %s", strings.TrimSpace(req.Band), b, props.Title, b.A1())
+	}
 	if req.Action == DimDelete && !s.cfg.EnableDestructive {
 		return nil, Errorf("unsupported",
 			"deleting rows or columns is off in this server; start it with GSHEETS_ENABLE_DESTRUCTIVE=true to turn it on")
@@ -158,15 +165,6 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 				"Pass confirm to go ahead",
 			act.Band, props.Title, res.Cells, res.Formulas,
 			render.AnchorsTaken(res.Anchors), chartClause(res.Charts))
-	}
-	if req.Action == DimDelete {
-		if err := ask(ctx, func() (render.Question, error) {
-			return render.AskDeleteDimensions(ref.ID, titleOf(sp), props.SheetID, props.Title, act.Band.String(),
-				render.Contents{Cells: res.Cells, Formulas: res.Formulas, Anchors: len(res.Anchors),
-					Charted: len(res.Charts)}), nil
-		}); err != nil {
-			return nil, err
-		}
 	}
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{op},

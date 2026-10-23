@@ -11,10 +11,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v3/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v3/internal/tools"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/tools"
 )
 
 // searchTerm is a word that exists nowhere else, so finding it in a log
@@ -73,8 +73,9 @@ var toolCalls = map[string][]map[string]any{
 	"append_rows": {
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
 			"values": [][]any{{searchTerm, 1}}},
+		// Refused: a formula that fetches a URL is the operator's to allow.
 		{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "range": "A1:B2",
-			"values": [][]any{{searchTerm}}, "insert": "overwrite"},
+			"values": [][]any{{`=IMAGE("https://example.test/` + searchTerm + `")`}}},
 	},
 	"manage_sheet": {
 		{"spreadsheet": sheetstest.FixtureID, "action": "add", "title": "Oblisk added"},
@@ -158,9 +159,14 @@ var toolCalls = map[string][]map[string]any{
 	},
 	// A query is the most sensitive thing this server ever sends: it is
 	// somebody's SQL, and it travels in a request body like a value.
+	"connect_data_source": {
+		{"spreadsheet": sheetstest.FixtureID, "project": "example-project", "query": "SELECT " + searchTerm},
+		// Refused: no project to charge.
+		{"spreadsheet": sheetstest.FixtureID, "query": "SELECT " + searchTerm},
+	},
 	"manage_data_source": {
-		{"spreadsheet": sheetstest.FixtureID, "action": "add",
-			"project": "example-project", "query": "SELECT " + searchTerm},
+		// Refused, naming the ids: a refresh names its source.
+		{"spreadsheet": sheetstest.FixtureID, "action": "refresh"},
 		{"spreadsheet": sheetstest.FixtureID, "action": "list"},
 	},
 	// A comment's text and its assignee are caller text in a request
