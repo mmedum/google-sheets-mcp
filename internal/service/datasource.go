@@ -20,26 +20,33 @@ const (
 	SourceList    = "list"
 )
 
-// SourceRequest is what manage_data_source and delete_data_source ask
-// for.
+// SourceRequest is what manage_data_source asks for.
 type SourceRequest struct {
 	Spreadsheet string
 	Action      string
 	// ID is the spreadsheet-scoped data source id, which list reports.
-	// refresh and delete need it; cancel_refresh takes every source when
-	// it is empty.
-	ID string
-	// Sheet is delete's witness: the title of the sheet the source made,
+	// refresh needs it; cancel_refresh takes every source when it is
+	// empty.
+	ID     string
+	DryRun bool
+}
+
+// DeleteSourceRequest is what delete_data_source asks for.
+//
+// Its own request, as it is its own tool: manage_data_source carries no
+// confirm and no witness, so the delete is not one of its actions.
+type DeleteSourceRequest struct {
+	Spreadsheet string
+	ID          string
+	// Sheet is the witness: the title of the sheet the source made,
 	// which goes with it. Empty is refused unless the source has none.
 	Sheet string
-
-	// Confirm is required by delete, and by nothing else here. Deleting
-	// a data source removes the DATA_SOURCE sheet Google made for it and
-	// everything on it — strictly more than delete_sheet does, and what
-	// it removes cannot be got back without re-running a billed query.
-	// Registration gates the tool and the service gates the act (§8), so
-	// the confirm lives here, where the caller can be told what they are
-	// agreeing to.
+	// Confirm is required. Deleting a data source removes the
+	// DATA_SOURCE sheet Google made for it and everything on it —
+	// strictly more than delete_sheet does, and what it removes cannot be
+	// got back without re-running a billed query. Registration gates the
+	// tool and the service gates the act (§8), so the confirm lives here,
+	// where the caller can be told what they are agreeing to.
 	Confirm bool
 	DryRun  bool
 }
@@ -86,7 +93,7 @@ type SourceResult struct {
 // Render is the text half.
 func (r SourceResult) Render() string { return r.Summary }
 
-// ManageDataSource answers manage_data_source and delete_data_source.
+// ManageDataSource answers manage_data_source.
 //
 // refresh and cancel_refresh need the bigquery.readonly scope, and the
 // tool is registered only with GSHEETS_ENABLE_DATA_SOURCES so that scope
@@ -112,7 +119,8 @@ func (s *Service) ManageDataSource(ctx context.Context, req SourceRequest) (*Sou
 	case SourceRefresh, SourceCancel:
 		return s.refreshSource(ctx, ref, req, res)
 	case SourceDelete:
-		return s.deleteSource(ctx, ref, req, res)
+		return nil, Errorf("invalid", "deleting a data source is delete_data_source, its own tool, since it takes "+
+			"the source's sheet with it")
 	}
 	return nil, Errorf("invalid",
 		"action %q is not one of refresh, cancel_refresh or list", req.Action)
@@ -158,7 +166,12 @@ func (s *Service) ConnectDataSource(ctx context.Context, req ConnectRequest) (*S
 		return nil, Errorf("invalid", "a table needs dataset, the BigQuery dataset it is in")
 	}
 
-	act := render.SourceAct{Action: SourceAdd, Project: project, Query: query, Table: table, Dataset: dataset}
+	tableProject := strings.TrimSpace(req.TableProject)
+	if tableProject == "" {
+		tableProject = project
+	}
+	act := render.SourceAct{Action: SourceAdd, Project: project, Query: query, Table: table, Dataset: dataset,
+		TableProject: tableProject}
 	if req.DryRun {
 		res.DryRun = true
 		res.Summary = render.SourcePreview(act)
@@ -166,10 +179,6 @@ func (s *Service) ConnectDataSource(ctx context.Context, req ConnectRequest) (*S
 	}
 	op := plan.AddDataSource(project, query)
 	if table != "" {
-		tableProject := strings.TrimSpace(req.TableProject)
-		if tableProject == "" {
-			tableProject = project
-		}
 		op = plan.AddDataSourceTable(project, tableProject, dataset, table)
 	}
 	reply, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
@@ -240,8 +249,14 @@ func (s *Service) refreshSource(ctx context.Context, ref Reference, req SourceRe
 	return res, nil
 }
 
-// deleteSource removes a source, its sheet and the links to it.
-func (s *Service) deleteSource(ctx context.Context, ref Reference, req SourceRequest, res *SourceResult) (*SourceResult, error) {
+// DeleteDataSource answers delete_data_source: it removes a source, its
+// sheet and the links to it. It needs no BigQuery scope (§7.6).
+func (s *Service) DeleteDataSource(ctx context.Context, req DeleteSourceRequest) (*SourceResult, error) {
+	ref, err := s.Resolve(ctx, req.Spreadsheet)
+	if err != nil {
+		return nil, err
+	}
+	res := &SourceResult{Spreadsheet: ref.ID, Action: SourceDelete}
 	sp, err := s.card(ctx, ref.ID)
 	if err != nil {
 		return nil, err

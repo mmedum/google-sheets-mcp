@@ -513,6 +513,11 @@ func (s *Service) transformGuard(ctx context.Context, req TransformRequest, ref 
 				}
 			}
 		}
+		// What each formula becomes, since a rewrite can assemble a
+		// formula that reaches outside from parts of one already there.
+		plan.CheckFormulaRewrites(&report, source, req.Find, req.Replace, plan.FindReplaceOptions{
+			MatchCase: req.MatchCase, MatchEntireCell: req.MatchEntireCell, Regex: req.Regex,
+		})
 		return report, source, nil
 	}
 	return report, nil, nil

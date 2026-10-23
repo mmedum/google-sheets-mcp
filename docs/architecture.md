@@ -793,8 +793,15 @@ a model persuaded to write one would pass too (§9a). The refusal offers
 no argument. `create_spreadsheet`'s seed values and a `find_replace`
 whose replacement names such a function are refused the same way, the
 second whatever it searches, since whether a value it lands in becomes a
-formula has not been probed. Every formula a write creates is named in
-the result. Reads show formulas for the
+formula has not been probed. A `find_replace` inside formulas is also
+run here first over each formula the guard read, as Google would run
+it, since a replacement can complete a name from what is already there:
+`X(` replaced by `(` turns `=IMAGEX(…)` into `=IMAGE(…)`. A formula that
+would come out reaching outside is refused at its cell, and so is one
+that already did and would change. A regular expression Go cannot
+compile, such as a lookbehind, cannot be run here first, so over
+formulas it is refused unless the setting allows it. Every formula a
+write creates is named in the result. Reads show formulas for the
 same reason: an injected one should be visible, not hidden behind its
 value.
 
@@ -3888,6 +3895,6 @@ re-checked here.
 | `deleteDataSource` takes the source and its sheet, and nothing else | **Refined, tier 3**: the survey for this port read Google's description of `DeleteDataSourceRequest` as also deleting the source's sheet and unlinking every data source object built on it: tables, pivot tables, formulas and charts. The discovery snapshot here records field names only, so the wording is to be read again from the discovery document before the release; the unlinking has not been probed, since the driver cannot connect a source | `delete_data_source` carries the mark: other objects depend on what it removes |
 | An append that writes over the rows after a block can be guarded | **Refuted, tier 1** by this server's own finding (§7.3): `values.append` picks its destination during the call, so no read before it sees the rows `OVERWRITE` replaces, and no checkpoint can witness them | `insert: overwrite` removed; `write_values` writes over known addresses |
 | An `overwrite` flag is enough to say the person chose to replace what is there | **Refuted, by this server's own guard**: a flag set after a refusal covers whatever the cells hold when the write lands, a collaborator's later edit included, and a model can resend it on its own | `overwrite` needs `expect_checkpoint`, which the refusal and a dry run give; the instructions say `overwrite` carries a decision the person made, not a way past a refusal (§7.3) |
-| A `find_replace` cannot create a formula that reaches outside the spreadsheet | **Unverified, not probed**: the external-formula check ran only over values a write sends, and a replacement's text was never checked, inside formulas or out | A replacement naming such a function is refused unless the operator's setting allows it, whatever it searches (§7.3) |
+| A `find_replace` cannot create a formula that reaches outside the spreadsheet | **Unverified, not probed**: the external-formula check ran only over values a write sends, and a replacement's text was never checked, inside formulas or out. **Refuted by the review of the port, 2026-10-23**: checking the replacement text alone missed a rewrite that completes a name from a formula already there | A replacement naming such a function is refused unless the operator's setting allows it, whatever it searches, and a rewrite inside formulas is run first over each formula read and refused where one would reach outside (§7.3) |
 | Connected Sheets results are seen only by those with BigQuery access | **Unverified, waiting on a live probe** | `connect_data_source` documents only that the query's results go into a sheet of the spreadsheet (§9a) |
 | A comment's assignee, or an address its text names, is notified or given access only if the spreadsheet is shared with them | **Unverified, waiting on a live probe** | `manage_cell_comment` reaches any address meanwhile, recorded as a deviation (§17b) |

@@ -23,12 +23,18 @@ and this project follows [semantic versioning](https://semver.org).
 - **Breaking:** `delete_dimensions` refuses an `anchor:` band, and `clear_values` an `anchor:` range or no range at all, each naming the band or range it stands for now, so the call your client shows says what goes. `range` is required on `clear_values`; a whole sheet named in A1 still clears.
 - **Breaking:** `write_values` and `append_rows` no longer take `allow_external_formulas`. A formula that reaches outside the spreadsheet is written only when the server is started with `GSHEETS_ALLOW_EXTERNAL_FORMULAS=true`, by these, by `create_spreadsheet`'s seed values and by a `transform_range` `find_replace` replacement.
 - **Breaking:** `append_rows` no longer takes `insert` or `overwrite`, and always inserts. Use `write_values` to write over rows you know.
+- **Breaking:** a `transform_range` `find_replace` inside formulas is run over each formula first, and refused where one would come out reaching outside the spreadsheet, such as `X(` replaced by `(` turning `=IMAGEX(…)` into `=IMAGE(…)`, unless `GSHEETS_ALLOW_EXTERNAL_FORMULAS` is set. A regular expression with a lookbehind or a backreference cannot be run first, so over formulas it is refused the same way.
 - The server's instructions say that `overwrite` carries a decision you made, not a way past a refusal.
 - **Breaking:** the Go module path is now `github.com/mmedum/google-sheets-mcp/v4`, as Go requires for a new major version; install with `go install github.com/mmedum/google-sheets-mcp/v4/cmd/google-sheets-mcp@latest`.
 
 ### Removed
 
 - **Breaking:** `GSHEETS_REQUIRE_PROMPT` and `-require-prompt`. Set to anything but false, the server refuses to start rather than ignore it; unset it.
+
+### Fixed
+
+- `manage_data_source` refuses `action: delete`, naming `delete_data_source`; it used to preview the delete, and refuse it asking for a `confirm` it does not take.
+- A `connect_data_source` dry run and result name the whole table, with the project it lives in, not only the project charged.
 
 ## [3.1.2] - 2026-10-10
 

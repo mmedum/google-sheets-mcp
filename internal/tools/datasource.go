@@ -108,9 +108,8 @@ func registerDeleteDataSource(s *mcp.Server, d Deps) {
 		Kind:            Destructive,
 		PromptEveryCall: true,
 		Handle: func(ctx context.Context, in DeleteDataSourceInput) (*service.SourceResult, error) {
-			return d.Service.ManageDataSource(ctx, service.SourceRequest{
-				Spreadsheet: in.Spreadsheet, Action: service.SourceDelete, ID: in.ID, Sheet: in.Sheet,
-				Confirm: in.Confirm, DryRun: in.DryRun,
+			return d.Service.DeleteDataSource(ctx, service.DeleteSourceRequest{
+				Spreadsheet: in.Spreadsheet, ID: in.ID, Sheet: in.Sheet, Confirm: in.Confirm, DryRun: in.DryRun,
 			})
 		},
 	})

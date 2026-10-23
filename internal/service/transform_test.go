@@ -216,6 +216,68 @@ func TestAReplacementCannotWriteAnExternalFormula(t *testing.T) {
 	}
 }
 
+// A replacement inside formulas can assemble a formula that reaches
+// outside the spreadsheet from a formula already there, which the
+// replacement text alone does not show: "X(" replaced by "(" turns
+// =IMAGEX(…) into =IMAGE(…), and rewriting a formula that already
+// fetches changes what it fetches. So each formula read is rewritten here
+// first, as Google would, and one that would reach outside is refused at
+// its cell with no argument to lift it. A rewrite that stays inside goes.
+func TestAFormulaRewriteCannotReachOutside(t *testing.T) {
+	for _, tc := range []struct {
+		name, formula, find, replace string
+		regex, matchCase, entire     bool
+		want                         string
+	}{
+		{name: "a name completed", formula: `=IMAGEX("https://example.test/"&B1)`, find: "X(", replace: "(",
+			want: "[blocked] A1 would hold a formula that fetches a URL"},
+		{name: "case folded", formula: `=imagex("https://example.test/")`, find: "X(", replace: "(",
+			want: "[blocked] A1 would hold a formula that fetches a URL"},
+		{name: "a group carried over", formula: `=IMAGZ("https://example.test/")`, find: `IMA(G)Z\(`,
+			replace: "IMA$1E(", regex: true, want: "[blocked] A1 would hold a formula that fetches a URL"},
+		{name: "an external formula retargeted", formula: `=IMAGE("https://example.test/a")`, find: "/a",
+			replace: "/b", want: "[blocked] A1 would hold a formula that fetches a URL"},
+		{name: "IMPORTRANGE assembled", formula: `=IMPORTRANGEX("k","A1")`, find: "X(", replace: "(",
+			want: "[blocked] A1 would hold an IMPORTRANGE"},
+		{name: "the whole cell", formula: `=IMAGEX("https://example.test/")`, find: `=IMAGEX("https://example.test/")`,
+			replace: `=IMAGE("https://example.test/")`, entire: true,
+			want: "[blocked] the replacement text, A1 would hold a formula that fetches a URL"},
+		{name: "a lookbehind this server cannot run", formula: `=IMAGEX("https://example.test/")`,
+			find: `(?<=IMAGE)X`, replace: "", regex: true,
+			want: "[blocked] A1 would be rewritten by a regular expression this server cannot run first"},
+		{name: "a rewrite that stays inside", formula: `=SUM(B1:B3)`, find: "B3", replace: "B4"},
+		{name: "an external formula the search leaves alone", formula: `=IMAGE("https://example.test/")`,
+			find: "Zzzznomatch", replace: "x"},
+		{name: "case kept, so nothing matches", formula: `=imagex("https://example.test/")`, find: "X(",
+			replace: "(", matchCase: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := sheetstest.Standard(t)
+			svc := newService(t, srv)
+			srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Set(1, 1, sheetstest.Formula(tc.formula, 0, ""))
+			req := transformReq(service.TransformFindReplace, "A1")
+			req.Find, req.Replace, req.InFormulas = tc.find, tc.replace, true
+			req.Regex, req.MatchCase, req.MatchEntireCell = tc.regex, tc.matchCase, tc.entire
+			req.Overwrite, req.OverwriteFormulas = true, true
+			req = transformWitnessed(t, svc, req)
+			_, err := svc.Transform(context.Background(), req)
+			if tc.want == "" {
+				if err != nil {
+					t.Errorf("a rewrite that stays inside was refused: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.HasPrefix(err.Error(), tc.want) || !strings.Contains(err.Error(),
+				"GSHEETS_ALLOW_EXTERNAL_FORMULAS") || strings.Contains(err.Error(), "pass ") {
+				t.Errorf("error = %v\nwant it to start %q, name the setting and offer no argument", err, tc.want)
+			}
+			if batched(srv) {
+				t.Error("a refused rewrite reached the wire")
+			}
+		})
+	}
+}
+
 func TestTrimAndDedupeReportTheirCounts(t *testing.T) {
 	srv := sheetstest.Standard(t)
 	svc := newService(t, srv)

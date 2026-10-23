@@ -57,6 +57,32 @@ func TestSourceAddTable(t *testing.T) {
 	}
 }
 
+// A table is named whole, with the project it lives in, which the call
+// may name apart from the project charged: the preview and the result
+// say what is connected, not only what is billed.
+func TestSourceAddNamesTheWholeTable(t *testing.T) {
+	_, svc := standard(t)
+	for _, tc := range []struct {
+		tableProject, want string
+	}{
+		{"", `Dry run: nothing was sent. This would connect the BigQuery table example-project.warehouse.orders, ` +
+			`charged to the project "example-project".` + "\n"},
+		{"public-data", `Dry run: nothing was sent. This would connect the BigQuery table public-data.warehouse.orders, ` +
+			`charged to the project "example-project".` + "\n"},
+	} {
+		res, err := svc.ConnectDataSource(context.Background(), service.ConnectRequest{
+			Spreadsheet: sheetstest.FixtureID, Project: "example-project", Dataset: "warehouse", Table: "orders",
+			TableProject: tc.tableProject, DryRun: true,
+		})
+		if err != nil {
+			t.Fatalf("table_project %q: %v", tc.tableProject, err)
+		}
+		if res.Render() != tc.want {
+			t.Errorf("table_project %q:\n got %q\nwant %q", tc.tableProject, res.Render(), tc.want)
+		}
+	}
+}
+
 func TestSourceAddRefusals(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -208,8 +234,8 @@ func TestSourceDeleteNamesTheSheetItTakes(t *testing.T) {
 	added := addSource(t, svc)
 	// Unconfirmed first: the delete takes a sheet with it, so it is
 	// refused until the caller says so, and the refusal names the sheet.
-	_, err := svc.ManageDataSource(context.Background(), service.SourceRequest{
-		Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: added.ID, Sheet: "Data source 1",
+	_, err := svc.DeleteDataSource(context.Background(), service.DeleteSourceRequest{
+		Spreadsheet: sheetstest.FixtureID, ID: added.ID, Sheet: "Data source 1",
 	})
 	if err == nil {
 		t.Fatal("an unconfirmed delete went ahead")
@@ -218,8 +244,8 @@ func TestSourceDeleteNamesTheSheetItTakes(t *testing.T) {
 		t.Errorf("the refusal does not name what goes:\n%v", err)
 	}
 
-	res, err := svc.ManageDataSource(context.Background(), service.SourceRequest{
-		Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: added.ID, Sheet: "Data source 1", Confirm: true,
+	res, err := svc.DeleteDataSource(context.Background(), service.DeleteSourceRequest{
+		Spreadsheet: sheetstest.FixtureID, ID: added.ID, Sheet: "Data source 1", Confirm: true,
 	})
 	if err != nil {
 		t.Fatalf("delete: %v", err)
@@ -251,8 +277,8 @@ func TestSourceDeleteRefusals(t *testing.T) {
 		{"", `[invalid] delete needs id, the data source to delete; it has "` + id + `" on the sheet "Data source 1"`},
 		{"9999", `[not_found] this spreadsheet has no data source "9999"; it has "` + id + `" on the sheet "Data source 1"`},
 	} {
-		_, err := svc.ManageDataSource(context.Background(), service.SourceRequest{
-			Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: tc.id, Sheet: "Data source 1", Confirm: true,
+		_, err := svc.DeleteDataSource(context.Background(), service.DeleteSourceRequest{
+			Spreadsheet: sheetstest.FixtureID, ID: tc.id, Sheet: "Data source 1", Confirm: true,
 		})
 		if err == nil || err.Error() != tc.want {
 			t.Errorf("id %q: error = %v\nwant %s", tc.id, err, tc.want)
@@ -269,8 +295,8 @@ func TestADataSourceDeleteCarriesItsSheet(t *testing.T) {
 	srv, svc := destructive(t)
 	id := addSource(t, svc).ID
 	del := func(sheet string, dry bool) (*service.SourceResult, error) {
-		return svc.ManageDataSource(context.Background(), service.SourceRequest{
-			Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: id, Sheet: sheet,
+		return svc.DeleteDataSource(context.Background(), service.DeleteSourceRequest{
+			Spreadsheet: sheetstest.FixtureID, ID: id, Sheet: sheet,
 			Confirm: true, DryRun: dry,
 		})
 	}
@@ -324,8 +350,8 @@ func TestADataSourceWitnessIsReadPastTheCache(t *testing.T) {
 		&gsheets.BatchUpdateSpreadsheetRequest{Requests: []*gsheets.Request{plan.RenameSheet(sheetID, "Orders")}}); err != nil {
 		t.Fatalf("rename behind the server's back: %v", err)
 	}
-	if _, err := svc.ManageDataSource(context.Background(), service.SourceRequest{
-		Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: id, Sheet: "Orders", Confirm: true,
+	if _, err := svc.DeleteDataSource(context.Background(), service.DeleteSourceRequest{
+		Spreadsheet: sheetstest.FixtureID, ID: id, Sheet: "Orders", Confirm: true,
 	}); err != nil {
 		t.Errorf("a delete naming the sheet's title now: %v", err)
 	}
@@ -347,8 +373,8 @@ func TestSourceDryRun(t *testing.T) {
 				Spreadsheet: sheetstest.FixtureID, Action: service.SourceRefresh, ID: id, DryRun: true})
 		}},
 		{"delete", func() (*service.SourceResult, error) {
-			return svc.ManageDataSource(context.Background(), service.SourceRequest{
-				Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: id, DryRun: true})
+			return svc.DeleteDataSource(context.Background(), service.DeleteSourceRequest{
+				Spreadsheet: sheetstest.FixtureID, ID: id, DryRun: true})
 		}},
 	} {
 		srv.Reset()
@@ -386,8 +412,8 @@ func TestSourceUnknownAction(t *testing.T) {
 func TestSourceDeleteIsOffWithoutTheDestructiveFlag(t *testing.T) {
 	_, svc := standard(t)
 	added := addSource(t, svc)
-	_, err := svc.ManageDataSource(context.Background(), service.SourceRequest{
-		Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: added.ID, Confirm: true,
+	_, err := svc.DeleteDataSource(context.Background(), service.DeleteSourceRequest{
+		Spreadsheet: sheetstest.FixtureID, ID: added.ID, Confirm: true,
 	})
 	if err == nil {
 		t.Fatal("a delete went ahead with the destructive flag off")
@@ -399,9 +425,27 @@ func TestSourceDeleteIsOffWithoutTheDestructiveFlag(t *testing.T) {
 
 // TestDeleteIsNotAManageAction is the other half of the split: the
 // action is gone from the tool that used to carry it, so a caller
-// reaching for it is told the tool that does.
+// reaching for it is told the tool that does, and nothing is read for
+// it or previewed, dry run or not.
 func TestDeleteIsNotAManageAction(t *testing.T) {
-	_, svc := standard(t)
+	srv, svc := destructive(t)
+	id := addSource(t, svc).ID
+	for _, dry := range []bool{false, true} {
+		srv.Reset()
+		_, err := svc.ManageDataSource(context.Background(), service.SourceRequest{
+			Spreadsheet: sheetstest.FixtureID, Action: service.SourceDelete, ID: id, DryRun: dry,
+		})
+		want := "[invalid] deleting a data source is delete_data_source, its own tool, since it takes the " +
+			"source's sheet with it"
+		if err == nil || err.Error() != want {
+			t.Errorf("dry run %v: error = %v\nwant %s", dry, err, want)
+		}
+		for _, c := range srv.Calls() {
+			if c.Op == "spreadsheets.batchUpdate" {
+				t.Errorf("dry run %v: a delete through manage_data_source sent a write", dry)
+			}
+		}
+	}
 	_, err := svc.ManageDataSource(context.Background(), service.SourceRequest{
 		Spreadsheet: sheetstest.FixtureID, Action: "remove",
 	})

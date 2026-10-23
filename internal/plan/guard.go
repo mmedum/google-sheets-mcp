@@ -191,6 +191,10 @@ type Report struct {
 	// spreadsheet's data into this one.
 	Fetching         Cells
 	CrossSpreadsheet Cells
+	// Unchecked are formulas a find_replace would rewrite by a regular
+	// expression this server cannot run first, so whether one would come
+	// out reaching outside the spreadsheet cannot be told.
+	Unchecked Cells
 	// TooLong are cells whose text is past MaxCellChars.
 	TooLong Cells
 	// TableHeaders are formulas being written into a table's header row.
@@ -264,6 +268,14 @@ func (r Report) Blockers(ack Ack) []Blocker {
 			Why: fmt.Sprintf("%s would hold an IMPORTRANGE, which pulls another spreadsheet's data into this one "+
 				"and embeds that spreadsheet's id, and this server does not write one unless the person running "+
 				"it sets %s", r.CrossSpreadsheet, externalSetting),
+		})
+	}
+	if r.Unchecked.Any() && !ack.AllowExternalFormulas {
+		out = append(out, Blocker{
+			Why: fmt.Sprintf("%s would be rewritten by a regular expression this server cannot run first, so it "+
+				"cannot tell whether a rewrite makes a formula that reaches outside the spreadsheet; search "+
+				"without lookarounds or backreferences, or this server does not run it unless the person running "+
+				"it sets %s", r.Unchecked, externalSetting),
 		})
 	}
 
@@ -586,6 +598,108 @@ func CheckReplacement(r *Report, replace string) {
 		r.CrossSpreadsheet.Add("the replacement text")
 	}
 }
+
+// CheckFormulaRewrites records each formula a find_replace inside
+// formulas would leave reaching outside the spreadsheet, at its cell.
+//
+// The replacement text alone does not say: "X(" replaced by "(" turns
+// =IMAGEX(…) into =IMAGE(…), and rewriting a formula that already
+// fetches a URL changes what it fetches. So each formula read is
+// rewritten here as Google would rewrite it, and one that changes and
+// then names such a function is recorded. A search that cannot be run
+// here, a regular expression in Java's syntax, which the API documents,
+// that Go's cannot compile, records every formula as Unchecked.
+func CheckFormulaRewrites(r *Report, g *grid.Grid, find, replace string, o FindReplaceOptions) {
+	rewrite, ok := rewriter(find, replace, o)
+	for i, row := range g.Cells {
+		for j, cell := range row {
+			if !cell.HasFormula() {
+				continue
+			}
+			if !ok {
+				r.Unchecked.Add(g.Address(i, j))
+				continue
+			}
+			after := rewrite(cell.Formula)
+			if after == cell.Formula {
+				continue
+			}
+			if externalFetch.MatchString(after) {
+				r.Fetching.Add(g.Address(i, j))
+			}
+			if externalRange.MatchString(after) {
+				r.CrossSpreadsheet.Add(g.Address(i, j))
+			}
+		}
+	}
+}
+
+// rewriter is the replacement a find_replace makes in one cell's text.
+// A plain find is literal; a regular expression's replacement refers to
+// its groups as $1 or ${name}, and a backslash quotes the next character,
+// as in Java.
+func rewriter(find, replace string, o FindReplaceOptions) (func(string) string, bool) {
+	pattern := regexp.QuoteMeta(find)
+	if o.Regex {
+		pattern = find
+	}
+	if o.MatchEntireCell {
+		pattern = `^(?:` + pattern + `)$`
+	}
+	if !o.MatchCase {
+		pattern = `(?i)` + pattern
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, false
+	}
+	template := strings.ReplaceAll(replace, "$", "$$")
+	if o.Regex {
+		template = javaReplacement(replace, re.NumSubexp())
+	}
+	return func(s string) string { return re.ReplaceAllString(s, template) }, true
+}
+
+// javaReplacement turns a replacement in Java's syntax into Go's. Java
+// reads $ and one digit as a group, and takes each further digit while
+// the number stays a group the pattern has.
+func javaReplacement(s string, groups int) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '\\' && i+1 < len(s):
+			i++
+			if s[i] == '$' {
+				b.WriteString("$$")
+			} else {
+				b.WriteByte(s[i])
+			}
+		case c == '$' && i+1 < len(s) && isDigit(s[i+1]):
+			n, j := int(s[i+1]-'0'), i+2
+			for j < len(s) && isDigit(s[j]) && n*10+int(s[j]-'0') <= groups {
+				n, j = n*10+int(s[j]-'0'), j+1
+			}
+			fmt.Fprintf(&b, "${%d}", n)
+			i = j - 1
+		case c == '$' && i+1 < len(s) && s[i+1] == '{':
+			end := strings.IndexByte(s[i:], '}')
+			if end < 0 {
+				b.WriteString("$$")
+				continue
+			}
+			b.WriteString(s[i : i+end+1])
+			i += end
+		case c == '$':
+			b.WriteString("$$")
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 
 // CheckTableHeaders records the formulas a write would put in a table's
 // header row, given each table's header row on the sheet.

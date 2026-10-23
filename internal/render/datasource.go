@@ -13,7 +13,10 @@ type SourceAct struct {
 	Query   string
 	Table   string
 	Dataset string
-	Sheet   string
+	// TableProject is the project the table lives in, which may not be
+	// the one charged.
+	TableProject string
+	Sheet        string
 	// State and Error are the refresh's, not the call's. A call that
 	// worked and a refresh that failed are different things and the
 	// templates keep them apart.
@@ -27,7 +30,8 @@ func (a SourceAct) Phrase() string {
 	case "add":
 		what := fmt.Sprintf("a query against the project %q", a.Project)
 		if a.Table != "" {
-			what = fmt.Sprintf("the BigQuery table %s.%s, charged to the project %q", a.Dataset, a.Table, a.Project)
+			what = fmt.Sprintf("the BigQuery table %s.%s.%s, charged to the project %q",
+				a.TableProject, a.Dataset, a.Table, a.Project)
 		}
 		return "connect " + what
 	case "refresh":
