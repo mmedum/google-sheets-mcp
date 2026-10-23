@@ -496,7 +496,7 @@ Dependencies, all pinned: `modelcontextprotocol/go-sdk` v1.8.0 (with
 `zalando/go-keyring` v0.2.8, `golang.org/x/time` v0.15.0. Nothing else.
 
 Toolchain, current as of 2026-09-05 and matching the sibling servers:
-Go 1.27.2 (`go 1.27.2` in go.mod), go-sdk v1.8.0, golangci-lint v2.14.0, govulncheck
+Go 1.27.3 (`go 1.27.3` in go.mod), go-sdk v1.8.0, golangci-lint v2.14.0, govulncheck
 v1.7.0, go-licenses v1.6.0, gitleaks v8.30.1, GoReleaser v2.18.
 
 **Scaffolding first.** The Makefile, the gates, `.golangci.yml`, the CI,
@@ -2659,7 +2659,7 @@ they are not reopened.
    accepted under the existing scopes, so `get_spreadsheet` reports that
    a spreadsheet is connected to a data source for every user, at no
    cost and no consent.
-7. **Go directive `go 1.27.2`**, matching the sibling servers.
+7. **Go directive `go 1.27.3`**, matching the sibling servers.
 8. **A tool result is not masked; the artifacts meant to be pasted are**
    (decided 2026-09-06, after the live run raised it). `read_range`
    returns cells and `search_spreadsheets` returns titles, ids and the

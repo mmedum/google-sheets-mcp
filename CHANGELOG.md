@@ -37,6 +37,10 @@ and this project follows [semantic versioning](https://semver.org).
 - `manage_data_source` refuses `action: delete`, naming `delete_data_source`; it used to preview the delete, and refuse it asking for a `confirm` it does not take.
 - A `connect_data_source` dry run and result name the whole table, with the project it lives in, not only the project charged.
 
+### Security
+
+- Built with Go 1.27.3, which fixes GO-2026-6809 in `crypto/x509`, which `govulncheck` found reachable from this server: intermediate certificates known to be compromised are no longer trusted.
+
 ## [3.1.2] - 2026-10-10
 
 ### Changed
