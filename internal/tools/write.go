@@ -89,7 +89,7 @@ type DeleteDimensionsInput struct {
 type ClearInput struct {
 	Spreadsheet string `json:"spreadsheet" jsonschema:"a spreadsheet id, any docs.google.com/spreadsheets URL, or an exact title"`
 	Sheet       string `json:"sheet,omitempty" jsonschema:"the sheet title exactly as get_spreadsheet reports it, or its numeric sheet id"`
-	Range       string `json:"range" jsonschema:"the range to clear, in A1, such as B2:D40. Not an anchor, and never left out: the call names what goes. For the whole sheet, name its whole extent, which get_spreadsheet gives"`
+	Range       string `json:"range,omitempty" jsonschema:"required: the range to clear, in A1, such as B2:D40. Not an anchor, and never left out: the call names what goes. For the whole sheet, name its whole extent, which a call without range gives"`
 	Confirm     bool   `json:"confirm,omitempty" jsonschema:"required: Sheets cannot undo a clear"`
 	DryRun      bool   `json:"dry_run,omitempty" jsonschema:"report what is there and clear nothing"`
 }

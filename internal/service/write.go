@@ -153,7 +153,7 @@ func (s *Service) Write(ctx context.Context, req WriteRequest) (*WriteResult, er
 			// From the report rather than a second walk of the grid: it
 			// counted the same cells a moment ago.
 			Counts:   grid.Counts{NonEmpty: report.NonEmpty.Total, Formulas: report.Formulas.Total},
-			Blockers: blockerLines(report, ack),
+			Blockers: seen.previewBlockers(report, ack, req.ExpectCheckpoint),
 		})
 		return res, nil
 	}
@@ -401,11 +401,31 @@ type witness struct {
 // refusal hands over the checkpoint this call read, so no second read
 // is needed.
 func (w witness) holds(ack plan.Ack, expect string) error {
-	if (!ack.Overwrite && !ack.OverwriteFormulas) || expect != "" {
-		return nil
+	if why := w.missing(ack, expect); why != "" {
+		return Errorf("invalid", "%s", why)
 	}
-	return Errorf("invalid", "overwrite needs expect_checkpoint, so that what it replaces is what was read: %s reads %s "+
+	return nil
+}
+
+// missing says why an overwrite with no witness is refused, or nothing
+// when the call needs none or carries one.
+func (w witness) missing(ack plan.Ack, expect string) string {
+	if (!ack.Overwrite && !ack.OverwriteFormulas) || expect != "" {
+		return ""
+	}
+	return fmt.Sprintf("overwrite needs expect_checkpoint, so that what it replaces is what was read: %s reads %s "+
 		"now. Pass that, and a change there before the write is refused", w.where, w.checkpoint)
+}
+
+// previewBlockers is what a dry run lists as in the way: the guard's
+// findings, and an overwrite with no witness, which the same call without
+// dry_run is refused for.
+func (w witness) previewBlockers(r plan.Report, ack plan.Ack, expect string) []string {
+	lines := blockerLines(r, ack)
+	if why := w.missing(ack, expect); why != "" {
+		lines = append(lines, why)
+	}
+	return lines
 }
 
 // refuseWitnessed is refuse for a write an overwrite can open, which

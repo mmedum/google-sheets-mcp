@@ -599,6 +599,28 @@ func CheckReplacement(r *Report, replace string) {
 	}
 }
 
+// CheckCarried records the formulas a copy or a fill would carry into
+// new cells that reach outside the spreadsheet. Each copy reads the
+// cells beside it, so one IMAGE sending one cell becomes many sending
+// many. They are labeled as copies of their source cell, since where
+// each copy lands is the destination's to say.
+func CheckCarried(r *Report, source *grid.Grid) {
+	for i, row := range source.Cells {
+		for j, cell := range row {
+			if !cell.HasFormula() {
+				continue
+			}
+			at := "copies of " + source.Address(i, j)
+			if externalFetch.MatchString(cell.Formula) {
+				r.Fetching.Add(at)
+			}
+			if externalRange.MatchString(cell.Formula) {
+				r.CrossSpreadsheet.Add(at)
+			}
+		}
+	}
+}
+
 // CheckFormulaRewrites records each formula a find_replace inside
 // formulas would leave reaching outside the spreadsheet, at its cell.
 //

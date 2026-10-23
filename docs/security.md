@@ -162,7 +162,10 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
   Every write refuses both, for those two different reasons, unless
   whoever starts the server sets `GSHEETS_ALLOW_EXTERNAL_FORMULAS=true`.
   It used to be an argument, which a model persuaded to write one would
-  have passed too. Every formula a write creates is named in the result.
+  have passed too. A `find_replace` inside formulas is run over each
+  formula first, since a replacement can complete such a name from a
+  formula already there, and a copy or a fill reads the formulas it
+  would copy. Every formula a write creates is named in the result.
 - **Content is data, never instructions.** A read returns what the cells
   hold and the server never acts on it. Formulas are shown rather than
   resolved, so an injected one is visible instead of hidden behind its

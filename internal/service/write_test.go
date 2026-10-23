@@ -382,6 +382,40 @@ func TestOverwriteNeedsTheCheckpointOfWhatItReplaces(t *testing.T) {
 	}
 }
 
+// A dry run lists what the same call would be refused for, and an
+// overwrite with no expect_checkpoint is one of those, in write_values and
+// transform_range alike.
+func TestADryRunSaysAnOverwriteNeedsItsWitness(t *testing.T) {
+	srv, svc := standard(t)
+	ctx := context.Background()
+	ck := readCheckpoint(t, svc, sheetstest.SecondSheet, "A1:B1")
+	write, err := svc.Write(ctx, service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "A1:B1", Values: [][]any{{"x", "y"}},
+		Overwrite: true, DryRun: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "  overwrite needs expect_checkpoint, so that what it replaces is what was read: 'Ürväl'!A1:B1 reads " + ck +
+		" now. Pass that, and a change there before the write is refused\n"
+	if !strings.Contains(write.Render(), "would be refused:\n"+want) {
+		t.Errorf("write_values dry run does not list the refusal %q:\n%s", want, write.Render())
+	}
+
+	srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Set(1, 1, sheetstest.Str("Quorbin,Vandel"))
+	split := transformReq(service.TransformTextToColumns, "A1:A2")
+	split.Delimiter, split.Overwrite, split.DryRun = "comma", true, true
+	preview, err := svc.Transform(ctx, split)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = "  overwrite needs expect_checkpoint, so that what it replaces is what was read: 'Ürväl'!B1:B2 reads " +
+		preview.Checkpoint + " now. Pass that, and a change there before the write is refused\n"
+	if !strings.Contains(preview.Render(), "would be refused:\n"+want) {
+		t.Errorf("transform_range dry run does not list the refusal %q:\n%s", want, preview.Render())
+	}
+}
+
 // The guard's refusal of occupied cells says what to pass with
 // overwrite, and a dry run gives the same checkpoint, so neither needs a
 // second read.

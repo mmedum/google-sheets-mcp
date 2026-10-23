@@ -33,8 +33,8 @@ type ConnectDataSourceInput struct {
 // DeleteDataSourceInput is what delete_data_source takes.
 type DeleteDataSourceInput struct {
 	Spreadsheet string `json:"spreadsheet" jsonschema:"a spreadsheet id, any docs.google.com/spreadsheets URL, or an exact title"`
-	ID          string `json:"id" jsonschema:"which data source, as manage_data_source list reports it; a call without it is refused naming each source and its sheet"`
-	Sheet       string `json:"sheet" jsonschema:"the exact title of the sheet the data source made, which goes with it, as manage_data_source list names it. Refused [conflict] if that is not the source's sheet now; a dry run names it"`
+	ID          string `json:"id,omitempty" jsonschema:"required: which data source, as manage_data_source list reports it. A call without it is refused naming each source and its sheet"`
+	Sheet       string `json:"sheet,omitempty" jsonschema:"required: the exact title of the sheet the data source made, which goes with it, as manage_data_source list names it. Refused [conflict] if that is not the source's sheet now; a dry run, or a call without it, names it"`
 	Confirm     bool   `json:"confirm,omitempty" jsonschema:"required: this removes the data source and the sheet Google made for it, with everything on that sheet, and getting it back means re-running the query"`
 	DryRun      bool   `json:"dry_run,omitempty" jsonschema:"say what would change and send nothing"`
 }

@@ -396,11 +396,13 @@ func TestResourceNotFoundIsTheSpecifiedError(t *testing.T) {
 	}
 }
 
-// TestDeleteDataSourceTakesItsSheet: delete_data_source's schema
-// requires the title of the sheet that goes with the source, so a
-// client's prompt shows it, and the title reaches the service, so a
-// delete naming it goes through (§9a.7).
-func TestDeleteDataSourceTakesItsSheet(t *testing.T) {
+// TestADeleteLeftUnnamedIsTheServersRefusal: an argument a delete
+// refuses to go without is still optional in the schema, so a call
+// without it reaches the server's refusal, which says what to pass, and
+// not the SDK's schema error, which says nothing. With only the
+// destructive flag on, delete_data_source's refusal is the one place the
+// sources are listed. The witness, once given, reaches the service.
+func TestADeleteLeftUnnamedIsTheServersRefusal(t *testing.T) {
 	s, fake := newServer(t, config.Config{EnableDestructive: true}, nil)
 	ctx := context.Background()
 	reply, err := fake.Client().BatchUpdate(ctx, sheetstest.FixtureID, &gsheets.BatchUpdateSpreadsheetRequest{
@@ -411,39 +413,35 @@ func TestDeleteDataSourceTakesItsSheet(t *testing.T) {
 	}
 	id := reply.Replies[0].AddDataSource.DataSource.DataSourceID
 	cs := connect(t, s)
-
-	list, err := cs.ListTools(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var required []string
-	for _, tool := range list.Tools {
-		if tool.Name != "delete_data_source" {
-			continue
-		}
-		raw, err := json.Marshal(tool.InputSchema)
+	call := func(name string, args map[string]any) (string, bool) {
+		t.Helper()
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("%s: %v", name, err)
 		}
-		var schema struct {
-			Required []string `json:"required"`
-		}
-		if err := json.Unmarshal(raw, &schema); err != nil {
-			t.Fatal(err)
-		}
-		required = schema.Required
+		return res.Content[0].(*mcp.TextContent).Text, res.IsError
 	}
-	if !slices.Contains(required, "sheet") {
-		t.Errorf("delete_data_source requires %v, not sheet", required)
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{"delete_data_source", map[string]any{"spreadsheet": sheetstest.FixtureID, "sheet": "Data source 1", "confirm": true},
+			`[invalid] delete needs id, the data source to delete; it has "` + id + `" on the sheet "Data source 1"`},
+		{"delete_data_source", map[string]any{"spreadsheet": sheetstest.FixtureID, "id": id, "confirm": true},
+			`[invalid] delete needs sheet, the title of the sheet the data source made, so the call names the tab ` +
+				`that goes with it: the data source ` + id + ` made the sheet "Data source 1". Pass that`},
+		{"clear_values", map[string]any{"spreadsheet": sheetstest.FixtureID, "sheet": sheetstest.SecondSheet, "confirm": true},
+			`[invalid] clear_values needs range, so the call names what goes: the whole of "Ürväl" is 'Ürväl'!A1:H50. ` +
+				`Pass that to clear all of it`},
+	} {
+		if text, _ := call(tc.name, tc.args); text != tc.want {
+			t.Errorf("%s %v:\n got %s\nwant %s", tc.name, tc.args, text, tc.want)
+		}
 	}
-
-	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "delete_data_source", Arguments: map[string]any{
+	if text, isErr := call("delete_data_source", map[string]any{
 		"spreadsheet": sheetstest.FixtureID, "id": id, "sheet": "Data source 1", "confirm": true,
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.IsError {
-		t.Errorf("a delete naming its sheet was refused: %v", res.Content[0].(*mcp.TextContent).Text)
+	}); isErr {
+		t.Errorf("a delete naming its sheet was refused: %s", text)
 	}
 }

@@ -97,8 +97,14 @@ func staleness(bin string) error {
 		return err
 	}
 	registered := make([]string, 0, len(dump.Tools))
+	var deletes []string
 	for _, t := range dump.Tools {
 		registered = append(registered, t.Name)
+		// A delete is a tool that takes confirm: the five gated ones, read
+		// from the binary rather than listed here.
+		if _, ok := t.InputSchema.Properties["confirm"]; ok {
+			deletes = append(deletes, t.Name)
+		}
 		if t.Description == "" {
 			problems = append(problems, t.Name+" has no description")
 		}
@@ -129,7 +135,8 @@ func staleness(bin string) error {
 	if extra := difference(documented, registered); len(extra) > 0 {
 		problems = append(problems, "README's tool table names tools that are not registered: "+strings.Join(extra, ", "))
 	}
-	problems = append(problems, permissionRulesAreTools(string(readme), registered)...)
+	sort.Strings(deletes)
+	problems = append(problems, permissionRulesAreTools(string(readme), registered, deletes)...)
 
 	cfg, err := os.ReadFile("internal/config/config.go")
 	if err != nil {
@@ -180,17 +187,23 @@ var permissionRule = regexp.MustCompile(`"mcp__google-sheets__([a-z0-9_]+)"`)
 // permissionRulesAreTools holds the README's Claude Code permission rules
 // to the registered tools. A rule for a tool that does not exist matches
 // nothing, so the person it was meant to ask is never asked. It also
-// holds that there are rules at all, since §9a sends the reader to them:
-// a README that lost its block would pass a check over its names.
-func permissionRulesAreTools(readme string, registered []string) []string {
-	rules := permissionRule.FindAllStringSubmatch(readme, -1)
-	if len(rules) < 5 {
-		return []string{fmt.Sprintf("README.md gives %d Claude Code permission rule(s); the deletes alone are five", len(rules))}
+// holds that every delete has a rule, since §9a sends the reader to them:
+// a README that lost its block, or one delete from it, would pass a check
+// over its names alone.
+func permissionRulesAreTools(readme string, registered, deletes []string) []string {
+	if len(deletes) == 0 {
+		return []string{"the binary lists no tool that takes confirm; this check is not looking at the deletes"}
 	}
-	var problems []string
-	for _, m := range rules {
+	var problems, ruled []string
+	for _, m := range permissionRule.FindAllStringSubmatch(readme, -1) {
+		ruled = append(ruled, m[1])
 		if !slices.Contains(registered, m[1]) {
 			problems = append(problems, "README.md gives a permission rule for "+m[1]+", which the binary does not register")
+		}
+	}
+	for _, name := range deletes {
+		if !slices.Contains(ruled, name) {
+			problems = append(problems, "README.md gives no permission rule for "+name+", which deletes")
 		}
 	}
 	return problems

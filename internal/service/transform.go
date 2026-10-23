@@ -167,6 +167,9 @@ func (s *Service) Transform(ctx context.Context, req TransformRequest) (*Transfo
 		res.DryRun = true
 		res.Checkpoint = seen.checkpoint
 		view.Blockers = blockerLines(report, ack)
+		if read != nil {
+			view.Blockers = seen.previewBlockers(report, ack, req.ExpectCheckpoint)
+		}
 		view.Checkpoint, view.Read = seen.checkpoint, seen.where
 		res.Summary = render.OpsPreview(view)
 		return res, nil
@@ -478,6 +481,20 @@ func (s *Service) transformGuard(ctx context.Context, req TransformRequest, ref 
 		if err := readable(t.destination, "the destination is read first to say what it would replace"); err != nil {
 			return plan.Report{}, nil, err
 		}
+		// A copy or a fill makes new formulas from the ones it copies,
+		// each reading the cells beside it, so the operator's setting
+		// covers them as it covers a formula written as text. A cut moves
+		// a formula rather than making another.
+		if carriesFormulas(req) && !ack.AllowExternalFormulas {
+			if err := readable(rect, "the source is read first for a formula that reaches outside the spreadsheet"); err != nil {
+				return plan.Report{}, nil, err
+			}
+			source, err := s.readTarget(ctx, target{ref: ref, props: props, rect: rect})
+			if err != nil {
+				return plan.Report{}, nil, err
+			}
+			plan.CheckCarried(&report, source)
+		}
 		return s.landingReport(ctx, target{ref: ref, props: t.destSheet, rect: t.destination}, report, ack)
 
 	case TransformTextToColumns:
@@ -521,6 +538,19 @@ func (s *Service) transformGuard(ctx context.Context, req TransformRequest, ref 
 		return report, source, nil
 	}
 	return report, nil, nil
+}
+
+// carriesFormulas says whether an action makes new formulas from the ones
+// in its range: a fill, and a copy of everything or of formulas.
+func carriesFormulas(req TransformRequest) bool {
+	switch req.Action {
+	case TransformAutoFill:
+		return true
+	case TransformCopyPaste:
+		paste, err := plan.ParsePaste(req.Paste)
+		return err == nil && (paste == gsheets.PasteNormal || paste == gsheets.PasteFormula)
+	}
+	return false
 }
 
 // splitGuard reads the columns a text_to_columns would spill into.

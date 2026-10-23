@@ -800,8 +800,12 @@ it, since a replacement can complete a name from what is already there:
 would come out reaching outside is refused at its cell, and so is one
 that already did and would change. A regular expression Go cannot
 compile, such as a lookbehind, cannot be run here first, so over
-formulas it is refused unless the setting allows it. Every formula a
-write creates is named in the result. Reads show formulas for the
+formulas it is refused unless the setting allows it. A `copy_paste` of
+everything or of formulas, and an `auto_fill`, make new formulas from
+the ones they copy, each reading the cells beside it, so the source is
+read for such a formula and the copy refused the same way; a cut moves
+a formula rather than making another. Every formula a write creates is
+named in the result. Reads show formulas for the
 same reason: an injected one should be visible, not hidden behind its
 value.
 
@@ -1296,7 +1300,7 @@ readOnly rows and requests read-only scopes.
 | `format_cells` | Number format, styles, borders, alignment, wrapping, merges, notes | idempotent, destructive | 2 |
 | `manage_range` | Named ranges, protected ranges, data validation, tables, banding, conditional format rules | destructive | 2 |
 | `transform_range` | sort, find_replace, trim, dedupe, text_to_columns, fill, copy/cut-paste | destructive | 2 |
-| `manage_anchor` | Durable labels for a row, column or sheet: add, list, move, remove. `anchor:<name>` works wherever a range does (§6.4) | — | 3 |
+| `manage_anchor` | Durable labels for a row, column or sheet: add, list, move, remove. `anchor:<name>` works wherever a range does, except in `delete_dimensions` and `clear_values` (§6.4, §9a) | — | 3 |
 | `clear_values` | Gated: clear a range's values, keeping formatting | destructive | 1 |
 | `delete_sheet` | Gated: delete a sheet and everything on it | destructive | 1 |
 | `manage_chart` | Charts and slicers: add, update, delete, move | destructive | 4 |
@@ -1614,7 +1618,7 @@ What stays is what holds on every client:
    - `allow_external_formulas` is gone as an argument. A formula that
      makes Google fetch a URL, or an `IMPORTRANGE`, is written only when
      the server was started with `GSHEETS_ALLOW_EXTERNAL_FORMULAS=true`,
-     on every write, `find_replace` included (§7.3).
+     on every write, `find_replace`, copies and fills included (§7.3).
 9. **The model never widens its own reach.** No tool writes this
    server's settings, turns a tool on or lifts a refusal.
    `TestNoToolCanWriteTheServersSettings` walks every package
