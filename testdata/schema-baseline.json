@@ -1,6 +1,6 @@
 {
   "server": "google-sheets-mcp",
-  "version": "v3.1.2",
+  "version": "v4.0.0",
   "sdk": "v1.8.0",
   "tools": [
     {
@@ -10,14 +10,10 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Add rows after a block of data, and report where they actually landed. Google decides the destination: it finds the contiguous block your range falls in and writes below that one, so the same sheet given a cell in the first block and given the whole sheet appends in different places. The result names the block it found and the range it wrote. insert=rows is the default and destroys nothing — it inserts, and everything below moves down, so an address or a checkpoint from before the call no longer points where it did. insert=overwrite writes over whatever follows and needs overwrite, because the destination is not knowable before the call. Use write_values when you know the addresses you want.",
+      "description": "Add rows after a block of data, and report where they actually landed. Google decides the destination: it finds the contiguous block your range falls in and writes below that one, so the same sheet given a cell in the first block and given the whole sheet appends in different places. The result names the block it found and the range it wrote. It inserts rows and destroys nothing: everything below moves down, so an address or a checkpoint from before the call no longer points where it did. Use write_values when you know the addresses you want, including to write over rows that are there.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "allow_external_formulas": {
-            "description": "allow appending formulas that reach outside the spreadsheet, as in write_values",
-            "type": "boolean"
-          },
           "dry_run": {
             "description": "report what would be appended and send nothing",
             "type": "boolean"
@@ -25,14 +21,6 @@
           "input": {
             "description": "typed (default) or literal, as in write_values",
             "type": "string"
-          },
-          "insert": {
-            "description": "rows (default) inserts, so nothing is overwritten and everything below moves down. overwrite writes over whatever follows the block and needs overwrite as well",
-            "type": "string"
-          },
-          "overwrite": {
-            "description": "required for insert=overwrite. The destination is chosen during the call, so this server cannot read it first and tell you what is there",
-            "type": "boolean"
           },
           "range": {
             "description": "which block of data to append after — not where the rows land. Google finds the contiguous block your range falls in and writes below that one, so a range inside the first block appends after the first block while the whole sheet appends after the last. The result says where the rows actually went",
@@ -170,16 +158,13 @@
       }
     },
     {
-      "_meta": {
-        "anthropic/requiresUserInteraction": true
-      },
       "annotations": {
         "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Clear a range's values and keep its formatting, notes and validation rules. Reads the range first and says how many cells it would remove and how many are formulas, so the confirmation is informed. A cell showing a value nobody typed is not one it removes, and a cell a pivot table is anchored at takes the whole table and everything it draws; both are named. Sheets cannot undo it, so confirm is required and dry_run shows what is there. To replace values rather than remove them, use write_values. When the client can, the server also asks the person before the write; a call they do not confirm is [blocked], and is not made again unless they ask.",
+      "description": "Clear a range's values and keep its formatting, notes and validation rules. Reads the range first and says how many cells it would remove and how many are formulas, so the confirmation is informed. A cell showing a value nobody typed is not one it removes, and a cell a pivot table is anchored at takes the whole table and everything it draws; both are named. The range is A1 and always given, never an anchor, so the call names what goes. Sheets cannot undo it, so confirm is required and dry_run shows what is there. To replace values rather than remove them, use write_values.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -192,7 +177,7 @@
             "type": "boolean"
           },
           "range": {
-            "description": "the range to clear, or omitted for the whole sheet",
+            "description": "required: the range to clear, in A1, such as B2:D40. Not an anchor, and never left out: the call names what goes. For the whole sheet, name its whole extent, which a call without range gives",
             "type": "string"
           },
           "sheet": {
@@ -245,6 +230,114 @@
           "range",
           "cells",
           "formulas"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Connect a BigQuery query or table to a spreadsheet through Connected Sheets. Google makes a sheet for it and runs the query, charged to the Cloud project named, now and on every refresh. It needs a Cloud project with BigQuery enabled and billing attached. The query runs in the background, so a call that succeeds has started it rather than finished it, and the result gives the new source's id and the state Google put it in. manage_data_source refreshes and lists sources.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dataset": {
+            "description": "the BigQuery dataset, when connecting a whole table instead of a query",
+            "type": "string"
+          },
+          "dry_run": {
+            "description": "say what would be connected and send nothing",
+            "type": "boolean"
+          },
+          "project": {
+            "description": "a BigQuery-enabled Cloud project with a billing account attached. Every query this source runs is charged to it",
+            "type": "string"
+          },
+          "query": {
+            "description": "the SQL to run. Give this or table",
+            "type": "string"
+          },
+          "spreadsheet": {
+            "description": "a spreadsheet id, any docs.google.com/spreadsheets URL, or an exact title",
+            "type": "string"
+          },
+          "table": {
+            "description": "the BigQuery table to connect whole",
+            "type": "string"
+          },
+          "table_project": {
+            "description": "the project the table lives in, when that is not the project being charged",
+            "type": "string"
+          }
+        },
+        "required": [
+          "spreadsheet",
+          "project"
+        ],
+        "type": "object"
+      },
+      "name": "connect_data_source",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "data_sources": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "where the data comes from",
+                  "type": "string"
+                },
+                "sheet": {
+                  "description": "the DATA_SOURCE sheet Google made for it",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "what Google said went wrong with the refresh, which is not the same as this call failing",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "spreadsheet": {
+            "type": "string"
+          },
+          "state": {
+            "description": "the refresh's state: RUNNING, SUCCEEDED, FAILED or CANCELLED",
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
+          "spreadsheet",
+          "action"
         ],
         "type": "object"
       }
@@ -406,16 +499,13 @@
       }
     },
     {
-      "_meta": {
-        "anthropic/requiresUserInteraction": true
-      },
       "annotations": {
         "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Delete a comment thread with its replies, or one reply with post_id. Sheets cannot bring it back, and resolving with manage_cell_comment usually does what is wanted while keeping it. Google lets only the author delete, and does not delete a reply that resolved, reopened or assigned the thread. confirm is required; dry_run shows what would go. A thread or reply that is not there is reported gone, and nothing is sent: Google cannot tell one already deleted from an id it never had. When the client can, the server also asks the person before the write; a call they do not confirm is [blocked], and is not made again unless they ask.",
+      "description": "Delete a comment thread with its replies, or one reply with post_id. Sheets cannot bring it back, and resolving with manage_cell_comment usually does what is wanted while keeping it. Google lets only the author delete, and does not delete a reply that resolved, reopened or assigned the thread. confirm is required; dry_run shows what would go. A thread or reply that is not there is reported gone, and nothing is sent: Google cannot tell one already deleted from an id it never had.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -590,7 +680,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Delete a Connected Sheets data source, the sheet Google made for it, and everything on that sheet. Getting it back means connecting the source again and re-running its query, which is charged to the Cloud project behind it. manage_data_source list and get_spreadsheet both report the ids. This needs no BigQuery scope, so it reaches a data source somebody else connected. When the client can, the server also asks the person before the write; a call they do not confirm is [blocked], and is not made again unless they ask.",
+      "description": "Delete a Connected Sheets data source, the sheet Google made for it, and everything on that sheet. Getting it back means connecting the source again and re-running its query, which is charged to the Cloud project behind it. It takes the source's id and the title of its sheet, both as manage_data_source list reports them; a call without the id is refused naming each source and its sheet. This needs no BigQuery scope, so it reaches a data source somebody else connected.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -603,7 +693,11 @@
             "type": "boolean"
           },
           "id": {
-            "description": "which data source, as manage_data_source list and get_spreadsheet both report",
+            "description": "required: which data source, as manage_data_source list reports it. A call without it is refused naming each source and its sheet",
+            "type": "string"
+          },
+          "sheet": {
+            "description": "required: the exact title of the sheet the data source made, which goes with it, as manage_data_source list names it. Refused [conflict] if that is not the source's sheet now; a dry run, or a call without it, names it",
             "type": "string"
           },
           "spreadsheet": {
@@ -612,8 +706,7 @@
           }
         },
         "required": [
-          "spreadsheet",
-          "id"
+          "spreadsheet"
         ],
         "type": "object"
       },
@@ -680,21 +773,18 @@
       }
     },
     {
-      "_meta": {
-        "anthropic/requiresUserInteraction": true
-      },
       "annotations": {
         "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Delete rows or columns and the data on them. Counts what is there first and says so, because nothing in Sheets brings it back. Everything after the band moves up, so a checkpoint or an address from before the call no longer points where it did. To make room rather than remove it, or to hide a band, use edit_dimensions. confirm is required. When the client can, the server also asks the person before the write; a call they do not confirm is [blocked], and is not made again unless they ask.",
+      "description": "Delete rows or columns and the data on them. Counts what is there first and says so, because nothing in Sheets brings it back. Everything after the band moves up, so a checkpoint or an address from before the call no longer points where it did. The band is A1, not an anchor, so the call names what goes. To make room rather than remove it, or to hide a band, use edit_dimensions. confirm is required.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "band": {
-            "description": "which ones, in A1: 2:5 for rows, B:D for columns. It must agree with dimension. anchor:\u003cname\u003e works here too, and resolves to whatever row or column that label points at now",
+            "description": "which ones, in A1: 2:5 for rows, B:D for columns. It must agree with dimension. Not an anchor: the call names what goes, and manage_anchor list says where an anchor points",
             "type": "string"
           },
           "confirm": {
@@ -807,16 +897,13 @@
       }
     },
     {
-      "_meta": {
-        "anthropic/requiresUserInteraction": true
-      },
       "annotations": {
         "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Delete a sheet and everything on it: values, formulas, charts, formatting. Counts what would go with it first and says so, because Sheets cannot bring any of it back. Consider manage_sheet duplicate first, or manage_sheet hide, which keeps the sheet and takes it out of the way. confirm is required. When the client can, the server also asks the person before the write; a call they do not confirm is [blocked], and is not made again unless they ask.",
+      "description": "Delete a sheet and everything on it: values, formulas, charts, formatting. Counts what would go with it first and says so, because Sheets cannot bring any of it back. Consider manage_sheet duplicate first, or manage_sheet hide, which keeps the sheet and takes it out of the way. confirm is required.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1172,7 +1259,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": true,
         "openWorldHint": false,
         "readOnlyHint": false
@@ -1404,7 +1491,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Label a row, a column or a sheet so it can be found again after the spreadsheet has been edited around it. An A1 address goes stale the moment somebody inserts a row: what was row 40 is row 41 and nothing says so. An anchor does not — it follows its row through inserts, deletes, moves and sorts, so anchor:invoice totals still reads the same row a week later. Deleting the row itself takes the anchor with it. Pass anchor:\u003cname\u003e anywhere a range or band argument is taken, in this tool and every other one; A1 keeps working everywhere, so an anchor is a convenience and never a requirement. action=add creates one and refuses a name already in use, move points an existing one somewhere else, remove deletes the label and leaves the data alone, and list shows every anchor in the spreadsheet. Anchors are stored in the spreadsheet itself, so they outlive this session and are visible to anything else that reads it.",
+      "description": "Label a row, a column or a sheet so it can be found again after the spreadsheet has been edited around it. An A1 address goes stale the moment somebody inserts a row: what was row 40 is row 41 and nothing says so. An anchor does not — it follows its row through inserts, deletes, moves and sorts, so anchor:invoice totals still reads the same row a week later. Deleting the row itself takes the anchor with it. Pass anchor:\u003cname\u003e anywhere a range or band argument is taken, in this tool and every other one but delete_dimensions and clear_values, which take the rows or range itself so the call names what goes; A1 keeps working everywhere, so an anchor is a convenience and never a requirement. action=add creates one and refuses a name already in use, move points an existing one somewhere else, remove deletes the label and leaves the data alone, and list shows every anchor in the spreadsheet. Anchors are stored in the spreadsheet itself, so they outlive this session and are visible to anything else that reads it.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1708,7 +1795,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
@@ -1896,16 +1983,12 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Connect a BigQuery data source to a spreadsheet, refresh it, cancel a refresh, delete it or list what is connected. This is Connected Sheets, and it reaches outside the spreadsheet: it needs a Cloud project with BigQuery enabled and billing attached, and every query is charged to that project. A refresh runs in the background, so a call that succeeds has started the work rather than finished it, and the result says which state Google put it in. get_spreadsheet already reports whether a spreadsheet has data sources at all, with no extra scope, so this tool is only needed to change one. Deleting one is delete_data_source, which is off by default and needs confirm. When the client can, the server also asks the person before the write; a call they do not confirm is [blocked], and is not made again unless they ask.",
+      "description": "Refresh a Connected Sheets data source, cancel a refresh, or list what is connected. This reaches outside the spreadsheet: every refresh runs the source's BigQuery query again, charged to the Cloud project behind it, so refresh names one source by id. A refresh runs in the background, so a call that succeeds has started the work rather than finished it, and the result says which state Google put it in. get_spreadsheet already reports whether a spreadsheet has data sources at all, with no extra scope. Connecting one is connect_data_source; deleting one is delete_data_source, which is off by default and needs confirm.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "action": {
-            "description": "add, refresh, cancel_refresh or list. Deleting is delete_data_source, its own tool, because it takes a whole sheet with it",
-            "type": "string"
-          },
-          "dataset": {
-            "description": "for add: the BigQuery dataset, when connecting a whole table instead of a query",
+            "description": "refresh, cancel_refresh or list. Connecting one is connect_data_source and deleting one is delete_data_source, each its own tool",
             "type": "string"
           },
           "dry_run": {
@@ -1913,27 +1996,11 @@
             "type": "boolean"
           },
           "id": {
-            "description": "which data source, as list reports it. refresh and cancel_refresh take every source when it is left out; delete does not",
-            "type": "string"
-          },
-          "project": {
-            "description": "for add: a BigQuery-enabled Cloud project with a billing account attached. Every query this source runs is charged to it",
-            "type": "string"
-          },
-          "query": {
-            "description": "for add: the SQL to run",
+            "description": "which data source, as list reports it. refresh needs it; cancel_refresh takes every source when it is left out",
             "type": "string"
           },
           "spreadsheet": {
             "description": "a spreadsheet id, any docs.google.com/spreadsheets URL, or an exact title",
-            "type": "string"
-          },
-          "table": {
-            "description": "for add: the BigQuery table to connect whole",
-            "type": "string"
-          },
-          "table_project": {
-            "description": "for add: the project the table lives in, when that is not the project being charged",
             "type": "string"
           }
         },
@@ -2007,7 +2074,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
@@ -2200,7 +2267,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
@@ -2966,12 +3033,12 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Sort, replace, trim, de-duplicate, split, shuffle, fill, copy or move a range. These are the operations that move data without you naming its new address, so each one reads what it would land on and refuses first: a paste lands on cells you did not name, a split spills into the columns to its right, and a replacement inside formulas rewrites what a cell computes rather than what it shows. Each refusal names the cells and the argument that would allow it. sort, randomize, remove_duplicates and cut_paste all move rows, so an address or a checkpoint from before the call no longer points where it did, and the result says so.",
+      "description": "Sort, replace, trim, de-duplicate, split, shuffle, fill, copy or move a range. These are the operations that move data without you naming its new address, so each one reads what it would land on and refuses first: a paste lands on cells you did not name, a split spills into the columns to its right, and a replacement inside formulas rewrites what a cell computes rather than what it shows. Each refusal names the cells and the argument that would allow it; overwrite needs expect_checkpoint, which the refusal gives. remove_duplicates deletes rows. sort, randomize, remove_duplicates and cut_paste all move rows, so an address or a checkpoint from before the call no longer points where it did, and the result says so.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2994,6 +3061,10 @@
           "dry_run": {
             "description": "say what would change and send nothing",
             "type": "boolean"
+          },
+          "expect_checkpoint": {
+            "description": "the checkpoint of the cells this action reads before it writes, as its refusal or a dry run gives it; the action is refused if they changed since. Required with overwrite",
+            "type": "string"
           },
           "fill_length": {
             "description": "for auto_fill: how many rows or columns to fill past the range",
@@ -3020,7 +3091,7 @@
             "type": "boolean"
           },
           "overwrite": {
-            "description": "allow the write over cells that are not empty, wherever this lands",
+            "description": "allow the write over cells that are not empty, wherever this lands, carrying the person's decision to replace them. Needs expect_checkpoint",
             "type": "boolean"
           },
           "overwrite_formulas": {
@@ -3087,6 +3158,10 @@
             "description": "what the API reported afterwards: cells changed, rows removed, occurrences replaced",
             "type": "integer"
           },
+          "checkpoint": {
+            "description": "on a dry run, the checkpoint of the cells the action reads before it writes (where a copy or fill lands, where a split spills, or the formulas a replacement rewrites), which overwrite needs as expect_checkpoint",
+            "type": "string"
+          },
           "destination": {
             "description": "where a copy or a cut landed",
             "type": "string"
@@ -3120,25 +3195,21 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Write a rectangle of values, refusing first anything the write would destroy that you cannot see. Before sending, this reads the target and refuses if it holds formulas (a formula and its result look identical in a read), if it is not empty, if it is protected, or if the write cuts across a merged range. A formula into a table's header row is refused outright: Google replaces it with a column name of its own. Each refusal names the cells and the argument that would allow it. Sheets has no undo, so this is the only guard there is. After writing it asks Google for the stored values back and names every one it changed: with input=typed, 007 becomes 7 and 2026-09-05 becomes a date serial that still displays as a date. The range says where to start; the values decide the rectangle. A range larger than the values leaves the rest as it was, and the result says so. Use dry_run first when you are not sure what is there.",
+      "description": "Write a rectangle of values, refusing first anything the write would destroy that you cannot see. Before sending, this reads the target and refuses if it holds formulas (a formula and its result look identical in a read), if it is not empty, if it is protected, or if the write cuts across a merged range. A formula into a table's header row is refused outright: Google replaces it with a column name of its own. Each refusal names the cells and the argument that would allow it. Sheets has no undo, so this is the only guard there is. overwrite carries the person's decision to replace what is there, not a way past a refusal, and it needs expect_checkpoint, which the refusal gives. A formula that fetches a URL, or IMPORTRANGE, is refused unless the person running the server allows them. After writing it asks Google for the stored values back and names every one it changed: with input=typed, 007 becomes 7 and 2026-09-05 becomes a date serial that still displays as a date. The range says where to start; the values decide the rectangle. A range larger than the values leaves the rest as it was, and the result says so. Use dry_run first when you are not sure what is there.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "allow_external_formulas": {
-            "description": "allow writing IMPORTXML, IMPORTDATA, IMPORTHTML, IMPORTFEED, IMAGE, HYPERLINK or IMPORTRANGE. The first six take an arbitrary URL that Google fetches from its own servers; IMPORTRANGE pulls another spreadsheet's data into this one",
-            "type": "boolean"
-          },
           "dry_run": {
             "description": "report what the write would find and change, and send nothing",
             "type": "boolean"
           },
           "expect_checkpoint": {
-            "description": "a checkpoint from a read_range of this same range; the write is refused if the cells changed since. Best effort — Sheets has no atomic guard — so a protected range is the real one",
+            "description": "the checkpoint of the cells the write covers, as a refusal, a dry run or a read_range of that same rectangle gives it; the write is refused if they changed since. Required with overwrite. Best effort — Sheets has no atomic guard — so a protected range is the real one",
             "type": "string"
           },
           "input": {
@@ -3146,7 +3217,7 @@
             "type": "string"
           },
           "overwrite": {
-            "description": "allow the write over cells that are not empty. Without it a write into occupied cells is refused with their addresses",
+            "description": "allow the write over cells that are not empty, carrying the person's decision to replace them. Without it a write into occupied cells is refused with their addresses. Needs expect_checkpoint",
             "type": "boolean"
           },
           "overwrite_formulas": {
@@ -3199,7 +3270,7 @@
             "type": "integer"
           },
           "checkpoint": {
-            "description": "a checkpoint over what was just written, to hand to a later write",
+            "description": "after a write, a checkpoint over what was just written, to hand to a later write; after a dry run, over what the target holds now, which overwrite needs as expect_checkpoint",
             "type": "string"
           },
           "coerced": {

@@ -1,8 +1,23 @@
 # Architecture — google-sheets-mcp
 
-**Status: v3.1.2 (2026-10-10):** a clearer answer when Google refuses a typed
-table add, and a refusal of a validation rule on a dropdown column's cells;
-run live first: 301 steps, none failed. v3.1.1 (2026-10-09), released and
+**Status: v4.0.0 (2026-10-23):** per-call approval is the client's (§9a).
+The server asks the person nothing, and `GSHEETS_REQUIRE_PROMPT` set on
+refuses to start. `connect_data_source` is what `manage_data_source`
+`add` was, `refresh` names its source, `append_rows` only inserts, an
+overwrite carries the checkpoint of what it replaces, the gated deletes
+take their target in A1, and formulas that reach outside are the
+operator's `GSHEETS_ALLOW_EXTERNAL_FORMULAS`. `destructiveHint` is exact,
+and only `delete_data_source` carries the mark. The module path is `/v4`,
+built with Go 1.27.3. Run live first: 302 steps, none failed, one
+undetermined (the content search, as in earlier phases), and the
+transcript read. Owed: two probes, of who sees Connected Sheets results
+and of whom a comment's assignee reaches (§9a, §17b); whether a
+`find_replace` over values can turn text into a formula that reaches
+outside; and the data source tools against a real BigQuery project,
+tested offline only. v3.1.2 (2026-10-10): a clearer answer when Google
+refuses a typed table add, and a refusal of a validation rule on a
+dropdown column's cells; run live first: 301 steps, none failed. v3.1.1
+(2026-10-09), released and
 verified from outside: checksums,
 the cosign signature and the provenance attestation, each also against a
 tampered copy, the version in the binary, the registry publish, and
@@ -27,25 +42,13 @@ gate holds — `$schema` at a release tag rather than a branch, with a
 floor under `manifest_version`. Spikes L, M, N and P ran
 against a real account and §18 carries what they found.
 
-**Unreleased, for 4.0.0: per-call approval is the client's (§9a).** The
-server asks the person nothing, and `GSHEETS_REQUIRE_PROMPT` set on
-refuses to start. `connect_data_source` is what `manage_data_source`
-`add` was, `refresh` names its source, `append_rows` only inserts, an
-overwrite carries the checkpoint of what it replaces, the gated deletes
-take their target in A1, and formulas that reach outside are the
-operator's `GSHEETS_ALLOW_EXTERNAL_FORMULAS`. `destructiveHint` is exact,
-and only `delete_data_source` carries the mark. The module path is
-`/v4`. Owed: a live run, its transcript read, and two probes, of who
-sees Connected Sheets results and of whom a comment's assignee reaches
-(§9a, §17b).
-
-**Unreleased: spike T Q12 and Q13 are answered, each run alone on
+**v3.1.2: spike T Q12 and Q13 are answered, each run alone on
 2026-10-09** (§15, §18). In a fresh spreadsheet, Google answered the
 fifth table add with column types HTTP 500 and took a plain add after it.
 `manage_range` now says so when such an add fails and nothing was added.
 Google refuses a data validation rule on a cell in a typed column, so
 `manage_range` refuses one on a dropdown column's cells before sending
-it. Owed: a live run of the new validation step (§16), spike T Q13b
+it; that step passed live in the run before 4.0.0. Owed: spike T Q13b
 (§15), and a person reading the comma-locale color scale. The dropdown
 refusal of v3.1.0 passed live in the 300-step run before the release.
 
@@ -2576,12 +2579,13 @@ the card showed the types. The refusals of a formula into a header, a
 boolean column over text and a table over a formula heading each came
 back as expected. Under `de_DE`, Google refused a color scale point of
 `1.5` and took `1,5`; which value `1,5` colors from is for a person to
-read in that spreadsheet. Still owed: a live run of the step added
-since, a dropdown typed over cells with a list of their own, which must
-be refused; and that reading of the comma-locale scale. Spike T Q12 and
-Q13 ran alone the same evening (§15).
+read in that spreadsheet. The step added since, a dropdown typed over
+cells with a list of their own, was refused, as it must be, in the run
+before 4.0.0. Still owed: that reading of the comma-locale scale. Spike
+T Q12 and Q13 ran alone the same evening (§15).
 
-**Per-call approval (v4.0.0). Built 2026-10-23, not yet run live.**
+**Per-call approval (v4.0.0). Built 2026-10-23. Live run the same day:
+302 steps, 0 failed, 1 undetermined**, the content search again.
 The family's standard dropped the server's question on 2026-10-22 and
 the maintainer approved this port on 2026-10-23; §9a is the design and
 §18 "Per-call approval" the evidence. The question, its signed state,
@@ -2593,14 +2597,25 @@ a dry run of the same call, starts a second server with
 and drives the refusals of an anchor band, an omitted clear range and a
 replacement naming `IMAGE`. Breaking, so the module path moves to `/v4`.
 
-**Unreleased: what Q12 and Q13 found, built in.** A table add with
+The transcript was read. No step put a question to the person. An
+overwrite without its checkpoint was refused `[invalid]` naming it, and
+went through with the checkpoint a dry run of the same call gave.
+`IMPORTRANGE` was refused naming the setting, and written by the second
+server. A `find_replace` of `1` by `2` inside formulas was refused
+naming the `IMPORTRANGE` it would rewrite. The three refusals named the
+band, the whole sheet and the setting. Not driven: the three data source
+tools, which need a BigQuery project, and Claude Code's prompt on
+`delete_data_source`, which a person has to see.
+
+**What Q12 and Q13 found, built in (v3.1.2).** A table add with
 column types that Google answers HTTP 500, and that a read finds did not
 land, says Google has refused such adds after about four in a
 spreadsheet, and that an add without `column_types` was still taken
 (§7.5). `data_validation` `add` and `update` are refused over a dropdown
 column's cells with Google's reason, from the card's tables (§7.5). The
 live driver asks for that refusal on the typed table's dropdown column.
-Owed: a live run of it and of the step above, and spike T Q13b (§15).
+Both refusals on a typed table's dropdown passed live in the run before
+4.0.0. Owed: spike T Q13b (§15).
 
 ## 17. Open decisions
 
@@ -3896,7 +3911,7 @@ re-checked here.
 | VS Code prompts by `destructiveHint` | **Refuted, tier 3.** VS Code prompts on every tool without `readOnlyHint` and ignores `destructiveHint`; Codex prompts by `destructiveHint`, and claude.ai and ChatGPT document that it decides theirs | `readOnlyHint` only on the six reads; `destructiveHint` on the five deletes and the six ordinary writes that can take away what they land on (§9a.5) |
 | A risky value of an argument is covered by the client's prompt for its tool | **Refuted, tier 3.** claude.ai, Codex, VS Code and Copilot remember "always allow" per tool, never per argument value, and Claude Code matches an MCP argument only in a command-line deny rule | `connect_data_source` split from `manage_data_source`; `refresh` needs `id`; `append_rows` `insert: overwrite` removed; `allow_external_formulas` became `GSHEETS_ALLOW_EXTERNAL_FORMULAS` (§9a.8) |
 | Every Destructive tool should carry `requiresUserInteraction` for a client that cannot ask | **Refined, tier 3.** Claude Code documents the mark for "tools whose permission prompt is itself the point", prompts for it on every call with no "don't ask again", and refuses the call where nothing can be drawn. On a delete made many times in a row it is a prompt per call, the failure the question had | The mark on `delete_data_source` alone (§9a.6) |
-| `deleteDataSource` takes the source and its sheet, and nothing else | **Refined, tier 3**: the survey for this port read Google's description of `DeleteDataSourceRequest` as also deleting the source's sheet and unlinking every data source object built on it: tables, pivot tables, formulas and charts. The discovery snapshot here records field names only, so the wording is to be read again from the discovery document before the release; the unlinking has not been probed, since the driver cannot connect a source | `delete_data_source` carries the mark: other objects depend on what it removes |
+| `deleteDataSource` takes the source and its sheet, and nothing else | **Refined, tier 3**: the survey for this port read Google's description of `DeleteDataSourceRequest` as also deleting the source's sheet and unlinking every data source object built on it: tables, pivot tables, formulas and charts. The discovery snapshot here records field names only. **Read again 2026-10-23** in revision 20260610 of the discovery document, the newest copy on hand offline: "Deletes a data source. The request also deletes the associated data source sheet, and unlinks all associated data source objects." `DataSourceObjectReference` names those objects: a chart, a formula's cell, a pivot table's anchor, a table's anchor and the `DATA_SOURCE` sheet. The unlinking has not been probed, since the driver cannot connect a source | `delete_data_source` carries the mark: other objects depend on what it removes |
 | An append that writes over the rows after a block can be guarded | **Refuted, tier 1** by this server's own finding (§7.3): `values.append` picks its destination during the call, so no read before it sees the rows `OVERWRITE` replaces, and no checkpoint can witness them | `insert: overwrite` removed; `write_values` writes over known addresses |
 | An `overwrite` flag is enough to say the person chose to replace what is there | **Refuted, by this server's own guard**: a flag set after a refusal covers whatever the cells hold when the write lands, a collaborator's later edit included, and a model can resend it on its own | `overwrite` needs `expect_checkpoint`, which the refusal and a dry run give; the instructions say `overwrite` carries a decision the person made, not a way past a refusal (§7.3) |
 | A `find_replace` cannot create a formula that reaches outside the spreadsheet | **Unverified, not probed**: the external-formula check ran only over values a write sends, and a replacement's text was never checked, inside formulas or out. **Refuted by the review of the port, 2026-10-23**: checking the replacement text alone missed a rewrite that completes a name from a formula already there | A replacement naming such a function is refused unless the operator's setting allows it, whatever it searches, and a rewrite inside formulas is run first over each formula read and refused where one would reach outside (§7.3) |

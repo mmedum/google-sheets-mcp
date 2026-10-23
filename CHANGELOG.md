@@ -5,6 +5,8 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-10-23
+
 ### Added
 
 - `connect_data_source` connects a BigQuery query or table through Connected Sheets, as `manage_data_source` `add` did, with `GSHEETS_ENABLE_DATA_SOURCES=true`. Your client's approval of `manage_data_source` no longer covers starting a new billed query.
@@ -1382,7 +1384,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.2...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.2...v4.0.0
 [3.1.2]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.1...v3.1.2
 [3.1.1]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/mmedum/google-sheets-mcp/compare/v3.0.2...v3.1.0
