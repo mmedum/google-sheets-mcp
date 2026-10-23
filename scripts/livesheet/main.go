@@ -36,6 +36,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"strings"
@@ -443,12 +444,8 @@ func (d *driver) witnessed(tool string, args map[string]any) (map[string]any, er
 	if args["expect_checkpoint"] != fromDryRun {
 		return args, nil
 	}
-	dry := map[string]any{}
-	for k, v := range args {
-		if k != "expect_checkpoint" {
-			dry[k] = v
-		}
-	}
+	dry := maps.Clone(args)
+	delete(dry, "expect_checkpoint")
 	dry["dry_run"] = true
 	_, structured, err := d.call(tool, dry)
 	if err != nil {
@@ -459,10 +456,7 @@ func (d *driver) witnessed(tool string, args map[string]any) (map[string]any, er
 		return nil, fmt.Errorf("the dry run gave no checkpoint")
 	}
 	line("     expect_checkpoint %s, from a dry run of the same call", ck)
-	out := map[string]any{}
-	for k, v := range args {
-		out[k] = v
-	}
+	out := maps.Clone(args)
 	out["expect_checkpoint"] = ck
 	return out, nil
 }

@@ -148,16 +148,17 @@ func (s *Service) ConnectDataSource(ctx context.Context, req ConnectRequest) (*S
 	}
 	query := strings.TrimSpace(req.Query)
 	table := strings.TrimSpace(req.Table)
+	dataset := strings.TrimSpace(req.Dataset)
 	switch {
 	case query != "" && table != "":
 		return nil, Errorf("invalid", "query and table are two ways to say the same thing; pass one")
 	case query == "" && table == "":
 		return nil, Errorf("invalid", "connecting needs query, some SQL to run, or table, a BigQuery table to connect whole")
-	case table != "" && strings.TrimSpace(req.Dataset) == "":
+	case table != "" && dataset == "":
 		return nil, Errorf("invalid", "a table needs dataset, the BigQuery dataset it is in")
 	}
 
-	act := render.SourceAct{Action: SourceAdd, Project: project, Query: query, Table: table, Dataset: req.Dataset}
+	act := render.SourceAct{Action: SourceAdd, Project: project, Query: query, Table: table, Dataset: dataset}
 	if req.DryRun {
 		res.DryRun = true
 		res.Summary = render.SourcePreview(act)
@@ -169,7 +170,7 @@ func (s *Service) ConnectDataSource(ctx context.Context, req ConnectRequest) (*S
 		if tableProject == "" {
 			tableProject = project
 		}
-		op = plan.AddDataSourceTable(project, tableProject, strings.TrimSpace(req.Dataset), table)
+		op = plan.AddDataSourceTable(project, tableProject, dataset, table)
 	}
 	reply, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{op},
