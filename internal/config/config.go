@@ -14,6 +14,7 @@ import (
 	"io"
 	"log/slog"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -110,6 +111,19 @@ type Settings struct {
 	// removed are the settings a release took out, as the environment
 	// gives them, read only to refuse one still set.
 	removed map[string]string
+	// vars is every setting Define binds to a flag, in order.
+	vars []Var
+}
+
+// Var is one setting Define binds to a flag.
+type Var struct {
+	// Name is the environment variable.
+	Name string
+	// Default is what the server uses when neither the variable nor its
+	// flag is set, written as a person would set it.
+	Default string
+	// Switch marks a setting that is on or off.
+	Switch bool
 }
 
 // removedSettings are the settings a release took out, each with what to
@@ -146,20 +160,24 @@ func Define(fs *flag.FlagSet, env func(string) string) *Settings {
 	for _, r := range removedSettings {
 		s.removed[r.key] = env(EnvPrefix + r.key)
 	}
-	def := func(p *string, name, key, fallback, usage string) {
+	bind := func(p *string, name, key, fallback, usage string, isSwitch bool) {
 		v := env(EnvPrefix + key)
 		if v == "" {
 			v = fallback
 		}
 		fs.StringVar(p, name, v, usage+" [env "+EnvPrefix+key+"]")
+		s.vars = append(s.vars, Var{Name: EnvPrefix + key, Default: fallback, Switch: isSwitch})
 	}
+	def := func(p *string, name, key, fallback, usage string) { bind(p, name, key, fallback, usage, false) }
+	// A switch is off unless set.
+	sw := func(p *string, name, key, usage string) { bind(p, name, key, "false", usage, true) }
 	def(&s.Profile, "profile", "PROFILE", "default", "named configuration profile")
 	def(&s.LogLevel, "log-level", "LOG_LEVEL", string(LogInfo), "log level: debug, info, warn, error")
 	def(&s.LogFormat, "log-format", "LOG_FORMAT", string(LogText), "log format: text, json")
-	def(&s.ReadOnly, "read-only", "READ_ONLY", "false", "register only read tools and request read-only scopes")
-	def(&s.EnableDestructive, "enable-destructive", "ENABLE_DESTRUCTIVE", "false", "register the destructive tools; each still needs confirm on the call")
-	def(&s.EnableDataSources, "enable-data-sources", "ENABLE_DATA_SOURCES", "false", "register manage_data_source and connect_data_source, and ask for the bigquery.readonly scope at login")
-	def(&s.AllowExternalFormulas, "allow-external-formulas", "ALLOW_EXTERNAL_FORMULAS", "false",
+	sw(&s.ReadOnly, "read-only", "READ_ONLY", "register only read tools and request read-only scopes")
+	sw(&s.EnableDestructive, "enable-destructive", "ENABLE_DESTRUCTIVE", "register the destructive tools; each still needs confirm on the call")
+	sw(&s.EnableDataSources, "enable-data-sources", "ENABLE_DATA_SOURCES", "register manage_data_source and connect_data_source, and ask for the bigquery.readonly scope at login")
+	sw(&s.AllowExternalFormulas, "allow-external-formulas", "ALLOW_EXTERNAL_FORMULAS",
 		"let a write create IMPORTXML, IMPORTDATA, IMPORTHTML, IMPORTFEED, IMAGE, HYPERLINK or IMPORTRANGE")
 	def(&s.MaxCells, "max-cells", "MAX_CELLS", strconv.Itoa(DefaultMaxCells), "default cell budget for a read")
 	def(&s.MaxChars, "max-chars", "MAX_CHARS", strconv.Itoa(DefaultMaxChars), "default character budget for a read")
@@ -167,6 +185,29 @@ func Define(fs *flag.FlagSet, env func(string) string) *Settings {
 	def(&s.WriteTimeout, "write-timeout", "WRITE_TIMEOUT", "180s", "timeout for a write, matching the 180s Sheets allows a request")
 	def(&s.ClientSecretPath, "client-secret", "CLIENT_SECRET", "", "path to the OAuth Desktop client JSON (overrides the stored profile setting)")
 	return s
+}
+
+// Vars is every setting Define binds to a flag, in the order it binds
+// them. The bundle gate reads each switch's default here.
+func Vars() []Var {
+	fs := flag.NewFlagSet("vars", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	return Define(fs, func(string) string { return "" }).vars
+}
+
+// EnvVars is every variable Define reads, the removed ones included,
+// sorted. It is recorded from the lookups rather than listed, so it
+// cannot fall behind.
+func EnvVars() []string {
+	var seen []string
+	fs := flag.NewFlagSet("envvars", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	Define(fs, func(name string) string {
+		seen = append(seen, name)
+		return ""
+	})
+	slices.Sort(seen)
+	return slices.Compact(seen)
 }
 
 var (

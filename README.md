@@ -79,17 +79,29 @@ bytes.
 ### Claude Desktop
 
 Every release also carries a `.mcpb` bundle. Open it and Claude Desktop
-installs the server and asks for your OAuth client JSON — no config file
-to edit. It covers macOS, Windows and Linux on both architectures each:
-macOS through a universal binary, Windows through amd64, and Linux
-through a small launcher that picks the right binary at start, because a
-bundle manifest has no key for the architecture. Its SHA-256 is in the
-same signed `checksums.txt`.
+installs the server and asks for the settings a client's configuration
+would carry: your OAuth client JSON, the profile, read-only, the
+destructive switch, Connected Sheets and formulas that reach outside —
+no config file to edit. Deleting (`enable_destructive`), Connected
+Sheets (`enable_data_sources`) and formulas that fetch a URL or another
+spreadsheet (`allow_external_formulas`) stay off unless you turn them
+on, and read-only leaves all three with nothing to register or allow.
+This server asks nobody before a call. Claude Desktop approves each
+tool, with Allow once or Always allow, and a tool you always allow then
+runs unasked, so leave a switch off unless you need its tools.
+
+It covers macOS, Windows and Linux on both architectures each: macOS
+through a universal binary, Windows through amd64, and Linux through a
+small launcher that picks the right binary at start, because a bundle
+manifest has no key for the architecture. Its SHA-256 is in the same
+signed `checksums.txt`.
 
 The bundle does **not** log you in. Install the binary as well, run
 `google-sheets-mcp login -secret <your client JSON>` once, and the bundle
-picks up the same credentials. Claude Code does not install `.mcpb`
-files, so it uses the command below.
+picks up the same credentials. Connected Sheets also needs a login that
+asks for its scope, `google-sheets-mcp login -enable-data-sources=true
+-secret <your client JSON>`. Claude Code does not install `.mcpb` files,
+so it uses the command below.
 
 ## Set up Google
 

@@ -5,7 +5,7 @@
   "display_name": "Google Sheets",
   "version": "0.0.0-dev",
   "description": "Google Sheets as MCP tools: read ranges, write without destroying formulas, format and validate.",
-  "long_description": "A single Go binary that speaks MCP over stdio, on your own machine, against your own Google account. macOS, Windows and Linux, on both architectures each. There is no server to host and no service account.\n\nThe bundle does NOT log you in. You need your own Google OAuth client and one login first: create an OAuth 2.0 Client ID of type Desktop app, download the JSON, and pick it during install. Then run `google-sheets-mcp login -secret <that file>` once from a terminal; the refresh token goes to your OS keyring. The README has the full setup, which needs the Sheets API and the Drive API enabled in a Cloud project you own.\n\nEvery other setting keeps its default, and two are worth knowing. GSHEETS_READ_ONLY asks Google for read-only scopes and registers only the tools that read. Nothing that removes something is registered at all unless GSHEETS_ENABLE_DESTRUCTIVE is set, and each of those still needs confirm on the call: clearing a range, deleting rows or columns, and deleting a sheet are off by default. Both take the manual client configuration in the README.",
+  "long_description": "A single Go binary that speaks MCP over stdio, on your own machine, against your own Google account. macOS, Windows and Linux, on both architectures each. There is no server to host and no service account.\n\nThe bundle does NOT log you in. You need your own Google OAuth client and one login first: create an OAuth 2.0 Client ID of type Desktop app, download the JSON, and pick it during install. Then run `google-sheets-mcp login -secret <that file>` once from a terminal; the refresh token goes to your OS keyring. The README has the full setup, which needs the Sheets API and the Drive API enabled in a Cloud project you own.\n\nThe bundle asks for the same settings as a client's configuration file, each off or empty unless you set it. Nothing that removes something is registered until you turn on the destructive switch, and each of those still needs confirm on the call. Connected Sheets and formulas that fetch from outside the spreadsheet stay off as well. This server asks nobody before a call: Claude Desktop approves each tool, and a tool you always allow then runs unasked.",
   "author": {
     "name": "mmedum",
     "url": "https://github.com/mmedum"
@@ -25,18 +25,26 @@
     "google-workspace",
     "stdio"
   ],
+  "privacy_policies": [
+    "https://policies.google.com/privacy"
+  ],
   "server": {
     "type": "binary",
-    "entry_point": "server/google-sheets-mcp",
+    "entry_point": "server/google-sheets-mcp-darwin",
     "mcp_config": {
-      "command": "${__dirname}/server/google-sheets-mcp",
+      "command": "${__dirname}/server/google-sheets-mcp-darwin",
       "args": [],
       "env": {
-        "GSHEETS_CLIENT_SECRET": "${user_config.client_secret}"
+        "GSHEETS_CLIENT_SECRET": "${user_config.client_secret}",
+        "GSHEETS_PROFILE": "${user_config.profile}",
+        "GSHEETS_READ_ONLY": "${user_config.read_only}",
+        "GSHEETS_ENABLE_DESTRUCTIVE": "${user_config.enable_destructive}",
+        "GSHEETS_ENABLE_DATA_SOURCES": "${user_config.enable_data_sources}",
+        "GSHEETS_ALLOW_EXTERNAL_FORMULAS": "${user_config.allow_external_formulas}"
       },
       "platform_overrides": {
         "linux": {
-          "command": "${__dirname}/server/linux-launch.sh"
+          "command": "${__dirname}/server/launch-linux.sh"
         },
         "win32": {
           "command": "${__dirname}/server/google-sheets-mcp.exe"
@@ -50,9 +58,45 @@
       "title": "OAuth client JSON",
       "description": "The client_secret JSON you downloaded when you created the Desktop OAuth client. The same file you passed to `google-sheets-mcp login -secret`.",
       "required": true
+    },
+    "profile": {
+      "type": "string",
+      "title": "Profile",
+      "description": "Which stored login to use. Each profile keeps its own client secret, refresh token and account, so one machine can hold a work account and a personal one, and each is logged in to with `google-sheets-mcp login -profile <name> -secret <file>`. Lower case, digits, - and _. Leave it empty for the default profile.",
+      "default": "",
+      "required": false
+    },
+    "read_only": {
+      "type": "boolean",
+      "title": "Read-only",
+      "description": "Register only the tools that read. For Google to refuse a write as well, log in with `google-sheets-mcp login -read-only=true -secret <file>`, which asks for read-only scopes; turning writes back on takes another login. While it is on, the three switches below register and allow nothing.",
+      "default": false,
+      "required": false
+    },
+    "enable_destructive": {
+      "type": "boolean",
+      "title": "Deleting",
+      "description": "Register the five tools that remove what Sheets cannot bring back: delete_sheet, delete_dimensions, clear_values, delete_cell_comment and delete_data_source. Each call also needs confirm: true. Off by default. This server asks nobody before a call, so Claude Desktop's approval of each tool is then the only check. It registers nothing while read-only is on.",
+      "default": false,
+      "required": false
+    },
+    "enable_data_sources": {
+      "type": "boolean",
+      "title": "Connected Sheets (BigQuery)",
+      "description": "Register connect_data_source and manage_data_source, which connect and refresh BigQuery data through Connected Sheets; a query runs charged to the Cloud project you name, now and on every refresh. Needs a login with `google-sheets-mcp login -enable-data-sources=true -secret <file>`, which asks for the bigquery.readonly scope. Off by default, and it registers nothing while read-only is on.",
+      "default": false,
+      "required": false
+    },
+    "allow_external_formulas": {
+      "type": "boolean",
+      "title": "Formulas that reach outside",
+      "description": "Let a write create IMPORTXML, IMPORTDATA, IMPORTHTML, IMPORTFEED, IMAGE, HYPERLINK or IMPORTRANGE. The first six make Google fetch a URL, which can carry the spreadsheet's data in it; IMPORTRANGE pulls in another spreadsheet your account can read. Off by default, and no argument on a call lifts it. While read-only is on there is no write for it to allow.",
+      "default": false,
+      "required": false
     }
   },
   "compatibility": {
+    "claude_desktop": ">=0.10.0",
     "platforms": [
       "darwin",
       "linux",
