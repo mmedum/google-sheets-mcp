@@ -5,6 +5,18 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [4.1.1] - 2026-10-24
+
+### Changed
+
+- The Claude Desktop bundle's OAuth client field may be left empty to use the client `google-sheets-mcp login` recorded for the profile; a file picked there must be that same client, since the refresh token belongs to it. 4.1.0 required the field.
+- The Claude Desktop bundle's profile field says what a profile name may be: up to 64 characters from a to z, 0 to 9, - and _, starting with a letter or digit, with capitals read as lowercase. The server's refusal of another name states the same rule.
+
+### Fixed
+
+- A profile name with a character that Unicode lowercases into a to z, such as the Kelvin sign (U+212A), is refused rather than read as another profile's name.
+- A variable set to spaces alone is unset, as an empty one is, `GSHEETS_CONFIG_DIR` and `GSHEETS_REFRESH_TOKEN` included, and the spaces around any value are dropped; a bundle field cleared to a space no longer stops the server.
+
 ## [4.1.0] - 2026-10-24
 
 ### Added
@@ -1394,7 +1406,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v4.1.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v4.1.1...HEAD
+[4.1.1]: https://github.com/mmedum/google-sheets-mcp/compare/v4.1.0...v4.1.1
 [4.1.0]: https://github.com/mmedum/google-sheets-mcp/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.2...v4.0.0
 [3.1.2]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.1...v3.1.2

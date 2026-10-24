@@ -98,7 +98,9 @@ signed `checksums.txt`.
 
 The bundle does **not** log you in. Install the binary as well, run
 `google-sheets-mcp login -secret <your client JSON>` once, and the bundle
-picks up the same credentials. Connected Sheets also needs a login that
+picks up the same credentials. Leave its OAuth client field empty to use
+the client that login recorded; a file you pick there must be that same
+client, since the refresh token belongs to it. Connected Sheets also needs a login that
 asks for its scope, `google-sheets-mcp login -enable-data-sources=true
 -secret <your client JSON>`. Claude Code does not install `.mcpb` files,
 so it uses the command below.

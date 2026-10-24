@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 )
 
 // The write steps. Every one of them changes the scratch spreadsheet the
@@ -21,7 +23,7 @@ func (d *driver) writeAll() {
 	d.run(d.sheetSteps()...)
 	sec("write_values")
 	d.run(d.writeSteps()...)
-	d.withSetting("GSHEETS_ALLOW_EXTERNAL_FORMULAS=true", d.externalSteps()...)
+	d.withSetting(config.EnvPrefix+"ALLOW_EXTERNAL_FORMULAS=true", d.externalSteps()...)
 	d.run(d.afterExternalSteps()...)
 	d.checkpointSteps()
 	sec("append_rows")
@@ -398,7 +400,7 @@ func (d *driver) writeSteps() []step {
 			},
 			expectError: "blocked",
 			check: func(text string, _ map[string]any) error {
-				if !strings.Contains(text, "unless the person running it sets GSHEETS_ALLOW_EXTERNAL_FORMULAS") ||
+				if !strings.Contains(text, "unless the person running it sets "+config.EnvPrefix+"ALLOW_EXTERNAL_FORMULAS") ||
 					strings.Contains(text, "pass ") {
 					return fmt.Errorf("the refusal offers an argument, or does not name the setting: %s", text)
 				}
@@ -580,7 +582,7 @@ func (d *driver) appendSteps() []step {
 			expectError: "blocked",
 			check: func(text string, _ map[string]any) error {
 				if !strings.Contains(text, "row 1, column 1 of the values") ||
-					!strings.Contains(text, "GSHEETS_ALLOW_EXTERNAL_FORMULAS") {
+					!strings.Contains(text, config.EnvPrefix+"ALLOW_EXTERNAL_FORMULAS") {
 					return fmt.Errorf("the refusal does not name the value and the setting: %s", text)
 				}
 				return nil

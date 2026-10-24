@@ -8,18 +8,20 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 )
 
 func TestProfileLayout(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv(EnvDir, dir)
+	t.Setenv(config.EnvConfigDir, dir)
 
 	base, err := BaseDir()
 	if err != nil || base != dir {
 		t.Fatalf("BaseDir() = %q, %v; want the override", base, err)
 	}
 
-	got, err := ProfileDir(DefaultProfile)
+	got, err := ProfileDir(config.DefaultProfile)
 	if err != nil || got != dir {
 		t.Errorf("the default profile lives at the base: %q, %v", got, err)
 	}
@@ -50,7 +52,7 @@ func TestProfileLayout(t *testing.T) {
 
 func TestSaveLoadRemove(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv(EnvDir, dir)
+	t.Setenv(config.EnvConfigDir, dir)
 
 	if _, err := Load("work"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Load before Save = %v, want ErrNotFound", err)
@@ -109,8 +111,8 @@ func TestSaveLoadRemove(t *testing.T) {
 
 func TestLoadRejectsBrokenJSON(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv(EnvDir, dir)
-	p, err := Path(DefaultProfile)
+	t.Setenv(config.EnvConfigDir, dir)
+	p, err := Path(config.DefaultProfile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,13 +122,13 @@ func TestLoadRejectsBrokenJSON(t *testing.T) {
 	if err := os.WriteFile(p, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(DefaultProfile); err == nil || errors.Is(err, ErrNotFound) {
+	if _, err := Load(config.DefaultProfile); err == nil || errors.Is(err, ErrNotFound) {
 		t.Fatalf("Load on broken JSON = %v; want a parse error naming the file", err)
 	}
 }
 
 func TestBaseDirFallsBackToTheUserConfigDir(t *testing.T) {
-	t.Setenv(EnvDir, "")
+	t.Setenv(config.EnvConfigDir, "")
 	got, err := BaseDir()
 	if err != nil {
 		t.Fatalf("BaseDir: %v", err)
@@ -159,7 +161,7 @@ func TestSaveReportsAnUnwritableProfileDirectory(t *testing.T) {
 	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(EnvDir, dir)
+	t.Setenv(config.EnvConfigDir, dir)
 
 	err := Save("work", Config{AccountEmail: "someone@example.test"})
 	if err == nil {
@@ -175,8 +177,8 @@ func TestSaveReportsAnUnwritableProfileDirectory(t *testing.T) {
 
 func TestRemoveReportsARealFailure(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv(EnvDir, dir)
-	p, err := Path(DefaultProfile)
+	t.Setenv(config.EnvConfigDir, dir)
+	p, err := Path(config.DefaultProfile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +187,7 @@ func TestRemoveReportsARealFailure(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(p, "in-the-way"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := Remove(DefaultProfile); err == nil {
+	if err := Remove(config.DefaultProfile); err == nil {
 		t.Error("Remove over a non-empty directory reported success")
 	}
 }
@@ -194,7 +196,7 @@ func TestNoUserConfigDirIsReportedNotGuessed(t *testing.T) {
 	// With nowhere to put a profile, every path helper has to say so
 	// rather than fall back to the working directory, where a token file
 	// could end up in somebody's repository.
-	t.Setenv(EnvDir, "")
+	t.Setenv(config.EnvConfigDir, "")
 	for _, key := range []string{"XDG_CONFIG_HOME", "HOME", "APPDATA", "USERPROFILE"} {
 		t.Setenv(key, "")
 	}
@@ -229,7 +231,7 @@ func TestNoUserConfigDirIsReportedNotGuessed(t *testing.T) {
 // serving.
 func TestResolveClientSecretPath(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv(EnvDir, dir)
+	t.Setenv(config.EnvConfigDir, dir)
 
 	def, err := DefaultClientSecretPath("work")
 	if err != nil {
@@ -274,16 +276,16 @@ func TestResolveClientSecretPath(t *testing.T) {
 // one — so `logout` has to be able to name them.
 func TestProfilesAndSharingClient(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv(EnvDir, dir)
+	t.Setenv(config.EnvConfigDir, dir)
 
 	if got, err := Profiles(); err != nil || len(got) != 0 {
 		t.Fatalf("Profiles() with nothing configured = %v, %v", got, err)
 	}
 
 	for name, secret := range map[string]string{
-		DefaultProfile: "/secrets/one.json",
-		"work":         "/secrets/one.json",
-		"personal":     "/secrets/two.json",
+		config.DefaultProfile: "/secrets/one.json",
+		"work":                "/secrets/one.json",
+		"personal":            "/secrets/two.json",
 	} {
 		if err := Save(name, Config{ClientSecretPath: secret}); err != nil {
 			t.Fatal(err)
@@ -301,7 +303,7 @@ func TestProfilesAndSharingClient(t *testing.T) {
 	}
 
 	// The two sharing a client secret are the two a revocation reaches.
-	shared, err := SharingClient(DefaultProfile)
+	shared, err := SharingClient(config.DefaultProfile)
 	if err != nil {
 		t.Fatal(err)
 	}

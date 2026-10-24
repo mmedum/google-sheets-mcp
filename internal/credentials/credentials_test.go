@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/zalando/go-keyring"
+
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 )
 
 // fakeKeyring is an in-memory Backend that can be made to fail the way a
@@ -67,7 +69,7 @@ func newStore(t *testing.T, kr Backend, env map[string]string) *Store {
 
 func TestEnvironmentWinsAndIsNotDeletable(t *testing.T) {
 	kr := newFake()
-	s := newStore(t, kr, map[string]string{EnvVar: "env-token"})
+	s := newStore(t, kr, map[string]string{config.EnvRefreshToken: "env-token"})
 	if _, err := s.Save("stored-token"); err != nil {
 		t.Fatal(err)
 	}

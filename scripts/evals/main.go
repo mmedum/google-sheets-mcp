@@ -33,6 +33,8 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 )
 
 // scratchTitle is the prefix every spreadsheet this makes carries, so
@@ -341,7 +343,7 @@ func writeMCPConfig(bin string) (string, error) {
 			// Destructive tools stay off. An eval that could delete a
 			// sheet would be scoring the model's restraint rather than
 			// the server's, and §10 makes that a deployment choice.
-			"env": map[string]string{"GSHEETS_LOG_LEVEL": "error"},
+			"env": map[string]string{config.EnvPrefix + "LOG_LEVEL": "error"},
 		},
 	}}
 	f, err := os.CreateTemp("", "evals-mcp-*.json")

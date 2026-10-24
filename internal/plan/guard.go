@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 )
@@ -48,7 +49,7 @@ type Ack struct {
 // externalSetting is what allows a formula that reaches outside the
 // spreadsheet, named in the refusal so a person reading it knows where
 // the choice lives.
-const externalSetting = "GSHEETS_ALLOW_EXTERNAL_FORMULAS"
+const externalSetting = config.EnvPrefix + "ALLOW_EXTERNAL_FORMULAS"
 
 // maxNamed is how many addresses a finding lists before it starts
 // counting instead. Enough to go and look at, short enough to read.

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -85,9 +86,10 @@ func githubRepo(module string) (owner, name string, err error) {
 	return parts[1], parts[2], nil
 }
 
-// modulePath reads the module this repository is, from go.mod.
-func modulePath() (string, error) {
-	data, err := os.ReadFile("go.mod")
+// modulePath reads the module the repository under root is, from its
+// go.mod, whose lines may end in "\r\n".
+func modulePath(root string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(root, "go.mod")) //nolint:gosec // a repository path from a constant
 	if err != nil {
 		return "", err
 	}
@@ -149,7 +151,7 @@ func tagMatchesModule(tag, module string) error {
 // releaseTag is the release workflow's check that the tag it was started
 // for agrees with go.mod, before anything is built or published.
 func releaseTag(tag string) error {
-	module, err := modulePath()
+	module, err := modulePath(".")
 	if err != nil {
 		return err
 	}
@@ -193,7 +195,7 @@ func bundleRow(checksums string) (name, sum string, err error) {
 
 // registryPublish writes the entry for one release to out.
 func registryPublish(out io.Writer, version, checksums string) error {
-	module, err := modulePath()
+	module, err := modulePath(".")
 	if err != nil {
 		return err
 	}
@@ -217,12 +219,16 @@ func registryPublish(out io.Writer, version, checksums string) error {
 		return err
 	}
 
-	manifest, err := readManifest()
+	// The gate's own read, so the entry describes the manifest the gate
+	// and the packer held, a repeated key refused.
+	_, m, problems, err := committedManifest(".")
 	if err != nil {
 		return err
 	}
-	description, _ := manifest["description"].(string)
-	switch {
+	if err := manifestRefused(problems); err != nil {
+		return err
+	}
+	switch description := m.Description; {
 	case description == "":
 		return fmt.Errorf("%s has no description for the registry entry to carry", mcpbManifestPath)
 	case len(description) > registryDescriptionMax:
@@ -242,7 +248,7 @@ func registryPublish(out io.Writer, version, checksums string) error {
 	entry := registryEntry{
 		Schema:      registrySchema,
 		Name:        fmt.Sprintf("io.github.%s/%s", owner, repo),
-		Description: description,
+		Description: m.Description,
 		Version:     semver,
 		WebsiteURL:  fmt.Sprintf("https://github.com/%s/%s#readme", owner, repo),
 		Repository: registryRepo{

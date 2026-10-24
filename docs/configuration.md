@@ -8,14 +8,16 @@ Environment variables come first because that is what MCP clients pass:
 Claude Code, Claude Desktop and Cursor all hand a stdio server a
 `command`, its `args` and an `env` map, and nothing else. Everything is
 validated once at start, so a misconfigured server fails before it
-announces itself rather than on the first call.
+announces itself rather than on the first call. A variable set to spaces
+alone is unset, as an empty one is, and the spaces around a value are
+dropped.
 
 ## Settings
 
 | Variable | Flag | Default | What it does |
 |---|---|---|---|
-| `GSHEETS_PROFILE` | `-profile` | `default` | Names a set of stored credentials, account and settings. Two profiles never share a token. Lower case, digits, `-` and `_`. |
-| `GSHEETS_CLIENT_SECRET` | `-client-secret` | (stored) | Path to the Desktop-app OAuth client JSON. Normally set once by `login` and remembered. |
+| `GSHEETS_PROFILE` | `-profile` | `default` | Names a set of stored credentials, account and settings. Two profiles never share a token. A name is up to 64 characters from a to z, 0 to 9, - and _, starting with a letter or digit; capitals are read as lowercase, and any other name stops the server at start. |
+| `GSHEETS_CLIENT_SECRET` | `-client-secret` | (stored) | Path to the Desktop-app OAuth client JSON. Normally set once by `login` and remembered: left empty, the server uses the path `login` recorded for the profile. A file named here must be the client `login` used, since the refresh token belongs to it. |
 | `GSHEETS_REFRESH_TOKEN` | — | (unset) | A refresh token from the environment, for CI and automation. It wins over the keyring and the file, and `logout` does not touch it. |
 | `GSHEETS_CONFIG_DIR` | — | `os.UserConfigDir()/google-sheets-mcp` | Where the profile's non-secret state and the fallback token file live. |
 | `GSHEETS_LOG_LEVEL` | `-log-level` | `info` | `debug`, `info`, `warn` or `error`. Logs go to stderr; stdout carries JSON-RPC frames and nothing else. |

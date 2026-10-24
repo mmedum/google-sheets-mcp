@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 )
 
 // smoke drives the built binary over stdio without credentials, in two
@@ -39,9 +41,9 @@ func smoke(bin string) error {
 // a first-run user's machine looks.
 func smokeEnv(cmd *exec.Cmd) {
 	cmd.Env = append(cmd.Environ(),
-		"GSHEETS_CONFIG_DIR=no-such-directory-for-the-smoke-test",
-		"GSHEETS_REFRESH_TOKEN=",
-		"GSHEETS_LOG_LEVEL=error",
+		config.EnvConfigDir+"=no-such-directory-for-the-smoke-test",
+		config.EnvRefreshToken+"=",
+		config.EnvPrefix+"LOG_LEVEL=error",
 	)
 }
 
