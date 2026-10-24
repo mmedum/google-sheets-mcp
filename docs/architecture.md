@@ -1816,11 +1816,24 @@ then `manage_cell_comment` reaches any address, recorded in §17b.
   buys is validation against the published schema, and that is not the
   validation worth having — a manifest whose `entry_point` names a binary
   nobody staged is well formed by any schema and produces a bundle that
-  installs and then does nothing. `checkManifest` holds it to the staged
-  tree instead: `entry_point`, `mcp_config.command`, **every**
-  `platform_overrides.*.command`, and every `${user_config.x}` an env
-  value spends. Each is broken on purpose in the tests and watched being
-  refused.
+  installs and then does nothing. `validateManifest` holds it to the
+  staged tree instead: `entry_point` and every command name a program
+  the packer stages, never `LICENSE` or `README.md`; every command
+  starts with `${__dirname}/` (§18); `entry_point` is the file the
+  default command runs; every claimed platform runs the file staged for
+  it, so a deleted `win32` override is refused rather than running the
+  macOS binary; and every `${user_config.x}` an env value or an argument
+  spends is declared. The claimed platforms are exactly the ones the
+  staged table has an entry point for, `server.type` is `binary`, and
+  `name` is the server's own. Each is broken on purpose in the tests and
+  watched being refused.
+
+  **The gate and the packer run one function**, `committedManifest`,
+  which reads the manifest, the launcher, go.mod, LICENSE and README
+  once from one root. It refuses a key repeated in one object, since
+  Go's decode merges one while the validator and the host take the
+  last. The packer holds the stamped document it ships to the vendored
+  schema again, and a failed close of the bundle fails the pack.
 
   A manifest names a command per *platform* and has no key for the
   architecture, so every platform it claims has to work on both. macOS
@@ -1854,17 +1867,30 @@ then `manage_cell_comment` reaches any address, recorded in §17b.
   configuration**: the OAuth client file, the profile, read-only, the
   destructive switch, Connected Sheets and external formulas, each under
   its variable's name without `GSHEETS_`, lowercased, which gives the
-  family's bundles the same keys. Logging, the read budgets, the
+  family's bundles the same keys. The keys come from `config.Vars`, the
+  registry of every variable the server reads, the removed one and the
+  two read outside Define included. Logging, the read budgets, the
   timeouts, the config directory and the refresh token are left out,
-  each with its reason in `gates mcpb`, and the gate fails on a variable
-  with no verdict. Each switch defaults to the server's own default,
-  off, and the profile to `""`, which the server reads as unset; the
-  client file is required. Claude Desktop approves each tool, and a
-  person can set a tool to always allow, so a switch left off is the one
-  guard a bundle install keeps (§18). No combination of the fields is
-  refused: read-only leaves the destructive and Connected Sheets switches
-  nothing to register and external formulas no write to allow, so those
-  fields say so. The bundle stages `server/google-sheets-mcp-darwin`,
+  each with its reason in `gates mcpb`; the gate fails on a variable
+  with no verdict, a reason for one the server does not read, and an
+  `env` key that is left out or no setting. Every setting passes by
+  `mcp_config.env`: `mcp_config.args` is `[]`, and a platform override
+  carries no `env` or `args`, an empty one included (§18). Each switch
+  defaults to the server's own default, off, and the profile and the
+  client file to `""`, which the server reads as unset: an empty client
+  file takes the path `login` recorded for the profile, and the field
+  says a file picked there must be that client, since the refresh token
+  belongs to it. The gate starts `config.Load` from the environment the
+  defaults give and from none, and names each field that differs.
+  Claude Desktop approves each tool, and a person can set a tool to
+  always allow, so a switch left off is the one guard a bundle install
+  keeps (§18). No combination of the fields is refused: read-only leaves
+  the destructive and Connected Sheets switches nothing to register and
+  external formulas no write to allow, so those fields say so. The gate
+  starts every set of the switches, each turned from its default, and
+  holds the ones Build refuses to a declared list, empty here, both
+  ways. The profile field says the rule Build's refusal says,
+  `config.ProfileRule`. The bundle stages `server/google-sheets-mcp-darwin`,
   `server/google-sheets-mcp.exe`, `server/google-sheets-mcp-linux-amd64`,
   `server/google-sheets-mcp-linux-arm64` and `server/launch-linux.sh`,
   with `LICENSE` and `README.md` at the root, and names Google's privacy
@@ -3951,5 +3977,7 @@ host's code; Claude Desktop itself was not probed.
 | Convention | Verdict | Effect |
 |---|---|---|
 | A bundle install has a second approval behind the server, as Claude Code's ask rules are | **Refuted (the docs and the reference host; no page names desktop extensions).** anthropics/mcpb v2.1.2 declares `tools` for display, and its `src/` reads it only in `init`; its `src/shared/config.ts` passes a boolean to `env` as "true" or "false". claude.com/docs/connectors/getting-started: "Select Allow once to continue, or Always allow to skip the prompt for that tool from now on". claude.com/docs/connectors/building/review-criteria: readOnlyHint and destructiveHint "determine auto-permissions in Claude" | Every switch the bundle asks for defaults to the server's own default, off, and `gates mcpb` refuses one that does not, compared as JSON. The bundle declares no `tools` list (§12) |
-| A bundle's optional setting the person leaves blank reaches the server empty | **Refuted (the reference host).** anthropics/mcpb v2.1.2 `src/shared/config.ts` builds its variables from the defaults and the person's values, and leaves a variable it does not have as written, so an optional key with no default reaches `env` as the text `${user_config.x}`. The 4.0.0 bundle asked only for the client file, which is required, so it was not affected | Every optional key has a default, and `gates mcpb` refuses one without. The environment the defaults give the server must configure it as no environment does, which `TestVarsDescribeWhatBuildDoes` holds for each setting's default and for `""` |
+| A bundle's optional setting the person leaves blank reaches the server empty | **Refuted (the reference host).** anthropics/mcpb v2.1.2 `src/shared/config.ts` builds its variables from the defaults and the person's values, and leaves a variable it does not have as written, so an optional key with no default reaches `env` as the text `${user_config.x}`. The 4.0.0 bundle asked only for the client file, which is required, so it was not affected | Every optional key has a default, and `gates mcpb` refuses one without. The environment the defaults give the server must configure it as no environment does, which `TestVarsDescribeWhatBuildDoes` holds for each setting's default and for `""`. A variable of spaces alone is unset too, since a field cleared to a space would otherwise reach the server as one, which `TestASettingOfSpacesIsUnset` holds for every variable the server reads |
+| Any `command` the specification shows runs from the bundle | **Refined (the specification and the reference host; Claude Desktop not probed).** anthropics/mcpb v2.1.2 MANIFEST.md shows a binary's command once as `server/my-server` and never says what it is resolved against, and says `${__dirname}` "is replaced with the absolute path to the extension's directory"; its `src/shared/config.ts` substitutes the variables in `command` and resolves no path | `gates mcpb` requires every command to start with `${__dirname}/` and to name a staged program, as the committed manifest's do, and refuses a relative or absolute one. 4.1.0's gate stripped a leading `/` and passed `/server/x`. A probe of Claude Desktop's working directory would settle the relative form |
+| A platform override's `env` and `args` are merged into `mcp_config`'s | **Refuted (the reference host; Claude Desktop not probed).** anthropics/mcpb v2.1.2 `src/shared/config.ts`: `result.args = platformConfig.args \|\| result.args` and `result.env = platformConfig.env \|\| result.env`, and the `${user_config.x}` substitution covers the whole configuration, `args` included | An override's `env` or `args`, an empty one included, replaces the base's, so the settings would not reach that platform, and an argument such as `-enable-destructive=true` would reach the server past every check on `env`. `gates mcpb` refuses any `env` or `args` on an override and an argument in `mcp_config.args`, and keeps the base's `"args": []`, refusing it missing or null |
 | `privacy_policies` is optional for a bundle | **Refuted (the specification).** anthropics/mcpb `MANIFEST.md`: "Required when the extension connects to external services (first- or third-party) that process user data"; added in manifest_version 0.2, and enforced by neither the schema nor `mcpb validate` | The manifest names https://policies.google.com/privacy, which answered 200 on 2026-10-24, and `gates mcpb` refuses an empty list |

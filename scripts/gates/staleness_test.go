@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 )
 
 // The path check has to actually fail on a dead link, and the way to
@@ -168,5 +170,40 @@ func TestPermissionRulesAreTools(t *testing.T) {
 	want = []string{"the binary lists no tool that takes confirm; this check is not looking at the deletes"}
 	if got := permissionRulesAreTools(ok, registered, nil); !slices.Equal(got, want) {
 		t.Errorf("no deletes read: %v", got)
+	}
+}
+
+// The configuration page names every variable the server reads, the
+// removed one included, as a whole word, names no other, and says what a
+// profile name is in the server's own words.
+func TestConfigDocProblems(t *testing.T) {
+	doc := string(repoFile(t, configDocPath))
+	if got := configDocProblems(config.Vars(), doc); len(got) != 0 {
+		t.Errorf("the committed page: %q", got)
+	}
+	for _, tc := range []struct {
+		name, old, new string
+		want           []string
+	}{
+		{"a variable left out", "`GSHEETS_WRITE_TIMEOUT`", "`the write timeout`",
+			[]string{"docs/configuration.md does not document GSHEETS_WRITE_TIMEOUT"}},
+		{"a removed variable left out", "`GSHEETS_REQUIRE_PROMPT`", "`the prompt setting`",
+			[]string{"docs/configuration.md does not document GSHEETS_REQUIRE_PROMPT"}},
+		{"a name kept only inside a longer one", "`GSHEETS_CONFIG_DIR`", "`GSHEETS_CONFIG_DIRECTORY`", []string{
+			"docs/configuration.md does not document GSHEETS_CONFIG_DIR",
+			"docs/configuration.md documents GSHEETS_CONFIG_DIRECTORY, which the code does not read",
+		}},
+		{"a variable the code does not read", "`GSHEETS_MAX_CHARS`", "`GSHEETS_MAX_CHARS` and `GSHEETS_MAX_ROWS`",
+			[]string{"docs/configuration.md documents GSHEETS_MAX_ROWS, which the code does not read"}},
+		{"the profile rule in other words", "- and _, starting", "`-` and `_`, starting",
+			[]string{`docs/configuration.md does not say a profile name is "up to 64 characters from a to z, ` +
+				`0 to 9, - and _, starting with a letter or digit"`}},
+	} {
+		if !strings.Contains(doc, tc.old) {
+			t.Fatalf("%s: the page does not say %q", tc.name, tc.old)
+		}
+		if got := configDocProblems(config.Vars(), strings.ReplaceAll(doc, tc.old, tc.new)); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }

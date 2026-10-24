@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"regexp"
@@ -11,15 +12,10 @@ import (
 	"strings"
 
 	"github.com/mmedum/google-sheets-mcp/v4/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 )
 
 var (
-	// def(&s.Field, "flag-name", "ENV_KEY", default, usage) is how every
-	// setting is registered, and sw(&s.Field, "flag-name", "ENV_KEY",
-	// usage) every switch, so the list of settings is derived rather
-	// than typed. A hand-written list of eleven names is the same shape
-	// as a hand-written package list: silent when it falls behind.
-	configKey = regexp.MustCompile(`(?:def|sw)\(&s\.\w+,\s*"[a-z-]+",\s*"([A-Z_]+)"`)
 	// The README's tool table.
 	readmeTool = regexp.MustCompile("(?m)^\\| `([a-z_]+)` \\|")
 	// A version heading, as Keep a Changelog writes it.
@@ -139,23 +135,12 @@ func staleness(bin string) error {
 	sort.Strings(deletes)
 	problems = append(problems, permissionRulesAreTools(string(readme), registered, deletes)...)
 
-	cfg, err := os.ReadFile("internal/config/config.go")
+	conf, err := os.ReadFile(configDocPath)
 	if err != nil {
 		return err
 	}
-	conf, err := os.ReadFile("docs/configuration.md")
-	if err != nil {
-		return err
-	}
-	keys := configKey.FindAllStringSubmatch(string(cfg), -1)
-	if len(keys) < 12 {
-		return fmt.Errorf("found %d settings in config.go, under the 12 it defines; the def() and sw() pattern has probably changed", len(keys))
-	}
-	for _, m := range keys {
-		if !strings.Contains(string(conf), "GSHEETS_"+m[1]) {
-			problems = append(problems, "docs/configuration.md does not document GSHEETS_"+m[1])
-		}
-	}
+	vars := config.Vars()
+	problems = append(problems, configDocProblems(vars, string(conf))...)
 
 	arch, err := os.ReadFile("docs/architecture.md")
 	if err != nil {
@@ -177,9 +162,46 @@ func staleness(bin string) error {
 		return fmt.Errorf("%d problem(s):\n  %s", len(problems), strings.Join(problems, "\n  "))
 	}
 	fmt.Printf("%d tools documented, %d settings documented, %d document(s) checked for dead paths\n",
-		len(registered), len(keys), len(docPaths))
+		len(registered), len(vars), len(docPaths))
 	return nil
 }
+
+// configDocPath is the page every setting is documented on.
+const configDocPath = "docs/configuration.md"
+
+// configDocProblems holds the configuration page, text, to the variables
+// the server reads, vars, both ways. It names every one as a whole word,
+// the removed one it refuses and the two read outside Define included,
+// names no other, and says what a profile name is in the words the
+// server refuses one with.
+func configDocProblems(vars []config.Var, text string) []string {
+	var problems []string
+	documented := map[string]bool{}
+	for _, m := range settingWord.FindAllStringSubmatch(text, -1) {
+		documented[m[2]] = true
+	}
+	known := map[string]bool{}
+	for _, v := range vars {
+		known[v.Name] = true
+		if !documented[v.Name] {
+			problems = append(problems, fmt.Sprintf("%s does not document %s", configDocPath, v.Name))
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(documented)) {
+		if !known[name] {
+			problems = append(problems, fmt.Sprintf("%s documents %s, which the code does not read", configDocPath, name))
+		}
+	}
+	if !strings.Contains(text, config.ProfileRule) {
+		problems = append(problems, fmt.Sprintf("%s does not say a profile name is %q", configDocPath, config.ProfileRule))
+	}
+	return problems
+}
+
+// settingWord is a setting's name standing as a word of its own, all of
+// it: a longer name that contains one, such as GSHEETS_READ_ONLY_X, is
+// that longer name and not GSHEETS_READ_ONLY.
+var settingWord = regexp.MustCompile(`(^|[^A-Z0-9_])(` + config.EnvPrefix + `[A-Z0-9_]+)`)
 
 // permissionRule is a Claude Code permission rule for one of this
 // server's tools, under the server name the README uses.

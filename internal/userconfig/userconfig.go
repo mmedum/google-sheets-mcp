@@ -17,13 +17,12 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 )
 
 // AppDir is the directory name under the user's config directory.
 const AppDir = "google-sheets-mcp"
-
-// EnvDir overrides the base directory.
-const EnvDir = "GSHEETS_CONFIG_DIR"
 
 // DefaultProfile is the profile used when none is named.
 const DefaultProfile = "default"
@@ -40,9 +39,11 @@ type Config struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
-// BaseDir returns the application config directory.
+// BaseDir returns the application config directory: config.EnvConfigDir,
+// read through config.Lookup as every setting is, or the user's config
+// directory when that is unset.
 func BaseDir() (string, error) {
-	if v := os.Getenv(EnvDir); v != "" {
+	if v := config.Lookup(os.Getenv, config.EnvConfigDir); v != "" {
 		return v, nil
 	}
 	d, err := os.UserConfigDir()
