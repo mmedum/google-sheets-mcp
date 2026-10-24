@@ -2,10 +2,16 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/json"
-	"io"
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -14,8 +20,19 @@ import (
 // carry the placeholder rather than a version.
 func TestCommittedManifestPacks(t *testing.T) {
 	atRepoRoot(t)
-	if err := mcpbGate(io.Discard); err != nil {
-		t.Fatalf("the committed manifest: %v", err)
+	var out bytes.Buffer
+	if err := mcpbGate(&out); err != nil {
+		t.Fatalf("the committed manifest: %v\n%s", err, out.String())
+	}
+	// And it read something: today's 8 files, 3 platforms and 6
+	// user_config keys.
+	var files, platforms, keys int
+	if _, err := fmt.Sscanf(out.String(), "bundle manifest ok: %d file(s), %d platform(s), %d user_config key(s)",
+		&files, &platforms, &keys); err != nil {
+		t.Fatalf("cannot read the summary %q: %v", out.String(), err)
+	}
+	if files < 8 || platforms < 3 || keys < 6 {
+		t.Errorf("summary %q is under its floors of 8 files, 3 platforms and 6 user_config keys", out.String())
 	}
 	manifest, err := readManifest()
 	if err != nil {
@@ -39,7 +56,7 @@ func TestManifestIsHeldToTheStagedTree(t *testing.T) {
 			server(m)["entry_point"] = "server/not-the-binary"
 		},
 		"a command nobody stages": func(m map[string]any) {
-			config(m)["command"] = "${__dirname}/server/typo"
+			mcpConfig(m)["command"] = "${__dirname}/server/typo"
 		},
 		"a win32 override with a typo in the .exe": func(m map[string]any) {
 			overrides(m)["win32"] = map[string]any{"command": "${__dirname}/server/google-sheets-mcp.ex"}
@@ -48,7 +65,7 @@ func TestManifestIsHeldToTheStagedTree(t *testing.T) {
 			overrides(m)["linux"] = map[string]any{"command": "${__dirname}/server/launch.sh"}
 		},
 		"an env spending a key nobody declares": func(m map[string]any) {
-			config(m)["env"] = map[string]any{"GSHEETS_CLIENT_SECRET": "${user_config.oauth_json}"}
+			mcpConfig(m)["env"] = map[string]any{"GSHEETS_CLIENT_SECRET": "${user_config.oauth_json}"}
 		},
 		"an override for a platform nobody claims": func(m map[string]any) {
 			overrides(m)["freebsd"] = map[string]any{"command": "${__dirname}/server/google-sheets-mcp"}
@@ -84,13 +101,13 @@ func server(m map[string]any) map[string]any {
 	return s
 }
 
-func config(m map[string]any) map[string]any {
+func mcpConfig(m map[string]any) map[string]any {
 	c, _ := server(m)["mcp_config"].(map[string]any)
 	return c
 }
 
 func overrides(m map[string]any) map[string]any {
-	o, _ := config(m)["platform_overrides"].(map[string]any)
+	o, _ := mcpConfig(m)["platform_overrides"].(map[string]any)
 	return o
 }
 
@@ -143,9 +160,9 @@ func TestBundleLayoutAndModes(t *testing.T) {
 	}
 	for _, want := range []string{
 		"manifest.json", "LICENSE", "README.md",
-		"server/google-sheets-mcp", "server/google-sheets-mcp.exe",
-		"server/google-sheets-mcp-amd64", "server/google-sheets-mcp-arm64",
-		"server/linux-launch.sh",
+		"server/google-sheets-mcp-darwin", "server/google-sheets-mcp.exe",
+		"server/google-sheets-mcp-linux-amd64", "server/google-sheets-mcp-linux-arm64",
+		"server/launch-linux.sh",
 	} {
 		mode, ok := seen[want]
 		if !ok {
@@ -337,5 +354,293 @@ func TestTheCommittedManifestMeetsTheFloor(t *testing.T) {
 	declared, _ := manifest["manifest_version"].(string)
 	if declared != "0.3" {
 		t.Fatalf("the committed manifest declares %q; this repository has checked 0.3", declared)
+	}
+}
+
+// committedManifest is the committed manifest with one edit applied.
+func committedManifest(t *testing.T, edit func(map[string]any)) map[string]any {
+	t.Helper()
+	atRepoRoot(t)
+	manifest, err := readManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit(manifest)
+	return manifest
+}
+
+// dig is the object at a path in a decoded manifest.
+func dig(doc map[string]any, keys ...string) map[string]any {
+	for _, key := range keys {
+		doc = doc[key].(map[string]any)
+	}
+	return doc
+}
+
+// The two claims the family's bundles all make about themselves, each
+// broken once in the committed manifest.
+func TestTheManifestNamesAPrivacyPolicyAndTheFloor(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		edit func(map[string]any)
+		want string
+	}{
+		{"no privacy policy", func(m map[string]any) { delete(m, "privacy_policies") }, "privacy_policies is empty"},
+		{"an empty privacy policy list", func(m map[string]any) { m["privacy_policies"] = []any{} },
+			"privacy_policies is empty"},
+		{"no Claude Desktop floor", func(m map[string]any) { delete(dig(m, "compatibility"), "claude_desktop") },
+			`compatibility.claude_desktop is ""; the family's bundles claim ">=0.10.0"`},
+		{"another floor", func(m map[string]any) { dig(m, "compatibility")["claude_desktop"] = ">=0.9.0" },
+			`compatibility.claude_desktop is ">=0.9.0"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := strings.Join(checkManifest(committedManifest(t, tc.edit), bundleNames()), "\n")
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("problems:\n%s\nwant one containing %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// Each rule the bundle's settings are held to, broken once in the
+// committed manifest, and the shape that ships passing all of them.
+func TestTheBundleSettingsRefuseEachBreak(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		edit func(map[string]any)
+		want string
+	}{
+		{name: "the shape that ships", edit: func(map[string]any) {}},
+		{"a switch the bundle turns on", func(d map[string]any) {
+			dig(d, "user_config", "enable_destructive")["default"] = true
+		}, "user_config.enable_destructive is a boolean defaulting to true; GSHEETS_ENABLE_DESTRUCTIVE is a " +
+			"switch the server defaults to false"},
+		{"a switch asked as text", func(d map[string]any) {
+			dig(d, "user_config", "read_only")["type"] = "string"
+			dig(d, "user_config", "read_only")["default"] = "false"
+		}, `user_config.read_only is a string defaulting to "false"; GSHEETS_READ_ONLY is a switch`},
+		{"a switch with no default", func(d map[string]any) {
+			delete(dig(d, "user_config", "enable_data_sources"), "default")
+		}, "user_config.enable_data_sources is a boolean defaulting to null"},
+		{"an optional key with no default", func(d map[string]any) {
+			delete(dig(d, "user_config", "profile"), "default")
+		}, "user_config.profile is optional with no default"},
+		{"a setting the bundle no longer asks for", func(d map[string]any) {
+			delete(dig(d, "user_config"), "allow_external_formulas")
+			delete(dig(d, "server", "mcp_config", "env"), "GSHEETS_ALLOW_EXTERNAL_FORMULAS")
+		}, "user_config does not ask for allow_external_formulas, which sets GSHEETS_ALLOW_EXTERNAL_FORMULAS"},
+		{"a setting spent under another key", func(d map[string]any) {
+			dig(d, "server", "mcp_config", "env")["GSHEETS_ENABLE_DATA_SOURCES"] = "${user_config.enable_destructive}"
+		}, `mcp_config.env.GSHEETS_ENABLE_DATA_SOURCES is "${user_config.enable_destructive}", want ` +
+			`"${user_config.enable_data_sources}"`},
+		{"a key no setting has", func(d map[string]any) {
+			dig(d, "user_config")["verbose"] = map[string]any{
+				"type": "boolean", "title": "Verbose", "description": "d", "default": false}
+		}, "user_config asks for verbose, which is no setting's key"},
+		{"a variable the bundle does not ask for", func(d map[string]any) {
+			dig(d, "server", "mcp_config", "env")["GSHEETS_LOG_LEVEL"] = "debug"
+		}, "mcp_config.env sets GSHEETS_LOG_LEVEL, which the bundle does not ask for"},
+		{"a default that configures the server", func(d map[string]any) {
+			dig(d, "user_config", "profile")["default"] = "work"
+		}, "the bundle's defaults configure the server otherwise than no environment does"},
+		{"a default the server refuses", func(d map[string]any) {
+			dig(d, "user_config", "profile")["default"] = "Not A Profile"
+		}, `the environment the bundle's defaults give the server is refused: config: invalid: profile "Not A Profile"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			problems := settingProblems(committedManifest(t, tc.edit), serverVars())
+			if tc.want == "" {
+				if len(problems) > 0 {
+					t.Fatalf("the shape that ships was refused:\n%s", strings.Join(problems, "\n"))
+				}
+				return
+			}
+			if !slices.ContainsFunc(problems, func(p string) bool { return strings.Contains(p, tc.want) }) {
+				t.Errorf("problems:\n%s\nwant one containing %q", strings.Join(problems, "\n"), tc.want)
+			}
+		})
+	}
+}
+
+// The 4.0.0 bundle's names are refused, so the family's layout cannot
+// drift back in one file and not the others.
+func TestTheOldLayoutIsRefused(t *testing.T) {
+	for _, tc := range []struct{ name, entry, linux, want string }{
+		{"the old macOS name", "server/google-sheets-mcp", "server/launch-linux.sh",
+			`server.entry_point names "server/google-sheets-mcp"`},
+		{"the old launcher name", "server/google-sheets-mcp-darwin", "server/linux-launch.sh",
+			`platform_overrides.linux.command names "server/linux-launch.sh"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			manifest := committedManifest(t, func(d map[string]any) {
+				dig(d, "server")["entry_point"] = tc.entry
+				dig(d, "server", "mcp_config", "platform_overrides", "linux")["command"] = "${__dirname}/" + tc.linux
+			})
+			problems := strings.Join(checkManifest(manifest, bundleNames()), "\n")
+			if !strings.Contains(problems, tc.want) {
+				t.Errorf("problems:\n%s\nwant %q", problems, tc.want)
+			}
+		})
+	}
+	// And the launcher still looking for the old Linux names.
+	old := "bin=$dir/google-sheets-mcp-amd64\nbin=$dir/google-sheets-mcp-arm64\n" +
+		`echo "Install with: go install example.com/m/v4/cmd/google-sheets-mcp@latest" >&2`
+	got := strings.Join(launcherProblems(old, "module example.com/m/v4\n"), "\n")
+	for _, want := range []string{
+		"the packer stages server/google-sheets-mcp-linux-amd64 and the launcher never names it",
+		"the packer stages server/google-sheets-mcp-linux-arm64 and the launcher never names it",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("problems:\n%s\nwant %q", got, want)
+		}
+	}
+}
+
+// Every variable the server reads has a verdict: asked for, or left out
+// with a reason. A new one with neither fails, and so does a verdict on
+// one the server no longer reads.
+func TestEverySettingHasABundleVerdict(t *testing.T) {
+	known := serverVars()
+	if len(known) < 15 {
+		t.Fatalf("the server reads %d variables; this would be checking a stub", len(known))
+	}
+	manifest := committedManifest(t, func(map[string]any) {})
+	if p := settingProblems(manifest, known); len(p) != 0 {
+		t.Fatalf("the committed manifest fails: %v", p)
+	}
+	got := strings.Join(settingProblems(manifest, append(slices.Clone(known), "GSHEETS_NEW")), "\n")
+	if !strings.Contains(got, "the server reads GSHEETS_NEW, and the bundle neither asks for it nor says why not") {
+		t.Errorf("a setting with no verdict passed: %s", got)
+	}
+	without := slices.DeleteFunc(slices.Clone(known), func(s string) bool { return s == "GSHEETS_WRITE_TIMEOUT" })
+	got = strings.Join(settingProblems(manifest, without), "\n")
+	if !strings.Contains(got, "the bundle has a verdict on GSHEETS_WRITE_TIMEOUT, which the server does not read") {
+		t.Errorf("a verdict on a setting the server does not read passed: %s", got)
+	}
+}
+
+// The launcher's install hint names the module go.mod declares, read
+// under Windows line endings too. The path moves with each major
+// version, so a hint left behind sends somebody to an old one.
+func TestTheLauncherInstallHintIsGoModsModule(t *testing.T) {
+	const hint = `echo "no binary." "Install with: go install example.com/m/v4/cmd/google-sheets-mcp@latest" >&2`
+	for _, goMod := range []string{"module example.com/m/v4\n\ngo 1.27\n", "module example.com/m/v4\r\n\r\ngo 1.27\r\n"} {
+		if problems := installHintProblems(hint, goMod); len(problems) > 0 {
+			t.Errorf("go.mod %q: %v", goMod, problems)
+		}
+	}
+	for _, tc := range []struct{ name, launcher, goMod, want string }{
+		{"a hint without the major version", strings.Replace(hint, "/v4", "", 1), "module example.com/m/v4\n",
+			`the launcher says "go install example.com/m/cmd/google-sheets-mcp@latest"`},
+		{"a hint a major version behind", strings.Replace(hint, "/v4", "/v3", 1), "module example.com/m/v4\r\n",
+			`the launcher says "go install example.com/m/v3/cmd/google-sheets-mcp@latest"`},
+		{"no hint at all", "exit 1", "module example.com/m/v4\n", "gives no install hint"},
+		{"no module line", hint, "go 1.27\n", "go.mod names no module"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := strings.Join(installHintProblems(tc.launcher, tc.goMod), "\n")
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("problems %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The launcher runs the binary staged for the architecture, by the name
+// the packer stages it under, and every way it fails leaves stdout,
+// which is the JSON-RPC channel, empty.
+func TestTheLinuxLauncherPicksABinaryAndKeepsStdoutClean(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the launcher is /bin/sh, and it is not the Windows entry point")
+	}
+	atRepoRoot(t)
+	dir := t.TempDir()
+	launcher := filepath.Join(dir, "launch-linux.sh")
+	body, err := os.ReadFile(bundleExtras()[linuxLauncher])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(launcher, body, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// The names come from the packer, so a rename that broke the pairing
+	// fails here rather than on somebody's machine.
+	var staged []string
+	for _, b := range bundleFiles() {
+		if !b.byLauncher {
+			continue
+		}
+		name := path.Base(b.as)
+		staged = append(staged, name)
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\necho ran "+name+"\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(staged) != 2 {
+		t.Fatalf("the packer stages %v for the launcher, want the two Linux binaries", staged)
+	}
+	fake := filepath.Join(dir, "fake")
+	if err := os.Mkdir(fake, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fake, "uname"), []byte("#!/bin/sh\necho \"$FAKE_ARCH\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	run := func(arch string) (stdout, stderr string, code int) {
+		cmd := exec.Command("/bin/sh", launcher)
+		cmd.Env = append(os.Environ(), "FAKE_ARCH="+arch, "PATH="+fake+":"+os.Getenv("PATH"))
+		var out, errOut bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &out, &errOut
+		err := cmd.Run()
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return out.String(), errOut.String(), exit.ExitCode()
+		}
+		if err != nil {
+			t.Fatalf("running the launcher for %s: %v", arch, err)
+		}
+		return out.String(), errOut.String(), 0
+	}
+
+	for _, c := range []struct{ arch, want string }{
+		{"x86_64", "google-sheets-mcp-linux-amd64"},
+		{"amd64", "google-sheets-mcp-linux-amd64"},
+		{"aarch64", "google-sheets-mcp-linux-arm64"},
+		{"arm64", "google-sheets-mcp-linux-arm64"},
+	} {
+		stdout, stderr, code := run(c.arch)
+		if code != 0 {
+			t.Errorf("%s: exit %d, stderr %q", c.arch, code, stderr)
+		}
+		if strings.TrimSpace(stdout) != "ran "+c.want {
+			t.Errorf("%s ran %q, want %s", c.arch, strings.TrimSpace(stdout), c.want)
+		}
+	}
+
+	stdout, stderr, code := run("riscv64")
+	if code == 0 {
+		t.Error("an architecture the bundle does not carry exited 0")
+	}
+	if stdout != "" {
+		t.Errorf("the launcher wrote %q to stdout, which is the JSON-RPC channel", stdout)
+	}
+	if !strings.Contains(stderr, "riscv64") || !strings.Contains(stderr, "go install") {
+		t.Errorf("the complaint does not name the architecture and the install command: %q", stderr)
+	}
+
+	// A binary missing from the bundle is the other way this ends, and
+	// it must end the same way: nothing on stdout.
+	if err := os.Remove(filepath.Join(dir, "google-sheets-mcp-linux-amd64")); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, code = run("x86_64")
+	if code == 0 {
+		t.Error("a missing binary exited 0")
+	}
+	if stdout != "" {
+		t.Errorf("the launcher wrote %q to stdout for a missing binary", stdout)
+	}
+	if !strings.Contains(stderr, "google-sheets-mcp-linux-amd64") {
+		t.Errorf("the complaint does not name the missing binary: %q", stderr)
 	}
 }

@@ -15,10 +15,11 @@ import (
 
 var (
 	// def(&s.Field, "flag-name", "ENV_KEY", default, usage) is how every
-	// setting is registered, so the list of settings is derived rather
+	// setting is registered, and sw(&s.Field, "flag-name", "ENV_KEY",
+	// usage) every switch, so the list of settings is derived rather
 	// than typed. A hand-written list of eleven names is the same shape
 	// as a hand-written package list: silent when it falls behind.
-	configKey = regexp.MustCompile(`def\(&s\.\w+,\s*"[a-z-]+",\s*"([A-Z_]+)"`)
+	configKey = regexp.MustCompile(`(?:def|sw)\(&s\.\w+,\s*"[a-z-]+",\s*"([A-Z_]+)"`)
 	// The README's tool table.
 	readmeTool = regexp.MustCompile("(?m)^\\| `([a-z_]+)` \\|")
 	// A version heading, as Keep a Changelog writes it.
@@ -147,8 +148,8 @@ func staleness(bin string) error {
 		return err
 	}
 	keys := configKey.FindAllStringSubmatch(string(cfg), -1)
-	if len(keys) < 5 {
-		return fmt.Errorf("found %d settings in config.go; the def() pattern has probably changed", len(keys))
+	if len(keys) < 12 {
+		return fmt.Errorf("found %d settings in config.go, under the 12 it defines; the def() and sw() pattern has probably changed", len(keys))
 	}
 	for _, m := range keys {
 		if !strings.Contains(string(conf), "GSHEETS_"+m[1]) {
