@@ -21,7 +21,7 @@ func TestProfileLayout(t *testing.T) {
 		t.Fatalf("BaseDir() = %q, %v; want the override", base, err)
 	}
 
-	got, err := ProfileDir(DefaultProfile)
+	got, err := ProfileDir(config.DefaultProfile)
 	if err != nil || got != dir {
 		t.Errorf("the default profile lives at the base: %q, %v", got, err)
 	}
@@ -112,7 +112,7 @@ func TestSaveLoadRemove(t *testing.T) {
 func TestLoadRejectsBrokenJSON(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(config.EnvConfigDir, dir)
-	p, err := Path(DefaultProfile)
+	p, err := Path(config.DefaultProfile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestLoadRejectsBrokenJSON(t *testing.T) {
 	if err := os.WriteFile(p, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(DefaultProfile); err == nil || errors.Is(err, ErrNotFound) {
+	if _, err := Load(config.DefaultProfile); err == nil || errors.Is(err, ErrNotFound) {
 		t.Fatalf("Load on broken JSON = %v; want a parse error naming the file", err)
 	}
 }
@@ -178,7 +178,7 @@ func TestSaveReportsAnUnwritableProfileDirectory(t *testing.T) {
 func TestRemoveReportsARealFailure(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(config.EnvConfigDir, dir)
-	p, err := Path(DefaultProfile)
+	p, err := Path(config.DefaultProfile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestRemoveReportsARealFailure(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(p, "in-the-way"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := Remove(DefaultProfile); err == nil {
+	if err := Remove(config.DefaultProfile); err == nil {
 		t.Error("Remove over a non-empty directory reported success")
 	}
 }
@@ -283,9 +283,9 @@ func TestProfilesAndSharingClient(t *testing.T) {
 	}
 
 	for name, secret := range map[string]string{
-		DefaultProfile: "/secrets/one.json",
-		"work":         "/secrets/one.json",
-		"personal":     "/secrets/two.json",
+		config.DefaultProfile: "/secrets/one.json",
+		"work":                "/secrets/one.json",
+		"personal":            "/secrets/two.json",
 	} {
 		if err := Save(name, Config{ClientSecretPath: secret}); err != nil {
 			t.Fatal(err)
@@ -303,7 +303,7 @@ func TestProfilesAndSharingClient(t *testing.T) {
 	}
 
 	// The two sharing a client secret are the two a revocation reaches.
-	shared, err := SharingClient(DefaultProfile)
+	shared, err := SharingClient(config.DefaultProfile)
 	if err != nil {
 		t.Fatal(err)
 	}

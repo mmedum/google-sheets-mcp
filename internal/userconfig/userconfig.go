@@ -24,9 +24,6 @@ import (
 // AppDir is the directory name under the user's config directory.
 const AppDir = "google-sheets-mcp"
 
-// DefaultProfile is the profile used when none is named.
-const DefaultProfile = "default"
-
 // ErrNotFound means this profile has no config file yet.
 var ErrNotFound = errors.New("userconfig: no config file for this profile; run `google-sheets-mcp login`")
 
@@ -59,7 +56,7 @@ func ProfileDir(profile string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if profile == "" || profile == DefaultProfile {
+	if profile == "" || profile == config.DefaultProfile {
 		return base, nil
 	}
 	return filepath.Join(base, "profiles", profile), nil
@@ -168,7 +165,7 @@ func Profiles() ([]string, error) {
 	}
 	var out []string
 	if _, err := os.Stat(filepath.Join(base, "config.json")); err == nil {
-		out = append(out, DefaultProfile)
+		out = append(out, config.DefaultProfile)
 	}
 	entries, err := os.ReadDir(filepath.Join(base, "profiles"))
 	if err != nil {

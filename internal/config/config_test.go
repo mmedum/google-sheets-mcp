@@ -23,6 +23,11 @@ func settings(env map[string]string, args ...string) (*Settings, error) {
 	return s, nil
 }
 
+// envFrom is m as Load's environment.
+func envFrom(m map[string]string) func(string) string {
+	return func(name string) string { return m[name] }
+}
+
 func TestDefaults(t *testing.T) {
 	s, err := settings(nil)
 	if err != nil {
@@ -210,21 +215,14 @@ func TestExternalFormulasAreOffUnlessTheOperatorSaysSo(t *testing.T) {
 // value, configure what setting nothing does, which is what lets a
 // bundle leave a field blank.
 func TestVarsDescribeWhatBuildDoes(t *testing.T) {
-	build := func(env map[string]string) (Config, error) {
-		s, err := settings(env)
-		if err != nil {
-			return Config{}, err
-		}
-		return s.Build()
-	}
-	unset, err := build(nil)
+	unset, err := Load(nil, envFrom(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var switches, removed []string
 	for _, v := range registry(t) {
 		accepts := func(value string) bool {
-			_, err := build(map[string]string{v.Name: value})
+			_, err := Load(nil, envFrom(map[string]string{v.Name: value}))
 			return err == nil
 		}
 		if boolean := accepts("true") && accepts("false") && !accepts("maybe"); boolean != v.Switch {
@@ -240,7 +238,7 @@ func TestVarsDescribeWhatBuildDoes(t *testing.T) {
 			removed = append(removed, v.Name)
 		}
 		for _, value := range []string{v.Default, ""} {
-			c, err := build(map[string]string{v.Name: value})
+			c, err := Load(nil, envFrom(map[string]string{v.Name: value}))
 			if err != nil {
 				t.Errorf("%s=%q is refused: %v", v.Name, value, err)
 				continue
@@ -324,23 +322,17 @@ func TestProfileRule(t *testing.T) {
 	if ProfileRule != "up to 64 characters from a to z, 0 to 9, - and _, starting with a letter or digit" {
 		t.Errorf("ProfileRule = %q", ProfileRule)
 	}
-	build := func(name string) (Config, error) {
-		s, err := settings(map[string]string{EnvPrefix + "PROFILE": name})
-		if err != nil {
-			return Config{}, err
-		}
-		return s.Build()
-	}
 	for _, tc := range []struct{ name, want string }{
 		{"Work", "work"}, {" work ", "work"}, {"a", "a"}, {"9-", "9-"}, {"a-b_c", "a-b_c"},
 		{strings.Repeat("a", 64), strings.Repeat("a", 64)},
 	} {
-		if c, err := build(tc.name); err != nil || c.Profile != tc.want {
+		if c, err := Load(nil, envFrom(map[string]string{EnvPrefix + "PROFILE": tc.name})); err != nil ||
+			c.Profile != tc.want {
 			t.Errorf("GSHEETS_PROFILE=%q: profile %q, %v; want %q", tc.name, c.Profile, err, tc.want)
 		}
 	}
 	for _, name := range []string{strings.Repeat("a", 65), "-a", "_a", "a.b", "a b", "caf\u00e9", "\u212aey"} {
-		_, err := build(name)
+		_, err := Load(nil, envFrom(map[string]string{EnvPrefix + "PROFILE": name}))
 		if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "must be "+ProfileRule) {
 			t.Errorf("GSHEETS_PROFILE=%q: %v; want it refused, naming the rule", name, err)
 		}

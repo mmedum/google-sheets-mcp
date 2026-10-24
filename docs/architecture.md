@@ -1828,12 +1828,17 @@ then `manage_cell_comment` reaches any address, recorded in §17b.
   `name` is the server's own. Each is broken on purpose in the tests and
   watched being refused.
 
-  **The gate and the packer run one function**, `committedManifest`,
-  which reads the manifest, the launcher, go.mod, LICENSE and README
-  once from one root. It refuses a key repeated in one object, since
-  Go's decode merges one while the validator and the host take the
-  last. The packer holds the stamped document it ships to the vendored
-  schema again, and a failed close of the bundle fails the pack.
+  **The gate, the packer and the registry entry run one function**,
+  `committedManifest`, which reads the manifest, the launcher, go.mod,
+  LICENSE and README once from one root, and refuse in its words. It
+  refuses a key repeated in one object, or two equal but for case, since
+  Go's decode merges a repeated key and matches one in any case while
+  the validator and the host keep each as written. The registry entry
+  takes its description from that read. The packer holds the stamped
+  document it ships to the vendored schema again, and writes the bundle
+  to a temporary file beside it, renamed only once the archive and its
+  close succeed, so a failed pack leaves nothing under the name a
+  release publishes.
 
   A manifest names a command per *platform* and has no key for the
   architecture, so every platform it claims has to work on both. macOS
@@ -2668,6 +2673,63 @@ live driver asks for that refusal on the typed table's dropdown column.
 Both refusals on a typed table's dropdown passed live in the run before
 4.0.0. Owed: spike T Q13b (§15).
 
+**The family's bundle and settings rules (after 4.1.0, unreleased).
+Reviewed 2026-10-24.** `/simplify`, one agent over reuse, quality,
+efficiency and altitude, `/code-review medium` and `/security-review`
+ran over `v4.0.0..family-rules`. The security review found nothing at
+confidence 8 or above. The other two found nine things to fix and three
+to keep. Each fix has a test that fails on the code before it, except
+the deletions:
+
+- A pack that failed part way left a truncated `.mcpb` under the
+  release's name. It writes a temporary file beside it and renames it
+  once the archive is whole.
+- The floor on `config.Vars` was typed in both config test packages. It
+  is one constant.
+- The launcher's install hint parsed go.mod with its own pattern. It
+  takes `modulePath(root)`, which is tested with Windows line endings.
+- The registry entry read the manifest a second time, past the
+  repeated-key refusal. It reads through `committedManifest`, as the
+  gate and the packer do.
+- A test copied the packer's lookup of its sources, two config tests
+  copied `Load`, and the gate and the packer each worded the problems
+  their own way. Each is one function now, and the packer's refusal is
+  the gate's.
+- A placeholder check no run could reach, and `TestTheOldLayoutIsRefused`,
+  which repeated the unstaged-name cases, are deleted.
+- The configuration page was held to the profile rule alone. It is held
+  to every bundle field rule.
+
+The family's sweep of the sibling servers' reviews found five more that
+apply here, fixed the same way:
+
+- `fieldDiff` reported a differing unexported slice or map only when no
+  named field differed, and compared a pointer by address. It reports
+  any such difference, and compares what a pointer points to.
+- The repeated-key refusal missed two keys equal but for case, which
+  Go's decode matches to one field. It refuses those, quotes a key
+  holding a dot or a bracket in the path it names, and refuses a
+  document its walk cannot read.
+- The name scan read `EnvPrefix + "ENABLE_" + kind` as a variable. A
+  run another operand completes is a prefix.
+- The live driver read `GSHEETS_PROFILE` with its own `os.Getenv` and
+  typed `"default"`, and `userconfig` kept a second `DefaultProfile`.
+  Both use config's.
+- Eight files typed a variable's name whole, a guard's refusal and the
+  smoke test's environment among them. Each uses config's constant or
+  `EnvPrefix`. The scan now refuses a name typed whole and a server
+  variable read with `os.Getenv` or `os.LookupEnv`.
+
+Kept, with the reasons:
+
+- `configDiff` stays a one-line wrapper over `fieldDiff`, which keeps the
+  gate's call typed. The family decided it.
+- `Lookup` trims a path the environment gives, while a flag's value is
+  used as written. A path that truly begins or ends with a space is not
+  supported, and `Build` trims what it reads either way.
+- Nothing holds the fields' sentences that read-only leaves the other
+  switches nothing to do (§17a.34).
+
 ## 17. Open decisions
 
 None. The seven below were decided on 2026-09-05 and are kept here so
@@ -2739,7 +2801,7 @@ they are not reopened.
 
 ## 17a. Deferred cleanups
 
-Sixteen open, eleven closed. A closed entry keeps its text and the decision that
+Seventeen open, eleven closed. A closed entry keeps its text and the decision that
 closed it, so nobody reopens a question that was answered. Five of the
 open ones were raised by phase 2's own review passes and are recorded
 here rather than fixed in passing; two of those (entries 12 and 14) are
@@ -3226,6 +3288,15 @@ cannot be verified again yet.
    nothing it lacked: such a client answers the server's question itself
    and can accept without a person. `GSHEETS_REQUIRE_PROMPT=true` refuses
    the call instead, since it reads the call's own capabilities.
+34. **Nothing holds the bundle fields' sentences about read-only.** The
+   read-only, destructive, Connected Sheets and external formulas
+   fields each say that read-only leaves the other switches nothing to
+   register or allow. That is true of Build and of registration today,
+   and no check reads those sentences, so a change that let a switch act
+   under read-only would leave its field saying otherwise. **Left open**,
+   from the review of 2026-10-24: low priority, since read-only
+   registers no write, and the check is the family's to write once for
+   every bundle.
 
 ### 17c. Where the profile and the guards follow the sibling servers
 

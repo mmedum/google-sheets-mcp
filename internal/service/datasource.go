@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
@@ -301,7 +302,8 @@ func (s *Service) DeleteDataSource(ctx context.Context, req DeleteSourceRequest)
 	// be trusting a registration decision made one layer up.
 	if !s.cfg.EnableDestructive {
 		return nil, Errorf("unsupported",
-			"deleting a data source is off in this server; start it with GSHEETS_ENABLE_DESTRUCTIVE=true to turn it on")
+			"deleting a data source is off in this server; start it with "+config.EnvPrefix+
+				"ENABLE_DESTRUCTIVE=true to turn it on")
 	}
 	if req.Sheet == "" && sheet != "" {
 		return nil, Errorf("invalid", "delete needs sheet, the title of the sheet the data source made, so the call "+

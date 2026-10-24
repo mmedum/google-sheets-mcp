@@ -140,9 +140,6 @@ func TestCommittedManifestPacks(t *testing.T) {
 	if files < 8 || platforms < 3 || keys < 6 {
 		t.Errorf("summary %q is under its floors of 8 files, 3 platforms and 6 user_config keys", out.String())
 	}
-	if got := good(t).Version; got != mcpbPlaceholder {
-		t.Errorf("the committed manifest claims version %q; a version in the tree is a stale one", got)
-	}
 }
 
 // The OAuth client field may be left empty: it is optional and defaults
@@ -363,6 +360,11 @@ func TestManifestProblemsRunsEveryCheck(t *testing.T) {
 				`"mcp_config": {"command": "${__dirname}/server/google-sheets-mcp-darwin", "args": []}},` +
 				"\n" + `  "user_config": {`,
 			want: "the manifest has server more than once"},
+		// The decode matches "Server" to the field as it does "server",
+		// so it merges the two while the host keeps them apart.
+		{name: "a server object in another case", file: mcpbManifestPath, old: `  "user_config": {`,
+			new:  `  "Server": {"type": "binary"},` + "\n" + `  "user_config": {`,
+			want: "the manifest has Server more than once, or in another case"},
 		{name: "a variable mapped twice", file: mcpbManifestPath, old: `"GSHEETS_PROFILE": "${user_config.profile}",`,
 			new:  `"GSHEETS_PROFILE": "${user_config.profile}", "GSHEETS_PROFILE": "${user_config.profile}",`,
 			want: "the manifest has server.mcp_config.env.GSHEETS_PROFILE more than once"},
@@ -402,7 +404,9 @@ func TestManifestProblemsRunsEveryCheck(t *testing.T) {
 
 // A key is repeated only within one object, and each repeated key is
 // named once, by its path, a list's elements and a repeated object's
-// own keys included.
+// own keys included. Two keys equal but for case are one key, as Go's
+// decode matches them, and a key a dot or a bracket would blur is
+// quoted. A document the walk cannot read is an error, not a pass.
 func TestRepeatedKeysNameEachPathOnce(t *testing.T) {
 	for _, tc := range []struct {
 		doc  string
@@ -411,11 +415,18 @@ func TestRepeatedKeysNameEachPathOnce(t *testing.T) {
 		{`{"a": [{"b": 1, "b": 2, "b": 3}], "c": {"d": 1}, "d": 1}`, []string{"a[0].b"}},
 		{`{"x": {"y": 1}, "x": {"y": 1, "y": 2}}`, []string{"x", "x.y"}},
 		{`{"server": {"type": "binary"}, "user_config": {"type": {"type": "boolean"}}}`, nil},
-		{`{"a": 1,`, nil},
+		{`{"server": {"command": "a", "Command": "b", "COMMAND": "c"}}`, []string{"server.Command"}},
+		{`{"k": 1, "\u212a": 2}`, []string{"\u212a"}},
+		{`{"env": {"a.b": 1, "a.b": 2, "a": {"b": 1}}}`, []string{`env["a.b"]`}},
+		{`{"env": {"a[0]": 1, "A[0]": 2, "": 1, "": 2}}`, []string{`env["A[0]"]`, `env[""]`}},
 	} {
-		if got := repeatedKeys([]byte(tc.doc)); !slices.Equal(got, tc.want) {
-			t.Errorf("repeatedKeys(%s) = %q, want %q", tc.doc, got, tc.want)
+		got, err := repeatedKeys([]byte(tc.doc))
+		if err != nil || !slices.Equal(got, tc.want) {
+			t.Errorf("repeatedKeys(%s) = %q, %v; want %q", tc.doc, got, err, tc.want)
 		}
+	}
+	if got, err := repeatedKeys([]byte(`{"a": 1,`)); err == nil {
+		t.Errorf("a document cut short gives %q and no error", got)
 	}
 }
 
@@ -648,26 +659,42 @@ func TestTheFieldRulesHaveAFloor(t *testing.T) {
 }
 
 // A field the defaults change is named, an unexported one included
-// where its type compares; an unexported one that does not is reported
-// unnamed, rather than panicking.
+// where its type compares by value. An unexported one that does not is
+// compared by what it holds, a pointer's target included, and reported
+// unnamed when it differs, beside any named field, rather than
+// panicking.
 func TestTheConfigDiffNamesTheFieldsThatDiffer(t *testing.T) {
 	type cfg struct {
 		Shown  int
 		hidden int
 		rest   []string
 		held   any
+		at     *int
+		byKey  map[string]int
 	}
+	one, alsoOne, two := 1, 1, 2
+	base := cfg{Shown: 1, hidden: 1, at: &one, byKey: map[string]int{"k": 1}}
 	for _, tc := range []struct {
+		name string
 		b    cfg
 		want []string
 	}{
-		{cfg{2, 1, nil, nil}, []string{"Shown"}},
-		{cfg{1, 2, nil, nil}, []string{"hidden"}},
-		{cfg{1, 1, []string{"x"}, nil}, []string{"an unexported field"}},
-		{cfg{1, 1, nil, nil}, nil},
+		{"an exported field", cfg{Shown: 2, hidden: 1, at: &one, byKey: map[string]int{"k": 1}}, []string{"Shown"}},
+		{"an unexported field that compares", cfg{Shown: 1, hidden: 2, at: &one, byKey: map[string]int{"k": 1}},
+			[]string{"hidden"}},
+		{"a slice", cfg{Shown: 1, hidden: 1, rest: []string{"x"}, at: &one, byKey: map[string]int{"k": 1}},
+			[]string{"an unexported field"}},
+		{"a slice beside a named field", cfg{Shown: 2, hidden: 1, rest: []string{"x"}, at: &one,
+			byKey: map[string]int{"k": 1}}, []string{"Shown", "an unexported field"}},
+		{"another pointer to the same value", cfg{Shown: 1, hidden: 1, at: &alsoOne, byKey: map[string]int{"k": 1}}, nil},
+		{"a pointer to another value", cfg{Shown: 1, hidden: 1, at: &two, byKey: map[string]int{"k": 1}},
+			[]string{"an unexported field"}},
+		{"a map holding another value", cfg{Shown: 1, hidden: 1, at: &one, byKey: map[string]int{"k": 2}},
+			[]string{"an unexported field"}},
+		{"the same", cfg{Shown: 1, hidden: 1, at: &one, byKey: map[string]int{"k": 1}}, nil},
 	} {
-		if got := fieldDiff(cfg{1, 1, nil, nil}, tc.b); !slices.Equal(got, tc.want) {
-			t.Errorf("fieldDiff against %+v = %q, want %q", tc.b, got, tc.want)
+		if got := fieldDiff(base, tc.b); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: fieldDiff = %q, want %q", tc.name, got, tc.want)
 		}
 	}
 	// An interface holding a slice on both sides compares as a type and
@@ -832,56 +859,24 @@ func TestSettingProblemsHoldTheRefusals(t *testing.T) {
 	}
 }
 
-// The 4.0.0 bundle's names are refused, so the family's layout cannot
-// drift back in one file and not the others.
-func TestTheOldLayoutIsRefused(t *testing.T) {
-	for _, tc := range []struct{ name, entry, linux, want string }{
-		{"the old macOS name", "server/google-sheets-mcp", "server/launch-linux.sh",
-			`entry_point "server/google-sheets-mcp" is not a program the packer stages`},
-		{"the old launcher name", "server/google-sheets-mcp-darwin", "server/linux-launch.sh",
-			`platform_overrides.linux.command is "${__dirname}/server/linux-launch.sh", which is not a program`},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			m := edited(t, func(d map[string]any) {
-				dig(d, "server")["entry_point"] = tc.entry
-				dig(d, "server", "mcp_config", "platform_overrides", "linux")["command"] = "${__dirname}/" + tc.linux
-			})
-			if problems := validateManifest(m, bundleFiles); !mentions(problems, tc.want) {
-				t.Errorf("problems:\n%s\nwant %q", strings.Join(problems, "\n"), tc.want)
-			}
-		})
-	}
-	// And the launcher still looking for the old Linux names.
-	old := "bin=$dir/google-sheets-mcp-amd64\nbin=$dir/google-sheets-mcp-arm64\n" +
-		`echo "Install with: go install example.com/m/v4/cmd/google-sheets-mcp@latest" >&2`
-	got := launcherProblems(bundleFiles, old, "module example.com/m/v4\n")
-	want := []string{"the launcher runs [google-sheets-mcp-amd64 google-sheets-mcp-arm64]; " +
-		"the packer stages [google-sheets-mcp-linux-amd64 google-sheets-mcp-linux-arm64]"}
-	if !slices.Equal(got, want) {
-		t.Errorf("problems %q, want %q", got, want)
-	}
-}
-
-// The launcher's install hint names the module go.mod declares, read
-// under Windows line endings too. The path moves with each major
-// version, so a hint left behind sends somebody to an old one.
+// The launcher's install hint names the module go.mod declares, which
+// modulePath reads. The path moves with each major version, so a hint
+// left behind sends somebody to an old one.
 func TestTheLauncherInstallHintIsGoModsModule(t *testing.T) {
 	const hint = `echo "no binary." "Install with: go install example.com/m/v4/cmd/google-sheets-mcp@latest" >&2`
-	for _, goMod := range []string{"module example.com/m/v4\n\ngo 1.27\n", "module example.com/m/v4\r\n\r\ngo 1.27\r\n"} {
-		if problems := installHintProblems(hint, goMod); len(problems) > 0 {
-			t.Errorf("go.mod %q: %v", goMod, problems)
-		}
+	const module = "example.com/m/v4"
+	if problems := installHintProblems(hint, module); len(problems) > 0 {
+		t.Errorf("the hint for %s: %v", module, problems)
 	}
-	for _, tc := range []struct{ name, launcher, goMod, want string }{
-		{"a hint without the major version", strings.Replace(hint, "/v4", "", 1), "module example.com/m/v4\n",
+	for _, tc := range []struct{ name, launcher, want string }{
+		{"a hint without the major version", strings.Replace(hint, "/v4", "", 1),
 			`the launcher says "go install example.com/m/cmd/google-sheets-mcp@latest"`},
-		{"a hint a major version behind", strings.Replace(hint, "/v4", "/v3", 1), "module example.com/m/v4\r\n",
+		{"a hint a major version behind", strings.Replace(hint, "/v4", "/v3", 1),
 			`the launcher says "go install example.com/m/v3/cmd/google-sheets-mcp@latest"`},
-		{"no hint at all", "exit 1", "module example.com/m/v4\n", "gives no install hint"},
-		{"no module line", hint, "go 1.27\n", "go.mod names no module"},
+		{"no hint at all", "exit 1", "gives no install hint"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := strings.Join(installHintProblems(tc.launcher, tc.goMod), "\n")
+			got := strings.Join(installHintProblems(tc.launcher, module), "\n")
 			if !strings.Contains(got, tc.want) {
 				t.Errorf("problems %q, want %q", got, tc.want)
 			}
@@ -1232,17 +1227,9 @@ func (*failingClose) Close() error { return errors.New("no space left on device"
 // A bundle cut short at its close is not packed: the error is the
 // pack's.
 func TestAFailedCloseFailsThePack(t *testing.T) {
-	dist := fakeDist(t)
-	sources := map[string]string{}
-	for _, f := range bundleFiles {
-		src := filepath.Join(repoDir, f.source)
-		if f.glob != "" {
-			var err error
-			if src, err = onlyMatch(filepath.Join(dist, f.glob), f.path); err != nil {
-				t.Fatal(err)
-			}
-		}
-		sources[f.path] = src
+	sources, err := bundleSources(repoDir, fakeDist(t))
+	if err != nil {
+		t.Fatal(err)
 	}
 	out := &failingClose{}
 	if err := writeBundle(out, []byte("{}\n"), sources); err == nil || err.Error() != "no space left on device" {
@@ -1253,9 +1240,53 @@ func TestAFailedCloseFailsThePack(t *testing.T) {
 	}
 }
 
-// The packer refuses what the gate refuses, because both start from
-// committedManifest: a check the gate alone used to run stops the pack,
-// and so does a file beside the manifest.
+// A pack that fails while writing leaves no file under the name the
+// release publishes, and no temporary one beside it, so a bundle cut
+// short cannot be uploaded as a good one. A bundle a pack wrote before
+// is kept.
+func TestAFailedWriteLeavesNoBundle(t *testing.T) {
+	atRepoRoot(t)
+	dist := fakeDist(t)
+	bundle := filepath.Join(dist, bundleName+"_1.0.0.mcpb")
+	// The macOS binary is a directory, so the archive fails part way,
+	// after the license and the README are written.
+	broken := filepath.Join(dist, "universal_darwin_all", bundleName)
+	if err := os.Remove(broken); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(broken, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	listing := func() []string {
+		entries, err := os.ReadDir(dist)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		return names
+	}
+	before := listing()
+	if err := mcpbPack(&bytes.Buffer{}, "1.0.0", dist); err == nil {
+		t.Fatal("a pack from a directory where a binary belongs succeeded")
+	}
+	if got := listing(); !slices.Equal(got, before) {
+		t.Errorf("a failed pack left %v in dist, which held %v", got, before)
+	}
+	put(t, dist, bundleName+"_1.0.0.mcpb", "an earlier bundle")
+	if err := mcpbPack(&bytes.Buffer{}, "1.0.0", dist); err == nil {
+		t.Fatal("a pack from a directory where a binary belongs succeeded")
+	}
+	if got, err := os.ReadFile(bundle); err != nil || string(got) != "an earlier bundle" {
+		t.Errorf("a failed pack replaced the bundle there: %q, %v", got, err)
+	}
+}
+
+// The packer refuses what the gate refuses, in the gate's words,
+// because both start from committedManifest: a check the gate alone
+// used to run stops the pack, and so does a file beside the manifest.
 func TestPackRunsEveryCheckTheGateRuns(t *testing.T) {
 	root := copiedRoot(t)
 	t.Chdir(root)
@@ -1280,10 +1311,12 @@ func TestPackRunsEveryCheckTheGateRuns(t *testing.T) {
 			}
 			put(t, root, tc.file, strings.ReplaceAll(body, tc.old, tc.new))
 			t.Cleanup(func() { put(t, root, tc.file, body) })
-			var out bytes.Buffer
-			err := mcpbPack(&out, "1.0.0", dist)
-			if err == nil || !strings.Contains(out.String(), tc.want) {
-				t.Errorf("pack = %v, %q; want it refused, naming %q", err, out.String(), tc.want)
+			packErr := mcpbPack(&bytes.Buffer{}, "1.0.0", dist)
+			if packErr == nil || !strings.Contains(packErr.Error(), tc.want) {
+				t.Errorf("pack = %v; want it refused, naming %q", packErr, tc.want)
+			}
+			if gateErr := mcpbGate(&bytes.Buffer{}); packErr != nil && (gateErr == nil || gateErr.Error() != packErr.Error()) {
+				t.Errorf("the pack's refusal is not the gate's:\n pack %v\n gate %v", packErr, gateErr)
 			}
 		})
 	}

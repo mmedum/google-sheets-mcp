@@ -1,6 +1,7 @@
 package main
 
 import (
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -174,11 +175,12 @@ func TestPermissionRulesAreTools(t *testing.T) {
 }
 
 // The configuration page names every variable the server reads, the
-// removed one included, as a whole word, names no other, and says what a
-// profile name is in the server's own words.
+// removed one included, as a whole word, names no other, and states each
+// of the bundle's field rules, what a profile name is among them, in the
+// server's own words.
 func TestConfigDocProblems(t *testing.T) {
 	doc := string(repoFile(t, configDocPath))
-	if got := configDocProblems(config.Vars(), doc); len(got) != 0 {
+	if got := configDocProblems(config.Vars(), fieldRules, doc); len(got) != 0 {
 		t.Errorf("the committed page: %q", got)
 	}
 	for _, tc := range []struct {
@@ -202,8 +204,16 @@ func TestConfigDocProblems(t *testing.T) {
 		if !strings.Contains(doc, tc.old) {
 			t.Fatalf("%s: the page does not say %q", tc.name, tc.old)
 		}
-		if got := configDocProblems(config.Vars(), strings.ReplaceAll(doc, tc.old, tc.new)); !slices.Equal(got, tc.want) {
+		if got := configDocProblems(config.Vars(), fieldRules, strings.ReplaceAll(doc, tc.old, tc.new)); !slices.Equal(got,
+			tc.want) {
 			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
 		}
+	}
+	// A rule added to the bundle's field is held on the page too.
+	rules := maps.Clone(fieldRules)
+	rules[config.EnvPrefix+"LOG_LEVEL"] = fieldRule{words: "one of debug, info, warn and error", fails: "say a log level is"}
+	want := []string{`docs/configuration.md does not say a log level is "one of debug, info, warn and error"`}
+	if got := configDocProblems(config.Vars(), rules, doc); !slices.Equal(got, want) {
+		t.Errorf("a rule the page does not state: %q, want %q", got, want)
 	}
 }

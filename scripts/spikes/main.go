@@ -25,6 +25,7 @@ import (
 
 	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/credentials"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/redact"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/userconfig"
@@ -137,7 +138,7 @@ func wanted(letter string) bool {
 }
 
 func tokenSource(ctx context.Context) (oauth2.TokenSource, error) {
-	profile := userconfig.DefaultProfile
+	profile := config.DefaultProfile
 	secret, err := userconfig.ResolveClientSecretPath(profile)
 	if err != nil {
 		return nil, err

@@ -141,7 +141,7 @@ func TestTheBundleRowMustBeExactlyOne(t *testing.T) {
 func TestTheEntryIsBuiltFromThisRepository(t *testing.T) {
 	t.Chdir("../..")
 
-	module, err := modulePath()
+	module, err := modulePath(".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,16 +177,54 @@ func TestTheEntryIsBuiltFromThisRepository(t *testing.T) {
 // A description too long for the registry is a manifest that has put the
 // wrong text in the short field, and the refusal should say so.
 func TestATooLongDescriptionIsRefusedWithTheFix(t *testing.T) {
-	t.Chdir("../..")
-	manifest, err := readManifest()
-	if err != nil {
-		t.Fatal(err)
+	m := good(t)
+	if len(m.Description) > registryDescriptionMax {
+		t.Fatalf("the committed manifest's description is already %d characters", len(m.Description))
 	}
-	if d, _ := manifest["description"].(string); len(d) > registryDescriptionMax {
-		t.Fatalf("the committed manifest's description is already %d characters", len(d))
-	}
-	if manifest["long_description"] == nil {
+	if m.LongDescription == "" {
 		t.Error("no long_description, so there is nowhere for the detail to live")
+	}
+}
+
+// The entry reads the manifest through the gate's own read, so a
+// description given twice, or in another case, which the gate's decode
+// and the registry's would each settle differently, is refused, and no
+// entry is written.
+func TestTheEntryRefusesWhatTheGateRefuses(t *testing.T) {
+	for extra, want := range map[string]string{
+		`"description": "a second description",`: "the manifest has description more than once",
+		`"Description": "in another case",`:      "the manifest has Description more than once",
+	} {
+		root := copiedRoot(t)
+		body := string(repoFile(t, mcpbManifestPath))
+		put(t, root, mcpbManifestPath, strings.Replace(body, `  "user_config": {`, "  "+extra+"\n"+`  "user_config": {`, 1))
+		t.Chdir(root)
+		var out bytes.Buffer
+		err := registryPublish(&out, "v4.2.1", checksumsFile(t, oneBundle))
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: registryPublish = %v, want it refused, naming the key", extra, err)
+		}
+		if out.Len() > 0 {
+			t.Errorf("%s: a refused manifest still wrote an entry: %s", extra, out.String())
+		}
+	}
+}
+
+// modulePath reads go.mod's module directive under the root it is
+// given, with Unix or Windows line endings, and refuses a go.mod with
+// none.
+func TestModulePathReadsTheModuleUnderRoot(t *testing.T) {
+	for _, goMod := range []string{"module example.com/m/v4\n\ngo 1.27\n", "module example.com/m/v4\r\n\r\ngo 1.27\r\n"} {
+		root := t.TempDir()
+		put(t, root, "go.mod", goMod)
+		if got, err := modulePath(root); err != nil || got != "example.com/m/v4" {
+			t.Errorf("go.mod %q: modulePath = %q, %v; want example.com/m/v4", goMod, got, err)
+		}
+	}
+	root := t.TempDir()
+	put(t, root, "go.mod", "go 1.27\n")
+	if got, err := modulePath(root); err == nil || err.Error() != "go.mod names no module" {
+		t.Errorf("a go.mod with no module line: %q, %v", got, err)
 	}
 }
 
@@ -209,7 +247,7 @@ func TestTheVersionMayCarryItsVOrNot(t *testing.T) {
 // the entry refuses a tag whose major is not go.mod's on its own.
 func TestTheEntryRefusesATagOfAnotherMajor(t *testing.T) {
 	t.Chdir("../..")
-	module, err := modulePath()
+	module, err := modulePath(".")
 	if err != nil {
 		t.Fatal(err)
 	}

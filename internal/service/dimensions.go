@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
@@ -106,7 +107,8 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 	}
 	if req.Action == DimDelete && !s.cfg.EnableDestructive {
 		return nil, Errorf("unsupported",
-			"deleting rows or columns is off in this server; start it with GSHEETS_ENABLE_DESTRUCTIVE=true to turn it on")
+			"deleting rows or columns is off in this server; start it with "+config.EnvPrefix+
+				"ENABLE_DESTRUCTIVE=true to turn it on")
 	}
 
 	act := render.DimensionAct{

@@ -31,6 +31,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -47,6 +48,7 @@ import (
 
 	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/credentials"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/livecover"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/userconfig"
@@ -54,7 +56,8 @@ import (
 
 func main() {
 	bin := flag.String("bin", "./google-sheets-mcp", "the built server")
-	profile := flag.String("profile", envOr("GSHEETS_PROFILE", "default"), "which profile's credentials to use")
+	profile := flag.String("profile", cmp.Or(config.Lookup(os.Getenv, config.EnvPrefix+"PROFILE"), config.DefaultProfile),
+		"which profile's credentials to use")
 	keep := flag.Bool("keep", false, "do not attempt to trash the scratch spreadsheet")
 	flag.Parse()
 
@@ -62,13 +65,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\nlivesheet: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }
 
 func run(ctx context.Context, bin, profile string, keep bool) error {
@@ -231,7 +227,7 @@ func startServer(ctx context.Context, bin, profile string, settings ...string) (
 	// the surface and a driver that could not call them would leave the
 	// two most dangerous tools untested.
 	cmd.Env = append(cmd.Environ(),
-		"GSHEETS_PROFILE="+profile, "GSHEETS_LOG_LEVEL=warn", "GSHEETS_ENABLE_DESTRUCTIVE=true")
+		config.EnvPrefix+"PROFILE="+profile, config.EnvPrefix+"LOG_LEVEL=warn", config.EnvPrefix+"ENABLE_DESTRUCTIVE=true")
 	cmd.Env = append(cmd.Env, settings...)
 	cmd.Stderr = os.Stderr
 	// The driver declares form elicitation, as a client with a person at

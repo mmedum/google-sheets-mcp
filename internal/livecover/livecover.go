@@ -19,6 +19,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 )
 
 // Undrivable are the tool options a live run cannot exercise, each with
@@ -41,7 +43,7 @@ var Undrivable = map[string]string{
 var UndrivableTools = map[string]string{
 	"connect_data_source": "Connected Sheets needs a BigQuery-enabled Cloud project with billing attached, and " +
 		"addDataSource needs the bigquery.readonly scope this server asks for only under " +
-		"GSHEETS_ENABLE_DATA_SOURCES. Spike N sent addDataSource and recorded what came back (§18); " +
+		config.EnvPrefix + "ENABLE_DATA_SOURCES. Spike N sent addDataSource and recorded what came back (§18); " +
 		"driving it for real would charge somebody's project on every run",
 	"manage_data_source": "there is nothing to refresh or list: the driver cannot connect a data source, for the " +
 		"reason connect_data_source cannot be driven. Spike N sent every call in the tool and recorded what came " +

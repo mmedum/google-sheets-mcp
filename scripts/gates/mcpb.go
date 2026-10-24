@@ -43,8 +43,9 @@ import (
 // any schema and produces a bundle that installs cleanly and then does
 // nothing.
 //
-// The gate and the packer both start from committedManifest, so a
-// release cannot pack a manifest the gate would refuse.
+// The gate, the packer and the registry entry all start from
+// committedManifest, so a release cannot pack or describe a manifest the
+// gate would refuse.
 
 // mcpbPlaceholder is the version the COMMITTED manifest carries. The
 // real one is written in as the bundle is packed, so a manifest in the
@@ -166,11 +167,8 @@ func mcpbGate(out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if len(problems) > 0 {
-		for _, p := range problems {
-			_, _ = fmt.Fprintln(out, "  "+p)
-		}
-		return fmt.Errorf("%d problem(s) in %s", len(problems), mcpbManifestPath)
+	if err := manifestRefused(problems); err != nil {
+		return err
 	}
 	_, _ = fmt.Fprintf(out, "bundle manifest ok: %d file(s), %d platform(s), %d user_config key(s)\n",
 		len(bundleFiles)+1, len(m.Compatibility.Platforms), len(m.UserConfig))
@@ -201,65 +199,84 @@ func mcpbPack(out io.Writer, version, dist string) error {
 	if err != nil {
 		return err
 	}
-	if len(problems) > 0 {
-		for _, p := range problems {
-			_, _ = fmt.Fprintln(out, "  "+p)
-		}
-		return fmt.Errorf("%d problem(s) in the bundle manifest", len(problems))
+	if err := manifestRefused(problems); err != nil {
+		return err
 	}
 	stamped, err := stampManifest(raw, version)
 	if err != nil {
 		return err
 	}
-
-	sources := map[string]string{}
-	for _, f := range bundleFiles {
-		src := f.source
-		if f.glob != "" {
-			if src, err = onlyMatch(filepath.Join(dist, f.glob), f.path); err != nil {
-				return err
-			}
-		}
-		sources[f.path] = src
-	}
-
-	bundle := filepath.Join(dist, fmt.Sprintf("%s_%s.mcpb", bundleName, version))
-	f, err := os.Create(bundle) //nolint:gosec // a path built from dist and the version
+	sources, err := bundleSources(".", dist)
 	if err != nil {
 		return err
 	}
-	if err := writeBundle(f, stamped, sources); err != nil {
+	bundle := filepath.Join(dist, fmt.Sprintf("%s_%s.mcpb", bundleName, version))
+	if err := packTo(bundle, stamped, sources); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(out, "mcpb-pack: wrote %s (%d files)\n", bundle, len(sources)+1)
 	return nil
 }
 
-// readManifest decodes the committed manifest into a map, for the
-// registry entry, which reads one field of it.
-func readManifest() (map[string]any, error) {
-	raw, err := os.ReadFile(mcpbManifestPath)
-	if err != nil {
-		return nil, err
+// manifestRefused is the error that stops the gate, the packer and the
+// registry entry over the problems committedManifest found, naming each;
+// nil when it found none.
+func manifestRefused(problems []string) error {
+	if len(problems) == 0 {
+		return nil
 	}
-	var document map[string]any
-	if err := json.Unmarshal(raw, &document); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", mcpbManifestPath, err)
-	}
-	return document, nil
+	return fmt.Errorf("%d problem(s) in %s:\n  %s", len(problems), mcpbManifestPath, strings.Join(problems, "\n  "))
 }
 
-// committedManifest is where the gate and the packer both start: the
-// committed manifest under root, read once and decoded once, and every
-// problem manifestProblems finds in it. The packer ships this document
+// bundleSources is where each staged file is packed from: a file this
+// repository ships, under root, or the one file under dist a binary's
+// glob matches.
+func bundleSources(root, dist string) (map[string]string, error) {
+	sources := map[string]string{}
+	for _, f := range bundleFiles {
+		src := filepath.Join(root, f.source)
+		if f.glob != "" {
+			var err error
+			if src, err = onlyMatch(filepath.Join(dist, f.glob), f.path); err != nil {
+				return nil, err
+			}
+		}
+		sources[f.path] = src
+	}
+	return sources, nil
+}
+
+// packTo writes the bundle to path through a temporary file beside it,
+// renamed to path only once the archive is whole. A pack that fails
+// removes the temporary file, so nothing is left under the name a
+// release publishes, and a bundle already there is kept.
+func packTo(path string, manifest []byte, sources map[string]string) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }() // nothing to remove once renamed
+	if err := writeBundle(tmp, manifest, sources); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil { //nolint:gosec // a release asset, read by everyone
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+// committedManifest is where the gate, the packer and the registry entry
+// start: the committed manifest under root, read once and decoded once,
+// and every problem manifestProblems finds in it. The packer ships this document
 // with the real version stamped in and encoded again, not these bytes,
 // and holds what it stamps to the vendored schema too.
 //
-// A key repeated in one object is refused before anything else is
-// checked. The decode into manifest merges a repeated object into the
-// first, while the schema validator, the packer's encode and the host
-// each keep the last, so every other check would read a document that
-// is not the one shipped.
+// A key repeated in one object, or given twice in different cases, is
+// refused before anything else is checked. The decode into manifest
+// merges a repeated object into the first and matches a field in any
+// case, while the schema validator, the packer's encode and the host
+// each keep the keys as written, so every other check would read a
+// document that is not the one shipped.
 func committedManifest(root string) (raw []byte, m manifest, problems []string, err error) {
 	raw, err = os.ReadFile(filepath.Join(root, mcpbManifestPath)) //nolint:gosec // a repository path from a constant
 	if err != nil {
@@ -268,11 +285,15 @@ func committedManifest(root string) (raw []byte, m manifest, problems []string, 
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return raw, manifest{}, []string{fmt.Sprintf("the manifest does not decode: %v", err)}, nil
 	}
-	if repeated := repeatedKeys(raw); len(repeated) > 0 {
+	repeated, err := repeatedKeys(raw)
+	if err != nil {
+		return raw, manifest{}, []string{fmt.Sprintf("the manifest's keys cannot be read: %v", err)}, nil
+	}
+	if len(repeated) > 0 {
 		for _, at := range repeated {
-			problems = append(problems, fmt.Sprintf("the manifest has %s more than once; the gate's decode merges "+
-				"a repeated key, and the schema, the packer and the host keep the last, so they would read "+
-				"different documents", at))
+			problems = append(problems, fmt.Sprintf("the manifest has %s more than once, or in another case; "+
+				"the gate's decode merges a repeated key and matches one in any case, and the schema, the "+
+				"packer and the host keep each as written, so they would read different documents", at))
 		}
 		return raw, manifest{}, problems, nil
 	}
@@ -281,10 +302,13 @@ func committedManifest(root string) (raw []byte, m manifest, problems []string, 
 
 // repeatedKeys is the path of every key an object in raw has more than
 // once, each once, in document order: "server" at the top level,
-// "server.mcp_config.env.GSHEETS_PROFILE" inside, and [i] for an element
-// of a list. A document that is not JSON has none here, since the
-// decode reports it.
-func repeatedKeys(raw []byte) []string {
+// "server.mcp_config.env.GSHEETS_PROFILE" inside, [i] for an element of
+// a list, and ["a.b"] for a key holding a dot or a bracket. Two keys
+// equal under Unicode case folding are the same key here, as they are
+// to Go's decode, which matches a field in any case; the later is named.
+// A walk that fails is an error rather than none, so the gate refuses
+// what it could not read.
+func repeatedKeys(raw []byte) ([]string, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	var repeated []string
 	var walk func(path string) error
@@ -295,18 +319,19 @@ func repeatedKeys(raw []byte) []string {
 		}
 		switch tok {
 		case json.Delim('{'):
-			seen := map[string]int{}
+			var seen []string
+			reported := map[int]bool{}
 			for dec.More() {
 				keyTok, err := dec.Token()
 				if err != nil {
 					return err
 				}
 				key, _ := keyTok.(string)
-				at := key
-				if path != "" {
-					at = path + "." + key
-				}
-				if seen[key]++; seen[key] == 2 {
+				at := keyPath(path, key)
+				if first := slices.IndexFunc(seen, func(k string) bool { return strings.EqualFold(k, key) }); first < 0 {
+					seen = append(seen, key)
+				} else if !reported[first] {
+					reported[first] = true
 					repeated = append(repeated, at)
 				}
 				if err := walk(at); err != nil {
@@ -325,10 +350,22 @@ func repeatedKeys(raw []byte) []string {
 		_, err = dec.Token() // the closing brace or bracket
 		return err
 	}
-	if walk("") != nil {
-		return nil
+	if err := walk(""); err != nil {
+		return nil, err
 	}
-	return repeated
+	return repeated, nil
+}
+
+// keyPath is the path of key inside path: path.key, or path["key"] for
+// a key a dot or a bracket would make ambiguous, and an empty one.
+func keyPath(path, key string) string {
+	switch {
+	case key == "" || strings.ContainsAny(key, ".["):
+		return path + "[" + strconv.Quote(key) + "]"
+	case path == "":
+		return key
+	}
+	return path + "." + key
 }
 
 // manifestProblems is every check the gate and the packer both run, so
@@ -831,27 +868,28 @@ func identityProblems(m manifest, files []staged) []string {
 }
 
 // checkLauncher holds the Linux launcher under root to the binaries the
-// packer stages for it, and its install hint to go.mod, each read once.
+// packer stages for it, and its install hint to the module go.mod
+// declares, each read once.
 func checkLauncher(files []staged, root string) []string {
 	script, err := os.ReadFile(filepath.Join(root, launcherPath)) //nolint:gosec // a repository path from a constant
 	if err != nil {
 		return []string{"cannot read the launcher: " + err.Error()}
 	}
-	goMod, err := os.ReadFile(filepath.Join(root, "go.mod")) //nolint:gosec // a repository path from a constant
+	module, err := modulePath(root)
 	if err != nil {
-		return []string{"cannot read go.mod: " + err.Error()}
+		return []string{err.Error()}
 	}
-	return launcherProblems(files, string(script), string(goMod))
+	return launcherProblems(files, string(script), module)
 }
 
-// launcherProblems is checkLauncher over the two files' contents. The
+// launcherProblems is checkLauncher over the launcher and the module. The
 // launcher chooses between the packer's own names, which live in a shell
 // script no manifest mentions, so nothing else can see them: renaming a
 // staged binary otherwise passes every check and ships a bundle that
 // fails for every user of that platform. It asserts the names rather
 // than generating the script: a launcher is a thing a person should be
 // able to read.
-func launcherProblems(files []staged, launcher, goMod string) []string {
+func launcherProblems(files []staged, launcher, module string) []string {
 	var problems []string
 	var launchable, chosen []string
 	for _, f := range files {
@@ -869,19 +907,15 @@ func launcherProblems(files []staged, launcher, goMod string) []string {
 		problems = append(problems, fmt.Sprintf("the launcher runs [%s]; the packer stages [%s]",
 			strings.Join(chosen, " "), strings.Join(launchable, " ")))
 	}
-	return append(problems, installHintProblems(launcher, goMod)...)
+	return append(problems, installHintProblems(launcher, module)...)
 }
 
 // installHintProblems holds the launcher's install hint, given on an
-// architecture the bundle does not carry, to the module go.mod declares.
-// The path changes with every major version from v2, so a hint written
-// before one names a module that `go install` no longer updates.
-func installHintProblems(launcher, goMod string) []string {
-	module := moduleLine.FindStringSubmatch(goMod)
-	if module == nil {
-		return []string{"go.mod names no module"}
-	}
-	want := "go install " + module[1] + "/cmd/" + bundleName + "@latest"
+// architecture the bundle does not carry, to module, the one go.mod
+// declares. The path changes with every major version from v2, so a hint
+// written before one names a module that `go install` no longer updates.
+func installHintProblems(launcher, module string) []string {
+	want := "go install " + module + "/cmd/" + bundleName + "@latest"
 	hints := installHint.FindAllString(launcher, -1)
 	if len(hints) == 0 {
 		return []string{"the launcher gives no install hint for an architecture the bundle does not carry"}
@@ -896,9 +930,6 @@ func installHintProblems(launcher, goMod string) []string {
 }
 
 var (
-	// moduleLine is go.mod's module directive. Trailing space is allowed
-	// because a checkout with Windows line endings ends it with "\r".
-	moduleLine  = regexp.MustCompile(`(?m)^module\s+(\S+)\s*$`)
 	installHint = regexp.MustCompile(`go install [^\s"]+`)
 	// launcherBinary is a binary the launcher picks, beside itself.
 	launcherBinary = regexp.MustCompile(`\$dir/([A-Za-z0-9._-]+)`)
@@ -1226,8 +1257,9 @@ func configDiff(a, b config.Config) []string {
 
 // fieldDiff names the fields of two values of one struct type that
 // differ. An unexported field cannot be read out through Interface, so
-// it is compared with Value.Equal where its type compares; one that does
-// not, and differs, is reported unnamed.
+// it is compared with Value.Equal where its type compares strictly; one
+// whose type does not is compared by sameValue and, when it differs,
+// reported unnamed, once, whatever else differs.
 func fieldDiff(a, b any) []string {
 	va, vb := reflect.ValueOf(a), reflect.ValueOf(b)
 	var fields []string
@@ -1244,21 +1276,22 @@ func fieldDiff(a, b any) []string {
 				fields = append(fields, f.Name)
 			}
 		default:
-			unnamed = true
+			unnamed = unnamed || !sameValue(va.Field(i), vb.Field(i))
 		}
 	}
-	if unnamed && len(fields) == 0 && !reflect.DeepEqual(a, b) {
+	if unnamed {
 		fields = append(fields, "an unexported field")
 	}
 	return fields
 }
 
-// strictlyComparable reports whether every value of t compares with
-// Value.Equal. An interface type compares as a type, but Equal panics on
-// a dynamic value that does not, so one anywhere inside t rules it out.
+// strictlyComparable reports whether Value.Equal compares every value of
+// t by what it holds. An interface type compares as a type, but Equal
+// panics on a dynamic value that does not; a pointer, a channel and a
+// func compare by address. One anywhere inside t rules it out.
 func strictlyComparable(t reflect.Type) bool {
 	switch t.Kind() {
-	case reflect.Interface:
+	case reflect.Interface, reflect.Pointer, reflect.Chan, reflect.UnsafePointer, reflect.Func:
 		return false
 	case reflect.Struct:
 		for i := range t.NumField() {
@@ -1271,6 +1304,56 @@ func strictlyComparable(t reflect.Type) bool {
 		return strictlyComparable(t.Elem())
 	}
 	return t.Comparable()
+}
+
+// sameValue is reflect.DeepEqual for two values of one type that may be
+// unexported fields, which DeepEqual cannot be handed. A configuration
+// holds no cycle, so none is followed.
+func sameValue(x, y reflect.Value) bool {
+	switch x.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if x.IsNil() || y.IsNil() {
+			return x.IsNil() == y.IsNil()
+		}
+		if x.Elem().Type() != y.Elem().Type() {
+			return false
+		}
+		return sameValue(x.Elem(), y.Elem())
+	case reflect.Slice:
+		if x.IsNil() != y.IsNil() || x.Len() != y.Len() {
+			return false
+		}
+		fallthrough
+	case reflect.Array:
+		for i := range x.Len() {
+			if !sameValue(x.Index(i), y.Index(i)) {
+				return false
+			}
+		}
+		return true
+	case reflect.Map:
+		if x.IsNil() != y.IsNil() || x.Len() != y.Len() {
+			return false
+		}
+		for _, key := range x.MapKeys() {
+			if v := y.MapIndex(key); !v.IsValid() || !sameValue(x.MapIndex(key), v) {
+				return false
+			}
+		}
+		return true
+	case reflect.Struct:
+		for i := range x.NumField() {
+			if !sameValue(x.Field(i), y.Field(i)) {
+				return false
+			}
+		}
+		return true
+	case reflect.Func:
+		return x.IsNil() && y.IsNil()
+	case reflect.Chan, reflect.UnsafePointer:
+		return x.Pointer() == y.Pointer()
+	}
+	return x.Equal(y)
 }
 
 // bundleRefused are the sets of the bundle's switches the server refuses

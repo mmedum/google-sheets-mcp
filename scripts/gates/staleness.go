@@ -140,7 +140,7 @@ func staleness(bin string) error {
 		return err
 	}
 	vars := config.Vars()
-	problems = append(problems, configDocProblems(vars, string(conf))...)
+	problems = append(problems, configDocProblems(vars, fieldRules, string(conf))...)
 
 	arch, err := os.ReadFile("docs/architecture.md")
 	if err != nil {
@@ -172,9 +172,10 @@ const configDocPath = "docs/configuration.md"
 // configDocProblems holds the configuration page, text, to the variables
 // the server reads, vars, both ways. It names every one as a whole word,
 // the removed one it refuses and the two read outside Define included,
-// names no other, and says what a profile name is in the words the
-// server refuses one with.
-func configDocProblems(vars []config.Var, text string) []string {
+// and names no other. And it states each of rules, the bundle's
+// fieldRules, in the words the server refuses a value with, so a rule
+// added for the bundle's field is held on the page too.
+func configDocProblems(vars []config.Var, rules map[string]fieldRule, text string) []string {
 	var problems []string
 	documented := map[string]bool{}
 	for _, m := range settingWord.FindAllStringSubmatch(text, -1) {
@@ -192,8 +193,10 @@ func configDocProblems(vars []config.Var, text string) []string {
 			problems = append(problems, fmt.Sprintf("%s documents %s, which the code does not read", configDocPath, name))
 		}
 	}
-	if !strings.Contains(text, config.ProfileRule) {
-		problems = append(problems, fmt.Sprintf("%s does not say a profile name is %q", configDocPath, config.ProfileRule))
+	for _, name := range slices.Sorted(maps.Keys(rules)) {
+		if rule := rules[name]; !strings.Contains(text, rule.words) {
+			problems = append(problems, fmt.Sprintf("%s does not %s %q", configDocPath, rule.fails, rule.words))
+		}
 	}
 	return problems
 }

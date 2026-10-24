@@ -54,7 +54,7 @@ func schemaDiff(bin string) error {
 	if err != nil {
 		return err
 	}
-	module, err := modulePath()
+	module, err := modulePath(".")
 	if err != nil {
 		return err
 	}
