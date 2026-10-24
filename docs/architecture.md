@@ -1,6 +1,14 @@
 # Architecture — google-sheets-mcp
 
-**Status: v4.1.0 (2026-10-24):** the Claude Desktop bundle has the shape
+**Status: v4.1.1 (2026-10-24):** 4.1.0's bundle work reviewed after its
+release by `/simplify`, `/code-review medium` and `/security-review`,
+with the family's bundle rules ported (§16): the gate derives its
+settings from the server's registry, starts the server from the
+bundle's defaults, refuses `args` and overrides, holds each platform to
+its own file and the identity, and refuses a repeated key. The OAuth
+client file is optional, a profile name is lowered A to Z alone, and a
+variable of spaces alone is unset. A live run of 301 steps passed, its
+transcript read. v4.1.0 (2026-10-24): the Claude Desktop bundle has the shape
 the sibling servers' bundles share: every setting another client sets,
 each off or empty by default as the server is, the shared file names,
 Claude Desktop 0.10.0 or later and Google's privacy policy. The server

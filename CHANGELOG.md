@@ -5,6 +5,8 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [4.1.1] - 2026-10-24
+
 ### Changed
 
 - The Claude Desktop bundle's OAuth client field may be left empty to use the client `google-sheets-mcp login` recorded for the profile; a file picked there must be that same client, since the refresh token belongs to it. 4.1.0 required the field.
@@ -1404,7 +1406,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v4.1.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v4.1.1...HEAD
+[4.1.1]: https://github.com/mmedum/google-sheets-mcp/compare/v4.1.0...v4.1.1
 [4.1.0]: https://github.com/mmedum/google-sheets-mcp/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.2...v4.0.0
 [3.1.2]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.1...v3.1.2
