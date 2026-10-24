@@ -1,6 +1,10 @@
 # Architecture — google-sheets-mcp
 
-**Status: v4.0.0 (2026-10-23):** per-call approval is the client's (§9a).
+**Status: v4.1.0 (2026-10-24):** the Claude Desktop bundle has the shape
+the sibling servers' bundles share: every setting another client sets,
+each off or empty by default as the server is, the shared file names,
+Claude Desktop 0.10.0 or later and Google's privacy policy. The server
+is unchanged. v4.0.0 (2026-10-23): per-call approval is the client's (§9a).
 The server asks the person nothing, and `GSHEETS_REQUIRE_PROMPT` set on
 refuses to start. `connect_data_source` is what `manage_data_source`
 `add` was, `refresh` names its source, `append_rows` only inserts, an

@@ -5,6 +5,8 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-10-24
+
 ### Added
 
 - The Claude Desktop bundle asks for the profile, read-only, `enable_destructive`, `enable_data_sources` and `allow_external_formulas` as well as the OAuth client file, each off or empty unless you set it, names Google's privacy policy, and needs Claude Desktop 0.10.0 or later.
@@ -1392,7 +1394,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/mmedum/google-sheets-mcp/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.2...v4.0.0
 [3.1.2]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.1...v3.1.2
 [3.1.1]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.0...v3.1.1
