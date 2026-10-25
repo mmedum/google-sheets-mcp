@@ -5,6 +5,10 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+
+- `make leaks-history` passes on the existing history. It allows `support@github.com`, the address on Dependabot's sign-off, by the whole address only.
+
 ## [4.1.1] - 2026-10-24
 
 ### Changed
