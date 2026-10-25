@@ -80,6 +80,10 @@ var allowedValues = map[string]string{
 	// the commit messages rather than in a file — which is why the tree
 	// scan never saw it and the history scan did.
 	"noreply@anthropic.com": "the Co-Authored-By trailer; a noreply address that identifies no account", // leakcheck:allow
+	// The Signed-off-by trailer Dependabot puts on its version bumps:
+	// GitHub's own support address, which identifies nobody. Only the
+	// history scan meets it, in Dependabot's commit messages.
+	"support@github.com": "Dependabot's Signed-off-by trailer; GitHub's support address, which identifies no account", // leakcheck:allow
 }
 
 // skipFiles hold machine-generated hashes rather than prose or code.
