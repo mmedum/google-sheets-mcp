@@ -19,6 +19,10 @@ func TestRulesCatchPlantedIdentifiers(t *testing.T) {
 		leaks bool
 	}{
 		{"address at a real domain", "contact plimth@quorbinnardle.co.uk for access", true}, // leakcheck:allow
+		// Dependabot's trailer is allowed by its exact value; another
+		// address at the same domain is still a finding.
+		{"Dependabot's sign-off", "Signed-off-by: dependabot[bot] <support" + "@github.com>", false},
+		{"another address at github.com", "mail someone" + "@github.com", true},
 		{"documentation address", "owner fixture@example.test signed in", false},
 		{"test domain", "a@b.test", false},
 		{"example.com", "a@example.com", false},
