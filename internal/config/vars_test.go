@@ -151,10 +151,9 @@ func TestEveryVariableTheCodeNamesIsInEnvVars(t *testing.T) {
 }
 
 // A name is a whole word of a string, or of a + chain of literals and
-// EnvPrefix read in order. A run of them that another operand follows
-// ends in a prefix the operand completes, not in a name, unless a
-// character that ends a name comes between. A literal holding a whole
-// name types it. os.Getenv or os.LookupEnv of a name, or of one of
+// EnvPrefix read in order, each run whole: one ending in _ before
+// another operand ends in a prefix, and one ending in a name's last
+// character ends in that name. A literal holding a whole name types it. os.Getenv or os.LookupEnv of a name, or of one of
 // config's Env constants, reads it past config.Lookup.
 func TestSpelledReadsNamesAndPrefixes(t *testing.T) {
 	for _, tc := range []struct {
@@ -167,7 +166,8 @@ func TestSpelledReadsNamesAndPrefixes(t *testing.T) {
 		{`EnvPrefix + "C=" + value`, []string{"GSHEETS_C"}, nil},
 		{`"GSHEETS_D"`, []string{"GSHEETS_D"}, []string{"GSHEETS_D"}},
 		{`"start with GSHEETS_E=true or " + x`, []string{"GSHEETS_E"}, []string{"GSHEETS_E"}},
-		{`"GSHEETS_F" + x`, nil, []string{"GSHEETS_F"}},
+		{`"GSHEETS_F" + x`, []string{"GSHEETS_F"}, []string{"GSHEETS_F"}},
+		{`EnvPrefix + "WHOLE" + suffix`, []string{"GSHEETS_WHOLE"}, nil},
 		{`"GSHEETS_* variables"`, nil, nil},
 		{`f(EnvPrefix + "G", "GSHEETS_" + key)`, []string{"GSHEETS_G"}, nil},
 	} {
@@ -206,8 +206,9 @@ func TestSpelledReadsNamesAndPrefixes(t *testing.T) {
 	}
 }
 
-// envName is a GSHEETS_ variable's name.
-var envName = regexp.MustCompile(`^GSHEETS_[A-Z0-9][A-Z0-9_]*$`)
+// envName is a GSHEETS_ variable's name. A name ends in a capital or a
+// digit, so GSHEETS_ENABLE_ is a prefix, not one.
+var envName = regexp.MustCompile(`^GSHEETS_[A-Z0-9_]*[A-Z0-9]$`)
 
 // nameRune is a character a variable's name may hold.
 func nameRune(r rune) bool { return r == '_' || ('A' <= r && r <= 'Z') || ('0' <= r && r <= '9') }
@@ -230,19 +231,14 @@ type typedName struct {
 // spelled is what f spells. A name is a whole word of a string literal,
 // or of a + chain of literals and EnvPrefix read in order: each run of
 // them is one string, and any other operand ends the run and is read on
-// its own. A run another operand follows ends in a prefix, as
-// EnvPrefix + "ENABLE_" + kind does, so a word running to its end is not
-// a name. One built from any other constant, or through a format verb,
+// its own. Each run is read whole, so EnvPrefix + "ENABLE_" + kind spells
+// only a prefix, which is no name. One built from any other constant, or through a format verb,
 // is not seen.
 func spelled(f *ast.File) spelling {
 	sp := spelling{names: map[string]token.Pos{}}
 	words := func(s string) []string { return strings.FieldsFunc(s, func(r rune) bool { return !nameRune(r) }) }
-	spell := func(s string, at token.Pos, completed bool) {
-		w := words(s)
-		if completed && len(w) > 0 && nameRune(rune(s[len(s)-1])) {
-			w = w[:len(w)-1]
-		}
-		for _, word := range w {
+	spell := func(s string, at token.Pos) {
+		for _, word := range words(s) {
 			if envName.MatchString(word) {
 				sp.names[word] = at
 			}
@@ -264,15 +260,15 @@ func spelled(f *ast.File) spelling {
 					run += s
 					continue
 				}
-				spell(run, at, true)
+				spell(run, at)
 				run = ""
 				ast.Inspect(op, visit)
 			}
-			spell(run, at, false)
+			spell(run, at)
 			return false
 		case *ast.BasicLit:
 			if s, err := strconv.Unquote(n.Value); n.Kind == token.STRING && err == nil {
-				spell(s, n.Pos(), false)
+				spell(s, n.Pos())
 			}
 		}
 		return true
