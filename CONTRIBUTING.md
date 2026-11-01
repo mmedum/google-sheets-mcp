@@ -46,10 +46,13 @@ why.
   another type, or be missing where it was required. A break ships only
   as a new major version, with go.mod's `/vN` raised; the release commit
   records the new surface with `make schema-baseline VERSION=vX.Y.Z`.
-- If a pull request changes the tool surface, end one of its commits
-  with a `SCHEMA-CHANGE:` footer that says what changed. Annotations
-  such as `destructiveHint` count. A break needs `BREAKING CHANGE:`
-  instead. CI checks this with `schema-ack`.
+- If a pull request changes the tool surface, annotations included, end
+  one of its commits with a footer naming each changed item:
+  `SCHEMA-CHANGE: write_values, append_rows: destructiveHint true`. Name
+  a tool by its name, a resource by its URI or template, and the
+  instructions as `instructions`. Put a name with a comma in it in
+  backticks. If it breaks something a release shipped, name that item in
+  a `BREAKING CHANGE:` footer instead. CI checks this with `schema-ack`.
 - Verify against the discovery document or a live probe before adopting a
   convention, and record the verdict in the evidence log in
   `docs/architecture.md` §18. A reference page's prose is not evidence:
