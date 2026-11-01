@@ -273,12 +273,10 @@ func againstBaseline(was toolSurface) string {
 const resourcePrefix = "resource "
 
 // itemName is what a footer names an item by, from its key in the
-// surface: a tool's name, a resource's URI or template without the
-// prefix, an item of another list without its list's name.
+// surface. A tool's key is its name; every other key is a word for its
+// list, a space and the name, as itemKey builds it, and a tool's name
+// has no space.
 func itemName(key string) string {
-	if uri, ok := strings.CutPrefix(key, resourcePrefix); ok {
-		return uri
-	}
 	if _, name, ok := strings.Cut(key, " "); ok {
 		return name
 	}
@@ -519,8 +517,10 @@ func parentPath(path string) string {
 // removed is not listed again. A removed tool is the caller's to report.
 func brokenFields(prev, cur map[string]toolFields) []change {
 	var out []change
+	// broke records that name's field on side broke, in the way the
+	// format says.
 	broke := func(name, side, field, format string, args ...any) {
-		out = append(out, change{name, name + ": " + fmt.Sprintf(format, args...), side + " " + field})
+		out = append(out, change{name, name + ": " + side + " field " + field + " " + fmt.Sprintf(format, args...), side + " " + field})
 	}
 	for _, name := range slices.Sorted(maps.Keys(prev)) {
 		now, kept := cur[name]
@@ -538,24 +538,24 @@ func brokenFields(prev, cur map[string]toolFields) []change {
 				n, still := side.now.fields[f]
 				if !still {
 					if _, parentKept := side.now.fields[parentPath(f)]; parentPath(f) == "" || parentKept {
-						broke(name, side.what, f, "%s field %s removed", side.what, f)
+						broke(name, side.what, f, "removed")
 					}
 					continue
 				}
 				if typeBreaks(w.typ, n.typ, side.input) {
-					broke(name, side.what, f, "%s field %s changed type from %s to %s", side.what, f, typeWord(w.typ), typeWord(n.typ))
+					broke(name, side.what, f, "changed type from %s to %s", typeWord(w.typ), typeWord(n.typ))
 				}
 				// A caller sent this value, and it is refused now.
 				if side.input && n.enum != nil {
 					for _, v := range w.enum {
 						if !slices.Contains(n.enum, v) {
-							broke(name, "input", f, "input field %s no longer takes %s", f, v)
+							broke(name, "input", f, "no longer takes %s", v)
 						}
 					}
 				}
 				// A caller read this field as always there.
 				if !side.input && side.was.required[f] && !side.now.required[f] {
-					broke(name, "output", f, "output field %s no longer required", f)
+					broke(name, "output", f, "no longer required")
 				}
 			}
 		}
@@ -566,7 +566,7 @@ func brokenFields(prev, cur map[string]toolFields) []change {
 			parent := parentPath(f)
 			_, parentWas := was.inputs.fields[parent]
 			if !was.inputs.required[f] && (parent == "" || parentWas) {
-				broke(name, "input", f, "input field %s newly required", f)
+				broke(name, "input", f, "newly required")
 			}
 		}
 	}

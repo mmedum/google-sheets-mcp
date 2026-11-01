@@ -106,17 +106,22 @@ func checkAck(w io.Writer, c surfaceChanges, messages []string, base string) err
 	}
 	c.write(w, "the merge-base "+base)
 	named, breaks := acknowledged(messages)
-	var problems []string
-	if items := unnamed(c.breaking, breaks); len(items) > 0 {
-		problems = append(problems, "no BREAKING CHANGE: footer names "+strings.Join(items, ", "))
+	var problems, fix []string
+	breakItems := unnamed(c.breaking, breaks)
+	if len(breakItems) > 0 {
+		problems = append(problems, "no BREAKING CHANGE: footer names "+strings.Join(breakItems, ", "))
+		fix = append(fix, "BREAKING CHANGE: "+strings.Join(breakItems, ", ")+": what broke")
 	}
 	if items := unnamed(slices.Concat(c.added, c.changed), named); len(items) > 0 {
 		problems = append(problems, "no footer names "+strings.Join(items, ", "))
+		// A BREAKING CHANGE: footer names an item for both checks.
+		if rest := slices.DeleteFunc(items, func(i string) bool { return slices.Contains(breakItems, i) }); len(rest) > 0 {
+			fix = append(fix, "SCHEMA-CHANGE: "+strings.Join(rest, ", ")+": what changed")
+		}
 	}
 	if len(problems) > 0 {
-		return fmt.Errorf("the tool surface changed since %s, and %s. Add an empty commit (git commit --allow-empty) "+
-			"whose message ends with a footer naming them, such as `SCHEMA-CHANGE: write_values: destructiveHint true`; "+
-			"never amend", base, strings.Join(problems, ", and "))
+		return fmt.Errorf("the tool surface changed since %s, and %s. Add an empty commit (git commit --allow-empty), "+
+			"never an amend, whose message ends with:\n\n%s", base, strings.Join(problems, ", and "), strings.Join(fix, "\n"))
 	}
 	_, _ = fmt.Fprintf(w, "the change since %s is acknowledged\n", base)
 	return nil

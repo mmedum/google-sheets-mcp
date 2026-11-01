@@ -247,16 +247,23 @@ func gitIn(t *testing.T, dir string, args ...string) {
 	}
 }
 
+// initRepo makes dir a git repository whose commits are Fixture's and
+// never signed, whatever the machine's own configuration says.
+func initRepo(t *testing.T, dir string) {
+	t.Helper()
+	gitIn(t, dir, "init", "-q")
+	gitIn(t, dir, "config", "user.email", "fixture@example.test")
+	gitIn(t, dir, "config", "user.name", "Fixture")
+	gitIn(t, dir, "config", "commit.gpgsign", "false")
+}
+
 // fixtureRepo is a throwaway repository with enough tracked files to
 // meet the scan's own "am I seeing a repository" floor, and one
 // gitignored name to prove the ignore rules are still honored.
 func fixtureRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	gitIn(t, dir, "init", "-q")
-	gitIn(t, dir, "config", "user.email", "fixture@example.test")
-	gitIn(t, dir, "config", "user.name", "Fixture")
-	gitIn(t, dir, "config", "commit.gpgsign", "false")
+	initRepo(t, dir)
 	for i := range 20 {
 		write(t, dir, fmt.Sprintf("kept%02d.md", i), "Quorbin and Nardle, which are invented.\n")
 	}

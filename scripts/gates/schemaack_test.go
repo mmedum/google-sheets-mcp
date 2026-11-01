@@ -77,6 +77,35 @@ func TestSchemaAckNeedsEveryItemNamed(t *testing.T) {
 	}
 }
 
+// The fix a refusal names is the footer that fixes it: BREAKING CHANGE:
+// for an unnamed break, SCHEMA-CHANGE: for the rest, each naming its
+// items, and a message that ends with it passes.
+func TestARefusalNamesTheFooterThatFixesIt(t *testing.T) {
+	both := strings.Replace(renamed, `"name":"spreadsheet"`, `"name":"sheet"`, 1)
+	for _, tc := range []struct{ name, built, wantFix string }{
+		{"a change", flipped, "SCHEMA-CHANGE: write_values: what changed"},
+		{"a break", renamed, "BREAKING CHANGE: write_values: what broke"},
+		{"a break and a change", both, "BREAKING CHANGE: write_values: what broke\nSCHEMA-CHANGE: gsheets://{id}: what changed"},
+		{"a break and a change to one tool", strings.Replace(renamed, `"destructiveHint":false`, `"destructiveHint":true`, 1),
+			"BREAKING CHANGE: write_values: what broke"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := compareSurfaces(surfaceOf(t, plain), surfaceOf(t, tc.built))
+			err := checkAck(io.Discard, c, []string{"Change it"}, "base")
+			if err == nil {
+				t.Fatal("checkAck passed with no footer")
+			}
+			_, fix, _ := strings.Cut(err.Error(), "\n\n")
+			if fix != tc.wantFix {
+				t.Errorf("the refusal's fix is %q, want %q", fix, tc.wantFix)
+			}
+			if err := checkAck(io.Discard, c, []string{"Change it", "Name it\n\n" + fix}, "base"); err != nil {
+				t.Errorf("checkAck = %v after the fix it named", err)
+			}
+		})
+	}
+}
+
 // A name in backticks is taken whole, so a URI with a comma in it can be
 // named; split on its comma, it names nothing.
 func TestAFooterCanNameAURIWithACommaInBackticks(t *testing.T) {
@@ -157,25 +186,21 @@ func TestABreakOfTheReleaseIsNotMatchedByItsText(t *testing.T) {
 func TestReleasedBreaksReadTheBaseBranchBaseline(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	git := func(args ...string) { t.Helper(); gitIn(t, dir, args...) }
-	git("init", "--quiet", "--initial-branch=main")
-	git("config", "user.email", "fixture@example.test")
-	git("config", "user.name", "Fixture")
-	git("config", "commit.gpgsign", "false")
-	git("commit", "--quiet", "--allow-empty", "-m", "Start")
+	initRepo(t, dir)
+	gitIn(t, dir, "commit", "--quiet", "--allow-empty", "-m", "Start")
 	head := surfaceOf(t, renamed)
 
-	breaks, err := releasedBreaks("main", head)
+	breaks, err := releasedBreaks("HEAD", head)
 	if err != nil || len(breaks) != 0 {
 		t.Fatalf("releasedBreaks with no baseline = %v, %v; want none", breaks, err)
 	}
 
 	put(t, dir, baselineFile, plain)
-	git("add", baselineFile)
-	git("commit", "--quiet", "-m", "Release")
+	gitIn(t, dir, "add", baselineFile)
+	gitIn(t, dir, "commit", "--quiet", "-m", "Release")
 	// The working tree's baseline is a branch's, not the release's.
 	put(t, dir, baselineFile, `{"tools":[]}`)
-	breaks, err = releasedBreaks("main", head)
+	breaks, err = releasedBreaks("HEAD", head)
 	if err != nil || !slices.Equal(breaks, renameBreak) {
 		t.Errorf("releasedBreaks = %v, %v; want %v", breaks, err, renameBreak)
 	}
