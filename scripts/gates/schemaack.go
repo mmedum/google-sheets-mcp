@@ -130,8 +130,7 @@ func unnamed(cs []change, names map[string]bool) []string {
 			out = append(out, c.item)
 		}
 	}
-	slices.Sort(out)
-	return slices.Compact(out)
+	return dedupe(out)
 }
 
 // footerToken is a footer line: a token, a colon, a space and a value,

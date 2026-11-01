@@ -256,6 +256,7 @@ func fixtureRepo(t *testing.T) string {
 	gitIn(t, dir, "init", "-q")
 	gitIn(t, dir, "config", "user.email", "fixture@example.test")
 	gitIn(t, dir, "config", "user.name", "Fixture")
+	gitIn(t, dir, "config", "commit.gpgsign", "false")
 	for i := range 20 {
 		write(t, dir, fmt.Sprintf("kept%02d.md", i), "Quorbin and Nardle, which are invented.\n")
 	}
