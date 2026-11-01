@@ -5,9 +5,11 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -86,16 +88,24 @@ var precommitOnly = map[string]string{
 		"for it to read on a commit and nothing for it to assert about the code",
 }
 
+// prOnly are gates only pull-request CI can run, each with the reason.
+// Each must run in ci.yml and stay out of `make check`. Without this,
+// deleting its CI step would leave every gate green.
+var prOnly = map[string]string{
+	"schema-ack": "it measures a pull request from its merge-base, which only a pull request has",
+}
+
 func parityGate() error {
 	makefile, workflow, err := readBothLists()
 	if err != nil {
 		return err
 	}
-	if err := checkParity(makefile, workflow); err != nil {
+	both, err := checkParity(makefile, workflow)
+	if err != nil {
 		return err
 	}
-	subcommands, _ := gateSubcommands()
-	fmt.Printf("%d check(s) and %d gate(s) run in both `make check` and CI\n", len(parityChecks), len(subcommands))
+	fmt.Printf("%d check(s) and %d gate(s) run in both `make check` and CI, and %d only on a pull request\n",
+		len(parityChecks), both, len(prOnly))
 	return nil
 }
 
@@ -161,7 +171,9 @@ func executableLines(workflow string) string {
 // checkParity is the comparison, over the two files' text rather than
 // their paths, so a test can hand it a version with one check removed
 // and watch this fail.
-func checkParity(makefile, workflow string) error {
+// checkParity holds the two lists to each other and returns how many
+// gates it found on both sides.
+func checkParity(makefile, workflow string) (int, error) {
 	// Whole-line comments go first, and here rather than in the reader,
 	// so nothing can reach the comparison without passing through it.
 	//
@@ -195,7 +207,7 @@ func checkParity(makefile, workflow string) error {
 	workflow = executableLines(workflow)
 	targets, err := checkTargets(makefile)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	var problems []string
@@ -214,18 +226,34 @@ func checkParity(makefile, workflow string) error {
 	// Every gates subcommand is run by both, or excused by name.
 	subcommands, err := gateSubcommands()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if len(subcommands) < 8 {
-		return fmt.Errorf("found %d gate subcommands; the dispatcher is not being read", len(subcommands))
+		return 0, fmt.Errorf("found %d gate subcommands; the dispatcher is not being read", len(subcommands))
+	}
+	both := 0
+	for _, name := range slices.Sorted(maps.Keys(prOnly)) {
+		if !slices.Contains(subcommands, name) {
+			problems = append(problems, fmt.Sprintf("%q is a pull-request gate the dispatcher does not have", name))
+		}
 	}
 	for _, name := range subcommands {
+		if reason, pr := prOnly[name]; pr {
+			if !strings.Contains(workflow, "gates "+name) {
+				problems = append(problems, fmt.Sprintf("ci.yml does not run the %q gate, which only a pull request can: %s", name, reason))
+			}
+			if targets[name] {
+				problems = append(problems, fmt.Sprintf("`make check` runs the %q gate, which only a pull request can: %s", name, reason))
+			}
+			continue
+		}
 		if reason, excused := precommitOnly[name]; excused {
 			if reason == "" {
 				problems = append(problems, fmt.Sprintf("%q is excused from parity with no reason", name))
 			}
 			continue
 		}
+		both++
 		target := name
 		if t, ok := gateTargets[name]; ok {
 			target = t
@@ -240,10 +268,10 @@ func checkParity(makefile, workflow string) error {
 
 	if len(problems) > 0 {
 		sort.Strings(problems)
-		return fmt.Errorf("`make check` and ci.yml disagree, and the Makefile says they do not:\n  %s",
+		return 0, fmt.Errorf("`make check` and ci.yml disagree, and the Makefile says they do not:\n  %s",
 			strings.Join(problems, "\n  "))
 	}
-	return nil
+	return both, nil
 }
 
 var checkTargetLine = regexp.MustCompile(`(?m)^check:\s*(.*?)(?:\s*##.*)?$`)

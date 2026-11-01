@@ -140,14 +140,32 @@ func DumpSchemas(ctx context.Context, s *mcp.Server, w io.Writer, version string
 	sort.Slice(tmpls.ResourceTemplates, func(i, j int) bool {
 		return tmpls.ResourceTemplates[i].URITemplate < tmpls.ResourceTemplates[j].URITemplate
 	})
+	// Fixed resources and prompts too. The server has none today, so one
+	// added later still reaches the schema gates.
+	rs, err := cs.ListResources(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("list resources: %w", err)
+	}
+	sort.Slice(rs.Resources, func(i, j int) bool { return rs.Resources[i].URI < rs.Resources[j].URI })
+	ps, err := cs.ListPrompts(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("list prompts: %w", err)
+	}
+	sort.Slice(ps.Prompts, func(i, j int) bool { return ps.Prompts[i].Name < ps.Prompts[j].Name })
 
+	// The instructions are what a client puts in front of the model, so
+	// an edit to them changes what the model is told as surely as a tool
+	// description does.
 	out := struct {
 		Server            string                  `json:"server"`
 		Version           string                  `json:"version"`
 		SDK               string                  `json:"sdk"`
+		Instructions      string                  `json:"instructions,omitempty"`
 		Tools             []*mcp.Tool             `json:"tools"`
 		ResourceTemplates []*mcp.ResourceTemplate `json:"resourceTemplates"`
-	}{Name, version, SDKVersion, res.Tools, tmpls.ResourceTemplates}
+		Resources         []*mcp.Resource         `json:"resources,omitempty"`
+		Prompts           []*mcp.Prompt           `json:"prompts,omitempty"`
+	}{Name, version, SDKVersion, cs.InitializeResult().Instructions, res.Tools, tmpls.ResourceTemplates, rs.Resources, ps.Prompts}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)

@@ -43,6 +43,11 @@ func TestParityFindsTheDriftsThatHappened(t *testing.T) {
 			drop: "gates staleness",
 			want: `ci.yml does not run the "staleness" gate`,
 		},
+		{
+			name: "the pull-request gate is gone from CI",
+			drop: "gates schema-ack",
+			want: `ci.yml does not run the "schema-ack" gate, which only a pull request can`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			makefile, workflow := repoFiles(t)
@@ -52,7 +57,7 @@ func TestParityFindsTheDriftsThatHappened(t *testing.T) {
 			if tc.drop != "" {
 				workflow = strings.ReplaceAll(workflow, tc.drop, "nothing-of-the-sort")
 			}
-			err := checkParity(makefile, workflow)
+			_, err := checkParity(makefile, workflow)
 			if err == nil {
 				t.Fatalf("the drift was accepted")
 			}
@@ -67,7 +72,7 @@ func TestParityFindsTheDriftsThatHappened(t *testing.T) {
 // only that it fails on everything.
 func TestParityPassesOnThisRepository(t *testing.T) {
 	makefile, workflow := repoFiles(t)
-	if err := checkParity(makefile, workflow); err != nil {
+	if _, err := checkParity(makefile, workflow); err != nil {
 		t.Errorf("the repository as it stands: %v", err)
 	}
 }
@@ -104,7 +109,7 @@ func TestParitySeesThroughACommentedOutStep(t *testing.T) {
 			// its place. A gate reading the raw text still finds it.
 			cut := strings.ReplaceAll(workflow, tc.line, "nothing-of-the-sort")
 			cut += "\n      " + tc.commented + "\n"
-			if err := checkParity(makefile, cut); err == nil {
+			if _, err := checkParity(makefile, cut); err == nil {
 				t.Fatal("a step that exists only inside a comment was counted as running")
 			} else if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error = %v, want one naming %q", err, tc.want)
@@ -126,7 +131,7 @@ func TestParityIgnoresAGateNamedButNotRun(t *testing.T) {
 		makefile, workflow := repoFiles(t)
 		cut := strings.ReplaceAll(workflow, "gates staleness", "nothing-of-the-sort")
 		cut += "\n" + where
-		if err := checkParity(makefile, cut); err == nil {
+		if _, err := checkParity(makefile, cut); err == nil {
 			t.Errorf("a gate named in %q was counted as running", strings.TrimSpace(where))
 		}
 	}
@@ -138,7 +143,7 @@ func TestParityIgnoresCommentedMakefileLines(t *testing.T) {
 	makefile, workflow := repoFiles(t)
 	makefile = withoutTarget(t, makefile, "secrets")
 	makefile += "\n# check: secrets\n"
-	if err := checkParity(makefile, workflow); err == nil {
+	if _, err := checkParity(makefile, workflow); err == nil {
 		t.Fatal("a target named only in a comment was counted as run")
 	}
 }
@@ -236,4 +241,27 @@ func atRepoRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(wd) })
+}
+
+// A pull-request gate in `make check` would run with no merge-base to
+// measure from.
+func TestParityKeepsAPullRequestGateOutOfMakeCheck(t *testing.T) {
+	makefile, workflow := repoFiles(t)
+	makefile = strings.Replace(makefile, "check: fmt", "check: schema-ack fmt", 1)
+	_, err := checkParity(makefile, workflow)
+	if err == nil || !strings.Contains(err.Error(), "`make check` runs the \"schema-ack\" gate") {
+		t.Errorf("checkParity = %v, want schema-ack refused in make check", err)
+	}
+}
+
+// A pull-request gate the dispatcher no longer has is a rename that left
+// its entry behind, and the step it names runs nothing.
+func TestParityRefusesAPullRequestGateThatIsGone(t *testing.T) {
+	prOnly["schema-ack-renamed"] = "a gate that was renamed"
+	defer delete(prOnly, "schema-ack-renamed")
+	makefile, workflow := repoFiles(t)
+	_, err := checkParity(makefile, workflow)
+	if err == nil || !strings.Contains(err.Error(), `"schema-ack-renamed" is a pull-request gate the dispatcher does not have`) {
+		t.Errorf("checkParity = %v, want the stale entry named", err)
+	}
 }
