@@ -240,3 +240,81 @@ func tableID(ctx context.Context, sheetID int) string {
 	}
 	return ""
 }
+
+// spikeV asks in what unit Google counts the two text limits this server
+// checks before it writes: a cell's 50 000 and a comment's 2048. Each is
+// written at the limit and one past it in three alphabets, x (one byte,
+// one UTF-16 unit), é (two bytes, one unit) and an emoji (four bytes, two
+// units), and the limits that hold say which unit it is.
+//
+// What it established, 2026-10-31. A cell counts UTF-16 units, under RAW
+// and USER_ENTERED alike: 50 000 é (100 000 bytes) and 25 000 emoji are
+// taken whole, and 50 001 é and 25 001 emoji refused, "Your input contains more than the maximum of
+// 50000 characters in a single cell". A comment counts bytes: 2048 x,
+// 1024 é and 512 emoji are taken, and one more of each refused,
+// "content must not exceed 2048 UTF-8 code units". Aside: on a cell
+// holding a 100 000-byte value, every comment at the limit failed with
+// "An error occurred while saving comments"; not followed further.
+func spikeV(ctx context.Context) {
+	sec("Spike V: the unit of the text limits")
+	const sheet = "SpikeUnits"
+	sheetID, err := addSheet(ctx, sheet)
+	if err != nil {
+		line("  setup failed: %v", err)
+		return
+	}
+	q := a1.QuoteSheet(sheet)
+	runs := []struct {
+		unit string
+		cell int
+		post int
+	}{{"x", 50000, 2048}, {"é", 50000, 1024}, {"😀", 25000, 512}}
+
+	line("")
+	line("  A cell at 50 000 x, 50 000 é and 25 000 emoji (50 000 UTF-16 units), and one more of each:")
+	for _, r := range runs {
+		for _, n := range []int{r.cell, r.cell + 1} {
+			text := strings.Repeat(r.unit, n)
+			status, body := putMode(ctx, q+"!A1", [][]any{{text}}, "RAW")
+			what := fmt.Sprintf("%d x %q (%d bytes)", n, r.unit, len(text))
+			if status != http.StatusOK {
+				line("    %-38s -> HTTP %d  %s", what, status, first120(body))
+				continue
+			}
+			_, back := getValues(ctx, q+"!A1")
+			line("    %-38s -> HTTP %d, stored whole: %v", what, status, storedLen(back) == len(text))
+		}
+	}
+
+	// The same with input=typed, which Google parses as a person typing:
+	// the unit could differ, and the guard checks both options alike.
+	line("")
+	line("  The same cells with USER_ENTERED:")
+	for _, r := range runs[1:] {
+		for _, n := range []int{r.cell, r.cell + 1} {
+			text := strings.Repeat(r.unit, n)
+			status, body := putMode(ctx, q+"!A2", [][]any{{text}}, "USER_ENTERED")
+			what := fmt.Sprintf("%d x %q (%d bytes)", n, r.unit, len(text))
+			if status != http.StatusOK {
+				line("    %-38s -> HTTP %d  %s", what, status, first120(body))
+				continue
+			}
+			_, back := getValues(ctx, q+"!A2")
+			line("    %-38s -> HTTP %d, stored whole: %v", what, status, storedLen(back) == len(text))
+		}
+	}
+
+	// The comments go on an empty cell, B5, with a short one first: the
+	// first run put them on A1 beside a 100 000-byte value, and every one
+	// at the limit failed with "An error occurred while saving comments",
+	// which said nothing about the limit.
+	line("")
+	line("  A comment on an empty cell: a short one, then one under, at and past 2048 bytes in each alphabet:")
+	insert(ctx, "a short comment", sheetID, 4, 1, "control", "")
+	for _, r := range runs {
+		for _, n := range []int{r.post - 1, r.post, r.post + 1} {
+			text := strings.Repeat(r.unit, n)
+			insert(ctx, fmt.Sprintf("%d x %q (%d bytes)", n, r.unit, len(text)), sheetID, 4, 1, text, "")
+		}
+	}
+}

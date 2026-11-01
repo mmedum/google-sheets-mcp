@@ -350,7 +350,7 @@ func gridRequest(req SheetRequest, props *gsheets.SheetProperties) (*gsheets.Req
 		}
 		// Shrinking takes the data on the rows or columns it removes,
 		// and nothing in Sheets brings it back. Refused here rather than
-		// gated: manage_sheet is not a destructive tool, and
+		// gated: manage_sheet is not behind the destructive flag, and
 		// edit_dimensions delete is where removing lives.
 		if (req.Rows > 0 && req.Rows < rows) || (req.Cols > 0 && req.Cols < cols) {
 			return nil, act, Errorf("blocked",

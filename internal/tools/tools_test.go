@@ -115,49 +115,26 @@ func TestRegistrationGatesAreServerSide(t *testing.T) {
 	}
 }
 
+// A write says destructiveHint true unless it only adds, idempotentHint
+// only as an IdempotentWrite, and openWorldHint only when it reaches
+// outside the spreadsheet: Connected, and Notifying, whose comment can
+// email its assignee. A read says readOnlyHint and nothing else.
 func TestAnnotationsFollowTheKind(t *testing.T) {
 	read := annotationsFor(Read, false)
 	if !read.ReadOnlyHint || !read.IdempotentHint || read.OpenWorldHint == nil || *read.OpenWorldHint {
 		t.Errorf("read annotations = %+v", read)
 	}
-	write := annotationsFor(Write, false)
-	if write.ReadOnlyHint || write.DestructiveHint == nil || *write.DestructiveHint {
-		t.Errorf("write annotations = %+v", write)
-	}
-	idem := annotationsFor(IdempotentWrite, false)
-	if !idem.IdempotentHint || idem.DestructiveHint == nil || *idem.DestructiveHint {
-		t.Errorf("idempotent annotations = %+v", idem)
-	}
-	// An ordinary write that can take away what it lands on says so,
-	// because Codex and claude.ai prompt by destructiveHint, and stays
-	// an ordinary write otherwise.
-	for _, k := range []Kind{Write, IdempotentWrite} {
-		a := annotationsFor(k, true)
-		if a.ReadOnlyHint || a.DestructiveHint == nil || !*a.DestructiveHint || a.IdempotentHint != (k == IdempotentWrite) {
-			t.Errorf("kind %v destroying by an argument: annotations = %+v", k, a)
-		}
-	}
-	destructive := annotationsFor(Destructive, false)
-	if destructive.DestructiveHint == nil || !*destructive.DestructiveHint {
-		t.Errorf("destructive annotations = %+v", destructive)
-	}
-	// A Kind that reaches outside the spreadsheet, whose open-world hint
-	// is true. That distinction is the reason it is a Kind rather than a
-	// flag on an existing one, and Notifying below is the other.
-	connected := annotationsFor(Connected, false)
-	if connected.OpenWorldHint == nil || !*connected.OpenWorldHint {
-		t.Errorf("connected annotations = %+v", connected)
-	}
-	// A comment can email its assignee, which reaches a person outside
-	// the spreadsheet; it destroys nothing.
-	notifying := annotationsFor(Notifying, false)
-	if notifying.OpenWorldHint == nil || !*notifying.OpenWorldHint || notifying.DestructiveHint == nil ||
-		*notifying.DestructiveHint || notifying.ReadOnlyHint {
-		t.Errorf("notifying annotations = %+v", notifying)
-	}
-	for _, k := range []Kind{Read, Write, IdempotentWrite, Destructive} {
-		if a := annotationsFor(k, false); a.OpenWorldHint == nil || *a.OpenWorldHint {
-			t.Errorf("kind %v claims an open world; only Connected and Notifying reach one", k)
+	for _, k := range []Kind{Write, IdempotentWrite, Destructive, Connected, Notifying} {
+		for _, adds := range []bool{false, true} {
+			if adds && k == Destructive {
+				continue // checkHints refuses it
+			}
+			a := annotationsFor(k, adds)
+			if a.ReadOnlyHint || a.DestructiveHint == nil || *a.DestructiveHint == adds ||
+				a.IdempotentHint != (k == IdempotentWrite) ||
+				a.OpenWorldHint == nil || *a.OpenWorldHint != (k == Connected || k == Notifying) {
+				t.Errorf("kind %v, adds %v: annotations = %+v", k, adds, a)
+			}
 		}
 	}
 }
@@ -184,36 +161,38 @@ func TestOnlyDeleteDataSourcePrompts(t *testing.T) {
 
 // TestTheHintsAreExact holds the two annotations a client prompts by
 // (§9a). VS Code prompts on every tool without readOnlyHint, so only the
-// reads carry it. Codex and claude.ai prompt by destructiveHint, so it
-// is on every tool that can take something away: the five deletes, and
-// the six ordinary writes that can by an argument.
+// reads carry it. Codex and claude.ai prompt by destructiveHint, which
+// the MCP schema reads as false only for "the tool performs only
+// additive updates": so only the three writes that add say false, and
+// every other write says true, gated or not. A write is destructive
+// unless marked Adds, so a new one that should not be fails here.
 func TestTheHintsAreExact(t *testing.T) {
-	var readOnly, destructive []string
+	var readOnly, adds []string
 	for name, tool := range surface(t) {
 		a := tool.Annotations
-		if a.ReadOnlyHint {
+		switch {
+		case a.ReadOnlyHint:
 			readOnly = append(readOnly, name)
-		}
-		if a.DestructiveHint != nil && *a.DestructiveHint {
-			destructive = append(destructive, name)
+		case a.DestructiveHint == nil:
+			t.Errorf("%s writes and leaves destructiveHint unset", name)
+		case !*a.DestructiveHint:
+			adds = append(adds, name)
 		}
 	}
 	slices.Sort(readOnly)
-	slices.Sort(destructive)
+	slices.Sort(adds)
 	if want := []string{"find_in_spreadsheet", "get_spreadsheet", "read_cell_comments", "read_formatting",
 		"read_range", "search_spreadsheets"}; !slices.Equal(readOnly, want) {
 		t.Errorf("readOnlyHint on %v, want %v", readOnly, want)
 	}
-	if want := []string{"clear_values", "delete_cell_comment", "delete_data_source", "delete_dimensions",
-		"delete_sheet", "format_cells", "manage_chart", "manage_pivot_table", "manage_range", "transform_range",
-		"write_values"}; !slices.Equal(destructive, want) {
-		t.Errorf("destructiveHint on %v, want %v", destructive, want)
+	if want := []string{"append_rows", "connect_data_source", "create_spreadsheet"}; !slices.Equal(adds, want) {
+		t.Errorf("destructiveHint false on %v, want %v", adds, want)
 	}
 }
 
 // A hint on a kind it does not describe is a defect found when the
 // server starts: the mark only on a tool the destructive flag registers,
-// and destroying by an argument only on an ordinary write.
+// and Adds only on a write that flag does not gate.
 func TestAHintOnTheWrongKindPanics(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -221,8 +200,7 @@ func TestAHintOnTheWrongKindPanics(t *testing.T) {
 	}{
 		{"the mark on a write", Def[withDryRun, fakeOut]{Name: "w", Kind: Write, PromptEveryCall: true}},
 		{"the mark on a connected tool", Def[withDryRun, fakeOut]{Name: "c", Kind: Connected, PromptEveryCall: true}},
-		{"destroys on a destructive tool", Def[withDryRun, fakeOut]{Name: "d", Kind: Destructive, Destroys: true}},
-		{"destroys on a notifying tool", Def[withDryRun, fakeOut]{Name: "n", Kind: Notifying, Destroys: true}},
+		{"adds on a destructive tool", Def[withDryRun, fakeOut]{Name: "d", Kind: Destructive, Adds: true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			defer func() {
@@ -234,13 +212,24 @@ func TestAHintOnTheWrongKindPanics(t *testing.T) {
 			add(s, Deps{Config: FullSurface(config.Config{})}, tc.def)
 		})
 	}
+	// A read takes no dry_run, so it is a Def of its own type.
+	t.Run("adds on a read", func(t *testing.T) {
+		defer func() {
+			if recover() == nil {
+				t.Error("registered without a panic")
+			}
+		}()
+		s := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil)
+		add(s, Deps{Config: FullSurface(config.Config{})}, Def[noDryRun, fakeOut]{Name: "r", Kind: Read, Adds: true})
+	})
 	// The kinds each hint is for register.
 	s := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil)
 	d := Deps{Config: FullSurface(config.Config{})}
 	add(s, d, Def[withDryRun, fakeOut]{Name: "marked", Kind: Destructive, PromptEveryCall: true})
-	add(s, d, Def[withDryRun, fakeOut]{Name: "destroys", Kind: IdempotentWrite, Destroys: true})
-	if got := listTools(t, s); len(got) != 2 {
-		t.Errorf("registered %d of the two", len(got))
+	add(s, d, Def[withDryRun, fakeOut]{Name: "adds", Kind: IdempotentWrite, Adds: true})
+	add(s, d, Def[withDryRun, fakeOut]{Name: "notifies", Kind: Notifying, Adds: true})
+	if got := listTools(t, s); len(got) != 3 {
+		t.Errorf("registered %d of the three", len(got))
 	}
 }
 

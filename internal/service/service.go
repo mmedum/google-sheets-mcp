@@ -199,3 +199,16 @@ type Rendered interface {
 // renderer, because a refusal and a result listing the same things
 // should read the same way.
 func join(items []string) string { return render.JoinAnd(items) }
+
+// knownTime is a time Google wrote, or "" when it is the Unix epoch,
+// which is how Google writes a time it does not have: Google Chat's API
+// sent 1970-01-01T00:00:00Z for one, live, on 2026-10-31. Nothing in a
+// spreadsheet dates from 1970, so reading the epoch as no time loses
+// nothing. The card, a search hit and a comment post read their times
+// through it.
+func knownTime(s string) string {
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil && t.Equal(time.Unix(0, 0)) {
+		return ""
+	}
+	return s
+}

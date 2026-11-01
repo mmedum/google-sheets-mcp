@@ -236,6 +236,38 @@ func TestCellsPastTheCharacterLimitAreRefused(t *testing.T) {
 	}
 }
 
+// Google counts the cell limit in UTF-16 units (spike V): 50 000 é are
+// taken though they are 100 000 bytes, and 25 001 emoji are refused
+// though they are 25 001 characters.
+func TestTheCellLimitIsCountedInUTF16Units(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+		over bool
+	}{
+		{"50 000 é", strings.Repeat("é", 50000), false},
+		{"50 001 é", strings.Repeat("é", 50001), true},
+		{"25 000 emoji", strings.Repeat("😀", 25000), false},
+		{"25 001 emoji", strings.Repeat("😀", 25001), true},
+	} {
+		r := plan.Check(target(), [][]any{{tc.text}}, evaluated)
+		if got := r.TooLong.Any(); got != tc.over {
+			t.Errorf("%s: refused as too long = %v, want %v", tc.name, got, tc.over)
+		}
+	}
+}
+
+// An anchor's name is at most 100 characters, a rule of this server's,
+// so a letter outside ASCII counts as one.
+func TestAnAnchorNameIsCountedInCharacters(t *testing.T) {
+	if err := plan.CheckAnchorName(strings.Repeat("é", 100)); err != nil {
+		t.Errorf("100 é: %v", err)
+	}
+	if err := plan.CheckAnchorName(strings.Repeat("é", 101)); err == nil {
+		t.Error("101 é: accepted")
+	}
+}
+
 // An append has no destination to read, so its findings are labeled by
 // position rather than by an address the server would be guessing.
 func TestCheckValuesLabelsByPosition(t *testing.T) {
