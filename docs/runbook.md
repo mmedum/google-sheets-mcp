@@ -112,7 +112,8 @@ move the app to **In production**.
 ## A tool suddenly returns `[forbidden]`
 
 Usually a scope that was never granted rather than one that was taken
-away. `doctor` prints the granted scopes; compare them against
-[`gcp-setup.md`](gcp-setup.md#4-add-the-scopes). Adding a scope in the
-console does not change an existing token — run `login` again to
-re-consent.
+away: a box left unticked at login, or, on an External app, a scope
+missing from the consent screen. `doctor` prints the granted scopes;
+compare them against [`gcp-setup.md`](gcp-setup.md#4-add-the-scopes).
+Adding a scope in the console does not change an existing token — run
+`login` again to re-consent, and tick every box.

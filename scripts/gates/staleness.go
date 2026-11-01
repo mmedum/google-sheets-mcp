@@ -56,9 +56,9 @@ func scopesAreDocumented() []string {
 		return []string{"README.md cannot be read to check its scopes: " + err.Error()}
 	}
 	// Every combination, not the default one: a scope this server asks
-	// for only under a setting is still a scope somebody has to add in
-	// the Cloud console before login works, and the README is where they
-	// find out.
+	// for only under a setting is still a scope somebody with an
+	// External app has to add in the Cloud console before login works,
+	// and the README is where they find out.
 	want := map[string]bool{}
 	for _, readOnly := range []bool{false, true} {
 		for _, dataSources := range []bool{false, true} {

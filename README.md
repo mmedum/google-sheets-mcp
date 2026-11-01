@@ -118,7 +118,10 @@ reasons. In short, and in the order `doctor` checks things in:
 3. Configure the consent screen: **Internal** for a Workspace account,
    **External + Testing** for a consumer one — which means re-running
    `login` weekly, because Google expires a testing app's refresh token.
-4. Add these two scopes, which are exactly what `login` requests:
+4. On an External app, add these two scopes, which are exactly what
+   `login` requests. Google asks for the list only from apps used by
+   people outside your Workspace organization, so an Internal app can
+   skip this step:
 
    | Scope | What it is for |
    |---|---|
@@ -268,10 +271,9 @@ product they do not have.
 ### Approving calls
 
 Your MCP client approves each call; the server does not ask you itself.
-claude.ai and Codex prompt for the tools marked destructive: the five
-deletes, and the six writes that can take away what they land on
-(`write_values`, `transform_range`, `format_cells`, `manage_range`,
-`manage_chart` and `manage_pivot_table`). VS Code prompts for every tool
+claude.ai and Codex prompt for the tools marked destructive, which is
+every write but the three that only add: `create_spreadsheet`,
+`append_rows` and `connect_data_source`. VS Code prompts for every tool
 that writes. In Claude Code, `delete_data_source` asks on every call
 whatever your rules say, since it takes a sheet and unlinks everything
 built on the source, and Sheets cannot undo it. For the rest, list the

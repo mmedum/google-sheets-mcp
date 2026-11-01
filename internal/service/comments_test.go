@@ -772,3 +772,50 @@ func TestAMissingScopeSaysToLogIn(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// Google writes a time it does not have as the Unix epoch, which reads as
+// no time: a spreadsheet's modified time on its card and in a search
+// hit, and a post's times.
+func TestTheEpochReadsAsNoTime(t *testing.T) {
+	const epoch = "1970-01-01T00:00:00.000Z"
+	srv := sheetstest.New(t)
+	doc, file := sheetstest.Fixture()
+	file.ModifiedTime = epoch
+	for _, th := range doc.Comments {
+		th.HeadPost.CreateTime, th.HeadPost.UpdateTime = epoch, epoch
+		for _, r := range th.Replies {
+			r.CreateTime, r.UpdateTime = epoch, epoch
+		}
+	}
+	srv.Add(doc, file)
+	svc := newService(t, srv)
+	ctx := context.Background()
+
+	card, err := svc.Card(ctx, sheetstest.FixtureID)
+	if err != nil {
+		t.Fatalf("Card: %v", err)
+	}
+	if strings.Contains(card.Card, "1970") {
+		t.Errorf("the card shows the epoch:\n%s", card.Card)
+	}
+	found, err := svc.Search(ctx, service.SearchRequest{Name: file.Name})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(found.Spreadsheets) == 0 || found.Spreadsheets[0].Modified != "" || strings.Contains(found.Results, "1970") {
+		t.Errorf("a search hit shows the epoch: %+v\n%s", found.Spreadsheets, found.Results)
+	}
+	res := readComments(t, svc, service.ReadCommentsRequest{IncludeResolved: true})
+	posts := 0
+	for _, th := range res.Threads {
+		for _, p := range th.Posts {
+			posts++
+			if p.Created != "" || p.Updated != "" {
+				t.Errorf("post %s reads the epoch as created %q, updated %q", p.PostID, p.Created, p.Updated)
+			}
+		}
+	}
+	if posts == 0 || strings.Contains(res.Render(), "1970") {
+		t.Errorf("%d posts read; reply:\n%s", posts, res.Render())
+	}
+}

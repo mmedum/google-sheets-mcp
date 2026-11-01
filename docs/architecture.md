@@ -1295,9 +1295,9 @@ each gated tool also requires `confirm: true` on the call. "Connected"
 means registered only with `GSHEETS_ENABLE_DATA_SOURCES=true`. Only
 `delete_data_source` sets `_meta["anthropic/requiresUserInteraction"]`
 (§9a). "destructive" in the Annotations column is `destructiveHint: true`,
-which the six ordinary writes marked so carry because an argument can
-take away what they land on. `GSHEETS_READ_ONLY=true` registers only the
-readOnly rows and requests read-only scopes.
+which every write carries but the three that only add, since the MCP
+schema reads `false` as "only additive updates". `GSHEETS_READ_ONLY=true`
+registers only the readOnly rows and requests read-only scopes.
 
 | Tool | Purpose | Annotations | Phase |
 |---|---|---|---|
@@ -1308,23 +1308,23 @@ readOnly rows and requests read-only scopes.
 | `create_spreadsheet` | A new spreadsheet, optionally with sheets and seed values | — | 1 |
 | `write_values` | Write a grid; guard, coercion report, checkpoint; an overwrite carries the checkpoint of what it replaces | destructive | 1 |
 | `append_rows` | Append after the detected table, inserting; reports where it landed | — | 1 |
-| `manage_sheet` | add, rename, duplicate, copy_to, hide, unhide, reorder, resize, freeze, tab_color | idempotent | 1 |
-| `edit_dimensions` | insert, move, resize, auto_resize, group, ungroup rows or columns | — | 1 |
+| `manage_sheet` | add, rename, duplicate, copy_to, hide, unhide, reorder, resize, freeze, tab_color | idempotent, destructive | 1 |
+| `edit_dimensions` | insert, move, resize, auto_resize, group, ungroup rows or columns | destructive | 1 |
 | `delete_dimensions` | Gated: remove rows or columns and the data on them | destructive | 1 |
 | `read_formatting` | Number formats, styles, borders, conditional rules over a range | readOnly | 2 |
 | `format_cells` | Number format, styles, borders, alignment, wrapping, merges, notes | idempotent, destructive | 2 |
 | `manage_range` | Named ranges, protected ranges, data validation, tables, banding, conditional format rules | destructive | 2 |
 | `transform_range` | sort, find_replace, trim, dedupe, text_to_columns, fill, copy/cut-paste | destructive | 2 |
-| `manage_anchor` | Durable labels for a row, column or sheet: add, list, move, remove. `anchor:<name>` works wherever a range does, except in `delete_dimensions` and `clear_values` (§6.4, §9a) | — | 3 |
+| `manage_anchor` | Durable labels for a row, column or sheet: add, list, move, remove. `anchor:<name>` works wherever a range does, except in `delete_dimensions` and `clear_values` (§6.4, §9a) | destructive | 3 |
 | `clear_values` | Gated: clear a range's values, keeping formatting | destructive | 1 |
 | `delete_sheet` | Gated: delete a sheet and everything on it | destructive | 1 |
 | `manage_chart` | Charts and slicers: add, update, delete, move | destructive | 4 |
 | `manage_pivot_table` | Pivot tables on a range | destructive | 4 |
 | `connect_data_source` | Connected: connect a BigQuery query or table, billed to the project named | openWorld | 4.0.0 |
-| `manage_data_source` | Connected: refresh one data source, cancel a refresh, list | openWorld | 4 |
+| `manage_data_source` | Connected: refresh one data source, cancel a refresh, list | destructive, openWorld | 4 |
 | `delete_data_source` | Gated: remove a data source, its sheet and everything on it; marked | destructive | 4 |
 | `read_cell_comments` | Comment threads on cells: the cell each is on now, status, assignee, posts | readOnly | 2026-10 |
-| `manage_cell_comment` | add, reply, edit, resolve, reopen a comment thread; an assignee is emailed | openWorld | 2026-10 |
+| `manage_cell_comment` | add, reply, edit, resolve, reopen a comment thread; an assignee is emailed | destructive, openWorld | 2026-10 |
 | `delete_cell_comment` | Gated: delete a comment thread, or one reply | destructive | 2026-10 |
 
 There is deliberately no bulk tool that spans spreadsheets: one
@@ -1348,8 +1348,9 @@ back a title with the end missing.
 **Registration.** One `Kind` per tool — read, write, idempotent write,
 destructive, connected, notifying — decides the annotations, whether read-only mode leaves the
 tool registered, and that the reply is rendered. Two fields beside it
-are refused on a kind they do not describe: `Destroys`, the
-`destructiveHint` of an ordinary write, and `PromptEveryCall`, the mark,
+are refused on a kind they do not describe: `Adds`, which makes a write
+not behind the destructive flag say `destructiveHint: false`, and
+`PromptEveryCall`, the mark,
 only on a Destructive tool (§9a). Four rules kept by hand at twenty call sites
 is four ways to be quietly wrong. `Kind` is an enum over *which world a
 tool touches*, so it grows an axis the first time a tool touches a second
@@ -1567,16 +1568,17 @@ What stays is what holds on every client:
 4. **`dry_run`** on every write.
 5. **Annotations, exact.** `readOnlyHint` is on the six reads and
    nothing else, since VS Code prompts on every tool without it.
-   `destructiveHint` is true on the five Destructive tools, and on the
-   six ordinary writes that can take away what they land on by an
-   argument: `write_values` (`overwrite`), `transform_range`
-   (`remove_duplicates`, a replacement, a paste), `format_cells`
-   (`clear_format`, a merge, a note), `manage_range`, `manage_chart` and
-   `manage_pivot_table` (`delete`). Codex prompts by it, and claude.ai
-   documents that it decides its own prompt. They stay ordinary writes:
-   what they remove is read and named first (§17c). `append_rows` is not
-   one of them: it only inserts (§7.3). `Def.Destroys` sets the hint,
-   and `add` refuses it on anything but a write.
+   `destructiveHint` is true on every write but the three that only add,
+   `create_spreadsheet`, `append_rows` (it only inserts, §7.3) and
+   `connect_data_source`, since the MCP schema reads `false` as "the tool
+   performs only additive updates": the five Destructive tools, and the
+   eleven writes not behind the destructive flag that change or remove
+   what is there, such as `write_values`, `manage_sheet` or
+   `manage_cell_comment`. Codex prompts by it, and claude.ai documents
+   that it decides its own prompt. Those eleven stay out from behind the
+   flag: what they remove is read and named first (§17c). A write says
+   true unless `Def.Adds` marks it as only adding, and `add` refuses that
+   mark on a read or a Destructive tool.
 6. **The mark.** `delete_data_source` alone carries Claude Code's
    `anthropic/requiresUserInteraction`, so Claude Code prompts on every
    call whatever the operator's rules say and refuses it where nobody
@@ -1666,9 +1668,9 @@ then `manage_cell_comment` reaches any address, recorded in §17b.
   enable the **Google Sheets API** and the **Google Drive API** (the
   latter only for `search_spreadsheets`) → consent screen (**Internal**
   for Workspace; **External + Testing** for consumer accounts, which
-  means re-running `login` weekly) → add the scopes → create a **Desktop
-  app** OAuth client → download `client_secret.json` → `login` →
-  `doctor`.
+  means re-running `login` weekly) → add the scopes, on an External app
+  only → create a **Desktop app** OAuth client → download
+  `client_secret.json` → `login` → `doctor`.
 - **No Developer Preview enrollment is needed.** Everything this server
   uses is GA. Google's own Sheets MCP is in the preview program and is
   a comparison (spike D), not a dependency.
@@ -3943,8 +3945,9 @@ ones Google may notify.
 
 Not probed: an account that may view but not comment (taken to be a
 403), the comments view under `spreadsheets.readonly`, comments on merged
-or hidden cells, whether a named address is notified, the 2048-unit
-limit, and what deleting a sheet does to its threads.
+or hidden cells, whether a named address is notified, and what deleting
+a sheet does to its threads. The 2048-unit limit was probed on
+2026-10-31 (spike V, below).
 
 **The comment tools' first live run, 2026-10-09.** The driver failed
 widely, and not at the comments: every read of cells was refused.
@@ -4038,7 +4041,7 @@ re-checked here.
 | Convention | Verdict | Effect |
 |---|---|---|
 | A server should put a write it cannot undo to the person itself, through MCP form elicitation | **Refuted for this server, tier 3.** The MCP specification puts consent to each tool call on the host, and its elicitation page sets no consent rule: a client gathers the answer "from the user or other sources". 83 of the 91 servers with risky writes among the 110 never ask; the 8 that do pick their own scope, from one tool (github/github-mcp-server's `delete_repository`) to about 145 commands (microsoft/mcp). Claude Code's `Elicitation` hook answers with no dialog, Codex under full access accepts a form with no fields (openai/codex PR #17164), and the VS Code extension does not draw one. No client's allow and ask rules match an elicitation | The question is gone (§9a); a removed `GSHEETS_REQUIRE_PROMPT` set on refuses to start |
-| VS Code prompts by `destructiveHint` | **Refuted, tier 3.** VS Code prompts on every tool without `readOnlyHint` and ignores `destructiveHint`; Codex prompts by `destructiveHint`, and claude.ai and ChatGPT document that it decides theirs | `readOnlyHint` only on the six reads; `destructiveHint` on the five deletes and the six ordinary writes that can take away what they land on (§9a.5) |
+| VS Code prompts by `destructiveHint` | **Refuted, tier 3.** VS Code prompts on every tool without `readOnlyHint` and ignores `destructiveHint`; Codex prompts by `destructiveHint`, and claude.ai and ChatGPT document that it decides theirs | `readOnlyHint` only on the six reads; `destructiveHint` on the five deletes and the six ordinary writes that can take away what they land on (§9a.5) *(Superseded 2026-10-31: every write but the three that only add, last table.)* |
 | A risky value of an argument is covered by the client's prompt for its tool | **Refuted, tier 3.** claude.ai, Codex, VS Code and Copilot remember "always allow" per tool, never per argument value, and Claude Code matches an MCP argument only in a command-line deny rule | `connect_data_source` split from `manage_data_source`; `refresh` needs `id`; `append_rows` `insert: overwrite` removed; `allow_external_formulas` became `GSHEETS_ALLOW_EXTERNAL_FORMULAS` (§9a.8) |
 | Every Destructive tool should carry `requiresUserInteraction` for a client that cannot ask | **Refined, tier 3.** Claude Code documents the mark for "tools whose permission prompt is itself the point", prompts for it on every call with no "don't ask again", and refuses the call where nothing can be drawn. On a delete made many times in a row it is a prompt per call, the failure the question had | The mark on `delete_data_source` alone (§9a.6) |
 | `deleteDataSource` takes the source and its sheet, and nothing else | **Refined, tier 3**: the survey for this port read Google's description of `DeleteDataSourceRequest` as also deleting the source's sheet and unlinking every data source object built on it: tables, pivot tables, formulas and charts. The discovery snapshot here records field names only. **Read again 2026-10-23** in revision 20260610 of the discovery document, the newest copy on hand offline: "Deletes a data source. The request also deletes the associated data source sheet, and unlinks all associated data source objects." `DataSourceObjectReference` names those objects: a chart, a formula's cell, a pivot table's anchor, a table's anchor and the `DATA_SOURCE` sheet. The unlinking has not been probed, since the driver cannot connect a source | `delete_data_source` carries the mark: other objects depend on what it removes |
@@ -4060,3 +4063,15 @@ host's code; Claude Desktop itself was not probed.
 | Any `command` the specification shows runs from the bundle | **Refined (the specification and the reference host; Claude Desktop not probed).** anthropics/mcpb v2.1.2 MANIFEST.md shows a binary's command once as `server/my-server` and never says what it is resolved against, and says `${__dirname}` "is replaced with the absolute path to the extension's directory"; its `src/shared/config.ts` substitutes the variables in `command` and resolves no path | `gates mcpb` requires every command to start with `${__dirname}/` and to name a staged program, as the committed manifest's do, and refuses a relative or absolute one. 4.1.0's gate stripped a leading `/` and passed `/server/x`. A probe of Claude Desktop's working directory would settle the relative form |
 | A platform override's `env` and `args` are merged into `mcp_config`'s | **Refuted (the reference host; Claude Desktop not probed).** anthropics/mcpb v2.1.2 `src/shared/config.ts`: `result.args = platformConfig.args \|\| result.args` and `result.env = platformConfig.env \|\| result.env`, and the `${user_config.x}` substitution covers the whole configuration, `args` included | An override's `env` or `args`, an empty one included, replaces the base's, so the settings would not reach that platform, and an argument such as `-enable-destructive=true` would reach the server past every check on `env`. `gates mcpb` refuses any `env` or `args` on an override and an argument in `mcp_config.args`, and keeps the base's `"args": []`, refusing it missing or null |
 | `privacy_policies` is optional for a bundle | **Refuted (the specification).** anthropics/mcpb `MANIFEST.md`: "Required when the extension connects to external services (first- or third-party) that process user data"; added in manifest_version 0.2, and enforced by neither the schema nor `mcpb validate` | The manifest names https://policies.google.com/privacy, which answered 200 on 2026-10-24, and `gates mcpb` refuses an empty list |
+
+**Hints, limits and times, 2026-10-31.** The family's sweep of that
+day. Tier 1 where a row says verified here.
+
+| Convention | Verdict | Effect |
+|---|---|---|
+| `destructiveHint: false` fits a write that changes what is there but cannot take away data, such as a rename or a refresh | **Refuted, tier 1.** The MCP schema (2025-11-25), `ToolAnnotations`: "If false, the tool performs only additive updates", and the default is true. A rename, a move, a reassigned comment and a refreshed data source all change what is there | Every write says true but `create_spreadsheet`, `append_rows` and `connect_data_source`. `manage_sheet`, `edit_dimensions`, `manage_anchor`, `manage_data_source` and `manage_cell_comment` flip, and stay out from behind the destructive flag. `Def.Destroys` became `Def.Adds`: a write says true unless marked as only adding, the schema's own default, so a new write errs toward a prompt. `TestTheHintsAreExact` names the three that say false. `connect_data_source` says false though it starts a billed query: the hint is about what a call changes, and the cost is gated by `GSHEETS_ENABLE_DATA_SOURCES` and said by `openWorldHint` |
+| A cell's 50 000 limit counts bytes | **Refuted, verified here (spike V, 2026-10-31).** Under `RAW` and `USER_ENTERED` alike, 50 000 é, 100 000 bytes, and 25 000 emoji are taken whole; 50 001 é and 25 001 emoji are refused, "Your input contains more than the maximum of 50000 characters in a single cell". Google counts UTF-16 units | The guard counts UTF-16 units, and only for a string longer than the limit in bytes, since units are never more than bytes |
+| A comment's 2048 limit is in UTF-8 code units, as Google's message says | **Confirmed, verified here (spike V, 2026-10-31).** On an empty cell 2048 x, 1024 é and 512 emoji are taken, and one more of each refused, "content must not exceed 2048 UTF-8 code units". On a cell holding a 100 000-byte value every comment at the limit failed, "An error occurred while saving comments"; not followed further | No change: `maxCommentBytes` already counts bytes. The comment tools' list of what was not probed no longer names it |
+| An anchor's 100-character name counts characters | The limit is this server's, not Google's, and the refusal said characters while counting bytes | It counts characters, so a name of 100 é is taken |
+| Google writes a time it does not have as the Unix epoch | **Tier 2.** Seen live from Google Chat's API on 2026-10-31: a read of a space answered `1970-01-01T00:00:00Z` for a time it lacked. Not seen from Sheets or Drive; nothing in a spreadsheet dates from 1970, so reading the epoch as no time loses nothing | `knownTime` in `internal/service` reads it as no time, at the three places a Google time is shown: a card's modified time, a search hit's, and a comment post's |
+| A scope must be on the consent screen to be granted | **Refined, tier 1.** Google's configure-oauth-consent guide (updated 2026-09-03): "you only need to list scopes for apps used by people outside your Google Workspace organization", and for internal apps "scopes aren't listed on the consent screen". Confirmed live the same day on an Internal app, whose token held scopes its Data Access page does not list | The README, the setup guide, the runbook and `login`'s and `doctor`'s warnings ask for the scope list on External apps only, and name a box left unticked at login as the other cause of a missing scope |

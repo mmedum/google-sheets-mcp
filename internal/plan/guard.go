@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
@@ -22,14 +23,31 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 )
 
-// MaxCellChars is the longest string one cell holds.
+// MaxCellChars is the longest string one cell holds, in UTF-16 units.
 //
 // Verified live: 60 004 characters is refused with `400
 // INVALID_ARGUMENT`, "Your input contains more than the maximum of 50000
-// characters in a single cell", under both input options. Checked here
-// so the caller is told which cell is too long, rather than having the
+// characters in a single cell", under both input options. Spike V found
+// the unit, under both options too: 50 000 é and 25 000 emoji are taken,
+// 50 001 é and 25 001 emoji refused, so an emoji counts as two and é as
+// one. Checked here so
+// the caller is told which cell is too long, rather than having the
 // whole write refused with a message that names none of them.
 const MaxCellChars = 50000
+
+// tooLongForACell reports whether s is past MaxCellChars. A string's
+// UTF-16 units are never more than its bytes, so only a string longer
+// than the limit in bytes is counted, and the common case costs nothing.
+func tooLongForACell(s string) bool {
+	if len(s) <= MaxCellChars {
+		return false
+	}
+	units := 0
+	for _, r := range s {
+		units += utf16.RuneLen(r)
+	}
+	return units > MaxCellChars
+}
 
 // Ack are the acknowledgments a write carries. Each one exists because
 // the thing it permits is invisible in a values read: a formula renders
@@ -375,7 +393,7 @@ func (r Report) unallowable() []Blocker {
 	}
 	if r.TooLong.Any() {
 		out = append(out, Blocker{Why: fmt.Sprintf(
-			"%s %s more than %d characters, which is the most one cell takes", r.TooLong,
+			"%s %s more than %d characters as Google counts them, an emoji counting as two, which is the most one cell takes", r.TooLong,
 			r.TooLong.Verb("holds", "hold"), MaxCellChars)})
 	}
 	if r.TableHeaders.Any() {
@@ -559,7 +577,7 @@ func CheckValues(r *Report, values [][]any, formulasEvaluated bool, label func(i
 			// An empty label still means a cell outside the grid and
 			// still records nothing; it is now asked for only when there
 			// would be something to record.
-			tooLong := len(s) > MaxCellChars
+			tooLong := tooLongForACell(s)
 			var fetching, cross bool
 			if formulasEvaluated && strings.HasPrefix(strings.TrimSpace(s), "=") {
 				fetching = externalFetch.MatchString(s)

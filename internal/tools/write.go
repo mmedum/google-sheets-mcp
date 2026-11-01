@@ -113,6 +113,7 @@ func registerWrite(s *mcp.Server, d Deps) {
 			"Seed values go to the first sheet, written as a separate request with the same rules as write_values, so " +
 			"input means the same thing here and coercions are reported the same way.",
 		Kind: Write,
+		Adds: true,
 		Handle: func(ctx context.Context, in CreateInput) (*service.CreateResult, error) {
 			return d.Service.Create(ctx, service.CreateRequest{
 				Title: in.Title, Sheets: in.Sheets, Values: in.Values, TSV: in.TSV,
@@ -135,8 +136,7 @@ func registerWrite(s *mcp.Server, d Deps) {
 			"007 becomes 7 and 2026-09-05 becomes a date serial that still displays as a date. " +
 			"The range says where to start; the values decide the rectangle. A range larger than the values leaves the " +
 			"rest as it was, and the result says so. Use dry_run first when you are not sure what is there.",
-		Kind:     Write,
-		Destroys: true,
+		Kind: Write,
 		Handle: func(ctx context.Context, in WriteInput) (*service.WriteResult, error) {
 			return d.Service.Write(ctx, service.WriteRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range,
@@ -157,6 +157,7 @@ func registerWrite(s *mcp.Server, d Deps) {
 			"before the call no longer points where it did. " +
 			"Use write_values when you know the addresses you want, including to write over rows that are there.",
 		Kind: Write,
+		Adds: true,
 		Handle: func(ctx context.Context, in AppendInput) (*service.AppendResult, error) {
 			return d.Service.Append(ctx, service.AppendRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range,

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
@@ -25,14 +26,15 @@ var anchorNamePattern = regexp.MustCompile(`^[\p{L}\p{N}][\p{L}\p{N} ._-]*$`)
 
 // CheckAnchorName refuses a label before a request is built.
 func CheckAnchorName(name string) error {
+	n := utf8.RuneCountInString(name)
 	switch {
 	case name == "":
 		return fmt.Errorf("an anchor needs a name")
 	case name != strings.TrimSpace(name):
 		return fmt.Errorf("%q starts or ends with a space, which is invisible in a result and impossible to "+
 			"retype reliably", name)
-	case len(name) > MaxAnchorName:
-		return fmt.Errorf("%q is %d characters; an anchor name is at most %d", name, len(name), MaxAnchorName)
+	case n > MaxAnchorName:
+		return fmt.Errorf("%q is %d characters; an anchor name is at most %d", name, n, MaxAnchorName)
 	case !anchorNamePattern.MatchString(name):
 		return fmt.Errorf("%q cannot be an anchor name: use letters, digits, spaces, and . _ -, starting with a "+
 			"letter or a digit", name)

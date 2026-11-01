@@ -99,13 +99,15 @@ type Def[In any, Out service.Rendered] struct {
 	Name        string
 	Description string
 	Kind        Kind
-	// Destroys marks an ordinary write that can take away what it lands
-	// on, by an argument: overwrite, a delete action, clear_format. It is
-	// guarded per call rather than gated, because what it removes is read
-	// and named first (§17c), and it says destructiveHint: true, because
-	// Codex and claude.ai decide their prompt by that hint (§9a). Only a
-	// Write or an IdempotentWrite may set it.
-	Destroys bool
+	// Adds marks a write that only adds: a new spreadsheet, appended rows,
+	// a new data source. Only such a write says destructiveHint: false,
+	// which the MCP schema defines as "the tool performs only additive
+	// updates"; every other write says true, the schema's own default,
+	// so a new write that forgets this errs toward a prompt. Codex and
+	// claude.ai decide their prompt by that hint (§9a). The hint is not
+	// the gate: what an ungated write removes is read and named first
+	// (§17c). A read or a Destructive tool may not set it.
+	Adds bool
 	// PromptEveryCall puts Claude Code's requiresUserInteraction mark on
 	// the tool, so Claude Code prompts on every call whatever the
 	// operator's rules say, and refuses the call where nobody can be
@@ -133,7 +135,7 @@ func add[In any, Out service.Rendered](s *mcp.Server, d Deps, def Def[In, Out]) 
 	}
 	// The same reasoning as the dry run: a mark or a hint on the wrong
 	// kind of tool is a defect in this server, found when it starts.
-	if err := checkHints(def.Kind, def.Destroys, def.PromptEveryCall); err != nil {
+	if err := checkHints(def.Kind, def.Adds, def.PromptEveryCall); err != nil {
 		panic(fmt.Sprintf("tools: %s: %v", def.Name, err))
 	}
 	if !allowed(def.Kind, d.Config) {
@@ -142,7 +144,7 @@ func add[In any, Out service.Rendered](s *mcp.Server, d Deps, def Def[In, Out]) 
 	tool := &mcp.Tool{
 		Name:        def.Name,
 		Description: def.Description,
-		Annotations: annotationsFor(def.Kind, def.Destroys),
+		Annotations: annotationsFor(def.Kind, def.Adds),
 	}
 	if def.PromptEveryCall {
 		tool.Meta = mcp.Meta{interactionKey: true}
@@ -198,27 +200,20 @@ func allowed(k Kind, cfg config.Config) bool {
 	}
 }
 
-// annotationsFor is a kind's annotations. destroys says an ordinary
-// write can take away what it lands on, which makes its destructiveHint
-// true: readOnlyHint is what VS Code prompts by, and destructiveHint is
-// what Codex and claude.ai prompt by, so both are exact (§9a).
-func annotationsFor(k Kind, destroys bool) *mcp.ToolAnnotations {
-	no, yes := new(false), new(true)
-	hint := no
-	if destroys {
-		hint = yes
+// annotationsFor is a kind's annotations. A write says destructiveHint
+// true unless it only adds, as the MCP schema reads false as "the tool
+// performs only additive updates". readOnlyHint is what VS Code prompts
+// by, and destructiveHint is what Codex and claude.ai prompt by, so both
+// are exact (§9a). Connected and Notifying reach outside the
+// spreadsheet, so they say openWorldHint.
+func annotationsFor(k Kind, adds bool) *mcp.ToolAnnotations {
+	if k == Read {
+		return &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: new(false)}
 	}
-	switch k {
-	case Read:
-		return &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: no}
-	case IdempotentWrite:
-		return &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: hint, OpenWorldHint: no}
-	case Destructive:
-		return &mcp.ToolAnnotations{DestructiveHint: yes, OpenWorldHint: no}
-	case Connected, Notifying:
-		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: yes}
-	default:
-		return &mcp.ToolAnnotations{DestructiveHint: hint, OpenWorldHint: no}
+	return &mcp.ToolAnnotations{
+		IdempotentHint:  k == IdempotentWrite,
+		DestructiveHint: new(!adds),
+		OpenWorldHint:   new(k == Connected || k == Notifying),
 	}
 }
 
@@ -226,14 +221,14 @@ func annotationsFor(k Kind, destroys bool) *mcp.ToolAnnotations {
 // every call, even under an allow rule.
 const interactionKey = "anthropic/requiresUserInteraction"
 
-// checkHints refuses a hint on a kind it does not describe. Destroys is
-// for the ordinary writes; a Destructive tool says destructiveHint
-// already, and a read destroys nothing. The mark is only for a tool the
+// checkHints refuses a hint on a kind it does not describe. Adds is for
+// a write the destructive flag does not gate; a Destructive tool removes
+// something, and a read writes nothing. The mark is only for a tool the
 // destructive flag registers: one Claude Code prompts for on every call
 // must not be reachable by default.
-func checkHints(k Kind, destroys, prompt bool) error {
-	if destroys && k != Write && k != IdempotentWrite {
-		return errors.New("only an ordinary write is marked as destroying by an argument")
+func checkHints(k Kind, adds, prompt bool) error {
+	if adds && (k == Read || k == Destructive) {
+		return errors.New("only a write the destructive flag does not gate is marked as only adding")
 	}
 	if prompt && k != Destructive {
 		return errors.New("only a Destructive tool carries " + interactionKey)

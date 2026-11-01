@@ -8,6 +8,14 @@ and this project follows [semantic versioning](https://semver.org).
 ### Changed
 
 - `make leaks-history` passes on the existing history. It allows `support@github.com`, the address on Dependabot's sign-off, by the whole address only.
+- The five writes that change what is there without being behind the destructive flag now say `destructiveHint: true`, as the MCP spec reads `false` as "only additive updates": `manage_sheet`, `edit_dimensions`, `manage_anchor`, `manage_cell_comment` and `manage_data_source`. claude.ai, ChatGPT and Codex may now ask before these; if you run them unattended there, allow them again. They still need no `GSHEETS_ENABLE_DESTRUCTIVE` and no `confirm`.
+
+### Fixed
+
+- A cell's 50,000-character limit is counted the way Google counts it, with an emoji counting as two and é as one. A cell of more than 50,000 bytes but no more than 50,000 such characters used to be refused before it was sent.
+- An anchor's name is counted in characters, as its refusal says, so a name of 100 letters outside ASCII is taken.
+- Google writes a time it does not have as 1970-01-01. A spreadsheet's modified time and a comment's times are now left out in that case rather than shown as 1970.
+- The README and the setup guide said every app must list its scopes on the consent screen. Google asks for that list only from External apps, so an Internal app can skip the step. `login` and `doctor` name a box left unticked at login as the other cause of a missing scope.
 
 ## [4.1.1] - 2026-10-24
 

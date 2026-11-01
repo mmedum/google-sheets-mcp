@@ -247,7 +247,7 @@ func applyGrantedScopes(uc *userconfig.Config, info *auth.TokenInfo, wanted []st
 		return
 	}
 	_, _ = fmt.Fprintf(out, "\nWarning: these scopes were not granted: %s\n"+
-		"Add them to the consent screen and run login again, or some tools will fail with [forbidden].\n",
+		"Run login again and tick every box, after adding them to the consent screen if the app is External, or some tools will fail with [forbidden].\n",
 		strings.Join(missing, ", "))
 }
 
@@ -469,8 +469,9 @@ var errSkipped = errors.New("skipped")
 
 // doctor checks the setup in the order it has to be set up, and names
 // what is missing rather than reporting a failure. Most first-run
-// reports are an API that was never enabled or a consent screen that
-// never got the scopes.
+// reports are an API that was never enabled or a scope that was never
+// granted: an External app's consent screen without it, or a box left
+// unticked at login.
 func doctor(ctx context.Context, cfg config.Config, spreadsheet string, out io.Writer) error {
 	_, _ = fmt.Fprintf(out, "%s\nprofile: %s\n\n", version.Info(), cfg.Profile)
 	fail := 0
@@ -535,7 +536,7 @@ func doctor(ctx context.Context, cfg config.Config, spreadsheet string, out io.W
 			return "", err
 		}
 		if missing := auth.MissingScopes(info.Scopes, scopes); len(missing) > 0 {
-			return "", fmt.Errorf("not granted: %s\n        add them to the consent screen, then run `google-sheets-mcp login` again",
+			return "", fmt.Errorf("not granted: %s\n        run `google-sheets-mcp login` again and tick every box, after adding them to the consent screen if the app is External",
 				strings.Join(missing, ", "))
 		}
 		return strings.Join(info.Scopes, " "), nil

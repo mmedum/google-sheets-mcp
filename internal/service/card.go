@@ -70,7 +70,7 @@ func (s *Service) describe(ctx context.Context, sp *gsheets.Spreadsheet, r Refer
 		f, _ = s.api.GetFile(ctx, c.ID)
 	}
 	if f != nil {
-		c.Modified = f.ModifiedTime
+		c.Modified = knownTime(f.ModifiedTime)
 		if len(f.Owners) > 0 {
 			c.Owner = f.Owners[0].EmailAddress
 		}

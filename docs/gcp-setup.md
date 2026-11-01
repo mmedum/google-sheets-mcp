@@ -39,7 +39,11 @@ Under **APIs & Services → OAuth consent screen**:
 
 ## 4. Add the scopes
 
-Two, and no more:
+On an **External** app, two, and no more. Google asks for the list only
+from apps used by people outside your Workspace organization: for an
+**Internal** app, "scopes aren't listed on the consent screen" (Google's
+configure-oauth-consent guide, updated 2026-09-03), so an Internal app
+can skip this step.
 
 | Scope | Why |
 |---|---|
@@ -105,7 +109,7 @@ google-sheets-mcp doctor -spreadsheet <id, URL or exact title>
 |---|---|
 | `OAuth client JSON` fails | The path is wrong, or the file is a Web client rather than a Desktop one. Re-run `login -secret <path>` |
 | `refresh token` fails | Run `login`. On a consumer account in Testing, this is the weekly expiry |
-| `granted scopes` is missing one | You added a scope after logging in. Run `login` again to re-consent |
+| `granted scopes` is missing one | A box was left unticked at login, or, on an External app, a scope was added after logging in. Run `login` again and tick every box |
 | `Drive API` fails and Sheets works | The Drive API is not enabled on the project, or `drive.readonly` was not granted. Only `search_spreadsheets` needs it |
 
 [`runbook.md`](runbook.md) covers rotating and recovering credentials

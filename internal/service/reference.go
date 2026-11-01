@@ -219,7 +219,7 @@ func (s *Service) findSheet(sp *gsheets.Spreadsheet, name string, ref Reference)
 func hits(files []*gapi.File) []render.Hit {
 	out := make([]render.Hit, 0, len(files))
 	for _, f := range files {
-		h := render.Hit{Title: f.Name, ID: f.ID, Modified: f.ModifiedTime, Link: f.WebViewLink}
+		h := render.Hit{Title: f.Name, ID: f.ID, Modified: knownTime(f.ModifiedTime), Link: f.WebViewLink}
 		if len(f.Owners) > 0 {
 			h.Owner = f.Owners[0].EmailAddress
 		}

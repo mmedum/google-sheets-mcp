@@ -143,8 +143,7 @@ func registerFormat(s *mcp.Server, d Deps) {
 			"Sheets cannot bring back, and a note replaces one that no values read would have shown you. Those three " +
 			"read the range first; everything else costs one request. " +
 			"Conditional format rules are manage_range, because a rule is attached to a range rather than written into it.",
-		Kind:     IdempotentWrite,
-		Destroys: true,
+		Kind: IdempotentWrite,
 		Handle: func(ctx context.Context, in FormatCellsInput) (*service.FormatResult, error) {
 			return d.Service.FormatCells(ctx, service.FormatRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range,
@@ -172,8 +171,7 @@ func registerFormat(s *mcp.Server, d Deps) {
 			"read_formatting reports. " +
 			"A protected range is the real guarantee this server can offer against a concurrent edit; a checkpoint is " +
 			"only best effort.",
-		Kind:     Write,
-		Destroys: true,
+		Kind: Write,
 		Handle: func(ctx context.Context, in ManageRangeInput) (*service.RangeResult, error) {
 			return d.Service.ManageRange(ctx, service.RangeRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range,
@@ -196,8 +194,7 @@ func registerFormat(s *mcp.Server, d Deps) {
 			"which the refusal gives. remove_duplicates deletes rows. " +
 			"sort, randomize, remove_duplicates and cut_paste all move rows, so an address or a checkpoint from before " +
 			"the call no longer points where it did, and the result says so.",
-		Kind:     Write,
-		Destroys: true,
+		Kind: Write,
 		Handle: func(ctx context.Context, in TransformRangeInput) (*service.TransformResult, error) {
 			return d.Service.Transform(ctx, service.TransformRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range, Action: in.Action,

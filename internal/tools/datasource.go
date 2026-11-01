@@ -71,6 +71,7 @@ func registerDataSource(s *mcp.Server, d Deps) {
 			"the result gives the new source's id and the state Google put it in. " +
 			"manage_data_source refreshes and lists sources.",
 		Kind: Connected,
+		Adds: true,
 		Handle: func(ctx context.Context, in ConnectDataSourceInput) (*service.SourceResult, error) {
 			return d.Service.ConnectDataSource(ctx, service.ConnectRequest{
 				Spreadsheet: in.Spreadsheet, Project: in.Project, Query: in.Query,
@@ -82,9 +83,9 @@ func registerDataSource(s *mcp.Server, d Deps) {
 
 // delete_data_source is its own tool for the reason edit_dimensions'
 // delete became delete_dimensions (§17a.10, §7.4): an action that
-// removes what nobody can read back does not belong inside a tool whose
-// annotations say it is not destructive. A host in an auto-approve mode
-// reads those annotations and asks nobody.
+// removes what nobody can read back does not belong inside a tool that
+// is not behind the destructive flag. A client remembers an approval per
+// tool, and a host in an auto-approve mode asks nobody.
 //
 // It is Destructive rather than Connected, and needs no BigQuery scope:
 // spike N sent deleteDataSource under this server's two scopes and got a

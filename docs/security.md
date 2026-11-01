@@ -129,9 +129,9 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
 - **The server asks the person nothing.** Your client approves each
   call, by its own rules: the README gives Claude Code `permissions.ask`
   rules for the writes that delete, start a billed query or can email
-  someone. `destructiveHint` is true on the deletes and on the six writes
-  that can take away what they land on, and `readOnlyHint` only on the
-  reads, so a client that prompts by either prompts where it should.
+  someone. `destructiveHint` is true on every write but the three that only
+  add, and `readOnlyHint` only on the reads, so a client that prompts by
+  either prompts where it should.
   `delete_data_source` alone carries Claude Code's
   `requiresUserInteraction` mark: it takes a sheet and unlinks what was
   built on the source.
