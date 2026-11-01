@@ -79,7 +79,7 @@ func TestBrokenFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := brokenFields(was.fields, now.fields)
+	got := texts(brokenFields(was.fields, now.fields))
 	want := []string{
 		`read_cell_comments: input field range removed`,
 		`read_cell_comments: output field left_out removed`,
@@ -145,7 +145,7 @@ func TestATypeChangeBreaksOneWay(t *testing.T) {
 		if c.side == "output" {
 			was, now = fieldsOf(t, empty, field(c.was)), fieldsOf(t, empty, field(c.now))
 		}
-		got := strings.Join(brokenFields(was, now), "\n")
+		got := strings.Join(texts(brokenFields(was, now)), "\n")
 		if got != c.want {
 			t.Errorf("%s %s to %s: got %q, want %q", c.side, c.was, c.now, got, c.want)
 		}
@@ -166,7 +166,7 @@ func TestAnOutputNoLongerRequiredBreaks(t *testing.T) {
 		"note":{"type":"string"},
 		"rows":{"type":"array","items":{"type":"object","properties":{"row":{"type":"integer"}}}}},
 		"required":["range","rows","note"]}`)
-	got := brokenFields(was, now)
+	got := texts(brokenFields(was, now))
 	want := []string{
 		`read_range: output field next_range removed`,
 		`read_range: output field rows[].row no longer required`,
@@ -192,7 +192,7 @@ func TestAnInputThatLosesAValueBreaks(t *testing.T) {
 		"input":{"type":"string","enum":["typed","raw","literal"]},
 		"render":{"type":"string"},
 		"dimensions":{"type":"array","items":{"type":"string","enum":["columns"]}}}}`, output)
-	got := brokenFields(was, now)
+	got := texts(brokenFields(was, now))
 	want := []string{
 		`read_range: input field dimensions[] no longer takes "rows"`,
 		`read_range: input field show no longer takes "formulas"`,
@@ -220,7 +220,7 @@ func TestValuesThatMayBreakAreReported(t *testing.T) {
 		"status":{"type":"string","enum":["complete","partial","truncated"]},
 		"value_type":{"type":"string"},
 		"source":{"type":"string","enum":["typed"]}}}`)
-	if b := brokenFields(was, now); !slices.Equal(b, []string{"read_range: output field dimension removed"}) {
+	if b := texts(brokenFields(was, now)); !slices.Equal(b, []string{"read_range: output field dimension removed"}) {
 		t.Fatalf("got breaks %q, want only the field removed", b)
 	}
 	got := valueNotes(was, now)
@@ -407,10 +407,19 @@ func TestCompareSurfacesSeesEveryChange(t *testing.T) {
 		{"a _meta mark", strings.Replace(a, `"description":"d",`, `"description":"d","_meta":{"anthropic/requiresUserInteraction":true},`, 1), false},
 		{"a key the dump gained", strings.Replace(a, `"tools":`, `"prompts":[{"name":"p"}],"tools":`, 1), false},
 	} {
-		if got := compareSurfaces(io.Discard, surfaceOf(t, a), surfaceOf(t, tc.b), "base").empty(); got != tc.same {
+		if got := compareSurfaces(surfaceOf(t, a), surfaceOf(t, tc.b)).empty(); got != tc.same {
 			t.Errorf("%s: no change = %v, want %v", tc.name, got, tc.same)
 		}
 	}
+}
+
+// texts is each change's text, as the report shows it.
+func texts(cs []change) []string {
+	out := make([]string, len(cs))
+	for i, c := range cs {
+		out[i] = c.text
+	}
+	return out
 }
 
 func surfaceOf(t *testing.T, dump string) toolSurface {
@@ -429,8 +438,9 @@ func TestCompareSurfacesNamesThePart(t *testing.T) {
 		"resourceTemplates":[{"uriTemplate":"gsheets://{id}","name":"spreadsheet"}]}`)
 	cur := surfaceOf(t, `{"version":"v1.0.1","tools":[{"name":"read_range","annotations":{"destructiveHint":true}}],
 		"resourceTemplates":[{"uriTemplate":"gsheets://{id}","name":"spreadsheet","title":"Spreadsheet"}],"instructions":"new"}`)
-	want := []string{"read_range (annotations.destructiveHint)", "resource gsheets://{id} (title)", "instructions"}
-	if got := compareSurfaces(io.Discard, base, cur, "base").changed; !slices.Equal(got, want) {
+	want := []change{{item: "read_range", text: "read_range (annotations.destructiveHint)"},
+		{item: "gsheets://{id}", text: "resource gsheets://{id} (title)"}, {item: "instructions", text: "instructions"}}
+	if got := compareSurfaces(base, cur).changed; !slices.Equal(got, want) {
 		t.Errorf("changed = %v, want %v", got, want)
 	}
 }
@@ -445,11 +455,11 @@ func TestCompareSurfacesReportsABreakOnce(t *testing.T) {
 	cur := surfaceOf(t, `{"tools":[{"name":"read_range","description":"d","annotations":{"destructiveHint":true},
 		"inputSchema":{"type":"object","properties":{}}}],
 		"prompts":[]}`)
-	c := compareSurfaces(io.Discard, base, cur, "base")
-	if len(c.breaking) != 2 || c.breaking[0] != "prompts summarize" || !strings.HasPrefix(c.breaking[1], "read_range: ") {
-		t.Errorf("breaking = %v, want the prompt gone and then read_range's field", c.breaking)
+	c := compareSurfaces(base, cur)
+	if want := []change{{"summarize", "prompts summarize removed", ""}, {"read_range", "read_range: input field range removed", "input range"}}; !slices.Equal(c.breaking, want) {
+		t.Errorf("breaking = %v, want %v", c.breaking, want)
 	}
-	if want := []string{"read_range (annotations.destructiveHint)"}; !slices.Equal(c.changed, want) {
+	if want := []change{{item: "read_range", text: "read_range (annotations.destructiveHint)"}}; !slices.Equal(c.changed, want) {
 		t.Errorf("changed = %v, want %v", c.changed, want)
 	}
 }
