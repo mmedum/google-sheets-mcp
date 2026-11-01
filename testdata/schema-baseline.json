@@ -1,6 +1,6 @@
 {
   "server": "google-sheets-mcp",
-  "version": "v4.1.1",
+  "version": "v4.2.0",
   "sdk": "v1.8.0",
   "tools": [
     {
@@ -605,7 +605,7 @@
                       "type": "string"
                     },
                     "created": {
-                      "description": "when it was posted, RFC 3339",
+                      "description": "when it was posted, RFC 3339; empty when Google does not have the time",
                       "type": "string"
                     },
                     "mine": {
@@ -986,7 +986,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
@@ -1486,7 +1486,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
@@ -1598,7 +1598,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": true,
         "readOnlyHint": false
@@ -1729,7 +1729,7 @@
                       "type": "string"
                     },
                     "created": {
-                      "description": "when it was posted, RFC 3339",
+                      "description": "when it was posted, RFC 3339; empty when Google does not have the time",
                       "type": "string"
                     },
                     "mine": {
@@ -1978,7 +1978,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": true,
         "readOnlyHint": false
@@ -2444,7 +2444,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": true,
         "openWorldHint": false,
         "readOnlyHint": false
@@ -2640,7 +2640,7 @@
                         "type": "string"
                       },
                       "created": {
-                        "description": "when it was posted, RFC 3339",
+                        "description": "when it was posted, RFC 3339; empty when Google does not have the time",
                         "type": "string"
                       },
                       "mine": {

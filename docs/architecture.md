@@ -1,6 +1,15 @@
 # Architecture — google-sheets-mcp
 
-**Status: v4.1.1 (2026-10-24):** 4.1.0's bundle work reviewed after its
+**Status: v4.2.0 (2026-11-01):** every write says `destructiveHint:
+true` unless `Def.Adds` marks it as only adding, as the MCP schema reads
+`false` as only additive; five ungated writes flip (§18). A cell's
+50 000 limit counts UTF-16 units and a comment's 2048 counts bytes, both
+found live by spike V; an anchor's name counts characters; Google's
+epoch reads as no time; the scope list is asked for on External apps
+only. Reviewed by `/simplify` and `/code-review medium`. A live run of
+302 steps passed, its transcript read; two earlier runs were cut short
+by the read quota per minute, not by a defect. v4.1.1 (2026-10-24):
+4.1.0's bundle work reviewed after its
 release by `/simplify`, `/code-review medium` and `/security-review`,
 with the family's bundle rules ported (§16): the gate derives its
 settings from the server's registry, starts the server from the
