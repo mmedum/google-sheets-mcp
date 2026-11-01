@@ -17,6 +17,7 @@
 //	go run ./scripts/gates staleness ./google-sheets-mcp
 //	go run ./scripts/gates schema-diff ./google-sheets-mcp
 //	go run ./scripts/gates schema-baseline ./google-sheets-mcp
+//	go run ./scripts/gates schema-ack origin/main HEAD
 //	go run ./scripts/gates api-coverage
 //	go run ./scripts/gates api-fields
 //	go run ./scripts/gates api-diff
@@ -34,7 +35,7 @@ import (
 func main() {
 	if len(os.Args) < 2 {
 		fail("usage: gates coverage PROFILE MIN | classes | leaks [history] | transcript | " +
-			"live-cover BIN | pins | smoke BIN | staleness BIN | schema-diff BIN | schema-baseline BIN | mcpb | " +
+			"live-cover BIN | pins | smoke BIN | staleness BIN | schema-diff BIN | schema-baseline BIN | schema-ack BASE HEAD | mcpb | " +
 			"mcpb-pack VERSION [DIST] | api-coverage | api-fields | api-diff | schema-refetch | parity | " +
 			"release-notes VERSION [CHANGELOG] | release-tag TAG | precommit")
 	}
@@ -73,11 +74,10 @@ func main() {
 		check(smoke(binArg()), "stdio smoke")
 	case "staleness":
 		check(staleness(binArg()), "staleness")
-	case "schema-diff", "schema-baseline":
-		// One clause for the two, because this switch is at the
-		// cyclomatic limit: the diff runs on every commit, and the
-		// baseline is recorded in a release commit.
-		schemaCommand(os.Args[1], binArg())
+	case "schema-diff", "schema-baseline", "schema-ack":
+		// One clause for the three, because this switch is at the
+		// cyclomatic limit.
+		schemaCommand(os.Args[1])
 	case "mcpb":
 		check(mcpbGate(os.Stdout), "bundle manifest")
 	case "mcpb-pack":
@@ -135,14 +135,20 @@ func contractCommand(name string) bool {
 	return true
 }
 
-// schemaCommand runs the schema diff, or records the release being cut
-// as its baseline.
-func schemaCommand(name, bin string) {
-	if name == "schema-baseline" {
-		check(writeBaseline(bin), "schema baseline")
-		return
+// schemaCommand runs schema-diff on every commit, schema-baseline in a
+// release commit, and schema-ack on a pull request.
+func schemaCommand(name string) {
+	switch name {
+	case "schema-baseline":
+		check(writeBaseline(binArg()), "schema baseline")
+	case "schema-ack":
+		if len(os.Args) < 4 {
+			fail("usage: gates schema-ack BASE HEAD")
+		}
+		check(schemaAck(os.Args[2], os.Args[3]), "schema ack")
+	default:
+		check(schemaDiff(binArg()), "schema diff")
 	}
-	check(schemaDiff(bin), "schema diff")
 }
 
 func tagArg() string {

@@ -5,6 +5,9 @@ GO        ?= go
 EXE       := $(if $(filter Windows_NT,$(OS)),.exe,)
 BIN       ?= ./google-sheets-mcp$(EXE)
 VERSION   ?= dev
+# The range schema-ack measures on a local run; CI passes its own.
+PR_BASE_REF ?= origin/main
+PR_HEAD   ?= HEAD
 PKG        = github.com/mmedum/google-sheets-mcp/v4
 LDFLAGS    = -s -w -X $(PKG)/internal/version.Version=$(VERSION)
 COVER_MIN ?= 80
@@ -143,6 +146,10 @@ schemas: build ## Dump the tool schemas
 .PHONY: schema-diff
 schema-diff: build gates ## Diff the tool schemas against the newest release's recorded baseline
 	@$(GATES) schema-diff $(BIN)
+
+.PHONY: schema-ack
+schema-ack: gates ## Check a tool-surface change since the merge-base carries a SCHEMA-CHANGE: footer
+	@$(GATES) schema-ack $(PR_BASE_REF) $(PR_HEAD)
 
 .PHONY: schema-baseline
 schema-baseline: build gates ## Record the release being cut as the baseline: VERSION=vX.Y.Z, in its release commit

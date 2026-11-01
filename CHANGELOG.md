@@ -5,6 +5,12 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+
+- For contributors: a pull request that changes the tool surface, an annotation or a `_meta` mark included, now fails CI unless one of its commits ends with a `SCHEMA-CHANGE:` footer saying what changed, or `BREAKING CHANGE:` for a break.
+- For contributors: the schema diff compares each tool and resource whole, and names the part that changed.
+- For contributors: `--dump-schemas` carries the server's instructions, and lists fixed resources and prompts once the server has any.
+
 ## [4.2.0] - 2026-11-01
 
 ### Changed

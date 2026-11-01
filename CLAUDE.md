@@ -109,7 +109,9 @@ built on the Drive API. Cell comments are here.
 tests, golangci-lint, race tests with an 80% floor per package,
 govulncheck, the license allow-list, the leak scan, the workflow pin
 check, a stdio smoke test, the schema diff, and the staleness gate over
-README, `docs/` and CHANGELOG. Plus tests for new behavior, `/simplify`
+README, `docs/` and CHANGELOG. On a pull request, CI also runs
+`schema-ack`: a change to the tool surface needs a `SCHEMA-CHANGE:`
+footer, and a break `BREAKING CHANGE:`. Plus tests for new behavior, `/simplify`
 and `/code-review high` with findings resolved or written down, and a
 look at the schema diff for anything breaking. The diff passes a break
 only when go.mod's major version (`/vN`) is above the last tag's.
