@@ -27,6 +27,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -145,7 +146,7 @@ func schemaCommand(name string) {
 		if len(os.Args) < 4 {
 			fail("usage: gates schema-ack BASE HEAD")
 		}
-		check(schemaAck(os.Args[2], os.Args[3]), "schema ack")
+		check(schemaAck(os.Stdout, os.Args[2], os.Args[3]), "schema ack")
 	default:
 		check(schemaDiff(binArg()), "schema diff")
 	}
@@ -167,14 +168,33 @@ func binArg() string {
 
 func check(err error, what string) {
 	if err != nil {
-		fail("%s: %v", what, err)
+		failWith(exitCode(err), "%s: %v", what, err)
 	}
 	fmt.Printf("%s ok\n", what)
 }
 
-func fail(format string, args ...any) {
+// couldNotRun is a gate that could not reach a verdict, a failed build
+// or git call, rather than one that found a problem. It says so, and
+// exits 2 where a verdict exits 1: under `go run`, which exits 1 for
+// both, the message is what tells them apart.
+type couldNotRun struct{ err error }
+
+func (e couldNotRun) Error() string { return "could not run: " + e.err.Error() }
+func (e couldNotRun) Unwrap() error { return e.err }
+
+// exitCode is 2 for a gate that could not run and 1 for a verdict.
+func exitCode(err error) int {
+	if errors.As(err, new(couldNotRun)) {
+		return 2
+	}
+	return 1
+}
+
+func fail(format string, args ...any) { failWith(1, format, args...) }
+
+func failWith(code int, format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "gates: "+format+"\n", args...)
-	os.Exit(1)
+	os.Exit(code)
 }
 
 func coverageCmd(args []string) {

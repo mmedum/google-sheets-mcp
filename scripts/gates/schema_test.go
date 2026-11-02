@@ -445,10 +445,11 @@ func TestCompareSurfacesNamesThePart(t *testing.T) {
 	}
 }
 
-// A tool that breaks is reported as the break, with its other changes
-// but not its schemas again, and an item gone from any list breaks a
-// caller.
-func TestCompareSurfacesReportsABreakOnce(t *testing.T) {
+// A tool that breaks is reported as the break, and still lists every
+// part that moved, a flipped hint and its schemas included, since the
+// break names only the fields it broke. An item gone from any list
+// breaks a caller.
+func TestCompareSurfacesReportsABreakAndEveryPartThatMoved(t *testing.T) {
 	base := surfaceOf(t, `{"tools":[{"name":"read_range","description":"d","annotations":{"destructiveHint":false},
 		"inputSchema":{"type":"object","properties":{"range":{"type":"string"}}}}],
 		"prompts":[{"name":"summarize"}]}`)
@@ -456,10 +457,10 @@ func TestCompareSurfacesReportsABreakOnce(t *testing.T) {
 		"inputSchema":{"type":"object","properties":{}}}],
 		"prompts":[]}`)
 	c := compareSurfaces(base, cur)
-	if want := []change{{"summarize", "prompts summarize removed", ""}, {"read_range", "read_range: input field range removed", "input range"}}; !slices.Equal(c.breaking, want) {
+	if want := []change{{"summarize", "prompts summarize removed", "prompts summarize"}, {"read_range", "read_range: input field range removed", "input range"}}; !slices.Equal(c.breaking, want) {
 		t.Errorf("breaking = %v, want %v", c.breaking, want)
 	}
-	if want := []change{{item: "read_range", text: "read_range (annotations.destructiveHint)"}}; !slices.Equal(c.changed, want) {
+	if want := []change{{item: "read_range", text: "read_range (annotations.destructiveHint, inputSchema.properties)"}}; !slices.Equal(c.changed, want) {
 		t.Errorf("changed = %v, want %v", c.changed, want)
 	}
 }

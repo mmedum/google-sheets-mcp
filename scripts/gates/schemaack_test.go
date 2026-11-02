@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -22,6 +24,19 @@ var (
 	renamed = strings.Replace(plain, `"properties":{"range"`, `"properties":{"cells"`, 1)
 )
 
+// relabeled is plain with the resource template's name changed, and
+// withDraft is plain with a tool added since the release.
+var (
+	relabeled = strings.Replace(plain, `"name":"spreadsheet"`, `"name":"sheet"`, 1)
+	withDraft = strings.Replace(plain, `"tools":[`, `"tools":[{"name":"draft_tool"},`, 1)
+)
+
+// refusalFix is the footer a refusal ends with, after its blank line.
+func refusalFix(err error) string {
+	_, fix, _ := strings.Cut(fmt.Sprint(err), "\n\n")
+	return fix
+}
+
 // renameBreak is the break renamed makes of plain.
 var renameBreak = []change{{"write_values", "write_values: input field range removed", "input range"}}
 
@@ -29,7 +44,6 @@ var renameBreak = []change{{"write_values", "write_values: input field range rem
 // item in a footer, and every break of a release in a BREAKING CHANGE:
 // footer.
 func TestSchemaAckNeedsEveryItemNamed(t *testing.T) {
-	relabeled := strings.Replace(plain, `"name":"spreadsheet"`, `"name":"sheet"`, 1)
 	withoutTemplate := strings.Replace(plain, `{"uriTemplate":"gsheets://{id}","name":"spreadsheet"}`, ``, 1)
 	reworded := strings.Replace(plain, `"version":"v1.0.0",`, `"version":"v1.0.0","instructions":"new",`, 1)
 	const (
@@ -56,6 +70,14 @@ func TestSchemaAckNeedsEveryItemNamed(t *testing.T) {
 		{"a resource template by its URI", relabeled, "Rename it\n\nSCHEMA-CHANGE: gsheets://{id}: renamed", ""},
 		{"a resource template unnamed", relabeled, "Rename it\n\nSCHEMA-CHANGE: write_values: renamed", "no footer names gsheets://{id}"},
 		{"the instructions by their key", reworded, "Reword them\n\nSCHEMA-CHANGE: instructions: reworded", ""},
+		{"the instructions unnamed", reworded, "Reword them", "no footer names instructions"},
+		{"a description word names nothing", flipped, "Mark it\n\nSCHEMA-CHANGE: read_range: write_values is destructive", wantUnnamed},
+		{"a tab after the colon starts the description too", flipped, "Mark it\n\nSCHEMA-CHANGE: read_range:\twrite_values is destructive", wantUnnamed},
+		{"a value with no description names its whole list", flipped, "Mark them\n\nSCHEMA-CHANGE: read_range, write_values", ""},
+		{"a value wrapped at the margin continues it", flipped, "Mark them\n\nSCHEMA-CHANGE: read_range,\nwrite_values: destructiveHint true", ""},
+		{"a Token #value footer is a footer", flipped, "Mark it\n\nSCHEMA-CHANGE: write_values: hints\n\nCloses #12", ""},
+		{"a footer ends the value before it", flipped, "Mark it\n\nSCHEMA-CHANGE: read_range,\nRefs #12, write_values", wantUnnamed},
+		{"three blank lines end one paragraph", flipped, "Mark it\n\nSCHEMA-CHANGE: write_values: hints\n\n\n\nCo-Authored-By: someone <x@example.com>", ""},
 		{"a break named only as a change", renamed, "Rename the field\n\nSCHEMA-CHANGE: write_values: range is cells", wantUnnamedBreak},
 		{"BREAKING CHANGE: acknowledges a break", renamed, "Rename the field\n\nBREAKING CHANGE: write_values: range is cells", ""},
 		{"BREAKING-CHANGE: is its synonym", renamed, "Rename the field\n\nBREAKING-CHANGE: write_values: range is cells", ""},
@@ -77,47 +99,63 @@ func TestSchemaAckNeedsEveryItemNamed(t *testing.T) {
 	}
 }
 
-// The fix a refusal names is the footer that fixes it: BREAKING CHANGE:
-// for an unnamed break, SCHEMA-CHANGE: for the rest, each naming its
-// items, and a message that ends with it passes.
+// A refusal ends with the footer that fixes it, bare so it can be copied:
+// BREAKING CHANGE: for the breaks, SCHEMA-CHANGE: for the rest, an item
+// the first names left out of the second. The footer it prints passes.
 func TestARefusalNamesTheFooterThatFixesIt(t *testing.T) {
-	both := strings.Replace(renamed, `"name":"spreadsheet"`, `"name":"sheet"`, 1)
-	for _, tc := range []struct{ name, built, wantFix string }{
-		{"a change", flipped, "SCHEMA-CHANGE: write_values: what changed"},
-		{"a break", renamed, "BREAKING CHANGE: write_values: what broke"},
-		{"a break and a change", both, "BREAKING CHANGE: write_values: what broke\nSCHEMA-CHANGE: gsheets://{id}: what changed"},
-		{"a break and a change to one tool", strings.Replace(renamed, `"destructiveHint":false`, `"destructiveHint":true`, 1),
-			"BREAKING CHANGE: write_values: what broke"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			c := compareSurfaces(surfaceOf(t, plain), surfaceOf(t, tc.built))
-			err := checkAck(io.Discard, c, []string{"Change it"}, "base")
-			if err == nil {
-				t.Fatal("checkAck passed with no footer")
-			}
-			_, fix, _ := strings.Cut(err.Error(), "\n\n")
-			if fix != tc.wantFix {
-				t.Errorf("the refusal's fix is %q, want %q", fix, tc.wantFix)
-			}
-			if err := checkAck(io.Discard, c, []string{"Change it", "Name it\n\n" + fix}, "base"); err != nil {
-				t.Errorf("checkAck = %v after the fix it named", err)
-			}
-		})
+	built := strings.Replace(relabeled, `"properties":{"range"`, `"properties":{"cells"`, 1)
+	built = strings.Replace(built, `"destructiveHint":false`, `"destructiveHint":true`, 1)
+	c := compareSurfaces(surfaceOf(t, plain), surfaceOf(t, built))
+	fix := refusalFix(checkAck(io.Discard, c, []string{"Change them"}, "base"))
+	if want := "BREAKING CHANGE: write_values: what broke\nSCHEMA-CHANGE: gsheets://{id}: what changed"; fix != want {
+		t.Fatalf("the refusal's fix is %q, want %q", fix, want)
+	}
+	if err := checkAck(io.Discard, c, []string{"Change them", "Acknowledge them\n\n" + fix}, "base"); err != nil {
+		t.Errorf("the printed fix does not pass: %v", err)
 	}
 }
 
-// A name in backticks is taken whole, so a URI with a comma in it can be
-// named; split on its comma, it names nothing.
-func TestAFooterCanNameAURIWithACommaInBackticks(t *testing.T) {
-	const tmpl = "gsheets://{id}{?range,sheet}"
-	was := strings.Replace(plain, `"gsheets://{id}"`, `"`+tmpl+`"`, 1)
-	now := strings.Replace(was, `"name":"spreadsheet"`, `"name":"sheet"`, 1)
-	c := compareSurfaces(surfaceOf(t, was), surfaceOf(t, now))
-	if err := checkAck(io.Discard, c, []string{"Rename\n\nSCHEMA-CHANGE: `" + tmpl + "`: renamed"}, "base"); err != nil {
-		t.Errorf("checkAck = %v, want the backticked URI to name the template", err)
+// A break no footer names is asked for once, as a break: the BREAKING
+// CHANGE: footer that fixes it names it for both checks.
+func TestARefusalAsksForAnUnnamedBreakOnce(t *testing.T) {
+	err := checkAck(io.Discard, compareSurfaces(surfaceOf(t, plain), surfaceOf(t, renamed)), nil, "base")
+	if want := "the tool surface changed since base, and no BREAKING CHANGE: footer names write_values. "; err == nil || !strings.HasPrefix(err.Error(), want) {
+		t.Errorf("checkAck = %v, want it to start %q", err, want)
 	}
-	if err := checkAck(io.Discard, c, []string{"Rename\n\nSCHEMA-CHANGE: " + tmpl + ": renamed"}, "base"); err == nil {
-		t.Error("checkAck passed with the URI split on its comma, which names nothing")
+}
+
+// A name the footer would split, or trim, is printed in backticks, and
+// the footer printed passes: a URI with a comma, and one ending in a full
+// stop, which a bare name would lose. Bare, the URI with a comma names
+// nothing.
+func TestARefusalQuotesANameTheFooterWouldSplit(t *testing.T) {
+	for _, tmpl := range []string{"gsheets://{id}{?range,sheet}", "gsheets://{id}."} {
+		was := strings.Replace(plain, `"gsheets://{id}"`, `"`+tmpl+`"`, 1)
+		c := compareSurfaces(surfaceOf(t, was), surfaceOf(t, strings.Replace(was, `"name":"spreadsheet"`, `"name":"sheet"`, 1)))
+		fix := refusalFix(checkAck(io.Discard, c, nil, "base"))
+		if want := "SCHEMA-CHANGE: `" + tmpl + "`: what changed"; fix != want {
+			t.Errorf("the refusal's fix is %q, want %q", fix, want)
+			continue
+		}
+		if err := checkAck(io.Discard, c, []string{"Rename it\n\n" + fix}, "base"); err != nil {
+			t.Errorf("the printed fix for %s does not pass: %v", tmpl, err)
+		}
+		if bare := strings.ReplaceAll(fix, "`", ""); strings.Contains(tmpl, ",") && checkAck(io.Discard, c, []string{"Rename it\n\n" + bare}, "base") == nil {
+			t.Errorf("%q passed, though split on its comma it names nothing", bare)
+		}
+	}
+}
+
+// A gate that could not run says so and exits 2; a refusal exits 1.
+// Under `go run`, which exits 1 for both, the message tells them apart.
+func TestSchemaAckTellsARefusalFromAFailure(t *testing.T) {
+	refused := checkAck(io.Discard, compareSurfaces(surfaceOf(t, plain), surfaceOf(t, flipped)), nil, "base")
+	if refused == nil || exitCode(refused) != 1 || strings.HasPrefix(refused.Error(), "could not run") {
+		t.Errorf("a refusal (%v) exits %d, want 1", refused, exitCode(refused))
+	}
+	failed := schemaAck(io.Discard, "refs/heads/no-such-branch-for-a-test", "HEAD")
+	if failed == nil || !strings.HasPrefix(failed.Error(), "could not run: ") || exitCode(failed) != 2 {
+		t.Errorf("a gate that could not run (%v) exits %d, want 2 and a message saying so", failed, exitCode(failed))
 	}
 }
 
@@ -126,13 +164,14 @@ func TestAFooterCanNameAURIWithACommaInBackticks(t *testing.T) {
 // the report lists it as one.
 func TestABreakIsABreakOfARelease(t *testing.T) {
 	release := surfaceOf(t, plain)
-	base := surfaceOf(t, strings.Replace(plain, `"tools":[`, `"tools":[{"name":"draft_tool"},`, 1))
+	base := surfaceOf(t, withDraft)
 	head := surfaceOf(t, renamed)
 	c := releaseBreaksOnly(compareSurfaces(base, head), compareSurfaces(release, head).breaking)
 	if !slices.Equal(c.breaking, renameBreak) {
 		t.Errorf("breaking = %v, want %v", c.breaking, renameBreak)
 	}
-	if want := []change{{item: "draft_tool", text: "draft_tool removed"}}; !slices.Equal(c.changed, want) {
+	if want := []change{{item: "write_values", text: "write_values (inputSchema.properties)"},
+		{item: "draft_tool", text: "draft_tool removed", field: "draft_tool"}}; !slices.Equal(c.changed, want) {
 		t.Errorf("changed = %v, want %v", c.changed, want)
 	}
 	var report strings.Builder
@@ -140,7 +179,8 @@ func TestABreakIsABreakOfARelease(t *testing.T) {
 	if err := checkAck(&report, c, []string{footer}, "base"); err != nil {
 		t.Errorf("checkAck = %v, want both acknowledged", err)
 	}
-	want := "against the merge-base base: 0 added, 1 changed, 1 breaking\n" +
+	want := "against the merge-base base: 0 added, 2 changed, 1 breaking\n" +
+		"  ~ write_values (inputSchema.properties)\n" +
 		"  ~ draft_tool removed\n" +
 		"  ! write_values: input field range removed  BREAKING\n" +
 		"the change since base is acknowledged\n"
@@ -163,6 +203,14 @@ func TestABreakOfTheReleaseIsMatchedByItsField(t *testing.T) {
 	if len(c.breaking) != 0 {
 		t.Errorf("breaking = %v, want draft, which no release shipped, as a change", c.breaking)
 	}
+	// Nor does a released tool of the name of a prompt the pull request
+	// removes: they are two items, though a footer names both alike.
+	release = surfaceOf(t, `{"tools":[{"name":"read_range"},{"name":"summarize"}]}`)
+	base = surfaceOf(t, `{"tools":[{"name":"read_range"}],"prompts":[{"name":"summarize"}]}`)
+	head = surfaceOf(t, `{"tools":[{"name":"read_range"}],"prompts":[]}`)
+	if c := releaseBreaksOnly(compareSurfaces(base, head), compareSurfaces(release, head).breaking); len(c.breaking) != 0 {
+		t.Errorf("breaking = %v, want the unreleased prompt's removal as a change", c.breaking)
+	}
 }
 
 // A break of the release is matched by its field, not its text. Here the
@@ -184,10 +232,8 @@ func TestABreakOfTheReleaseIsNotMatchedByItsText(t *testing.T) {
 // The release is the baseline the base branch records. Before the first
 // release there is none, and nothing breaks one.
 func TestReleasedBreaksReadTheBaseBranchBaseline(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	initRepo(t, dir)
-	gitIn(t, dir, "commit", "--quiet", "--allow-empty", "-m", "Start")
+	r := newDumpRepo(t)
+	r.git("commit", "--quiet", "--allow-empty", "-m", "Start")
 	head := surfaceOf(t, renamed)
 
 	breaks, err := releasedBreaks("HEAD", head)
@@ -195,13 +241,139 @@ func TestReleasedBreaksReadTheBaseBranchBaseline(t *testing.T) {
 		t.Fatalf("releasedBreaks with no baseline = %v, %v; want none", breaks, err)
 	}
 
-	put(t, dir, baselineFile, plain)
-	gitIn(t, dir, "add", baselineFile)
-	gitIn(t, dir, "commit", "--quiet", "-m", "Release")
+	put(t, r.root, baselineFile, plain)
+	r.git("add", baselineFile)
+	r.git("commit", "--quiet", "-m", "Release")
 	// The working tree's baseline is a branch's, not the release's.
-	put(t, dir, baselineFile, `{"tools":[]}`)
+	put(t, r.root, baselineFile, `{"tools":[]}`)
 	breaks, err = releasedBreaks("HEAD", head)
 	if err != nil || !slices.Equal(breaks, renameBreak) {
 		t.Errorf("releasedBreaks = %v, %v; want %v", breaks, err, renameBreak)
 	}
+}
+
+// Both sides are built from commits: the merge-base and the head. The
+// checkout is neither, in CI the merge commit and here main with a change
+// nobody committed, so what it would serve is not what is judged.
+func TestSchemaAckBuildsBothSidesFromCommits(t *testing.T) {
+	r := newDumpRepo(t)
+	r.commit(plain, "Base")
+	r.git("switch", "--quiet", "-c", "feature")
+	r.commit(flipped, "Flip write_values")
+	r.git("switch", "--quiet", "main")
+	r.write(renamed)
+
+	var out strings.Builder
+	err := schemaAck(&out, "main", "feature")
+	if err == nil || !strings.HasSuffix(err.Error(), "\n\nSCHEMA-CHANGE: write_values: what changed") {
+		t.Fatalf("schemaAck = %v, want a refusal naming the flip alone", err)
+	}
+	if !strings.Contains(out.String(), "~ write_values (annotations.destructiveHint)\n") || strings.Contains(out.String(), "BREAKING") {
+		t.Errorf("the report is\n%s\nwant the flip and no break", out.String())
+	}
+	r.git("checkout", "--", ".")
+	r.git("switch", "--quiet", "feature")
+	r.git("commit", "--quiet", "--allow-empty", "-m", "Acknowledge it\n\nSCHEMA-CHANGE: write_values: destructive")
+	if err := schemaAck(io.Discard, "main", "HEAD"); err != nil {
+		t.Fatalf("acknowledged: %v", err)
+	}
+	if n := r.worktrees(); n != 1 {
+		t.Errorf("%d worktrees left, want the checkout alone", n)
+	}
+}
+
+// Through the whole gate: a tool no release shipped, removed, is a plain
+// change, and an input the released baseline lists, renamed, is a break.
+func TestSchemaAckAsksForBreakingChangeOnlyForAReleasedBreak(t *testing.T) {
+	r := newDumpRepo(t)
+	r.release(plain, "Release")
+	r.commit(withDraft, "Add draft_tool")
+	r.git("switch", "--quiet", "-c", "feature")
+	r.commit(renamed, "Drop draft_tool and rename range")
+	c, messages, base, err := ackInputs("main", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fix := refusalFix(checkAck(io.Discard, c, messages, base))
+	if want := "BREAKING CHANGE: write_values: what broke\nSCHEMA-CHANGE: draft_tool: what changed"; fix != want {
+		t.Fatalf("the fix is %q, want %q", fix, want)
+	}
+	if err := checkAck(io.Discard, c, append(messages, "Acknowledge them\n\n"+fix), base); err != nil {
+		t.Fatalf("acknowledged: %v", err)
+	}
+}
+
+// The release is the baseline the base branch records, not the head's:
+// a branch cut before the last release, renaming what that release
+// already renamed, breaks no caller of it.
+func TestTheReleaseIsTheBaseBranchsBaseline(t *testing.T) {
+	r := newDumpRepo(t)
+	r.release(plain, "Release 1")
+	r.git("branch", "feature")
+	r.release(renamed, "Release 2")
+	r.git("switch", "--quiet", "feature")
+	r.commit(renamed, "Rename range")
+	if fix, want := refusalFix(schemaAck(io.Discard, "main", "HEAD")), "SCHEMA-CHANGE: write_values: what changed"; fix != want {
+		t.Errorf("the fix is %q, want %q, since release 2 shipped the rename", fix, want)
+	}
+}
+
+// dumpRepo is a git repository, the working directory for the test,
+// whose cmd/google-sheets-mcp prints a fixed dump, so the gate's worktree
+// builds are exercised without building the real server. The gate's own
+// git reads none of the machine's configuration either.
+type dumpRepo struct {
+	t    *testing.T
+	root string
+}
+
+func newDumpRepo(t *testing.T) *dumpRepo {
+	t.Helper()
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	dir := t.TempDir()
+	t.Chdir(dir)
+	initRepo(t, dir)
+	r := &dumpRepo{t: t, root: dir}
+	r.git("checkout", "--quiet", "-b", "main")
+	put(t, dir, "go.mod", "module example.invalid/fake\n\ngo 1.21\n")
+	r.git("add", "go.mod")
+	return r
+}
+
+func (r *dumpRepo) git(args ...string) {
+	r.t.Helper()
+	gitIn(r.t, r.root, args...)
+}
+
+// commit commits a main that prints dump.
+func (r *dumpRepo) commit(dump, message string) {
+	r.t.Helper()
+	r.write(dump)
+	r.git("add", "-A")
+	r.git("commit", "--quiet", "-m", message)
+}
+
+// release commits a main that prints dump with dump as the baseline, as
+// a release commit records it.
+func (r *dumpRepo) release(dump, message string) {
+	r.t.Helper()
+	put(r.t, r.root, baselineFile, dump)
+	r.commit(dump, message)
+}
+
+// write puts a main that prints dump in the working tree, uncommitted.
+func (r *dumpRepo) write(dump string) {
+	r.t.Helper()
+	put(r.t, r.root, "cmd/"+Binary+"/main.go",
+		fmt.Sprintf("package main\n\nimport \"os\"\n\nfunc main() { os.Stdout.WriteString(%q) }\n", dump))
+}
+
+func (r *dumpRepo) worktrees() int {
+	r.t.Helper()
+	out, err := git("worktree", "list", "--porcelain")
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	return strings.Count(out, "worktree ")
 }
