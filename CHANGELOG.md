@@ -7,8 +7,8 @@ and this project follows [semantic versioning](https://semver.org).
 
 ### Changed
 
-- For contributors: CI fails a pull request that changes the tool surface, an annotation or a `_meta` mark included, unless a commit footer names each changed item. A break of something a release shipped needs `BREAKING CHANGE:`.
-- For contributors: the schema diff compares each tool and resource whole, and names the part that changed. Its header counts every break, a removed item included, as breaking.
+- For contributors: CI fails a pull request that changes the tool surface, an annotation or a `_meta` mark included, unless a commit footer names each changed item. A break of something a release shipped needs `BREAKING CHANGE:`. Only the names before the first `: ` in a footer's value count. A footer's value may run on over several lines, and a `Closes #12` footer after it no longer drops it. A refusal prints the footer that fixes it, and a gate that could not run says so.
+- For contributors: the schema diff compares each tool and resource whole, and names the part that changed. Its header counts every break, a removed item included, as breaking, and a tool that breaks also lists every part of it that moved, its schemas included.
 - For contributors: `--dump-schemas` carries the server's instructions, and lists fixed resources and prompts once the server has any.
 
 ## [4.2.0] - 2026-11-01
