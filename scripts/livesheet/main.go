@@ -5,18 +5,15 @@
 //
 // Green gates are not done. Anything touching the write path or an API
 // response shape gets a live run before it counts, and the transcript is
-// read — a sibling project's driver twice reported that all calls
-// behaved as expected while three of its results were wrong, because it
-// checked whether calls succeeded rather than whether they told the
-// truth. Three rules are inherited from that fix rather than
-// rediscovered:
+// read: a driver that checks whether calls succeeded, rather than
+// whether they told the truth, reports every call as expected while its
+// results are wrong. Three rules follow:
 //
 //   - Every step carries an expected outcome and a reason. An expected
 //     refusal proves as much as a success, and a success where a
-//     refusal was expected is a failure. That alone caught two of the
-//     three.
-//   - A step that asserts state reads it back. All three wrong results
-//     were describing the state from before the write.
+//     refusal was expected is a failure.
+//   - A step that asserts state reads it back, since a result can
+//     describe the state from before the write.
 //   - Anything eventually consistent is polled and says which it saw.
 //     Here that is Drive's index, and one read cannot tell indexing lag
 //     from a broken search.
@@ -24,10 +21,9 @@
 // The driver never reads a spreadsheet it did not write: it creates a
 // scratch one, fills it with its own invented data and works inside
 // that, so the values in a transcript are its own. Redaction of ids and
-// links is a second line of defense and lives in the print helper only —
+// links is a second line of defense and lives in the print helper only:
 // scrubbing on the read path means a step parses a placeholder out of
-// one result and feeds it back into the next call, which is a mistake a
-// sibling made on its driver's first run.
+// one result and feeds it back into the next call.
 package main
 
 import (
@@ -132,8 +128,9 @@ func run(ctx context.Context, bin, profile string, keep bool) error {
 		}
 		if err := api.trash(ctx, id); err != nil {
 			// Expected, and said plainly rather than swallowed: this
-			// server asks for drive.readonly on purpose, and a
-			// read-only Drive scope cannot trash a file.
+			// server asks for drive.readonly, and the trash is a
+			// files.update, which no read-only Drive scope may call.
+			// https://developers.google.com/workspace/drive/api/reference/rest/v3/files/update
 			line("could not trash the scratch spreadsheets: %v", err)
 			line("THIS RUN LEFT FILES BEHIND, and it is expected: the server asks for drive.readonly,")
 			line("and trashing needs a write-capable Drive scope.")
@@ -183,7 +180,7 @@ func run(ctx context.Context, bin, profile string, keep bool) error {
 	if d.failed > 0 {
 		return fmt.Errorf("%d step(s) did not behave as expected", d.failed)
 	}
-	line("Read the transcript above before calling this phase done. A driver that")
+	line("Read the transcript above before calling the change done. A driver that")
 	line("only reports success can be wrong about every result it printed.")
 	return nil
 }
@@ -231,7 +228,7 @@ func startServer(ctx context.Context, bin, profile string, settings ...string) (
 	cmd.Env = append(cmd.Env, settings...)
 	cmd.Stderr = os.Stderr
 	// The driver declares form elicitation, as a client with a person at
-	// it would, and the server asks nobody (§9a): any question it puts
+	// it would, and the server asks nobody: any question it puts
 	// fails the step that made the call.
 	client := mcp.NewClient(&mcp.Implementation{Name: "livesheet", Version: "0"},
 		&mcp.ClientOptions{ElicitationHandler: person.handle})
@@ -265,8 +262,7 @@ type step struct {
 	args map[string]any
 	// expectError is the class the call must refuse with, or "" for a
 	// call that must succeed. A success where a refusal was expected is
-	// a failure, which is how two of three wrong results were caught in
-	// the project this rule comes from.
+	// a failure.
 	expectError string
 	// check reads the result and says what is wrong with it, if
 	// anything. This is the half that catches a call which succeeded and
@@ -276,11 +272,11 @@ type step struct {
 
 // fromDryRun stands for expect_checkpoint in a step's arguments. run
 // replaces it with the checkpoint a dry run of the same call gives, which
-// is what a caller passing overwrite carries (§4.7). The option is still
+// is what a caller passing overwrite carries. The option is still
 // written in the step, where the coverage gate reads it.
 const fromDryRun = "ck_from_a_dry_run"
 
-// asker is the run's client-side person. The server asks nobody (§9a),
+// asker is the run's client-side person. The server asks nobody,
 // so it prints any question into the transcript and declines it, and the
 // step that made the call fails.
 type asker struct{ asked int }
@@ -322,7 +318,7 @@ type driver struct {
 	// steps make.
 	commaLocale string
 	typedTables string
-	// The phase 4 objects, each learned from the reply that made it. A
+	// The chart steps' objects, each learned from the reply that made it. A
 	// chart and a slicer are addressed by id and a pivot table by its
 	// anchor cell, so only the first two need carrying.
 	chartID       int
@@ -511,9 +507,8 @@ func (d *driver) fail(s step, format string, args ...any) {
 }
 
 // call runs one tool and returns the text half and the structured half.
-// Both, because the whole point of §4.9 is that a client may show either
-// one, and a driver that read only one of them would not notice the
-// other going empty.
+// Both, because a client may show either one, and a driver that read
+// only one of them would not notice the other going empty.
 func (d *driver) call(tool string, args map[string]any) (string, map[string]any, error) {
 	// Recorded here rather than read out of the source, because a step
 	// can exist and never run — sitting in a slice nobody passes to run,

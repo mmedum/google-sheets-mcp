@@ -10,28 +10,20 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
 )
 
-// spikeQ answers §15.Q: what a merge and a clear do to a pivot table.
+// askPivotMergeClear asks what a merge and a clear do to a pivot table.
 //
-// §17a.27 gave the values write a refusal that names the pivot it is
-// protecting. Two other tools reach the same cells and still say
-// nothing about them. `format_cells merge` refuses with "merging would
-// keep the top-left value and discard C20, which is not empty", and
-// `clear_values` counts those cells into "removes 4 non-empty cell(s)"
-// before its confirm gate.
-//
-// Neither refusal can be improved until this runs. The wording §17a.27
-// uses — the whole pivot stops drawing, collapses to #REF! at the
-// anchor, and clearing the cell brings all of it back — is spike M's
-// finding about `values.update`, and nothing says a merge or a clear
-// behaves the same way. A guard that assumed it would be this project
-// putting an unverified claim in front of a caller, which is what rule
-// 12 exists to stop.
+// A values write over a pivot is refused, and the refusal says what the
+// write would do: the whole pivot stops drawing, collapses to #REF! at
+// the anchor, and clearing the cell brings all of it back. That is what
+// Google does with `values.update`, and nothing says a merge or a clear
+// behaves the same way. `format_cells merge` and `clear_values` reach
+// the same cells, and a guard on either that assumed it would put an
+// unverified claim in front of a caller.
 //
 // So: what does each do, is the damage reversible, and does the anchor
 // differ from the output — the split that made the values write two
 // different refusals rather than one.
-func spikeQ(ctx context.Context) {
-	sec("Spike Q: what a merge and a clear do to a pivot table")
+func askPivotMergeClear(ctx context.Context) {
 	const sheet = "SpikePivotGuards"
 	sheetID, err := addSheet(ctx, sheet)
 	if err != nil {
@@ -115,10 +107,9 @@ func spikeQ(ctx context.Context) {
 	//
 	// A second pivot, well clear of the first, and grouped across as
 	// well as down so the blanks exist at all. The candidates below are
-	// tried on their own rectangles: a merge leaves a merge behind, and
-	// the first version of this probe overlapped its own first answer
-	// and got "You must select all cells in a merged range" for its
-	// second, which answers a question nobody asked.
+	// tried on their own rectangles: a merge leaves a merge behind, and a
+	// candidate overlapping it gets "You must select all cells in a
+	// merged range", which answers a question nobody asked.
 	wide := map[string]any{
 		"source": source,
 		"rows": []any{map[string]any{

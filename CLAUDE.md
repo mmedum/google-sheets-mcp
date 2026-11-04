@@ -1,138 +1,123 @@
-# CLAUDE.md — google-sheets-mcp project instructions
+# CLAUDE.md — google-sheets-mcp
 
-Project-specific rules for Claude Code in this repository. The user's
-global instructions still apply; this file adds to them.
+A Go MCP server for Google Sheets over stdio: one binary per person,
+their own OAuth client, nothing hosted (D-01). It works inside one
+spreadsheet, and files, sharing and revisions belong to a Drive server
+(D-02). Why the code is the way it is lives in `docs/architecture.md`,
+one decision per `D-NN`; read it before changing the tool surface, the
+addressing, the write guards or the sign-in.
 
-## Mission
+## Commands
 
-A production-grade Go MCP server for Google Sheets, distributed to other
-people. One binary, stdio, per-user OAuth, no hosted deployment. The
-design, its evidence log, the decided constraints and the phase plan live
-in `docs/architecture.md`. Read it before changing the tool surface, the
-addressing model or the write path. The server works inside a
-spreadsheet: files, folders, sharing and revisions belong to a server
-built on the Drive API. Cell comments are here.
+- `make check` runs every gate CI runs; its `check` target is the list.
+  `make hooks`, once per clone, adds the pre-commit scan.
+- `make live` drives the built binary in scratch spreadsheets on your
+  account; read the transcript. `CONTRIBUTING.md` covers it, the spikes
+  (`-list` prints their names, `-only` takes them) and `make evals`.
+- `make api-diff`, `make schema-refetch`, `make leaks-history` and
+  `make schema-baseline` are release-day steps in `docs/release.md`.
+- `go run ./scripts/gates` lists the gates; add a name to run one.
 
 ## Hard rules
 
-1. **Nothing internal, ever.** No organization names, spreadsheet ids or
-   URLs, account emails, Cloud project ids, OAuth client ids or secrets;
-   no cell values, formulas, notes, sheet or spreadsheet titles, named
-   ranges or metadata from a real spreadsheet; and no reference to any
-   other project, repository, account or machine the maintainers use.
-   This holds for code, docs, fixtures, goldens, transcripts, commit and
-   tag messages, pull requests and logs. A formula is the worst of them:
-   `IMPORTRANGE` carries another spreadsheet's id inside a string.
-
-   Two of these are structural rather than a matter of care, and must
-   stay that way: **fixtures are generated, never recorded**, and the
-   **live driver reads only a spreadsheet it created and filled itself**.
-   `docs/architecture.md` §9.1 is the full specification, including why
-   every rule in the leak gate is an allow-list.
-2. **Stdout carries only MCP JSON-RPC frames.** This is the protocol, not
-   a house preference. MCP's stdio transport says the server "MUST NOT
-   write anything to its `stdout` that is not a valid MCP message", and
-   "MAY write UTF-8 strings to its standard error (`stderr`) for logging
-   purposes" —
-   <https://modelcontextprotocol.io/specification/2025-06-18/basic/transports>.
-   Logs use `slog` to stderr. A stray print corrupts the JSON-RPC stream
-   and the client silently stops working, which is why this is a hard
-   rule rather than a style note.
-
-   `forbidigo` enforces it: `fmt.Print*` and `os.Stdout` are forbidden
-   outside `main`, which names the process's streams once and passes them
-   down as `io.Writer`. `scripts/` is excluded, being maintainer tooling
-   rather than the server. Check the message text when verifying it — a
-   settings block that fails to load leaves forbidigo on its defaults,
-   firing, looking like it works.
-3. **Logs never carry the payload.** Method, tool, outcome, duration and
-   a truncated spreadsheet id are fine. Cell values, formulas, sheet or
-   spreadsheet titles, ranges and search terms are not — a search term
-   reaches a log through a request URL, so transport errors are stripped
-   of it.
-4. **A1 is the contract.** The model never sees a `GridRange` and never
-   does index arithmetic. Zero-based half-open conversion lives in
-   `internal/a1` and nowhere else.
-5. **Sheet names are read, never assumed.** `Sheet1` does not exist on a
-   non-English account. No tool defaults a sheet, and no description uses
-   `Sheet1` as an example.
-6. **A write never destroys what it cannot see.** Non-empty cells need
-   `overwrite`, with `expect_checkpoint` as its witness; formulas need
-   `overwrite_formulas` as well; protected
-   ranges and partial merges are refused before the request is built.
-   Sheets has no undo, so a gate here is the only one there is.
-7. **Coercion is reported, never hidden.** The caller chooses `typed` or
-   `literal` and the server never substitutes; every write reads back
-   what Google stored and names each value it changed.
-8. **Repeatability comes from the HTTP method.** GET and PUT may be
-   retried; a POST only where the call site says why. `values.append` and
-   `batchUpdate` duplicate data when repeated and are never retried on an
-   ambiguous failure.
-9. **Own wire types, raw REST.** Do not import `google.golang.org/api`;
-   extend `internal/gsheets`. No code is imported from any other project.
-10. **Destructive tools are unregistered** unless
-    `GSHEETS_ENABLE_DESTRUCTIVE=true`, and each still needs
-    `confirm: true` on the call. The server asks the person nothing:
-    the client approves each call, by annotations that are exact, and a
-    risky variant is its own tool, never an argument
-    (`docs/architecture.md` §9a).
-11. **Branches and commits.** `main` is released code and is never pushed
-    to directly, release commits included. Work on a short topic branch.
-    Commit at the end of every phase with a message that says what and
-    why. Pushing, opening the pull request and merging are the
-    maintainer's.
-12. **Verify against the discovery document or a live probe** before
-    adopting a convention, and record the verdict in the evidence log in
-    `docs/architecture.md` §18. A reference page's prose is not evidence.
-
-## Where things go
-
-- `cmd/google-sheets-mcp/` — subcommands and server wiring.
-- `internal/config/` env plus bound flags; `internal/credentials/`
-  keyring → file → env; `internal/userconfig/` non-secret profile state;
-  `internal/auth/` loopback OAuth and the token source.
-- `internal/gsheets/` wire types; `internal/gapi/` the raw REST client,
-  with `sheetstest/` the in-memory Sheets used by tests.
-- `internal/a1/` A1 notation and range conversion, no network;
-  `internal/grid/` the server's view of a rectangle and its checkpoints;
-  `internal/render/` text output; `internal/plan/` typed ops into the
-  `batchUpdate` union, and the write guards; `internal/service/`
-  orchestration and policy; `internal/tools/` the MCP tools;
-  `internal/server/` SDK wiring and the schema dump.
-- `scripts/gates/` the repository's own checks, as Go; `scripts/livesheet/`
-  the live driver.
-- `testdata/` synthetic fixtures and renderer goldens.
+1. **Never commit anything internal**: spreadsheet ids or URLs, anything
+   from a real spreadsheet, account addresses, Cloud project ids, OAuth
+   client ids, secrets, or a reference to another project, account or
+   machine the maintainers use. Not in code, docs, fixtures,
+   transcripts, commit messages, pull requests or logs. `make leaks` and
+   gitleaks fail on the shapes they see (D-09).
+2. **Never record a fixture, and never let the live driver or the evals
+   read what they did not write.** Fixtures are generated (D-10). Both
+   work in spreadsheets they made and print only through the redacting
+   helper `make transcript` holds (D-11).
+3. **Never write to stdout outside `main`.** Stdout carries only MCP
+   JSON-RPC frames; logs go to stderr through `slog` (D-06). forbidigo
+   and `make smoke` hold it, with `scripts/` excluded.
+4. **Never log the payload**: cell values, formulas, titles, ranges or
+   search terms; a transport error loses its URL (D-07).
+   `TestLogsCarryNothingFromTheSpreadsheet` holds it.
+5. **Never show the model a `GridRange` or make it count.** A1 is the
+   contract and the conversion lives in `internal/a1` alone (D-12). A
+   range is built from a parsed title, quoted on the wire (D-14). No
+   tool defaults a sheet and no description offers `Sheet1` (D-15);
+   `make staleness` refuses the second.
+6. **Never write over what the caller did not see.** Non-empty cells
+   need `overwrite` with `expect_checkpoint`, formulas
+   `overwrite_formulas` too, and protected ranges and partial merges are
+   refused (D-24, D-25). Formatting and transforms guard what they take
+   (D-33).
+7. **Never hide what Google changed.** The caller picks `typed` or
+   `literal` and the server never substitutes; every write reports what
+   Google stored, read back (D-27, D-31).
+8. **Never write a formula that reaches outside the spreadsheet** unless
+   `GSHEETS_ALLOW_EXTERNAL_FORMULAS` is set; no argument lifts it
+   (D-28).
+9. **Never repeat a write its HTTP method does not make safe.** An
+   append or a `batchUpdate` that may have landed is `[ambiguous_outcome]`
+   (D-45). `TestUnrepeatableWritesAreNotRepeated` holds it.
+10. **Never register a tool outside `add`**, whose `Kind` decides
+    annotations, registration and rendering (D-34). A delete is
+    unregistered without `GSHEETS_ENABLE_DESTRUCTIVE` and needs
+    `confirm: true` (D-35). A risky variant is its own tool, never an
+    argument (D-36). The server asks the person nothing (D-37), and
+    `requiresUserInteraction` stays on `delete_data_source` alone (D-39).
+11. **Never let a tool widen the server's reach**: its settings, the
+    credentials, the profile, a file or the environment (D-40).
+    `TestNoToolCanWriteTheServersSettings` holds it.
+12. **Never ask for another scope**, not even so the live driver can
+    clean up. `spreadsheets` and `drive.readonly`, or their read-only
+    pair, and `bigquery.readonly` only with `GSHEETS_ENABLE_DATA_SOURCES`
+    (D-49, D-43). `TestScopes` holds it.
+13. **Never import `google.golang.org/api`** or another project's code;
+    extend `internal/gsheets` (D-75). depguard refuses it. Never call a
+    method or model a field without a verdict in
+    `testdata/api-coverage.tsv` or `testdata/api-fields.tsv` (D-76).
+14. **Never rename or drop a released tool, argument or output field.**
+    `make schema-diff` fails on a break unless go.mod's major version is
+    above the release's (D-57).
+15. **Never emit an error outside `[class] message`.** `make classes`
+    holds the vocabulary closed (D-44).
+16. **Never add a rule that cannot fail**: a test, a list derived from
+    the code, and a floor on what the check read (D-65).
+17. **Never commit to `main` or push**; the owner pushes, tags and
+    merges (D-73).
+18. **Never adopt a belief about Google from a reference page's prose.**
+    Check the discovery document or a live probe (D-60). Record a
+    verified Google behavior in the comment at the line that depends on
+    it, with the source link and the live step that checks it.
 
 ## Definition of done
 
-`make check`, which is what CI runs: gofmt, `go vet` including the tagged
-tests, golangci-lint, race tests with an 80% floor per package,
-govulncheck, the license allow-list, the leak scan, the workflow pin
-check, a stdio smoke test, the schema diff, and the staleness gate over
-README, `docs/` and CHANGELOG. On a pull request, CI also runs
-`schema-ack`: a change to the tool surface needs a `SCHEMA-CHANGE:`
-footer, and a break `BREAKING CHANGE:`. Plus tests for new behavior, `/simplify`
-and `/code-review high` with findings resolved or written down, and a
-look at the schema diff for anything breaking. The diff passes a break
-only when go.mod's major version (`/vN`) is above the last tag's.
-The release workflow refuses a tag whose major is not go.mod's.
+- `make check` passes. On a pull request CI also runs `schema-ack`,
+  which needs a commit footer naming each changed item of the tool
+  surface (`CONTRIBUTING.md`).
+- New behavior has tests, and the schema diff has been read.
+- `/simplify` and `/code-review medium` have run. A fixed finding is one
+  line in the commit body. A declined one goes in the PR body, or
+  becomes a present-tense constraint comment at the line it protects.
+  Never write findings into `docs/`.
+- Anything touching the write path or an API response shape has had a
+  `make live` run whose transcript was read (D-61).
 
-Green gates are not done. Anything touching the write path or an API
-response shape gets a live run before it counts, and **the transcript is
-read** — a sibling's driver twice reported success while its results were
-wrong.
+## Traps
 
-## Working across sessions
-
-Each phase is one session, and the session is cleared between phases. On
-a fresh session: read this file, the status line and §16, §17 and §17a of
-`docs/architecture.md`, `CHANGELOG.md` under `[Unreleased]`,
-`git log --oneline -20` and `git status`; run `make check`; then continue
-the phase §16 names, on a topic branch. Commit at the end of the phase,
-say which version was tagged, and stop.
+- **Green gates are not done.** The fakes in `internal/gapi/sheetstest`
+  are written from belief about Google; only `make live` tests it.
+- **A dry run is each write's own early return.** Nothing in the API
+  client refuses a write under `dry_run`, so a new write needs its own
+  "sends nothing" test (D-30).
+- **The card is cached for `service.CacheWindow`, and only structural
+  writes drop it.** The format, transform and table-header guards read
+  it through the cache, and so does a read after `append_rows` (D-48).
+- **A test can redirect the config directory but not the OS keyring.**
+  `isolate` in `cmd/google-sheets-mcp` gives each test its own profile;
+  a test that skips it can delete your refresh token.
+- **Never delete a decision or reuse an ID.** Supersede or deprecate it,
+  and take the next ID from the file's `Next ID:` line.
 
 ## Writing
 
-Plain and short, everywhere it lands — code comments, commit messages,
-CHANGELOG, docs, tool descriptions. Lead with the outcome. One idea per
-sentence. No narration of the investigation.
+Plain and short: lead with the outcome, one idea per sentence, no
+narration, no count a gate does not check. History goes in commit
+messages. `release.yml` lifts the CHANGELOG section verbatim into the
+release notes, so its rules in `CONTRIBUTING.md` are not optional.

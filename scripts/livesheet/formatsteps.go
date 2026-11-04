@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Phase 2's steps: formatting, the objects attached to a range, and the
+// The steps for formatting, the objects attached to a range, and the
 // transforms.
 //
 // They work in a band of the scratch sheet the earlier steps do not
@@ -85,11 +85,9 @@ func (d *driver) formatSteps() []step {
 			},
 		},
 		{
-			// Its own values rather than another step's. The first
-			// version of these steps merged a band the write steps
-			// happened to fill, and when it turned out to be empty the
-			// merge simply succeeded — a step that asserts about values
-			// has to put them there.
+			// Its own values rather than another step's: a merge over a
+			// band that happens to be empty simply succeeds, so a step
+			// that asserts about values has to put them there.
 			name: "seed the band the merge steps work in",
 			why:  "a merge discards values, so there have to be values to discard",
 			tool: "write_values",
@@ -169,7 +167,7 @@ func (d *driver) formatSteps() []step {
 		},
 		{
 			name:        "removing a note is guarded too",
-			why:         "removing takes the same unseen thing that replacing does, which a review pass settled",
+			why:         "removing takes the same unseen thing that replacing does",
 			tool:        "format_cells",
 			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1", "clear_note": true},
 			expectError: "blocked",
@@ -439,7 +437,7 @@ func (d *driver) rangeSteps() []step {
 
 // colorScaleSteps write a color scale with each of the midpoint types
 // the Sheets interface offers, number, percent and percentile, and read
-// it back. Spike S found Google takes min and max there too (§18).
+// it back. Google takes min and max there too.
 func (d *driver) colorScaleSteps() []step {
 	const percentile = "color scale: min #ffffff -> percentile 50 #ffd666 -> max #57bb8a"
 	const percent = "color scale: number 0 #ffffff -> percent 50 #ffd666 -> max #57bb8a"
@@ -540,9 +538,8 @@ func (d *driver) tableSteps() []step {
 			},
 		},
 		{
-			// The step that found this: a rule over the table's range
-			// vanished across a delete, and spike J narrowed it to the
-			// delete rather than the add.
+			// Google takes the conditional rules over a table's range
+			// when the table is deleted, not when it is added.
 			name: "a rule over the table's range, to be taken by the delete",
 			why:  "deleting a table removes every conditional rule over its range, and the reply says nothing",
 			tool: "manage_range",
@@ -597,13 +594,13 @@ const (
 )
 
 // typedTablesAll makes a spreadsheet of its own for the typed-column
-// steps. Spike T Q12 saw Google answer every table add with column types
-// HTTP 500 after about four in one spreadsheet (§18), so table steps
-// before these could fail them.
+// steps. Google answers every table add with column types with HTTP 500
+// after about four in one spreadsheet, so table steps before these could
+// fail them.
 func (d *driver) typedTablesAll() {
 	d.run(step{
 		name: "a spreadsheet of its own for the typed table",
-		why:  "Google refuses table adds with column types after about four in one spreadsheet, with a 500 (§18)",
+		why:  "Google refuses table adds with column types after about four in one spreadsheet, with a 500",
 		tool: "create_spreadsheet",
 		args: map[string]any{"title": scratchTitle + " typed tables", "sheets": []any{typedSheet}},
 		check: func(_ string, s map[string]any) error {
@@ -625,18 +622,18 @@ func (d *driver) typedTablesAll() {
 // typedColumnSteps type a table's columns on add, retype one on update,
 // and check that the rest, a dropdown's list included, survive the
 // round trip, the header cells with them. Google replaces the whole list
-// on update (spike T Q3b), so the update sends every column. A formula
+// on update, so the update sends every column. A formula
 // into the header is refused, since Google would replace it, and so is a
 // dropdown over cells with a list of their own, which Google would drop,
-// and a list on a dropdown column's cells, which Google refuses (spike T).
-// What a type does to the cells is partly unverified (§18), and the
-// steps print it.
+// and a list on a dropdown column's cells, which Google refuses.
+// What a type does to the cells is partly unverified, and the steps
+// print it.
 func (d *driver) typedColumnSteps() []step {
 	headers := func(when string) step {
 		return step{
 			name: "the header cells read as written, " + when,
 			why: "Google writes a name sent into its header cell, and \"Column 1\" into a typed column's sent " +
-				"with none (§18); an add sends each typed column's header text and an update every column's",
+				"with none; an add sends each typed column's header text and an update every column's",
 			tool: "read_range",
 			args: map[string]any{"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "A1:D1", "show": "values"},
 			check: func(text string, _ map[string]any) error {
@@ -690,7 +687,7 @@ func (d *driver) typedColumnSteps() []step {
 		{
 			name: "a table typing three of its four columns, by heading and by letter",
 			why: "column_types sends only the columns named, each with its header's text as its name, which " +
-				"keeps Google from writing \"Column 1\" over the header (§18)",
+				"keeps Google from writing \"Column 1\" over the header",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": typedBand,
@@ -708,7 +705,7 @@ func (d *driver) typedColumnSteps() []step {
 		headers("after the add"),
 		{
 			name: "what a number type did to the cells under it",
-			why: "whether a type change rewrites a column's number format is unverified (§18); the " +
+			why: "whether a type change rewrites a column's number format is unverified; the " +
 				"transcript shows what the cells carry now",
 			tool: "read_formatting",
 			args: map[string]any{"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "B2:D4"},
@@ -719,8 +716,8 @@ func (d *driver) typedColumnSteps() []step {
 		},
 		{
 			name: "one column retyped, and the others sent back as they were",
-			why: "Google replaces the whole list, and one column sent alone takes every other column's type " +
-				"(§18), so the update reads the list and sends every column back, each with its name, since " +
+			why: "Google replaces the whole list, and one column sent alone takes every other column's type, " +
+				"so the update reads the list and sends every column back, each with its name, since " +
 				"Google refuses an entry with none; the dropdown goes in the card's own spelling, and the card " +
 				"after it must show the change and the dropdown's list both",
 			tool: "manage_range",
@@ -734,7 +731,7 @@ func (d *driver) typedColumnSteps() []step {
 		headers("after the update"),
 		{
 			name: "a formula into a table's header cell is refused",
-			why: "spike T: Google replaces a formula written there with a column name of its own and answers " +
+			why: "Google replaces a formula written there with a column name of its own and answers " +
 				"200, so the formula is lost with nothing said",
 			tool: "write_values",
 			args: map[string]any{
@@ -751,8 +748,8 @@ func (d *driver) typedColumnSteps() []step {
 		},
 		{
 			name: "a boolean type over text is refused",
-			why: "a boolean column shows checkboxes, and Google turns a word already in one into FALSE " +
-				"(§18), so the update stops and names the cells",
+			why: "a boolean column shows checkboxes, and Google turns a word already in one into FALSE, " +
+				"so the update stops and names the cells",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": typedBand,
@@ -777,7 +774,7 @@ func (d *driver) typedColumnSteps() []step {
 		},
 		{
 			name: "a table over a formula heading is refused, though the column is not typed",
-			why: "spike T: Google takes no table over a formula in its header row, typed or not, so the add is " +
+			why: "Google takes no table over a formula in its header row, typed or not, so the add is " +
 				"refused before it is sent, naming the cell",
 			tool: "manage_range",
 			args: map[string]any{
@@ -812,8 +809,8 @@ func (d *driver) typedColumnSteps() []step {
 		},
 		{
 			name: "a dropdown typed over cells with a list of their own is refused",
-			why: "spike T: Google dropped a cell's own list when its column was typed dropdown, and said " +
-				"nothing (§18), so the add stops and names the cells",
+			why: "Google drops a cell's own list when its column is typed dropdown, and says nothing, so " +
+				"the add stops and names the cells",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.typedTables, "sheet": typedSheet, "range": "I1:J3",
@@ -829,7 +826,7 @@ func (d *driver) typedColumnSteps() []step {
 		},
 		{
 			name: "a list on the dropdown column's cells is refused",
-			why: "spike T Q13: Google refuses a data validation rule on a cell in a typed column (§18), so the " +
+			why: "Google refuses a data validation rule on a cell in a typed column, so the " +
 				"call stops before it is sent, naming the cells; the card's column types are what it reads",
 			tool: "manage_range",
 			args: map[string]any{
@@ -857,8 +854,8 @@ func (d *driver) typedColumnSteps() []step {
 }
 
 // commaLocaleAll writes a number point under a locale that writes a
-// decimal with a comma. Spike S found Google refuses 1.5 there and takes
-// 1,5 (§18); which value 1,5 colors from, only a person looking can say.
+// decimal with a comma. Google refuses 1.5 there and takes 1,5; which
+// value 1,5 colors from, only a person looking can say.
 // It needs a spreadsheet in that locale, so it makes one.
 func (d *driver) commaLocaleAll() {
 	d.run(step{
@@ -887,14 +884,14 @@ func (d *driver) commaLocaleAll() {
 	d.run(d.commaLocaleSteps()...)
 	line("     LOOK: no reply says what de_DE read 1,5 as. In the comma-locale spreadsheet, column B scales")
 	line("     from 1,5 over 1 to 5. If its color first changes between 1 and 2, de_DE read it as one and")
-	line("     a half; record it in §18.")
+	line("     a half; record it in ParseGradient's comment, in internal/plan.")
 }
 
 func (d *driver) commaLocaleSteps() []step {
 	return []step{
 		{
 			name: "a number point written with a decimal point, under de_DE, is refused",
-			why: "manage_range sends the value as written, and spike S found Google refuses 1.5 where the " +
+			why: "manage_range sends the value as written, and Google refuses 1.5 where the " +
 				"locale writes one and a half as 1,5",
 			tool: "manage_range",
 			args: map[string]any{
@@ -912,7 +909,7 @@ func (d *driver) commaLocaleSteps() []step {
 		},
 		{
 			name: "the same point written with a decimal comma",
-			why:  "the spelling a person in that locale types, which spike S found Google takes",
+			why:  "the spelling a person in that locale types, which Google takes",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.commaLocale, "sheet": "Grivet", "range": "B1:B5",

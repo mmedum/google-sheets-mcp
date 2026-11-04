@@ -49,13 +49,10 @@ var ErrNotFound = errors.New("credentials: no refresh token found; run `google-s
 // fixed by logging in. A keyring that has the token and will not hand it
 // over — locked, or a session bus that cannot reach the daemon — is
 // fixed by unlocking it, and logging in again writes a second token
-// beside the first without addressing the cause.
-//
-// Written after chasing this on 2026-09-06: a token vanished five times
-// in a session, `login` appeared to fix it each time, and the secret was
-// in the keyring throughout — created once, never modified, readable
-// again later without anybody logging in. The message had said "run
-// login" and the maintainer had, five times.
+// beside the first without addressing the cause. go-keyring reads a
+// locked collection as an absence, so "run login" is the wrong advice
+// for it.
+// https://github.com/zalando/go-keyring
 var ErrKeyringSilent = errors.New("credentials: the profile records a refresh token in the OS keyring and the " +
 	"keyring returned nothing. It is more likely locked or unreachable than empty: unlock it and try again. " +
 	"`google-sheets-mcp login` writes a fresh token, which works around this rather than fixing it")

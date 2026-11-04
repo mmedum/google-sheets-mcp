@@ -46,7 +46,7 @@ type DeleteSourceRequest struct {
 	// DATA_SOURCE sheet Google made for it and everything on it —
 	// strictly more than delete_sheet does, and what it removes cannot be
 	// got back without re-running a billed query. Registration gates the
-	// tool and the service gates the act (§8), so the confirm lives here,
+	// tool and the service gates the act, so the confirm lives here,
 	// where the caller can be told what they are agreeing to.
 	Confirm bool
 	DryRun  bool
@@ -57,7 +57,7 @@ type DeleteSourceRequest struct {
 // Its own request, as it is its own tool: connecting starts a BigQuery
 // query billed to a Cloud project, now and on every refresh, and a
 // client that remembers its approval of manage_data_source for a refresh
-// would otherwise carry that approval to a new query unseen (§9a).
+// would otherwise carry that approval to a new query unseen.
 type ConnectRequest struct {
 	Spreadsheet string
 	// Project is the Cloud project the queries are charged to.
@@ -98,7 +98,7 @@ func (r SourceResult) Render() string { return r.Summary }
 //
 // refresh and cancel_refresh need the bigquery.readonly scope, and the
 // tool is registered only with GSHEETS_ENABLE_DATA_SOURCES so that scope
-// is asked for at login (§17.6a). list is the exception on purpose: the
+// is asked for at login. list is the exception on purpose: the
 // card's mask carries dataSources under the ordinary scopes, so
 // get_spreadsheet reports a connected source for every user.
 //
@@ -142,7 +142,7 @@ func (s *Service) listSources(ctx context.Context, ref Reference, res *SourceRes
 // ConnectDataSource answers connect_data_source: it connects a BigQuery
 // query or table, which runs the query, billed to the project named.
 // Like refresh it needs the bigquery.readonly scope, and its tool is
-// registered only with GSHEETS_ENABLE_DATA_SOURCES (§17.6a).
+// registered only with GSHEETS_ENABLE_DATA_SOURCES.
 func (s *Service) ConnectDataSource(ctx context.Context, req ConnectRequest) (*SourceResult, error) {
 	ref, err := s.Resolve(ctx, req.Spreadsheet)
 	if err != nil {
@@ -206,7 +206,7 @@ func (s *Service) ConnectDataSource(ctx context.Context, req ConnectRequest) (*S
 //
 // A refresh names its source. Refreshing every source runs every query
 // again, each billed, and reaching that by leaving id out would put it
-// inside the approval a client remembers for a refresh of one (§9a).
+// inside the approval a client remembers for a refresh of one.
 // Canceling every refresh stops billing rather than starting it, so
 // cancel_refresh still takes every source when id is left out.
 func (s *Service) refreshSource(ctx context.Context, ref Reference, req SourceRequest, res *SourceResult) (*SourceResult, error) {
@@ -251,7 +251,7 @@ func (s *Service) refreshSource(ctx context.Context, ref Reference, req SourceRe
 }
 
 // DeleteDataSource answers delete_data_source: it removes a source, its
-// sheet and the links to it. It needs no BigQuery scope (§7.6).
+// sheet and the links to it. It needs no BigQuery scope.
 func (s *Service) DeleteDataSource(ctx context.Context, req DeleteSourceRequest) (*SourceResult, error) {
 	ref, err := s.Resolve(ctx, req.Spreadsheet)
 	if err != nil {
@@ -285,7 +285,7 @@ func (s *Service) DeleteDataSource(ctx context.Context, req DeleteSourceRequest)
 	}
 	// The witness is the title of the sheet that goes with the source,
 	// which a person recognizes in a client's prompt where an id is not
-	// (§9a.7). A dry run without it names the sheet.
+	// (D-41). A dry run without it names the sheet.
 	if req.Sheet != "" && req.Sheet != sheet {
 		return nil, Errorf("conflict", "the data source %s %s, not %q; read it again before deleting it",
 			id, sourceSheetNow(sheet), req.Sheet)

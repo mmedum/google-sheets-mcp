@@ -70,10 +70,12 @@ func (e *APIError) Error() string {
 // rather than a permission. The value says whether backing off can help.
 //
 // Sheets' own troubleshooting page documents 400, 429, 500 and 503 and
-// no 403 reasons at all, so this table is the Drive API's vocabulary and
-// is unverified for Sheets. Spike E (§15) observes the real shapes.
-// Until then nothing is invented: an unlisted 403 stays a permission
-// refusal.
+// no 403 reasons at all, so this table is the Drive API's vocabulary.
+// Sheets answers a spent read quota with 429 RESOURCE_EXHAUSTED, and no
+// 403 quota reason from Sheets has been seen, so nothing is invented: an
+// unlisted 403 stays a permission refusal. Checked by the live step "the
+// shape of a Sheets error".
+// https://developers.google.com/workspace/sheets/api/troubleshoot-api-errors
 var rateLimit403 = map[string]bool{
 	reasonKey("rateLimitExceeded"):     true,
 	reasonKey("userRateLimitExceeded"): true,
@@ -107,8 +109,17 @@ func (e *APIError) Unwrap() error {
 		return ErrRateLimited
 	case e.Status == 403:
 		return ErrForbidden
+	// A missing spreadsheet is 404 NOT_FOUND, "Requested entity was not
+	// found."; the identical request has also come back 503, which the
+	// retry turns into the 404. Checked by the live steps "the shape of a
+	// Sheets error" and "a spreadsheet that does not exist".
+	// https://developers.google.com/workspace/sheets/api/troubleshoot-api-errors
 	case e.Status == 404:
 		return ErrNotFound
+	// A spent quota is 429 RESOURCE_EXHAUSTED (RATE_LIMIT_EXCEEDED),
+	// "Quota exceeded for quota metric 'Read requests' and limit 'Read
+	// requests per minute per user'", and it refills within the minute.
+	// https://developers.google.com/workspace/sheets/api/limits
 	case e.Status == 429:
 		return ErrRateLimited
 	case e.Status >= 500:

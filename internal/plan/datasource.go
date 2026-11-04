@@ -4,7 +4,7 @@ import "github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 
 // The Connected Sheets builders. Each needs the bigquery.readonly scope
 // against a real BigQuery source, which is why manage_data_source is
-// registered only with GSHEETS_ENABLE_DATA_SOURCES (§17.6a).
+// registered only with GSHEETS_ENABLE_DATA_SOURCES.
 
 // AddDataSource connects a BigQuery query to the spreadsheet. Google
 // makes a DATA_SOURCE sheet for it and starts a refresh.

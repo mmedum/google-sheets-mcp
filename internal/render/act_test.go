@@ -7,9 +7,8 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
 )
 
-// The words for a band live here now, so this is where they are checked.
-// They used to be composed in the service, where no golden could reach
-// them (§17a.9).
+// The words for a band live in render, so this is where they are
+// checked: composed in the service, no golden would reach them.
 func TestBandReadsTheWayItWasGiven(t *testing.T) {
 	rows := render.Band{Rows: true, First: 2, Last: 5}
 	if rows.String() != "rows 2:5" || rows.Count() != 4 || rows.Unit() != "row(s)" || rows.Start() != "row 2" {

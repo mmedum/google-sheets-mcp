@@ -2,22 +2,22 @@ package gsheets
 
 import "encoding/json"
 
-// The chart, slicer and pivot types, added in phase 4.
+// The chart, slicer and pivot types.
 //
 // Two of them come in a reading half and a writing half, the way
 // NewSheetProperties is separate from SheetProperties and for a sharper
 // reason. A chart's spec is a union of thirteen chart kinds, most of
 // which this server does not model, and `updateChartSpec` carries no
-// field mask: it replaces the spec whole and refuses a partial one
-// (spike L). So an update has to send back everything it read.
+// field mask: it replaces the spec whole and refuses a partial one. So
+// an update has to send back everything it read.
 //
 // Reading a spec into a struct and marshaling it again would drop every
 // field the struct does not name — a waterfall chart's settings, an axis
 // title, a series color — and report success. That is a silent destroy
-// of exactly the kind §4.3 exists to prevent, and it would be caused by
-// this server rather than found in the API. So the spec is read as raw
-// JSON and edited as JSON, and only the spec this server *builds* from
-// nothing is typed.
+// of exactly the kind the write guard exists to prevent, and it would be
+// caused by this server rather than found in the API. So the spec is
+// read as raw JSON and edited as JSON, and only the spec this server
+// *builds* from nothing is typed.
 
 // EmbeddedChart is a chart as it comes back from a read.
 //
@@ -180,7 +180,7 @@ type UpdateSlicerSpecRequest struct {
 }
 
 // DeleteEmbeddedObjectRequest removes a chart or a slicer. One request
-// for both, and its reply is empty for both (spike L), so what was
+// for both, and its reply is empty for both, so what was
 // removed has to be read before it goes.
 type DeleteEmbeddedObjectRequest struct {
 	ObjectID int `json:"objectId"`
@@ -189,7 +189,7 @@ type DeleteEmbeddedObjectRequest struct {
 // UpdateEmbeddedObjectPositionRequest moves or resizes a chart.
 //
 // Fields is required: the API refuses the request without it rather than
-// treating it as "everything given" (spike L).
+// treating it as "everything given".
 type UpdateEmbeddedObjectPositionRequest struct {
 	ObjectID    int                     `json:"objectId"`
 	NewPosition *EmbeddedObjectPosition `json:"newPosition,omitempty"`

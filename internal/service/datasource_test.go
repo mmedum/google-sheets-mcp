@@ -287,7 +287,7 @@ func TestSourceDeleteRefusals(t *testing.T) {
 }
 
 // TestADataSourceDeleteCarriesItsSheet holds delete_data_source's
-// witness (§9a.7): the title of the sheet that goes with the source,
+// witness: the title of the sheet that goes with the source,
 // which a client's prompt shows where an id means nothing to a person.
 // Leaving it out is refused naming it, and a title that is not the
 // source's sheet is refused, dry run or not. Nothing is sent either way.
@@ -403,12 +403,11 @@ func TestSourceUnknownAction(t *testing.T) {
 	}
 }
 
-// TestSourceDeleteIsOffWithoutTheDestructiveFlag is the altitude finding
-// of the phase's cleanup pass. Deleting a data source takes a whole
-// sheet with it — by this project's own criterion (§17c) that is a
-// destructive act, and it was reachable with GSHEETS_ENABLE_DESTRUCTIVE
-// off, under a tool whose annotations told clients it was not
-// destructive.
+// TestSourceDeleteIsOffWithoutTheDestructiveFlag holds the delete
+// behind the destructive flag. Deleting a data source takes a whole
+// sheet with it, which nobody can read back, so it is a destructive act
+// and must not be reachable with GSHEETS_ENABLE_DESTRUCTIVE off, under a
+// tool whose annotations tell clients it is not destructive.
 func TestSourceDeleteIsOffWithoutTheDestructiveFlag(t *testing.T) {
 	_, svc := standard(t)
 	added := addSource(t, svc)
@@ -423,10 +422,10 @@ func TestSourceDeleteIsOffWithoutTheDestructiveFlag(t *testing.T) {
 	}
 }
 
-// TestDeleteIsNotAManageAction is the other half of the split: the
-// action is gone from the tool that used to carry it, so a caller
-// reaching for it is told the tool that does, and nothing is read for
-// it or previewed, dry run or not.
+// TestDeleteIsNotAManageAction is the other half of the split:
+// manage_data_source has no delete action, so a caller reaching for it
+// is told the tool that does, and nothing is read for it or previewed,
+// dry run or not.
 func TestDeleteIsNotAManageAction(t *testing.T) {
 	srv, svc := destructive(t)
 	id := addSource(t, svc).ID

@@ -15,15 +15,17 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 )
 
-// coercionTable is spike A's transcript, recorded live on 2026-09-06 and
-// replayed here.
+// coercionTable is what values.update stores for each input under
+// USER_ENTERED, as Google answered, replayed here. The reference says
+// only that such input is parsed "as if the user typed them into the
+// UI". Checked by the live step "what values.update makes of its input".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/ValueInputOption
 //
 // Never simulated. A fake that parsed input would inherit whatever this
 // project believes about Google's parser, and a whole test suite would
-// then agree with the belief rather than with Google — which is exactly
-// how a sibling shipped a search bug its own tests confirmed. An input
-// that is not in this table is stored as it was sent, and a test that
-// needs a coercion uses one of these.
+// then agree with the belief rather than with Google. An input that is
+// not in this table is stored as it was sent, and a test that needs a
+// coercion uses one of these.
 var coercionTable = buildCoercionTable()
 
 func buildCoercionTable() map[string]*gsheets.CellData {
@@ -168,11 +170,10 @@ func (s *Server) valuesClear(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	// The pivot anchors first and separately, because clearing one takes
-	// cells this loop is walking (spike Q): values.clear over an anchor
-	// returns 200 naming that one cell and removes the definition and
-	// every cell of the output. It is not the documented way to delete a
-	// pivot table and the reply says nothing about it, which is what
-	// makes it the sixth silent destroy — and a fake that left the pivot
+	// cells this loop is walking: values.clear over an anchor returns 200
+	// naming that one cell and removes the definition and every cell of
+	// the output. It is not the documented way to delete a pivot table
+	// and the reply says nothing about it, so a fake that left the pivot
 	// standing would let the guard's tests pass over a hole.
 	var anchors [][2]int
 	for row := rect.FirstRow; row <= rect.LastRow; row++ {
@@ -441,10 +442,10 @@ func (s *Server) spreadsheetsBatchUpdate(w http.ResponseWriter, r *http.Request)
 		if err != nil {
 			s.mu.Unlock()
 			// Not every refusal is a 400. Google answers a basicChart
-			// with neither domains nor series with a 500, and §6.5
-			// classes a 500 as retryable — so a fake that flattened it
-			// to 400 would hide the reason manage_chart validates that
-			// shape itself.
+			// with neither domains nor series with a 500, which on a
+			// batchUpdate is an outcome nobody can know — so a fake that
+			// flattened it to 400 would hide the reason manage_chart
+			// validates that shape itself.
 			var se *statusError
 			if errors.As(err, &se) {
 				writeError(w, se.status, se.code, se.message)
@@ -506,7 +507,7 @@ func (s *Server) sheetsCopyTo(w http.ResponseWriter, r *http.Request) {
 // objects attached to its ranges.
 //
 // The attached objects are copied one level deep as well, because
-// phase 2's requests edit them in place — an updateProtectedRange sets a
+// the range requests edit them in place — an updateProtectedRange sets a
 // field on the protection it finds, and a slice shared with the original
 // would leave that edit behind when the batch failed.
 func (d *Doc) clone() *Doc {
@@ -685,8 +686,8 @@ func applyDimension(d *Doc, req *gsheets.Request) (*gsheets.Reply, error) {
 			shiftMetadata(d, r.SheetID, r.Dimension, r.StartIndex, r.StartIndex-r.EndIndex)
 			shiftCommentAnchors(sh, r.Dimension, r.StartIndex, r.StartIndex-r.EndIndex)
 			// The silent half: a chart reading the deleted columns keeps
-			// its place and loses its series, and the reply says nothing
-			// (spike L). The fake does it too, or the refusal this
+			// its place and loses its series, and the reply says nothing.
+			// The fake does it too, or the refusal this
 			// server writes about it could never be tested.
 			dropChartedColumns(d, r.SheetID, bandRect(r), r.Dimension == "ROWS")
 		})

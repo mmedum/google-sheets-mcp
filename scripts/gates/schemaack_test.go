@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -335,8 +334,7 @@ type dumpRepo struct {
 
 func newDumpRepo(t *testing.T) *dumpRepo {
 	t.Helper()
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	isolateGit(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
 	initRepo(t, dir)

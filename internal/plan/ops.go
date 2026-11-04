@@ -10,10 +10,9 @@ import (
 )
 
 // The builders below are the only way a request reaches the batchUpdate
-// union. They are the members this server sends, not the whole union;
-// each phase added its own.
+// union. They are the members this server sends, not the whole union.
 //
-// Typed rather than free-form maps (§4.8). A map would let a request be
+// Typed rather than free-form maps. A map would let a request be
 // sent that no code here has read, which is how a server ends up passing
 // the caller's JSON through to Google and calling it a feature.
 
@@ -56,10 +55,12 @@ func RenameSheet(sheetID int, title string) *gsheets.Request {
 // ReorderSheet moves a tab so it ends up at wanted.
 //
 // The API removes the sheet and then inserts it, and reads the index
-// against the order *before* the move. Verified live: a sheet at index 0
-// asked for index 3 in a four-sheet spreadsheet landed at 2, because
-// taking it out first shifted everything after it left. It is the same
-// convention moveDimension documents for rows and columns.
+// against the order *before* the move: a sheet at index 0 asked for
+// index 3 in a four-sheet spreadsheet lands at 2, because taking it out
+// first shifts everything after it left. It is the convention
+// moveDimension documents for rows and columns, and the reference does
+// not say it here. Checked by the live step "move it to the end".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#UpdateSheetPropertiesRequest
 //
 // The conversion is here so the caller's index means the position the
 // sheet ends up at, which is the only meaning anybody predicts.
@@ -137,10 +138,12 @@ func DeleteDimension(sheetID int, dimension string, first, last int) *gsheets.Re
 // MoveDimension moves a band so it ends up starting at destination.
 //
 // The API removes the band and then inserts it, reading
-// destinationIndex against the sheet *before* the move — the same
-// convention a sheet's index follows, and verified the same way: rows
-// 1-2 of four sent with destinationIndex 3 came back starting at row 2,
-// not row 4.
+// destinationIndex against the sheet *before* the move, the same
+// convention a sheet's index follows: rows 1-2 of four sent with
+// destinationIndex 3 land starting at row 2, not row 4. Checked by the
+// live steps "what values.update keeps and where a move lands" and "move
+// a band to where it was asked for".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#MoveDimensionRequest
 //
 // So a band moving down has to be given room for itself. Moving up needs
 // no adjustment, because nothing above it has shifted.
@@ -281,8 +284,7 @@ func ParseBand(dimension, band string) (Band, error) {
 // Rows reports whether the band runs down rather than across.
 func (b Band) Rows() bool { return b.Dimension == gsheets.DimensionRows }
 
-// A band has no String, Unit, Start or Count. It used to, and they are
-// render.Band's now: this package is below the renderer, and phrasing
-// decided below it is phrasing the goldens cannot cover (§17a.9). The
-// count went with them because counting is what the phrasing wanted it
-// for.
+// A band has no String, Unit, Start or Count: they are render.Band's,
+// because this package is below the renderer, and phrasing decided below
+// it is phrasing the goldens cannot cover. The count is there too,
+// because counting is what the phrasing wants it for.

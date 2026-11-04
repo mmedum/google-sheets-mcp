@@ -43,14 +43,16 @@ var Undrivable = map[string]string{
 var UndrivableTools = map[string]string{
 	"connect_data_source": "Connected Sheets needs a BigQuery-enabled Cloud project with billing attached, and " +
 		"addDataSource needs the bigquery.readonly scope this server asks for only under " +
-		config.EnvPrefix + "ENABLE_DATA_SOURCES. Spike N sent addDataSource and recorded what came back (§18); " +
-		"driving it for real would charge somebody's project on every run",
+		config.EnvPrefix + "ENABLE_DATA_SOURCES. The live step \"whether this server can reach a data source\" " +
+		"sends addDataSource and records Google's answer; driving it for real would charge somebody's project on " +
+		"every run",
 	"manage_data_source": "there is nothing to refresh or list: the driver cannot connect a data source, for the " +
-		"reason connect_data_source cannot be driven. Spike N sent every call in the tool and recorded what came " +
-		"back (§18)",
+		"reason connect_data_source cannot be driven. The live step \"whether this server can reach a data source\" " +
+		"sends refreshDataSource and cancelDataSourceRefresh and records Google's answers",
 	"delete_data_source": "there is nothing to delete: the driver cannot connect a data source, for the reason " +
-		"connect_data_source cannot be driven. Spike N sent deleteDataSource live and recorded the reply — a 400 " +
-		"naming the id, which is also how §18 knows this call needs no BigQuery scope",
+		"connect_data_source cannot be driven. The live step \"whether this server can reach a data source\" " +
+		"sends deleteDataSource, and Google's 400 names the id rather than a missing scope, so this call needs no " +
+		"BigQuery scope",
 }
 
 // Tool is one tool and the options it accepts.

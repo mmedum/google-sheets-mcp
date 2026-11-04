@@ -19,6 +19,11 @@ type AnchorInput struct {
 	DryRun      bool   `json:"dry_run,omitempty" jsonschema:"describe what would happen and send nothing"`
 }
 
+// registerAnchor says an anchor follows its row, not the data on it: a
+// values write over the anchored row leaves the anchor where it was, and
+// takes nothing from it. Checked by the live step "whether developer
+// metadata is a durable anchor".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.developerMetadata#DeveloperMetadata
 func registerAnchor(s *mcp.Server, d Deps) {
 	add(s, d, Def[AnchorInput, *service.AnchorResult]{
 		Name: "manage_anchor",

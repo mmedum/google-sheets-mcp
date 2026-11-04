@@ -13,22 +13,20 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
 )
 
-// spikeK answers §15.K: whether developer metadata is the durable anchor
-// §6.4 assumes it is.
+// askDurableAnchor asks whether developer metadata is a durable anchor.
 //
-// §6.4 offers "remember this row as invoice-totals" and promises it
-// survives the sheet being edited around it. The reference says only
-// that metadata attaches to a spreadsheet, a sheet or a single row or
-// column. It does not say what happens when that row is moved, sorted
-// or deleted — and an anchor that follows a row is a different feature
-// from one that holds a row *number*, because the second one silently
-// points at somebody else's data after one insert.
+// manage_anchor labels a row so it can be found again after the sheet
+// is edited around it. The reference says only that metadata attaches
+// to a spreadsheet, a sheet or a single row or column. It does not say
+// what happens when that row is moved, sorted or deleted — and an anchor
+// that follows a row is a different feature from one that holds a row
+// *number*, because the second one silently points at somebody else's
+// data after one insert.
 //
 // So every step here mutates the sheet and then reads the location back
 // out of developerMetadata.search. What is printed is where the API says
 // the anchor is, never where this code thinks it put it.
-func spikeK(ctx context.Context) {
-	sec("Spike K: developer metadata as a durable anchor")
+func askDurableAnchor(ctx context.Context) {
 	const sheet = "SpikeAnchors"
 	sheetID, err := addSheet(ctx, sheet)
 	if err != nil {
@@ -121,8 +119,7 @@ func spikeK(ctx context.Context) {
 	line("")
 	line("  Q5: does an ordinary values write disturb it?")
 	// Over the anchored row, not a neighboring one. Writing to some
-	// other row proves nothing about whether a write removes an anchor,
-	// and the first run of this spike did exactly that.
+	// other row proves nothing about whether a write removes an anchor.
 	if row := anchorRow(ctx, key); row > 0 {
 		line("    writing over row %d, which is the anchored one", row)
 		if err := put(ctx, fmt.Sprintf("%s!A%d:B%d", q, row, row), [][]any{{"Quorbin", "rewritten"}}); err != nil {
@@ -272,8 +269,8 @@ func spikeK(ctx context.Context) {
 	v.Set("fields", "developerMetadata,sheets(properties(sheetId),developerMetadata)")
 	status, body = call(ctx, http.MethodGet, sheetsBase+"/spreadsheets/"+scratchID+"?"+v.Encode(), nil)
 	line("    card fields, no grid data          -> HTTP %d  %s", status, first120(body))
-	// The anchored row, read now. Asking for a fixed row here is how the
-	// first run reported an empty rowMetadata and made it look as though
+	// The anchored row, read now. A fixed row here can miss the anchor,
+	// and its empty rowMetadata would make it look as though
 	// spreadsheets.get does not carry row anchors at all.
 	row = anchorRow(ctx, key)
 	v = url.Values{}
@@ -332,7 +329,7 @@ func mutate(ctx context.Context, what string, req map[string]any) {
 
 // rowLocation is a one-row location, in the 1-based row a person would
 // say. The API takes zero-based half-open indices and the conversion is
-// the one thing §6.4 must never get wrong twice.
+// the one thing an anchor must never get wrong twice.
 func rowLocation(sheetID, row int) map[string]any {
 	return map[string]any{"dimensionRange": dimRange(sheetID, row-1, row)}
 }

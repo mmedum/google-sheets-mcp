@@ -311,8 +311,8 @@ func TestBatchUpdateAppliesNothingWhenOneRequestFails(t *testing.T) {
 	}
 }
 
-// TestConditionalRulesAreChecked holds the fake to the refusals spike S
-// saw Google make of a color scale, in Google's words, so no test passes
+// TestConditionalRulesAreChecked holds the fake to the refusals Google
+// makes of a color scale, in Google's words, so no test passes
 // on a color scale Google refuses. A rule of neither kind is refused in
 // the fake's own words, since nothing asked Google.
 func TestConditionalRulesAreChecked(t *testing.T) {
@@ -390,10 +390,10 @@ func TestConditionalRulesAreChecked(t *testing.T) {
 	}
 }
 
-// TestAColorScaleIsStoredAsGoogleStoresIt is spike S: a value sent on a
-// min point is dropped (Q3), and under de_DE a number with a decimal
-// point is refused while one with a decimal comma is kept as written
-// (Q4).
+// TestAColorScaleIsStoredAsGoogleStoresIt holds the fake to Google: a
+// value sent on a min point is dropped, and under de_DE a number with a
+// decimal point is refused while one with a decimal comma is kept as
+// written.
 func TestAColorScaleIsStoredAsGoogleStoresIt(t *testing.T) {
 	white := &gsheets.ColorStyle{RGBColor: &gsheets.Color{Red: 1, Green: 1, Blue: 1, Alpha: 1}}
 	add := func(srv *Server, minpoint *gsheets.InterpolationPoint) error {
@@ -432,10 +432,9 @@ func TestAColorScaleIsStoredAsGoogleStoresIt(t *testing.T) {
 	}
 }
 
-// TestTableColumnsAreChecked holds the fake to what §18 records about a
+// TestTableColumnsAreChecked holds the fake to what Google does with a
 // table's columns on add: Google's refusals of a dropdown with no list
-// and a list on another type (spike T Q2), and the fake's own of the
-// rest.
+// and a list on another type, and the fake's own of the rest.
 func TestTableColumnsAreChecked(t *testing.T) {
 	list := &gsheets.TableColumnDataValidationRule{Condition: &gsheets.BooleanCondition{
 		Type: "ONE_OF_LIST", Values: []*gsheets.ConditionValue{{UserEnteredValue: "Open"}},
@@ -478,7 +477,7 @@ func TestTableColumnsAreChecked(t *testing.T) {
 				if err != nil {
 					t.Fatalf("refused: %v", err)
 				}
-				// As spike T Q1 read back: an entry for every column, the
+				// As Google reads it back: an entry for every column, the
 				// one left out named by its header, and the typed one sent
 				// with no name named "Column 1", over its header cell.
 				columns, _ := json.Marshal(stored[0].ColumnProperties)
@@ -502,10 +501,10 @@ func TestTableColumnsAreChecked(t *testing.T) {
 	}
 }
 
-// TestATableHeaderTakesWhatIsWrittenIntoIt is spike T as Google
-// answered it: text written into a table's header cell names the
-// column, and a formula there is replaced by "Column" and the column's
-// place in the table, which names it too (Q7).
+// TestATableHeaderTakesWhatIsWrittenIntoIt holds the fake to Google:
+// text written into a table's header cell names the column, and a
+// formula there is replaced by "Column" and the column's place in the
+// table, which names it too.
 func TestATableHeaderTakesWhatIsWrittenIntoIt(t *testing.T) {
 	srv := Standard(t)
 	ctx := context.Background()
@@ -534,9 +533,9 @@ func TestATableHeaderTakesWhatIsWrittenIntoIt(t *testing.T) {
 	}
 }
 
-// TestAnAddOverAFormulaHeaderIsRefused is spike T Q10: a formula in the
-// header of a column the add does not type is refused in Google's words,
-// and the formula stays.
+// TestAnAddOverAFormulaHeaderIsRefused holds the fake to Google: a
+// formula in the header of a column the add does not type is refused in
+// Google's words, and the formula stays.
 func TestAnAddOverAFormulaHeaderIsRefused(t *testing.T) {
 	srv := Standard(t)
 	srv.Doc(FixtureID).Find(SecondSheet).Set(1, 1, Formula(`="Tren"&"now"`, 0, "Trennow"))
@@ -556,10 +555,11 @@ func TestAnAddOverAFormulaHeaderIsRefused(t *testing.T) {
 	}
 }
 
-// TestUpdateTableReplacesTheColumnsWhole is spike T Q3b: one column sent
-// alone, named, replaces the whole list. The columns left out keep their
-// headers' text as their names and lose their types, a dropdown its list
-// with it. The name sent is written into its header cell (Q4).
+// TestUpdateTableReplacesTheColumnsWhole holds the fake to Google: one
+// column sent alone, named, replaces the whole list. The columns left
+// out keep their headers' text as their names and lose their types, a
+// dropdown its list with it. The name sent is written into its header
+// cell.
 func TestUpdateTableReplacesTheColumnsWhole(t *testing.T) {
 	srv := Standard(t)
 	sh := srv.Doc(FixtureID).Find(FirstSheet)
@@ -593,9 +593,9 @@ func TestUpdateTableReplacesTheColumnsWhole(t *testing.T) {
 	}
 }
 
-// TestABooleanColumnTurnsTextAndEmptyCellsFalse is spike T Q5: typing a
-// column boolean turned a word, the text "TRUE" and an empty cell into
-// FALSE. A cell already TRUE was kept (Q5b).
+// TestABooleanColumnTurnsTextAndEmptyCellsFalse holds the fake to
+// Google: typing a column boolean turns a word, the text "TRUE" and an
+// empty cell into FALSE, and keeps a cell already TRUE.
 func TestABooleanColumnTurnsTextAndEmptyCellsFalse(t *testing.T) {
 	srv := Standard(t)
 	sh := srv.Doc(FixtureID).Find(SecondSheet)
@@ -633,10 +633,10 @@ func TestABooleanColumnTurnsTextAndEmptyCellsFalse(t *testing.T) {
 	}
 }
 
-// TestADropdownColumnDropsTheCellsOwnRules is spike T Q1: an add typing a
-// column dropdown over cells with a list of their own read them back with
-// no rule, and the table's list was not put on them either. A column the
-// add does not type keeps its cells' rules.
+// TestADropdownColumnDropsTheCellsOwnRules holds the fake to Google: an
+// add typing a column dropdown over cells with a list of their own reads
+// them back with no rule, and the table's list is not put on them
+// either. A column the add does not type keeps its cells' rules.
 func TestADropdownColumnDropsTheCellsOwnRules(t *testing.T) {
 	srv := Standard(t)
 	srv.Doc(FixtureID).Find(SecondSheet).
@@ -669,10 +669,10 @@ func TestADropdownColumnDropsTheCellsOwnRules(t *testing.T) {
 	}
 }
 
-// TestARuleInADropdownColumnIsRefused is spike T Q13: a list set on a cell
-// under a dropdown column's header is refused in Google's words, and the
-// cell gets no rule. A cell under the table and a rule's removal are let
-// through.
+// TestARuleInADropdownColumnIsRefused holds the fake to Google: a list
+// set on a cell under a dropdown column's header is refused in Google's
+// words, and the cell gets no rule. A cell under the table and a rule's
+// removal are let through.
 func TestARuleInADropdownColumnIsRefused(t *testing.T) {
 	srv := Standard(t)
 	seeded := srv.Doc(FixtureID).Find(SecondSheet)
@@ -719,10 +719,10 @@ func TestARuleInADropdownColumnIsRefused(t *testing.T) {
 	}
 }
 
-// TestANameWrittenIntoAHeaderDropsItsRichText is spike T Q7: an update
-// sending "Flag" back as read left the cell holding "Flag" with no runs,
-// where two of its letters had been bold. Its whole-cell format stayed
-// (Q7, third run).
+// TestANameWrittenIntoAHeaderDropsItsRichText holds the fake to Google:
+// an update sending "Flag" back as read leaves the cell holding "Flag"
+// with no runs, where two of its letters were bold. Its whole-cell
+// format stays.
 func TestANameWrittenIntoAHeaderDropsItsRichText(t *testing.T) {
 	srv := Standard(t)
 	sh := srv.Doc(FixtureID).Find(FirstSheet)
@@ -750,7 +750,7 @@ func TestANameWrittenIntoAHeaderDropsItsRichText(t *testing.T) {
 	}
 }
 
-// TestUpdateTableRefusesAnEntryWithNoName is spike T Q3 and Q5: Google
+// TestUpdateTableRefusesAnEntryWithNoName holds the fake to Google, which
 // refuses an update entry that carries no name, in these words.
 func TestUpdateTableRefusesAnEntryWithNoName(t *testing.T) {
 	srv := Standard(t)
@@ -845,10 +845,11 @@ func TestPivotDrawsFiltersRulesAndCalculatedValues(t *testing.T) {
 	}
 }
 
-// TestPivotDrawsAHistogramAsGoogleDoes is spike U4's labels: every 20
-// from 25 to 70 drew "< 25", "25 - 44", "45 - 64" and "65 - 70", the
-// last holding the end itself. Ending at 68, the one age of 68 is the
-// end, and stays in the last bucket rather than going past it.
+// TestPivotDrawsAHistogramAsGoogleDoes holds the fake to Google's
+// labels: every 20 from 25 to 70 draws "< 25", "25 - 44", "45 - 64" and
+// "65 - 70", the last holding the end itself. Ending at 68, the one age
+// of 68 is the end, and stays in the last bucket rather than going past
+// it.
 func TestPivotDrawsAHistogramAsGoogleDoes(t *testing.T) {
 	for end, want := range map[string]string{
 		"70": "Age | SUM of Revenue\n< 25 | 100\n25 - 44 | 270\n45 - 64 | 80\n65 - 70 | 300\nGrand Total | 750",
@@ -949,7 +950,7 @@ func TestAStoredPivotCarriesBothFilterForms(t *testing.T) {
 }
 
 // TestPivotRulesAreChecked holds the fake to the rules for values, group
-// rules and filters: in Google's words where spike U saw Google refuse,
+// rules and filters: in Google's words where Google refuses,
 // in the fake's own elsewhere, and to what it refuses because it cannot
 // evaluate it.
 func TestPivotRulesAreChecked(t *testing.T) {
@@ -1007,8 +1008,7 @@ func TestPivotRulesAreChecked(t *testing.T) {
 		// refuse what they name and nothing beside it.
 		{"a plain group beside a rule on one column",
 			group("1", "null") + `,` + group("1", `{"dateTimeRule":{"type":"YEAR"}}`), sum, "", ""},
-		// The reference allows one rule per column, and Google took two
-		// (spike U2).
+		// The reference allows one rule per column, and Google takes two.
 		{"two rules on one column",
 			group("1", `{"dateTimeRule":{"type":"YEAR"}}`) + `,` + group("1", `{"dateTimeRule":{"type":"MONTH"}}`), sum, "", ""},
 		{"a grouping by hand", group("0", `{"manualRule":{"groups":[]}}`), sum, "", ""},

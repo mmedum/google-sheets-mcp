@@ -236,7 +236,7 @@ func TestCellsPastTheCharacterLimitAreRefused(t *testing.T) {
 	}
 }
 
-// Google counts the cell limit in UTF-16 units (spike V): 50 000 é are
+// Google counts the cell limit in UTF-16 units: 50 000 é are
 // taken though they are 100 000 bytes, and 25 001 emoji are refused
 // though they are 25 001 characters.
 func TestTheCellLimitIsCountedInUTF16Units(t *testing.T) {

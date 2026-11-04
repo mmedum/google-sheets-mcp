@@ -40,7 +40,12 @@ import (
 // Limits the API enforces, and the reason a parse can refuse a
 // syntactically fine reference.
 const (
-	// MaxColumns is 18278 columns per spreadsheet, which is column ZZZ.
+	// MaxColumns is 18278, column ZZZ: the most columns one sheet takes,
+	// a limit apart from the cell ceiling. Google refuses 18279 as "above
+	// the limit of 18278 columns" in "the sheet"; the API reference states
+	// no column limit. Checked by the live step "what a write past the size
+	// limits answers".
+	// https://developers.google.com/workspace/sheets/api/limits
 	MaxColumns = 18278
 	// MaxRows is the 10-million-cell ceiling read as a row number: no
 	// row beyond it can exist in any spreadsheet.
@@ -80,7 +85,12 @@ type Ref struct {
 //
 // It is total: one to three letters and nothing else. "A1" is not a
 // column, and neither is "" or "AA1" — a parser that accepts them
-// returns an index that looks like an answer.
+// returns an index that looks like an answer. Google answers four
+// letters with "Unable to parse range", and a real column past the
+// sheet's last one with "exceeds grid limits", which the service
+// refuses first with the sheet's own size. Checked by the live step
+// "what a write past the size limits answers".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/get
 func ParseColumn(s string) (int, error) {
 	if s == "" {
 		return 0, invalid("empty column")
@@ -302,6 +312,12 @@ func SplitSheet(s string) (sheet, rest string, hasSheet bool, err error) {
 }
 
 // Parse reads a full reference: a range, or a sheet and a range.
+//
+// Google answers a malformed range with 400 "Unable to parse range",
+// which says nothing about what is wrong, so Parse refuses it first and
+// says why. Checked by the live steps "the shape of a Sheets error" and
+// "a range that is not a range".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/get
 func Parse(s string) (Ref, error) {
 	sheet, rest, hasSheet, err := SplitSheet(s)
 	if err != nil {
@@ -322,10 +338,14 @@ func Parse(s string) (Ref, error) {
 // first appears. A title with a space or punctuation *requires* quotes.
 // And a whole-sheet reference — the form with no "!" — is resolved as a
 // named range first, so an unquoted "Data" returns the named range
-// called Data rather than the sheet. Verified live: with a "!" present
-// the left side is always a sheet title, so quoting changes nothing
-// there. Quoting everything means neither case has to be thought about
-// at the call site.
+// called Data rather than the sheet. With a "!" the left side is always
+// a sheet title, so quoting changes nothing there, and "Solo!A1:B1",
+// where Solo is only a named range, is "Unable to parse range". The
+// concepts guide speaks only of the bare form. Quoting everything means
+// neither case has to be thought about at the call site. Checked by the
+// live steps "what values.get makes of a range" and "a sheet whose title
+// needs quoting".
+// https://developers.google.com/workspace/sheets/api/guides/concepts
 func QuoteSheet(title string) string {
 	return "'" + strings.ReplaceAll(title, "'", "''") + "'"
 }
@@ -388,7 +408,9 @@ func Format(sheet string, r Rect) string {
 
 // GridRange converts to the API's zero-based half-open form. An
 // unbounded side becomes a missing index, which is what the API means by
-// unbounded too.
+// unbounded too: "Missing indexes indicate the range is unbounded on
+// that side".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/other#GridRange
 func (r Rect) GridRange(sheetID int) *gsheets.GridRange {
 	g := &gsheets.GridRange{SheetID: sheetID}
 	if r.FirstRow != 0 {
@@ -410,7 +432,7 @@ func (r Rect) GridRange(sheetID int) *gsheets.GridRange {
 // the API's zero-based half-open pair.
 //
 // It is Rect.GridRange's arithmetic on one axis, and it lives here for
-// the same reason: hard rule 4 says every conversion between A1 and the
+// the same reason: D-12 says every conversion between A1 and the
 // API's indices is this package's, and "the same arithmetic, but for a
 // dimension" was the shape of the exception that would have made the
 // rule nearly true.
@@ -425,7 +447,7 @@ func BandIndices(first, last int) (start, end int) {
 func ZeroBased(oneBased int) int { return oneBased - 1 }
 
 // AnchorPrefix marks a range that names a durable anchor rather than an
-// address: `anchor:invoice totals` (§6.4).
+// address: `anchor:invoice totals`.
 //
 // Here because it is range syntax, and because three layers speak it:
 // the service resolves it, the renderer tells a caller to use it, and

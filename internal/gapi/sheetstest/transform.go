@@ -71,11 +71,14 @@ func sortRange(d *Doc, req *gsheets.SortRangeRequest) error {
 	}
 	rows := take(sh, rect)
 	// The order is sorted rather than the rows, so what moved where is
-	// still known afterwards. Developer metadata anchored to a row
-	// travels with that row through a sort — spike K watched an anchor
-	// land exactly where its values did — and a fake that left anchors
-	// on their old row numbers would agree with code that treats an
-	// anchor as a row number.
+	// still known afterwards. sortRange moves rows whole, so developer
+	// metadata anchored to a row lands where its values do, which the
+	// reference does not say. A fake that left anchors on their old row
+	// numbers would agree with code that treats an anchor as a row
+	// number. Checked by the live steps "whether developer metadata is a
+	// durable anchor" and "the anchor followed the values through the
+	// sort".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#SortRangeRequest
 	order := make([]int, len(rows))
 	for i := range order {
 		order[i] = i + 1

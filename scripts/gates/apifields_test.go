@@ -47,8 +47,8 @@ func TestFieldsProblems(t *testing.T) {
 	// The record this repository's shape needs: one name two APIs share,
 	// and one struct that only shares a name. Built by a function rather
 	// than shared, because appending to a slice of a shared array
-	// overwrites the next case's rows — which is what the first draft of
-	// this table did, and it reported the corruption as a gate failure.
+	// overwrites the next case's rows, and the corruption reads as a gate
+	// failure.
 	ownerRow := fieldsRow{API: "sheets", Schema: "Membership", Property: "*", Verdict: "owner", Reason: "Sheets'", line: 1}
 	unrelatedRow := fieldsRow{API: "sheets", Schema: "Section", Property: "*", Verdict: "unrelated", Reason: "a sidebar section", line: 2}
 	both := func(extra ...fieldsRow) []fieldsRow {

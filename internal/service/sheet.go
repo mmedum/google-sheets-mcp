@@ -266,7 +266,7 @@ func (s *Service) ManageSheet(ctx context.Context, req SheetRequest) (*SheetResu
 // sheetRequest compiles one action into one union member, and returns
 // the parts of the sentence describing it. The sentence itself is the
 // renderer's, so a preview and a result cannot phrase the same act
-// differently (§17a.9).
+// differently.
 //
 // Split three ways by what the action touches: the sheet's identity, its
 // place among the others, and the grid on it.
@@ -345,17 +345,24 @@ func gridRequest(req SheetRequest, props *gsheets.SheetProperties) (*gsheets.Req
 		if req.Rows <= 0 && req.Cols <= 0 {
 			return nil, act, Errorf("invalid", "resize needs rows, cols, or both")
 		}
+		// Rows and columns are checked here. The 10-million-cell ceiling is
+		// per spreadsheet, "the number of cells in the workbook", so
+		// checking it would mean summing every sheet; Google's refusal
+		// names the limit and the action, and passes through. Checked by
+		// the live step "what a write past the size limits answers".
+		// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#UpdateSheetPropertiesRequest
 		if req.Rows > a1.MaxRows || req.Cols > a1.MaxColumns {
 			return nil, act, Errorf("invalid", "a sheet has at most %d rows and %d columns", a1.MaxRows, a1.MaxColumns)
 		}
 		// Shrinking takes the data on the rows or columns it removes,
 		// and nothing in Sheets brings it back. Refused here rather than
 		// gated: manage_sheet is not behind the destructive flag, and
-		// edit_dimensions delete is where removing lives.
+		// delete_dimensions is where removing lives.
 		if (req.Rows > 0 && req.Rows < rows) || (req.Cols > 0 && req.Cols < cols) {
 			return nil, act, Errorf("blocked",
 				"%q is %d by %d and this would shrink it, taking whatever is on the rows or columns it removes. "+
-					"Growing is fine; to remove rows or columns use edit_dimensions, which says what is on them first",
+					"Growing is fine; to remove rows or columns use delete_dimensions, which says what is on them first "+
+					"and is registered only when deletes are allowed",
 				props.Title, rows, cols)
 		}
 		return plan.ResizeGrid(props.SheetID, req.Rows, req.Cols), act, nil

@@ -2,9 +2,9 @@
 
 package main
 
-// The three probes phase 1 depends on: what USER_ENTERED does to input
-// (A), where an append lands and what it reports (B), and whether
-// Drive's file version is a cheaper staleness check than re-reading (F).
+// The probes the write path depends on, among them what USER_ENTERED
+// does to input, where an append lands and what it reports, and whether
+// Drive's file version is a cheaper staleness check than re-reading.
 //
 // Every value written here is invented, and every line goes through the
 // redacting printer.
@@ -56,7 +56,7 @@ func addSheet(ctx context.Context, title string) (int, error) {
 }
 
 // putMode writes one range under a stated valueInputOption and asks for
-// the stored values back, which is the shape §4.4 says every write uses.
+// the stored values back, as every value write this server makes does.
 func putMode(ctx context.Context, rangeA1 string, values [][]any, mode string) (int, string) {
 	u := sheetsBase + "/spreadsheets/" + scratchID + "/values/" + url.PathEscape(rangeA1) +
 		"?valueInputOption=" + mode + "&includeValuesInResponse=true&responseValueRenderOption=FORMULA"
@@ -117,7 +117,7 @@ func describe(c *gsheets.CellData) string {
 }
 
 // extended names which arm of the value union is set, which is the whole
-// question spike A asks.
+// question askCoercion asks.
 func extended(v *gsheets.ExtendedValue) string {
 	switch {
 	case v == nil:
@@ -143,14 +143,13 @@ func clip(s string) string {
 	return s
 }
 
-// coercionInputs are the strings §15.A names. Each is a shape a person
-// types and Google rewrites, or does not.
+// coercionInputs are the strings askCoercion writes. Each is a shape a
+// person types and Google rewrites, or does not.
 var coercionInputs = []string{
 	"1-2", "007", "=1+2", "$100.15", "TRUE", "'0123", "2026-09-05",
 }
 
-func spikeA(ctx context.Context) {
-	sec("Spike A: the coercion matrix")
+func askCoercion(ctx context.Context) {
 	const sheet = "SpikeCoercion"
 	if _, err := addSheet(ctx, sheet); err != nil {
 		line("  setup failed: %v", err)
@@ -191,9 +190,9 @@ func spikeA(ctx context.Context) {
 		line("  %-14s RAW:          %s", "", describe(rw))
 	}
 
-	// The size question §15.A ends on, asked separately: a 60 000
-	// character cell is past the 50 000 the reference documents, and a
-	// failure here must not take the rest of the run with it.
+	// The size question, asked separately: a 60 000 character cell is
+	// past the 50 000 the reference documents, and a failure here must
+	// not take the rest of the run with it.
 	long := strings.Repeat("Quorbin", 8572) // 60 004 characters
 	line("")
 	for _, mode := range []string{userEntered, raw} {
@@ -202,12 +201,12 @@ func spikeA(ctx context.Context) {
 	}
 }
 
-// spikeShape asks what values.update does when the range and the array
+// askRangeAgainstArray asks what values.update does when the range and the array
 // disagree about size. It decides write_values' contract: whether a
 // caller may name an anchor cell, and what the guard's target rectangle
 // actually is.
-func spikeShape(ctx context.Context) {
-	sec("Spike A, continued: the range against the array")
+func askRangeAgainstArray(ctx context.Context) {
+	sec("continued: the range against the array")
 	const sheet = "SpikeShape"
 	if _, err := addSheet(ctx, sheet); err != nil {
 		line("  setup failed: %v", err)
@@ -297,8 +296,7 @@ func layout(ctx context.Context, rangeA1 string) {
 	}
 }
 
-func spikeB(ctx context.Context) {
-	sec("Spike B: where an append lands")
+func askAppendLanding(ctx context.Context) {
 	line("  each sheet starts as a block in rows 1-3, a gap in rows 4-5, a second block in rows 6-7")
 
 	block1 := [][]any{{"Plimth", 1}, {"Nardle", 2}, {"Grivet", 3}}
@@ -419,8 +417,7 @@ func waitForChange(ctx context.Context, from stamp) (stamp, time.Duration, strin
 	return driveStamp(ctx), time.Since(start), ""
 }
 
-func spikeF(ctx context.Context) {
-	sec("Spike F: is a Drive field a cheaper staleness check")
+func askDriveVersion(ctx context.Context) {
 	const sheet = "SpikeVersion"
 	if _, err := addSheet(ctx, sheet); err != nil {
 		line("  setup failed: %v", err)
@@ -477,7 +474,7 @@ func spikeF(ctx context.Context) {
 	line("  would replace, because it would say nothing changed when something did.")
 }
 
-// spikeH asks what spreadsheets.create does with a sheets list: whether
+// askCreateWithSheets asks what spreadsheets.create does with a sheets list: whether
 // the sheets given are added beside the one Google always makes, or are
 // the whole set.
 //
@@ -485,9 +482,7 @@ func spikeF(ctx context.Context) {
 // Google's own first sheet beside the caller's would send a model
 // looking for a tab that is not there, and the seed values would land on
 // a different sheet from the one it expected.
-func spikeH(ctx context.Context) {
-	sec("Spike H: spreadsheets.create with a sheets list")
-
+func askCreateWithSheets(ctx context.Context) {
 	report := func(what string, body map[string]any) {
 		status, out := call(ctx, http.MethodPost, sheetsBase+"/spreadsheets", body)
 		if status != 200 {
@@ -529,7 +524,7 @@ func spikeH(ctx context.Context) {
 	})
 }
 
-// spikeI asks two questions the write path already assumes an answer to.
+// askWhatWritesKeep asks two questions the write path already assumes an answer to.
 //
 // Does values.update keep a cell's note and validation rule, the way
 // values.clear documents that it does? The guard tells a caller "the
@@ -537,8 +532,7 @@ func spikeH(ctx context.Context) {
 // false. And where does moveDimension's destinationIndex land a band —
 // against the sheet before the move, as it does for a sheet's index, or
 // after?
-func spikeI(ctx context.Context) {
-	sec("Spike I: what a values write keeps, and where a move lands")
+func askWhatWritesKeep(ctx context.Context) {
 	const sheet = "SpikeKeeps"
 	sheetID, err := addSheet(ctx, sheet)
 	if err != nil {

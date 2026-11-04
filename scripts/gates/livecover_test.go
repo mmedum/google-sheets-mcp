@@ -9,12 +9,10 @@ import (
 	"testing"
 )
 
-// TestDriverCallsReadsBothSpellings is the bug this check had on its
-// first run: a step written on its own carries its type, and a step
-// inside a []step slice has it elided. Reading only the first spelling
-// found one step out of nineteen and reported "the check is not reading
-// it" — which was true, and would have been a silent 1/28 coverage
-// claim if the floor had not caught it.
+// TestDriverCallsReadsBothSpellings: a step written on its own carries
+// its type, and a step inside a []step slice has it elided. Reading only
+// the first spelling finds almost no steps, and without the floor on
+// what was read that would be a silent coverage claim.
 func TestDriverCallsReadsBothSpellings(t *testing.T) {
 	dir := t.TempDir()
 	src := `package main

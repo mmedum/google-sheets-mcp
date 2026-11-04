@@ -10,12 +10,10 @@ import (
 
 // The words for a structural change, in one place.
 //
-// They used to be composed in the service, which built a fragment
-// ("insert 2 row(s) before row 2 on %q") that this package then
-// capitalized and wrapped. Phrasing decided above the renderer is
-// phrasing the goldens cannot cover, and the same fragment appeared in a
-// refusal, a preview and a result, where it had to agree with itself.
-// So the service passes the parts and the template lives here.
+// The service passes the parts and the templates live here. Phrasing
+// decided above the renderer is phrasing the goldens cannot cover, and
+// the same act appears in a refusal, a preview and a result, which have
+// to phrase it alike.
 
 // Band names a run of rows or columns the way a message does.
 type Band struct {

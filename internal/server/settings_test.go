@@ -20,8 +20,8 @@ var settingsWriters = []string{
 	"os", "os/exec", "syscall",
 }
 
-// TestNoToolCanWriteTheServersSettings holds §9a's rule that the model
-// never widens its own reach: no tool turns on a toolset, lifts a limit
+// TestNoToolCanWriteTheServersSettings holds the rule that the model
+// never widens its own reach (D-40): no tool turns on a toolset, lifts a limit
 // or edits the configuration, since only the operator may, outside the
 // conversation. It is held by what the tool path can reach rather than
 // by what each tool happens to do: walking every package this one

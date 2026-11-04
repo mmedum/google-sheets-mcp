@@ -227,9 +227,8 @@ func TestAnchorListIsOneRequest(t *testing.T) {
 	if len(res.Anchors) != 3 {
 		t.Fatalf("listed %d anchors, want 3: %+v", len(res.Anchors), res.Anchors)
 	}
-	// One search, whatever the anchors are attached to. Listing per
-	// sheet would cost a request per sheet and break §4.5 on any
-	// spreadsheet with more than one.
+	// One search, whatever the anchors are attached to: one tool call is
+	// one request, and listing per sheet would cost a request per sheet.
 	searches := 0
 	for _, c := range srv.Calls() {
 		if c.Op == "developerMetadata.search" {
@@ -283,8 +282,8 @@ func TestAnchorRangeWritesThroughTheGuard(t *testing.T) {
 	}
 }
 
-// The guard's second finding from spike K: a row delete takes the
-// anchors on it and the reply says nothing, so the refusal has to.
+// A row delete takes the anchors on it and Google's reply says nothing,
+// so the refusal has to.
 func TestDeletingRowsNamesTheAnchorsItWouldTake(t *testing.T) {
 	_, svc := destructive(t)
 	ctx := context.Background()
@@ -341,7 +340,8 @@ func TestDeletingColumnsIgnoresRowAnchors(t *testing.T) {
 	}
 }
 
-// The other two ways a row moves, both recorded from spike K. The fake
+// The other two ways a row moves: an anchor follows its row through a
+// move, and through a sort to where its values land. The fake
 // models them because a fake that left anchors on their old row numbers
 // would agree with any code treating an anchor as a row number, which is
 // the one thing this feature must not be.
@@ -489,9 +489,9 @@ func TestAnchorWorksWhereABandIsTaken(t *testing.T) {
 }
 
 // A URL carrying a gid and an anchor on another sheet is the conflict
-// the A1 path refuses; the anchor path used to accept it and quietly
-// read the anchor's sheet, because it compared the sheet argument as a
-// string and never consulted the gid.
+// the A1 path refuses, and the anchor path must refuse it too. Comparing
+// the sheet argument as a string, without the gid, would quietly read
+// the anchor's sheet.
 func TestAnchorRefusesAGidThatDisagreesWithIt(t *testing.T) {
 	_, svc := standard(t)
 	ctx := context.Background()
@@ -510,9 +510,9 @@ func TestAnchorRefusesAGidThatDisagreesWithIt(t *testing.T) {
 }
 
 // The result has to say what Google stored, not what the request asked
-// for (hard rule 7). A move used to report the note it was handed while
-// its field mask never wrote one, so the answer and the spreadsheet
-// disagreed and only a later list would have shown it.
+// for (D-31). A move that reported the note it was handed while
+// its field mask never wrote one would leave the answer and the
+// spreadsheet disagreeing, and only a later list would show it.
 func TestAnchorMoveReportsTheNoteItActuallyStored(t *testing.T) {
 	ctx := context.Background()
 

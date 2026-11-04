@@ -220,7 +220,7 @@ func TestManageSheetRefusals(t *testing.T) {
 		{
 			"resize that would shrink",
 			service.SheetRequest{Action: service.SheetResize, Sheet: sheetstest.SecondSheet, Rows: 2},
-			"edit_dimensions",
+			"use delete_dimensions",
 		},
 		{
 			"reorder with no index",

@@ -28,19 +28,20 @@ func (d *driver) writeAll() {
 	d.checkpointSteps()
 	sec("append_rows")
 	d.run(d.appendSteps()...)
-	// Phase 2 before the dimension steps: those insert and delete rows,
-	// which would move the band the transforms assert about.
+	// Formatting and transforms before the dimension steps: those insert
+	// and delete rows, which would move the band the transforms assert
+	// about.
 	d.formatAll()
 	sec("edit_dimensions")
 	d.run(d.dimensionSteps()...)
 	sec("delete_dimensions")
 	d.run(d.deleteDimensionSteps()...)
-	// Phase 3's anchors, on a sheet of their own: they insert, sort and
-	// delete rows to prove an anchor survives all three, which would
-	// move every band the steps above assert about.
+	// Anchors, on a sheet of their own: they insert, sort and delete rows
+	// to prove an anchor survives all three, which would move every band
+	// the steps above assert about.
 	d.anchorAll()
-	// Phase 4, also on a sheet of its own: it deletes a charted column
-	// to watch what the API does not say about it.
+	// Charts and pivot tables, also on a sheet of their own: they delete
+	// a charted column to watch what the API does not say about it.
 	d.chartAll()
 	// Comments, on a sheet of their own: they insert and delete rows to
 	// watch where a thread goes.
@@ -53,8 +54,9 @@ func (d *driver) writeAll() {
 
 // scratchTitle is the prefix every file this driver creates carries, so
 // the manual cleanup is one Drive search rather than a hunt. The driver
-// cannot trash what it makes: this server asks for drive.readonly on
-// purpose (§17.6), and trashing needs a write-capable Drive scope.
+// cannot trash what it makes: this server asks only for drive.readonly,
+// since it never writes to Drive, and trashing needs a write-capable
+// Drive scope.
 const scratchTitle = "livesheet scratch"
 
 func (d *driver) createSteps() []step {
@@ -314,7 +316,7 @@ func (d *driver) writeSteps() []step {
 		},
 		{
 			name:        "overwrite without the checkpoint of what it replaces is refused",
-			why:         "overwrite carries a decision about what was read, so it is held to what was read (§4.7)",
+			why:         "overwrite carries a decision about what was read, so it is held to what was read",
 			tool:        "write_values",
 			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1", "values": [][]any{{"Vandel"}}, "overwrite": true},
 			expectError: "invalid",
@@ -617,10 +619,9 @@ func (d *driver) dimensionSteps() []step {
 			},
 		},
 		{
-			// Marked first. The previous version of this step moved two
-			// rows the inserts above had left empty, so reading the
-			// destination back found blank cells and the check passed
-			// on the row gutters alone — a step that tested nothing.
+			// Marked first: the inserts above leave these rows empty,
+			// and a move of empty rows reads back as blank cells that
+			// pass the check on the row gutters alone.
 			name: "mark the rows a move will carry",
 			why:  "a move of empty rows lands anywhere and looks correct, whatever the conversion did",
 			tool: "write_values",
@@ -829,10 +830,10 @@ func (d *driver) deleteDimensionSteps() []step {
 func (d *driver) clearSteps() []step {
 	return []step{
 		{
-			// The first run of these steps cleared an empty rectangle
-			// and reported "0 non-empty cells" three times, which is
-			// true and proves nothing: the count is the only thing a
-			// clear's result says, so it is what has to be exercised.
+			// A clear over an empty rectangle reports "0 non-empty
+			// cells", which is true and proves nothing: the count is the
+			// only thing a clear's result says, so it is what has to be
+			// exercised.
 			name: "put something there to clear",
 			why:  "a clear over empty cells reports zero, and a zero that is always right tests nothing",
 			tool: "write_values",
@@ -864,7 +865,7 @@ func (d *driver) clearSteps() []step {
 		},
 		{
 			name:        "a clear that leaves its range out is refused, naming the whole sheet",
-			why:         "the call names what goes, so the client's prompt shows it rather than an empty argument (§9a)",
+			why:         "the call names what goes, so the client's prompt shows it rather than an empty argument",
 			tool:        "clear_values",
 			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "confirm": true},
 			expectError: "invalid",
@@ -886,7 +887,7 @@ func (d *driver) clearSteps() []step {
 			check: func(text string, _ map[string]any) error {
 				// What a clear can remove, which is what somebody
 				// typed. A cell drawn by something else is counted
-				// separately and named as surviving (spike Q).
+				// separately, since a clear does not take it out itself.
 				if !strings.Contains(text, "removes 4 cell(s)") {
 					return fmt.Errorf("the refusal does not count what it would take: %s", text)
 				}

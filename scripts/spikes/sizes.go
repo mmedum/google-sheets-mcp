@@ -12,15 +12,14 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
 )
 
-// spikeG answers §15.G: what the platform does at its own edges.
+// askSizeLimits asks what a write past the size limits answers: what
+// the platform does at its own edges.
 //
 // Three of them, and each decides a refusal this server writes rather
-// than forwards. The character limit was answered early and for free
-// during phase 1 — 60 004 characters is refused, and §18 carries the
-// message — so what is left is the boundary itself: exactly 50 000,
-// which the reference says is the most a cell takes, and one more.
-func spikeG(ctx context.Context) {
-	sec("Spike G: size behavior")
+// than forwards. Google refuses 60 004 characters in a cell, so what is
+// left is the boundary itself: exactly 50 000, which the reference says
+// is the most a cell takes, and one more.
+func askSizeLimits(ctx context.Context) {
 	const sheet = "SpikeSizes"
 	sheetID, err := addSheet(ctx, sheet)
 	if err != nil {
@@ -39,10 +38,9 @@ func spikeG(ctx context.Context) {
 	// write that reported success and stored a truncated string would
 	// look identical from the response alone.
 	//
-	// The value's length, not the body's. The first run of this printed
-	// len(body) and called it "characters back", which is the string
-	// plus the JSON around it — a number that looks like an answer and
-	// is not one.
+	// The value's length, not the body's: len(body) is the string plus
+	// the JSON around it, a number that looks like an answer and is not
+	// one.
 	status, body := getValues(ctx, q+"!A1")
 	line("    %-38s -> HTTP %d  %d characters stored", "reading the accepted cell", status, storedLen(body))
 
@@ -85,8 +83,8 @@ func spikeG(ctx context.Context) {
 	line("")
 	line("  And the column ceiling on its own.")
 	line("  The sheet is shrunk to one row first: at 1 000 rows, 18 279 columns is")
-	line("  18.3 million cells, so the cell ceiling answers before the column one and")
-	line("  the first run of this probe could not tell them apart.")
+	line("  18.3 million cells, so the cell ceiling would answer before the column one")
+	line("  and the two could not be told apart.")
 	if !resize(ctx, sheetID, "gridProperties.rowCount", map[string]any{"rowCount": 1}) {
 		line("    could not shrink the sheet; the two ceilings stay confounded")
 		return
@@ -130,16 +128,15 @@ func storedLen(body string) int {
 	return len(vr.Values[0][0])
 }
 
-// spikeJ answers a question the live driver raised rather than the plan:
-// a conditional format rule over a range vanished across an addTable and
-// a deleteTable on the same range, and the driver could only see that it
-// was gone by the end.
+// askTableRules asks what a table does to the rules over its range. A
+// conditional format rule over a range is gone after an addTable and a
+// deleteTable on the same range, and the end state alone cannot say
+// which of the two took it.
 //
 // Which of the two took it decides what manage_range has to say. Counted
 // after every step, because "it is gone now" is not an answer to "what
 // removed it".
-func spikeJ(ctx context.Context) {
-	sec("Spike J: what a table does to the rules over its range")
+func askTableRules(ctx context.Context) {
 	const sheet = "SpikeTables"
 	sheetID, err := addSheet(ctx, sheet)
 	if err != nil {
@@ -241,22 +238,22 @@ func tableID(ctx context.Context, sheetID int) string {
 	return ""
 }
 
-// spikeV asks in what unit Google counts the two text limits this server
-// checks before it writes: a cell's 50 000 and a comment's 2048. Each is
-// written at the limit and one past it in three alphabets, x (one byte,
-// one UTF-16 unit), é (two bytes, one unit) and an emoji (four bytes, two
-// units), and the limits that hold say which unit it is.
+// askTextLimitUnit asks in what unit Google counts the two text limits
+// this server checks before it writes: a cell's 50 000 and a comment's
+// 2048. Each is written at the limit and one past it in three alphabets,
+// x (one byte, one UTF-16 unit), é (two bytes, one unit) and an emoji
+// (four bytes, two units), and the limits that hold say which unit it
+// is.
 //
-// What it established, 2026-10-31. A cell counts UTF-16 units, under RAW
-// and USER_ENTERED alike: 50 000 é (100 000 bytes) and 25 000 emoji are
-// taken whole, and 50 001 é and 25 001 emoji refused, "Your input contains more than the maximum of
+// A cell counts UTF-16 units, under RAW and USER_ENTERED alike: 50 000 é
+// (100 000 bytes) and 25 000 emoji are taken whole, and 50 001 é and
+// 25 001 emoji refused, "Your input contains more than the maximum of
 // 50000 characters in a single cell". A comment counts bytes: 2048 x,
 // 1024 é and 512 emoji are taken, and one more of each refused,
 // "content must not exceed 2048 UTF-8 code units". Aside: on a cell
-// holding a 100 000-byte value, every comment at the limit failed with
-// "An error occurred while saving comments"; not followed further.
-func spikeV(ctx context.Context) {
-	sec("Spike V: the unit of the text limits")
+// holding a 100 000-byte value, every comment at the limit fails with
+// "An error occurred while saving comments"; why is not known.
+func askTextLimitUnit(ctx context.Context) {
 	const sheet = "SpikeUnits"
 	sheetID, err := addSheet(ctx, sheet)
 	if err != nil {
@@ -304,10 +301,10 @@ func spikeV(ctx context.Context) {
 		}
 	}
 
-	// The comments go on an empty cell, B5, with a short one first: the
-	// first run put them on A1 beside a 100 000-byte value, and every one
-	// at the limit failed with "An error occurred while saving comments",
-	// which said nothing about the limit.
+	// The comments go on an empty cell, B5, with a short one first: on A1
+	// beside a 100 000-byte value, every one at the limit fails with "An
+	// error occurred while saving comments", which says nothing about the
+	// limit.
 	line("")
 	line("  A comment on an empty cell: a short one, then one under, at and past 2048 bytes in each alphabet:")
 	insert(ctx, "a short comment", sheetID, 4, 1, "control", "")

@@ -17,8 +17,16 @@ import (
 // spreadsheetUrl is deliberately absent. Google's own URL carries an
 // `?ouid=` query holding the signed-in account's obfuscated id, which
 // nothing needs to open the spreadsheet — SpreadsheetURL builds a link
-// that works without it. Found by reading a live transcript, where the
-// redactor had been quietly catching it in every card.
+// that works without it. The reference calls the field only "The url of
+// the spreadsheet".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets#Spreadsheet
+//
+// dataSources needs no BigQuery scope: Google answers it under
+// spreadsheets and drive.readonly alone, so the card says a spreadsheet
+// is connected whatever the scopes. The reference does not say which
+// scopes a read of it needs. Checked by the live step "whether this
+// server can reach a data source".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/get
 const CardFields = "spreadsheetId," +
 	"properties(title,locale,timeZone,autoRecalc)," +
 	"sheets(properties(sheetId,title,index,sheetType,hidden,rightToLeft,gridProperties,tabColorStyle)," +
@@ -47,7 +55,10 @@ const TableFields = "sheets(properties(sheetId),tables(tableId,range,columnPrope
 //
 // userEnteredValue and effectiveValue are both here because a formula
 // and its result render identically, and the difference between them is
-// what the write guard is built on.
+// what the write guard is built on. Checked by the live steps "show=both
+// puts the formula under the value" and "the annotations a values read
+// cannot show".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/cells#CellData
 const GridFields = sheetHead + "data(startRow,startColumn,rowData(values(" + cellFields + "))))"
 
 // ReadFields is GridFields plus which rows and columns a person hid,
@@ -74,7 +85,7 @@ const sheetHead = "spreadsheetId," +
 // CommentFields is the field mask behind the comment tools: every
 // thread, and every sheet's anchors, which say which cell each thread is
 // on now. Google refuses it unless GetOptions.Comments asks for the
-// comments view (spike R). contentHtml is left out; content is the same
+// comments view. contentHtml is left out; content is the same
 // words as plain text.
 const CommentFields = "spreadsheetId,properties(title)," +
 	"sheets(properties(sheetId,title,index,gridProperties),commentAnchors(anchorId,range))," +
@@ -86,7 +97,7 @@ const postFields = "postId,content,commentAction,assigneeEmail,author(displayNam
 // ChartFields is the field mask behind manage_chart.
 //
 // The whole spec, because an update replaces it whole and has to send
-// back what it read (spike L). It is deliberately not the card's mask:
+// back what it read. It is deliberately not the card's mask:
 // live, one chart's full spec is about 2 KB against the 72 bytes a title
 // costs, so the card carries the title and this carries the rest.
 const ChartFields = "spreadsheetId,sheets(properties(sheetId,title),charts,slicers)"
@@ -134,7 +145,7 @@ const FormatFields = sheetHead +
 // only what the cell was explicitly given.
 //
 // And the pivot, for the reason GridFields carries it. Sheets refuses a
-// merge over any cell of a pivot table outright (spike Q), so the guard
+// merge over any cell of a pivot table outright, so the guard
 // has to see the anchor to say which table it is refusing for — a mask
 // without it made format_cells the one write path that could not name
 // what it had run into.
@@ -150,7 +161,7 @@ const FormatTargetFields = sheetHead +
 // names `data(...)` returns cells whether or not the option asked for
 // them. FormatFields names them, so using it without a range would have
 // fetched the entered and effective format of every cell of every sheet
-// — the whole-spreadsheet grid read §4.6 forbids, walking straight past
+// — the whole-spreadsheet grid read this server never makes, walking past
 // the guard in GetSpreadsheet, which can only see the option.
 const RuleFields = "spreadsheetId,sheets(properties(sheetId),conditionalFormats)"
 
@@ -166,7 +177,7 @@ type GetOptions struct {
 	// every cell in the spreadsheet, so the two travel together.
 	IncludeGridData bool
 	// Comments asks for the comments view. Google omits comments without
-	// it, and refuses a mask that names them (spike R).
+	// it, and refuses a mask that names them.
 	Comments bool
 }
 
@@ -182,12 +193,19 @@ func (c *Client) GetSpreadsheet(ctx context.Context, id string, o GetOptions) (*
 	// The option is not the only way to ask for cells. `includeGridData`
 	// is ignored when a field mask is set, so a mask naming `data(` is a
 	// grid read however the option is set — and without a range that is
-	// every cell of every sheet. The guard above could not see it: it
-	// reads the option, and the mask is what decides.
+	// every cell of every sheet. The guard above cannot see it: it reads
+	// the option, and the mask is what decides.
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/get
 	if len(o.Ranges) == 0 && strings.Contains(o.Fields, "data(") {
 		return nil, fmt.Errorf("%w: the field mask asks for cell data and no range was given, which is the whole spreadsheet", ErrInvalid)
 	}
-	// Google answers this with a 400 (spike R); refusing it here says why.
+	// Google answers a mask naming comments without the comments view
+	// with 400 "Field mask may not contain comment-specific fields if
+	// comments are not requested"; the reference says only that the view
+	// defaults to omitted. Refusing it here says why. Checked by the live
+	// steps "how cell comments read back and fail" and "a read counts the
+	// resolved thread and does not list it".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/get
 	if strings.Contains(o.Fields, "comment") && !o.Comments {
 		return nil, fmt.Errorf("%w: the field mask names comments and the read does not ask for the comments view", ErrInvalid)
 	}

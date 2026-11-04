@@ -4,11 +4,11 @@ import "github.com/mmedum/google-sheets-mcp/v4/internal/config"
 
 // Budget is what one call may read, render and hand back.
 //
-// One type rather than three numbers at three altitudes. The tool layer
-// held the maxima, the service the defaults, the renderer the character
-// cut, and `max_matches` had no maximum at all. Phase 1 adds five write
-// tools that would each have copied the tool-layer half, so the policy
-// moves here first: a limit copied is a limit that drifts.
+// One type rather than three numbers at three altitudes: the maxima, the
+// defaults and the character cut live here together, not in the tool
+// layer, the service and the renderer. Every tool that reads takes this
+// rather than copying a limit, because a limit copied is a limit that
+// drifts.
 type Budget struct {
 	// Cells bounds what is fetched, and is applied before the request is
 	// built so an open-ended range never becomes an unbounded read.

@@ -11,8 +11,8 @@ import (
 
 // Decoding a response is where a read's time actually goes.
 //
-// §11's target was written about rendering — "a 5 000-cell read rendered
-// under 20 ms" — and rendering turns out to be the cheap half by an
+// The read target is written about rendering — "a 5 000-cell read
+// rendered under 20 ms" — and rendering is the cheap half by an
 // order of magnitude. This is the expensive half, and it is the one
 // nothing here can make much faster: it is the shape of the wire.
 // Measured so the target says what it means.

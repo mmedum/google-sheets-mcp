@@ -6,7 +6,7 @@
 //
 // The task table itself is *not* behind the tag: `go test ./scripts/evals`
 // walks every prompt without credentials, which is where the
-// unsubstituted-placeholder guard belongs (§13).
+// unsubstituted-placeholder guard belongs: there it costs nothing.
 package main
 
 import "fmt"

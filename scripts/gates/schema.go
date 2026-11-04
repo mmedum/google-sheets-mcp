@@ -29,14 +29,14 @@ const changelogPath = "CHANGELOG.md"
 // that may carry a value it did not list is named, not failed.
 //
 // One invalid schema is not one broken tool: a client validating against
-// draft 2020-12 rejects the whole request, so five bad schemas killed
-// every one of forty-four tools in a shipped server's session, reporting
-// only an array index that named no server. So the dump runs on every
-// build.
+// draft 2020-12 rejects the whole request, so a few bad schemas take down
+// every tool in the session, and the error names only an array index.
+// So the dump runs on every build.
+// https://github.com/freema/mcp-gsheets/issues/138
 //
-// The baseline is a committed file, never a tag. The diff used to build
-// the last tag in a worktree and compare top-level fields only, so a
-// lost `threads[].cell` passed.
+// The baseline is a committed file, never a tag built in a worktree, and
+// the diff walks every depth: a comparison of top-level fields passes a
+// lost `threads[].cell`.
 func schemaDiff(bin string) error {
 	raw, current, err := dumpSchemas(bin)
 	if err != nil {
@@ -444,7 +444,10 @@ func (n *schemaNode) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, (*plain)(n))
 }
 
-// walk records every field under n, and which are required.
+// walk records every field under n, and which are required. It follows
+// properties and items alone, which reach every field only while the
+// dump carries no $ref, anyOf or oneOf; nothing checks that, and a
+// change to additionalProperties is not seen.
 func (n *schemaNode) walk(prefix string, into fieldSet) {
 	if n == nil {
 		return
@@ -538,7 +541,9 @@ func brokenFields(prev, cur map[string]toolFields) []change {
 				if typeBreaks(w.typ, n.typ, side.input) {
 					broke(name, side.what, f, "changed type from %s to %s", typeWord(w.typ), typeWord(n.typ))
 				}
-				// A caller sent this value, and it is refused now.
+				// A caller sent this value, and it is refused now: an
+				// enum admits only its listed values (Validation section
+				// 6.1.2).
 				if side.input && n.enum != nil {
 					for _, v := range w.enum {
 						if !slices.Contains(n.enum, v) {
@@ -621,8 +626,11 @@ func typeBreaks(was, now string, input bool) bool {
 
 // typesCover reports whether every value narrow allows, wide allows too,
 // as JSON Schema 2020-12 reads a type: a list allows any type in it, and
-// an integer is a number. No type, or the schema `true`, is any value;
-// the schema `false` lists no type, so it allows none.
+// an integer is a number with a zero fractional part (Validation section
+// 6.1.1). No type, or the schema `true`, is any value; the schema `false`
+// allows none (Core section 4.3.2).
+// https://json-schema.org/draft/2020-12/json-schema-validation#section-6.1.1
+// https://json-schema.org/draft/2020-12/json-schema-core#section-4.3.2
 func typesCover(wide, narrow string) bool {
 	if anyType(wide) {
 		return true

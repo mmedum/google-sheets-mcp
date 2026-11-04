@@ -58,10 +58,12 @@ jobs:
         run: go run ./scripts/gates release-notes "${REF_NAME}" > "${RUNNER_TEMP}/release-notes.md"
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
-          # Exact, not "~> v2", and not "~> v2.18.1" either: a `~>` value
-          # is a constraint whatever follows it, so narrowing one changes
-          # the width of the range and not its kind. This is the tool
-          # that decides what the artifacts are.
+          # Exact, not "~> v2", the action's own default, and not
+          # "~> v2.18.1" either: a `~>` value is a constraint whatever
+          # follows it, so narrowing one changes the width of the range
+          # and not its kind. This is the tool that decides what the
+          # artifacts are.
+          # https://github.com/goreleaser/goreleaser-action/blob/v7.3.0/action.yml
           version: "v2.18.1"
           args: release --clean --release-notes=${{ runner.temp }}/release-notes.md
         env:

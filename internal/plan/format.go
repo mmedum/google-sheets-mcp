@@ -22,9 +22,12 @@ import (
 // names exactly what has been set on it.
 //
 // Built rather than composed from a struct literal because the mask and
-// the value have to agree: a struct carrying bold=false says nothing
-// about whether the caller asked for it, and a mask written by hand
-// beside it is a second place to be wrong.
+// the value have to agree: a field named in the mask and absent from the
+// body is set back to its default, which is how bold is turned off. A
+// struct carrying bold=false says nothing about whether the caller asked
+// for it, and a mask written by hand beside it is a second place to be
+// wrong.
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#RepeatCellRequest
 type Patch struct {
 	cell   gsheets.CellData
 	fields []string

@@ -3,11 +3,10 @@
 // there.
 //
 // The task table is in this file and has no build tag, so `go test`
-// walks it without credentials. That placement is the point of §13's
-// second rule: a sibling project's first full eval run passed two tasks
-// while sending the agent a literal `{folder}`, and the guard against
-// that belongs where it costs nothing rather than in a live run that
-// costs ten minutes and an account.
+// walks it without credentials. That placement is the point: an eval
+// can pass a task while sending the agent a literal `{folder}`, and the
+// guard against that belongs where it costs nothing rather than in a
+// live run that costs ten minutes and an account.
 package main
 
 import (
@@ -37,8 +36,8 @@ type Task struct {
 	// Unverifiable names the half this task cannot check, and is
 	// printed with the result rather than hidden.
 	//
-	// §13's first rule: where the end state cannot exist, score the
-	// trace and *print* which half went unchecked. A task that says "I
+	// Where the end state cannot exist, score the trace and *print*
+	// which half went unchecked. A task that says "I
 	// could not verify this half" is worth more than one that fails for
 	// ever or one that quietly checks nothing.
 	Unverifiable string
@@ -120,8 +119,8 @@ func Tasks(f Fixture) []Task {
 			// which the seeded rows use — so the check matched
 			// "Threnody-03" from the fixture and the task passed a run
 			// in which the model made two reads and no write at all.
-			// A check a fixture satisfies by itself is §13's "task that
-			// quietly checks nothing", inside the harness written to
+			// A check a fixture satisfies by itself is a task that
+			// quietly checks nothing, inside the harness written to
 			// catch that.
 			// Every column the new row touches is named, because the
 			// table has four and three of them are numeric. The first
@@ -287,7 +286,7 @@ func Tasks(f Fixture) []Task {
 				"scoring a paraphrase. What is scored is how many reads it took to get there",
 			Trace: func(r *Run) error {
 				// Twelve, not six, and the number is a measurement of a
-				// defect rather than a target (§17a.25). A read's window
+				// defect rather than a target. A read's window
 				// is sized by the sheet's *allocated* width, so a
 				// 2-column block on a 26-column sheet costs thirteen
 				// times its own size in budget and the tail is that many
@@ -305,7 +304,7 @@ func Tasks(f Fixture) []Task {
 		},
 		{
 			Name: "anchor a row and find it after an edit",
-			Why:  "phase 3's own claim: a label survives what an A1 address does not, and the model has to use it",
+			Why:  "the anchor's own claim: a label survives what an A1 address does not, and the model has to use it",
 			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, label row %d as \"totals row\" so it can "+
 				"be found later. Then insert three rows at the top and tell me what is in the labeled row now.",
 				f.ID, f.SheetFor(WorkAnchor), f.AnchorRow),
@@ -365,7 +364,7 @@ func Tasks(f Fixture) []Task {
 		},
 		{
 			Name: "do not write over a pivot table",
-			Why: "the phase 4 half of the guard's reason: a pivot's output looks like ordinary values in a read, " +
+			Why: "the pivot half of the guard's reason: a pivot's output looks like ordinary values in a read, " +
 				"and a write into it stops the whole table drawing until the cell is cleared again",
 			// The fixture put the pivot table there, so this task is
 			// about the guard rather than about building one. The cell
@@ -396,7 +395,7 @@ func Tasks(f Fixture) []Task {
 				f.ID),
 			Unverifiable: "nothing: this task is a refusal, and the end state is that nothing changed",
 			Trace: func(r *Run) error {
-				// Two good answers, and this used to accept only one.
+				// Two good answers.
 				//
 				// The refusal is one: ask, be told the sheet does not
 				// exist and which do, and act on that. The other is to
@@ -428,10 +427,9 @@ func Tasks(f Fixture) []Task {
 // placeholder, and any task missing the fields that make a result
 // readable.
 //
-// A unit test walks the whole table through this. That sibling's first
-// run passed two tasks while sending a literal `{folder}`: one found the
-// file by name across the whole account and one wanted a refusal and got
-// one for the wrong reason. Both looked like passes.
+// A unit test walks the whole table through this. A literal `{folder}`
+// in a prompt can still pass: a task finds the file by name across the
+// whole account, or wants a refusal and gets one for the wrong reason.
 func CheckPrompts(tasks []Task) error {
 	var problems []string
 	seen := map[string]bool{}

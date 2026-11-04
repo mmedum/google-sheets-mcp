@@ -1,5 +1,5 @@
-// Package sheetstest is an in-memory Google Sheets, and the one Drive
-// endpoint this server calls, behind httptest.
+// Package sheetstest is an in-memory Google Sheets, and the Drive
+// endpoints this server calls, behind httptest.
 //
 // It exists so the unit tests never touch the network, and so the
 // awkward shapes — a formula whose result renders identically, a ragged
@@ -9,11 +9,9 @@
 // Two rules it keeps deliberately.
 //
 // The fake does not invent Google's parser. USER_ENTERED coercion is
-// recorded from a live probe and replayed; it is never simulated. A fake
-// built from the documentation inherits the documentation's errors, and
-// a sibling project shipped a search bug its whole suite agreed with.
-// Phase 0 reads only, so nothing here parses input yet, and the day it
-// does the table comes from spike A.
+// recorded from a live probe and replayed from coercionTable; it is
+// never simulated. A fake built from the documentation inherits the
+// documentation's errors, and a suite run against it agrees with them.
 //
 // Every fixture is generated. Titles come from an invented vocabulary
 // and numbers from a seeded generator, so there is no path by which
@@ -45,7 +43,7 @@ type Doc struct {
 	Sheets      []*Sheet
 	NamedRanges []*gsheets.NamedRange
 	// Metadata is the spreadsheet's developer metadata — the durable
-	// anchors of §6.4. It hangs off the document rather than the sheet
+	// anchors. It hangs off the document rather than the sheet
 	// because an entry can be attached to the spreadsheet itself.
 	Metadata []*gsheets.DeveloperMetadata
 	// DataSources are the Connected Sheets sources. They hang off the

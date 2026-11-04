@@ -15,11 +15,10 @@ import (
 //
 // The driver reads only a spreadsheet it created and filled itself, so
 // the values in a transcript are its own and this is a second line of
-// defense rather than the control. It matters where it sits: a sibling
-// project scrubbed on the read path, and a step then parsed a
-// placeholder out of one result and fed it back into the next call,
-// which the API rejected. Every step here reads the untouched value and
-// only the printing is redacted.
+// defense rather than the control. It matters where it sits: scrubbing
+// on the read path lets a step parse a placeholder out of one result and
+// feed it back into the next call, which the API rejects. Every step
+// here reads the untouched value and only the printing is redacted.
 var (
 	mu           sync.Mutex
 	replacements = map[string]string{}
@@ -39,11 +38,10 @@ func reg(value, placeholder string) {
 // contains another is handled before it, and then masks anything
 // identifying that was never registered.
 //
-// The second half is the one that was missing. Registration only covers
-// values this driver created and therefore knew in advance; everything
-// Drive returned about them — the owner's address, the folder id — went
-// through untouched, into the transcript §9.1 calls safe to paste into a
-// commit message. Found by reading a run rather than by running one.
+// The second half covers what registration cannot. Registration knows
+// only the values this driver created; everything Drive returns about
+// them, such as the owner's address or the folder id, would otherwise
+// reach a transcript that has to be safe to paste into a commit message.
 func redact(s string) string {
 	return redactpkg.Line(substitute(s))
 }
@@ -68,11 +66,11 @@ func substitute(s string) string {
 }
 
 func sec(title string) {
-	// Through line, not around it. sec used to print directly, which
-	// made the allowlist a list of functions permitted to reach the
+	// Through line, not around it. A sec that printed directly would
+	// make the allowlist a list of functions permitted to reach the
 	// terminal rather than a claim that everything reaching it is
-	// redacted — and a later sec(someSheetTitle) would have been blessed
-	// by name. One printer is the whole invariant.
+	// redacted, and would bless a sec(someSheetTitle) by name. One
+	// printer is the whole invariant.
 	line("")
 	line("== %s %s", title, strings.Repeat("=", max(0, 60-len(title))))
 }

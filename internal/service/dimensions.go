@@ -60,7 +60,7 @@ type DimensionResult struct {
 	Anchors []string `json:"anchors_removed,omitempty" jsonschema:"the anchors that were on the deleted rows or columns and went with them"`
 	// Charts are the charts reading the band. A chart is not deleted
 	// with its data: it stays where it is and loses the series, and
-	// nothing in the API's reply says so (spike L).
+	// nothing in the API's reply says so.
 	Charts []render.ChartLoss `json:"charts_affected,omitempty" jsonschema:"the charts reading the deleted rows or columns, which stay in place and lose those series"`
 	// Cells and Formulas are what a delete took with it.
 	Cells    int  `json:"cells,omitempty"`
@@ -71,13 +71,12 @@ type DimensionResult struct {
 // Render is the text half.
 func (r DimensionResult) Render() string { return r.Summary }
 
-// EditDimensions answers edit_dimensions.
+// EditDimensions answers edit_dimensions and delete_dimensions.
 //
-// The delete action is absent from the schema unless the destructive
-// flag is set, and needs confirm when it is there: deleting a column
-// takes its data with it and nothing in Sheets brings it back. An action
-// a model cannot see is one it cannot reach, which is the unregistered
-// tool rule applied one level down (§7.4).
+// The delete is its own tool, registered only with the destructive flag,
+// and needs confirm: deleting a column takes its data with it and
+// nothing in Sheets brings it back. It is refused here too when the flag
+// is off, so no other caller of this reaches it.
 func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*DimensionResult, error) {
 	ref, err := s.Resolve(ctx, req.Spreadsheet)
 	if err != nil {
@@ -100,7 +99,7 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 	}
 	if req.Action == DimDelete && strings.HasPrefix(strings.TrimSpace(req.Band), AnchorPrefix) {
 		// The call names what it deletes, so the client's prompt shows the
-		// rows rather than a label that resolves when the call runs (§9a).
+		// rows rather than a label that resolves when the call runs.
 		b := render.Band{Rows: band.Rows(), First: band.First, Last: band.Last}
 		return nil, Errorf("invalid", "delete_dimensions takes the band itself, not an anchor, so the call names "+
 			"what goes: %s points at %s on %q now. Pass band %s", strings.TrimSpace(req.Band), b, props.Title, b.A1())
@@ -132,19 +131,27 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 		res.Cells, res.Formulas = counts.NonEmpty, counts.Formulas
 		act.Cells, act.Formulas = counts.NonEmpty, counts.Formulas
 		// The anchors on the band go with it, and the API's reply says
-		// nothing at all about them (spike K). Same shape as spike J's
-		// deleteTable finding: what a delete takes silently is exactly
-		// what this server has to name beforehand.
+		// nothing at all about them: what a delete takes silently is
+		// exactly what this server has to name beforehand.
 		doomed, err := s.anchorsOnBand(ctx, ref.ID, props.SheetID, band)
 		if err != nil {
 			return nil, err
 		}
 		res.Anchors, act.Anchors = doomed, doomed
-		// A chart reading the band is the other silent loss, and it is
-		// worse than the anchors: the chart survives the delete, keeps
-		// its place and its title, and simply stops drawing anything.
-		// Live, deleting a charted column left a chart with one domain
-		// and zero series and the reply was `{}` (spike L).
+		// A chart reading the band is the other loss named here, and it
+		// is worse than the anchors: the chart survives the delete, keeps
+		// its place and its title, and stops drawing anything. Deleting a
+		// charted column leaves a chart with one domain and zero series,
+		// the reply is `{}`, and the card still lists the chart. Checked
+		// by the live steps "an unconfirmed delete names the chart it
+		// would break", "and the listing shows the chart short of a
+		// series" and "what a chart survives".
+		//
+		// A pivot whose source the band cuts is silent too: its source
+		// shrinks with the delete and its output can fall to a header
+		// and Grand Total. This does not name pivots. Checked by the live
+		// step "what a read sees where a pivot table sits".
+		// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#DeleteDimensionRequest
 		charts, err := s.chartsOnBand(ctx, ref, props, band)
 		if err != nil {
 			return nil, err
@@ -180,9 +187,9 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 
 // dimensionRequest compiles one action into one union member.
 //
-// It no longer says what the action does: the words are the renderer's,
+// It does not say what the action does: the words are the renderer's,
 // which is what keeps a preview, a result and a refusal describing the
-// same act in the same terms (§17a.9).
+// same act in the same terms.
 func dimensionRequest(req DimensionRequest, b plan.Band, props *gsheets.SheetProperties) (*gsheets.Request, error) {
 	switch req.Action {
 	case DimInsert:
@@ -246,9 +253,8 @@ func (s *Service) countBand(ctx context.Context, ref Reference, props *gsheets.S
 }
 
 // chartClause is the refusal's chart sentence. The renderer owns the
-// words; this owns where they sit in the sentence around them, which is
-// the join the first version got wrong — a clause written for one
-// sentence read as a run-on in the other.
+// words; this owns where they sit in the sentence around them, since a
+// clause written for one sentence reads as a run-on in the other.
 func chartClause(losses []render.ChartLoss) string {
 	if len(losses) == 0 {
 		return ""

@@ -35,36 +35,31 @@ type ClearResult struct {
 func (r ClearResult) Render() string { return r.Summary }
 
 // clearNotes says what a clear does beyond the cells it takes out
-// directly, in one place for all three things that report a clear.
+// directly, in one place for all three things that report a clear: the
+// confirm gate, the dry run the gate sends the caller to, and the
+// result. Each must say the same, or a caller who previews is told the
+// destructive call removes nothing.
 //
-// One place because the confirm gate used to be the only path that said
-// any of it, while its own closing words send the caller to dry_run —
-// so a caller who followed the advice was told the destructive call
-// would remove nothing. The result afterwards was worse: it announced
-// that the cells were still there.
+// A pivot's anchor comes first, because it subsumes the rest.
+// `values.clear` over the anchor returns 200 with `clearedRange` naming
+// that one cell, and the pivot's definition and every cell of its output
+// are gone. The reference deletes a pivot with an updateCells naming
+// the field, and says nothing of a clear doing it. Checked by the live
+// steps "an unconfirmed clear of the anchor says it takes the whole
+// table" and "what a merge and a clear do to a pivot table".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/clear
 //
-// Two findings, and the pivot one comes first because it subsumes the
-// other. Verified live (spike Q): `values.clear` over a pivot's anchor
-// returns 200 with `clearedRange` naming that one cell, and the pivot's
-// definition and every cell of its output are gone — eleven cells for a
-// reply that mentions one. That is the sixth silent destroy this
-// project has found and the first in a shipped tool, and it is not the
-// documented way to delete a pivot table either.
-//
-// Where no anchor is in the range, what is left to say is about cells
-// nobody typed. A clear does not take those out itself — that much is
-// live-verified — but it is not the promise of survival this used to
-// make: clearing an array formula takes its whole spill with it, and
-// the spill cells look exactly like a pivot's output from here. So the
-// sentence says what the clear does and what it depends on, and claims
-// nothing it cannot know.
+// Where no anchor is in the range, what is left is cells nobody typed.
+// A clear leaves a computed cell as it is, but clearing an array formula
+// takes its whole spill, and spill cells look exactly like a pivot's
+// output from here. So the sentence says those cells go only if
+// whatever draws them was in the range too, and claims nothing more.
 func clearNotes(g *grid.Grid, counts grid.Counts, past bool) string {
 	if counts.Pivots > 0 {
 		anchors := plan.PivotAnchors(g)
 		// Its own sentence, after the one about undo rather than inside
 		// it. A clause spliced into the middle leaves ", and Sheets
-		// cannot undo it" hanging off a full stop, which is the defect
-		// phase 4 found by reading a transcript rather than counting it.
+		// cannot undo it" hanging off a full stop.
 		verb := "takes"
 		if past {
 			verb = "took"
@@ -87,8 +82,8 @@ func clearNotes(g *grid.Grid, counts grid.Counts, past bool) string {
 // namesItsRange refuses a clear whose call does not name the cells it
 // takes: an omitted range, which means the whole sheet, and an anchor,
 // which resolves when the call runs. The client's prompt shows the
-// call's arguments, so they carry what goes (§9a). The refusal names
-// the range either one stands for now.
+// call's arguments, so they carry what goes. The refusal names the
+// range either one stands for now.
 func namesItsRange(rangeA1 string, at area) error {
 	rng := strings.TrimSpace(rangeA1)
 	whole := a1.Format(at.props.Title, at.rect)
@@ -151,8 +146,8 @@ func (s *Service) Clear(ctx context.Context, req ClearRequest) (*ClearResult, er
 	// CheckDestination rather than Check: these are the refusals that
 	// apply to any write to a rectangle, and they are the only ones a
 	// clear has. Asking the full guard and then muting the rest with
-	// acknowledgments this tool does not offer is what this used to do,
-	// and it would have applied a later blocker to a clear silently.
+	// acknowledgments this tool does not offer would let a blocker added
+	// later pass a clear silently.
 	if err := refuse(plan.CheckDestination(before), plan.Ack{}); err != nil {
 		return nil, err
 	}

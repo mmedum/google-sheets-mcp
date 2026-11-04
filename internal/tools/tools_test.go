@@ -33,7 +33,7 @@ type badDryRun struct {
 	DryRun string `json:"dry_run,omitempty"`
 }
 
-// TestDryRunIsFoundByReflectionNotByMemory is the rule §8 turns on: a
+// TestDryRunIsFoundByReflectionNotByMemory holds the dry-run rule: a
 // write that offers dry_run and does not honor it is a preview that
 // wrote, so the flag is looked for in the type rather than remembered
 // per tool.
@@ -139,7 +139,7 @@ func TestAnnotationsFollowTheKind(t *testing.T) {
 	}
 }
 
-// TestOnlyDeleteDataSourcePrompts holds the marked set (§9a). Claude
+// TestOnlyDeleteDataSourcePrompts holds the marked set. Claude
 // Code prompts for a marked tool on every call and refuses it where
 // nobody can be asked. delete_data_source takes its sheet and unlinks
 // every object built on the source, which Sheets cannot undo; every
@@ -159,8 +159,8 @@ func TestOnlyDeleteDataSourcePrompts(t *testing.T) {
 	}
 }
 
-// TestTheHintsAreExact holds the two annotations a client prompts by
-// (§9a). VS Code prompts on every tool without readOnlyHint, so only the
+// TestTheHintsAreExact holds the two annotations a client prompts by.
+// VS Code prompts on every tool without readOnlyHint, so only the
 // reads carry it. Codex and claude.ai prompt by destructiveHint, which
 // the MCP schema reads as false only for "the tool performs only
 // additive updates": so only the three writes that add say false, and
@@ -301,11 +301,10 @@ func listTools(t *testing.T, s *mcp.Server) map[string]*mcp.Tool {
 // TestFullSurfaceRegistersEverything is the claim FullSurface makes,
 // held by a test rather than by its comment.
 //
-// The schema dump describes the whole tool surface, and it built that
-// configuration by hand for three phases: ReadOnly off, EnableDestructive
-// on. Phase 4 added a second gate and the tool behind it vanished from
-// the dump — and so from the schema diff, which is the gate that would
-// have said a tool had appeared. Every test was still green.
+// The schema dump describes the whole tool surface. A configuration
+// built by hand there misses the next gate, and the tool behind it
+// vanishes from the dump and so from the schema diff, the gate that
+// would say a tool had appeared, with every test still green.
 //
 // So this enumerates the gates instead of naming them: no combination of
 // them may register a tool the full surface does not.

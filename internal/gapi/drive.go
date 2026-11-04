@@ -40,7 +40,7 @@ type FileList struct {
 	NextPageToken string  `json:"nextPageToken,omitempty"`
 }
 
-// SearchFields and FileFields are what the two Drive calls ask for.
+// SearchFields and FileFields are what files.list and files.get ask for.
 //
 // `parents` is deliberately absent. It was here, and a file's parent is
 // a raw folder id that nothing can use: no tool takes a folder, and
@@ -51,15 +51,18 @@ type FileList struct {
 // is actually cheap, so it is minimized here rather than masked later.
 const SearchFields = "nextPageToken,files(id,name,mimeType,modifiedTime,createdTime,owners(displayName,emailAddress),webViewLink)"
 
-// FileFields is what GetFile asks for.
+// FileFields is what GetFile asks for. Nothing in the server reads
+// `version`: Drive's version does not move on a Sheets edit, so it
+// cannot stand in for a checkpoint.
 const FileFields = "id,name,mimeType,createdTime,modifiedTime,owners(displayName,emailAddress),webViewLink,version,trashed"
 
 // SearchSpreadsheets runs a Drive query across My Drive and shared
 // drives, newest first. The caller builds q and is responsible for
 // escaping every value it interpolates — QuoteDriveValue is how.
 //
-// This is the only Drive call this server makes. Finding, sharing,
-// moving and trashing files belong to a server built on the Drive API.
+// Beside GetFile and About, this is the only Drive call this server
+// makes. Sharing, moving and trashing files belong to a server built on
+// the Drive API.
 func (c *Client) SearchSpreadsheets(ctx context.Context, q string, limit int, pageToken string) (*FileList, error) {
 	if limit <= 0 {
 		limit = 20

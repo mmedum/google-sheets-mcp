@@ -15,25 +15,23 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 )
 
-// spikeL answers §15.L: what a chart is once it exists, and what it
+// askChartSurvival asks what a chart is once it exists, and what it
 // survives.
 //
-// §8 promises manage_chart with add, update, delete and move. Four
-// things the reference does not settle decide what those can honestly
-// say. A chart's spec is a union of thirteen chart kinds and
-// UpdateChartSpecRequest carries no field mask, so an update may be a
-// whole-spec replace — which would make "change the title" a call that
-// silently discards the series. A chart's source is a GridRange, and
-// nothing says what happens to it when the columns underneath are
-// deleted. DeleteEmbeddedObjectRequest has no response type at all,
-// which is the shape phase 2's deleteTable and phase 3's anchors both
-// turned out to have. And the card asks for charts(chartId), so what a
+// manage_chart adds, updates, moves and deletes charts. Four things the
+// reference does not settle decide what those can honestly say. A
+// chart's spec is a union of chart kinds and UpdateChartSpecRequest
+// carries no field mask, so an update may be a whole-spec replace —
+// which would make "change the title" a call that silently discards the
+// series. A chart's source is a GridRange, and nothing says what happens
+// to it when the columns underneath are deleted.
+// DeleteEmbeddedObjectRequest has no response type at all, so its reply
+// cannot say what went. And the card asks for charts(chartId), so what a
 // wider mask would buy is unmeasured.
 //
 // Every answer here is read back out of the API after the write, never
 // inferred from the request that was sent.
-func spikeL(ctx context.Context) {
-	sec("Spike L: charts, and what a chart survives")
+func askChartSurvival(ctx context.Context) {
 	const sheet = "SpikeCharts"
 	sheetID, err := addSheet(ctx, sheet)
 	if err != nil {
@@ -151,10 +149,10 @@ func spikeL(ctx context.Context) {
 	// The message is the refusal this server has to write before
 	// sending, so the wording matters as much as the status.
 	//
-	// Each of these carries a valid position. The first run of this
-	// spike did not, and both probes came back refused on the position
-	// without the spec ever being looked at — an answer about the wrong
-	// half of the request, printed under a heading that said "spec".
+	// Each of these carries a valid position. Without one, both probes
+	// are refused on the position without the spec ever being looked at
+	// — an answer about the wrong half of the request, printed under a
+	// heading that says "spec".
 	somewhere := map[string]any{"overlayPosition": map[string]any{
 		"anchorCell": map[string]any{"sheetId": sheetID, "rowIndex": 20, "columnIndex": 0},
 	}}
@@ -235,8 +233,8 @@ func spikeL(ctx context.Context) {
 
 	line("")
 	line("  Q9: what does deleteEmbeddedObject say it did?")
-	// Two silent deletes have been found on this API already, so the
-	// reply body is read rather than the status.
+	// Other deletes on this API take more than they say, so the reply
+	// body is read rather than the status.
 	if slicerID != 0 {
 		status, body = batchOne(ctx, map[string]any{"deleteEmbeddedObject": map[string]any{"objectId": slicerID}})
 		line("    delete the slicer                  -> HTTP %d  %s", status, first120(body))

@@ -1,7 +1,8 @@
 // Package gapi is a raw REST client for the Google Sheets API, with the
-// one Drive call this server makes beside it.
+// Drive calls this server makes beside it: files.list and files.get to
+// find and describe a spreadsheet, and about.get for the account.
 //
-// google.golang.org/api is deliberately not a dependency (§4.8): it
+// google.golang.org/api is deliberately not a dependency: it
 // brings gRPC, OpenTelemetry and the cloud auth stack for a binary that
 // needs JSON over HTTP. Requests are built here and decode into
 // internal/gsheets. Nothing under this package imports MCP.
@@ -13,7 +14,7 @@
 // makes a second sheet. Three POSTs in this API only read, and they are
 // marked one by one — a syntax-tree test allows that flag only on those
 // three by name, because a flag set wrongly on a real write would let it
-// run during a preview.
+// be sent twice.
 //
 // A log line never carries the payload. A Sheets URL holds the
 // spreadsheet id and the range; a Drive search URL holds the caller's
@@ -188,17 +189,19 @@ func New(ts oauth2.TokenSource, o Options) *Client {
 	if c.log == nil {
 		c.log = slog.New(slog.DiscardHandler)
 	}
+	// Sheets may process one request for 180 seconds before it answers
+	// with a timeout, so a write waits that long; a read gets 60.
+	// https://developers.google.com/workspace/sheets/api/limits
 	if c.readTimeout <= 0 {
 		c.readTimeout = 60 * time.Second
 	}
 	if c.writeTimeout <= 0 {
 		c.writeTimeout = 180 * time.Second
 	}
-	// Field by field, not all or nothing. Filling the policy in only
-	// when MaxAttempts was left out meant a caller who set attempts and
-	// nothing else kept MaxDelay at zero — and a zero delay reaches
-	// rand.Int64N(0), which panics the process on the first retryable
-	// failure instead of backing off.
+	// Field by field, not all or nothing: a caller who sets attempts and
+	// nothing else must not keep MaxDelay at zero, because a zero delay
+	// reaches rand.Int64N(0), which panics the process on the first
+	// retryable failure instead of backing off.
 	d := DefaultRetry()
 	if c.retry.MaxAttempts <= 0 {
 		c.retry.MaxAttempts = d.MaxAttempts
@@ -209,9 +212,12 @@ func New(ts oauth2.TokenSource, o Options) *Client {
 	if c.retry.MaxDelay <= 0 {
 		c.retry.MaxDelay = d.MaxDelay
 	}
-	// 60 a minute is one a second, which is also Google's advice for
-	// concurrency. The burst lets a tool that reads then writes go
-	// straight through.
+	// Sheets counts requests, not units: 60 reads and 60 writes a minute
+	// per user, refilled every minute, and a batch with its subrequests
+	// counts once. 60 a minute is one a second, which is also Google's
+	// advice for concurrency on one spreadsheet. The burst lets a tool
+	// that reads then writes go straight through.
+	// https://developers.google.com/workspace/sheets/api/limits
 	if c.readLim == nil {
 		c.readLim = rate.NewLimiter(rate.Limit(1), 5)
 	}
@@ -249,10 +255,12 @@ type request struct {
 	body        []byte
 	// readOnly marks a POST that only reads. The Sheets API has exactly
 	// three: spreadsheets.getByDataFilter, values.batchGetByDataFilter
-	// and developerMetadata.search. A POST is a write by default, so a
+	// and developerMetadata.search, as their httpMethod and description
+	// in the discovery document show. A POST is a write by default, so a
 	// method added later without thought fails closed, and a test over
 	// this package's syntax tree refuses this field on anything but
 	// those three by name.
+	// https://sheets.googleapis.com/$discovery/rest?version=v4
 	readOnly bool
 }
 
@@ -264,7 +272,9 @@ func (r request) writes() bool {
 
 // repeatable reports whether sending the request twice is harmless.
 // values.update is a PUT and is; values.append and batchUpdate are POSTs
-// that duplicate rows and sheets, and are not.
+// that duplicate rows and sheets, and are not. The discovery document
+// gives each method's httpMethod.
+// https://sheets.googleapis.com/$discovery/rest?version=v4
 func (r request) repeatable() bool {
 	switch r.method {
 	case http.MethodGet, http.MethodPut:
@@ -281,11 +291,11 @@ func (c *Client) do(ctx context.Context, r request) ([]byte, error) {
 		lim, timeout = c.writeLim, c.writeTimeout
 	}
 
-	// Every path out of the loop below goes through this, because the
-	// two that did not — a canceled context during the rate-limit wait
-	// or during the backoff — returned a bare context error for a write
-	// that had already been sent once. Hard rule 8 is that an
-	// unrepeatable write whose outcome nobody can know says so.
+	// Every path out of the loop below goes through this, a canceled
+	// context during the rate-limit wait or the backoff included: a bare
+	// context error for a write already sent once would hide that its
+	// outcome is unknown, and an unrepeatable write whose outcome nobody
+	// can know says so.
 	var lastErr error
 	finish := func(err error) error {
 		if r.writes() && !r.repeatable() && lastErr != nil {
@@ -399,6 +409,7 @@ func (c *Client) once(ctx context.Context, r request, timeout time.Duration) (*a
 // including 503, or a connection cut mid-flight may have applied: of
 // UNAVAILABLE, Google's code.proto says it is "not always safe to retry
 // non-idempotent operations". Those are reported as such instead.
+// https://github.com/googleapis/googleapis/blob/master/google/rpc/code.proto
 func retryable(r request, err error) (bool, time.Duration) {
 	var te *transientError
 	if errors.As(err, &te) {

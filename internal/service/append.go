@@ -53,14 +53,16 @@ func (r AppendResult) Render() string { return r.Summary }
 // Append answers append_rows.
 //
 // Where the rows land is Google's decision and is reported rather than
-// predicted. Verified live: values.append finds the contiguous block the
-// given range falls in and writes after that one, and reports it as
-// tableRange.
+// predicted. values.append finds the contiguous block the given range
+// falls in and writes after that one, not at the end of the sheet, and
+// reports the block as tableRange. Checked by the live steps "rows land
+// after the block Google finds" and "where an append lands".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/append
 //
-// It always inserts. OVERWRITE wrote over whatever followed the block,
-// which is chosen during the call, so no read could witness it; a write
-// over cells the caller knows is write_values, which reads them first
-// (§4.3).
+// It always inserts. OVERWRITE would write over whatever follows the
+// block, which Google chooses during the call, so no read could witness
+// it; a write over cells the caller knows is write_values, which reads
+// them first.
 func (s *Service) Append(ctx context.Context, req AppendRequest) (*AppendResult, error) {
 	input, typed, err := parseInput(req.Input)
 	if err != nil {

@@ -219,7 +219,7 @@ const (
 // TestPivotUpdateRefusesASourceTooNarrowForWhatItKeeps is the update
 // that changes source. A group, value or filter it was not given keeps
 // its offset, and Google accepts an offset past the new source's edge
-// with a 200 and a pivot that reads nothing there (spike M).
+// with a 200 and a pivot that reads nothing there.
 func TestPivotUpdateRefusesASourceTooNarrowForWhatItKeeps(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -501,8 +501,8 @@ func TestPivotListEmpty(t *testing.T) {
 	}
 }
 
-// TestPivotOutputIsSeenByTheWriteGuard is the half of spike M that
-// matters most: a pivot's output carries an effectiveValue and no
+// TestPivotOutputIsSeenByTheWriteGuard holds what matters most about a
+// pivot on the wire: its output carries an effectiveValue and no
 // userEnteredValue, so the guard has to count those cells as occupied.
 // If it does not, a write lands on them and the pivot stops drawing.
 func TestPivotOutputIsSeenByTheWriteGuard(t *testing.T) {
@@ -708,11 +708,12 @@ func TestPivotUpdateCostsFewRequests(t *testing.T) {
 	}
 	t.Logf("an update costs %d read(s) and %d write(s)", reads, writes)
 	if reads > 3 {
-		t.Errorf("an update costs %d reads; it used to cost four and the point of the change was fewer", reads)
+		t.Errorf("an update costs %d reads, want at most 3", reads)
 	}
 }
 
-// TestWriteIntoPivotOutputNamesThePivot is §17a.27. A pivot's output
+// TestWriteIntoPivotOutputNamesThePivot holds the refusal that names
+// the pivot behind a write into its output. A pivot's output
 // cells are ordinary computed values on the wire, so the guard sees them
 // as "not empty" and nothing else; naming the table means looking up and
 // left of the write, after the refusal.
@@ -798,8 +799,8 @@ func TestWriteBesidePivotOutputSaysNothing(t *testing.T) {
 	}
 }
 
-// TestPivotLookupIsPaidOnlyOnARefusal is the cost §17a.27 turned on:
-// once per refusal rather than once per write.
+// TestPivotLookupIsPaidOnlyOnARefusal holds the lookup's cost: once per
+// refusal rather than once per write.
 func TestPivotLookupIsPaidOnlyOnARefusal(t *testing.T) {
 	srv, svc := standard(t)
 	addPivot(t, svc, "F1")
@@ -820,8 +821,8 @@ func TestPivotLookupIsPaidOnlyOnARefusal(t *testing.T) {
 	}
 }
 
-// TestPivotLookbackIsBoundedByTheReadBudget is the cost of the shape
-// §17a.27 chose. The window that could hold the anchor is bounded from
+// TestPivotLookbackIsBoundedByTheReadBudget is what the lookup gives up
+// to stay cheap. The window that could hold the anchor is bounded from
 // the write's end, so a pivot anchored further above than the budget
 // reaches is not named and the refusal says only what the guard saw.
 func TestPivotLookbackIsBoundedByTheReadBudget(t *testing.T) {
@@ -961,10 +962,11 @@ func TestPivotIsNotNamedOnceOverwriteIsPassed(t *testing.T) {
 	}
 }
 
-// TestMergeOverPivotOutputIsRefusedWithTheReason is §17a.31. Sheets
-// refuses a merge over any cell of a pivot table itself, so nothing is
-// being prevented here — what is fixed is a refusal that described a
-// loss which cannot happen and offered a flag that could not help.
+// TestMergeOverPivotOutputIsRefusedWithTheReason holds the reason a
+// merge over a pivot is refused. Sheets refuses a merge over any cell of
+// a pivot table itself, so nothing is being prevented here: the refusal
+// must not describe a loss that cannot happen or offer a flag that
+// cannot help.
 func TestMergeOverPivotOutputIsRefusedWithTheReason(t *testing.T) {
 	_, svc := standard(t)
 	addPivot(t, svc, "F1")
@@ -1031,8 +1033,8 @@ func TestClearOverPivotAnchorSaysWhatItTakes(t *testing.T) {
 	}
 
 	// The gate sends the caller to dry_run, so the dry run has to say it
-	// too — and so does the result, which used to announce that the
-	// pivot's cells had survived a call that had just destroyed them.
+	// too, and so does the result, which must not announce that the
+	// pivot's cells survived a call that destroyed them.
 	dry, err := svc.Clear(context.Background(), service.ClearRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "F1:F2", DryRun: true,
 	})

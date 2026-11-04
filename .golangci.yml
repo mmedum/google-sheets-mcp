@@ -22,6 +22,7 @@ linters:
     - prealloc
     - makezero
     - forbidigo
+    - depguard
   settings:
     misspell:
       locale: US
@@ -37,6 +38,16 @@ linters:
           msg: stdout carries only MCP JSON-RPC frames; write through the boundary helpers
         - pattern: ^os\.Stdout$
           msg: stdout carries only MCP JSON-RPC frames; take an io.Writer instead
+    depguard:
+      rules:
+        # Own wire types over raw REST (D-75). Check the message text when
+        # verifying this works: a settings block that fails to load
+        # leaves depguard on its default rule, which refuses every
+        # import outside the standard library with a message of its own.
+        own-wire-types:
+          deny:
+            - pkg: "google.golang.org/api"
+              desc: "it drags in gRPC and telemetry for the subset of the API this repository hand-writes in internal/gsheets and internal/gapi (D-75)"
     gocyclo:
       min-complexity: 25
     govet:

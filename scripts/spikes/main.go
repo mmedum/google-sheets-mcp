@@ -1,9 +1,10 @@
 //go:build live
 
-// Command spikes answers the questions §15 says the reference does not.
+// Command spikes asks Google, live, the questions its API reference
+// leaves open.
 //
-// Each probe prints what the API actually did, so the verdict written
-// into the evidence log is a transcript rather than a recollection. It
+// Each probe prints what the API actually did, so a behavior a comment
+// states rests on a transcript rather than a recollection. It
 // creates its own scratch spreadsheet and fills it, so nothing it prints
 // is anybody's data.
 package main
@@ -18,6 +19,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -42,11 +44,11 @@ func line(format string, args ...any) {
 
 // sec prints a static section header.
 func sec(title string) {
-	// Through line, not around it. sec used to print directly, which
-	// made the allowlist a list of functions permitted to reach the
+	// Through line, not around it. A sec that printed directly would
+	// make the allowlist a list of functions permitted to reach the
 	// terminal rather than a claim that everything reaching it is
-	// redacted — and a later sec(someSheetTitle) would have been blessed
-	// by name. One printer is the whole invariant.
+	// redacted, and would bless a sec(someSheetTitle) by name. One
+	// printer is the whole invariant.
 	line("")
 	line("== %s %s", title, strings.Repeat("=", max(0, 54-len(title))))
 }
@@ -56,16 +58,68 @@ const sheetsBase = "https://sheets.googleapis.com/v4"
 var client *http.Client
 var scratchID string
 
+// firstSheet and secondSheet are the titles setup gives the scratch
+// spreadsheet's sheets. A named range shadows the first.
+var firstSheet, secondSheet string
+
+// spike is one question the reference leaves open, asked live. Its name
+// says what it asks: -only and -list take it, its banner prints it, and a
+// comment citing a behavior it verified quotes it.
+type spike struct {
+	name string
+	run  func(ctx context.Context)
+}
+
+// spikes run in this order. A slice rather than a map: a transcript that
+// changes order between runs cannot be diffed against the last one. A
+// name holds no comma, since -only splits on one.
+var spikes = []spike{
+	{name: "what values.get makes of a range", run: askRangeSyntax},
+	{name: "the shape of a Sheets error", run: askErrorShapes},
+	{name: "what values.update makes of its input", run: func(ctx context.Context) {
+		askCoercion(ctx)
+		askRangeAgainstArray(ctx)
+	}},
+	{name: "where an append lands", run: askAppendLanding},
+	{name: "whether Drive's version moves on every edit", run: askDriveVersion},
+	{name: "what spreadsheets.create makes of a sheets list", run: askCreateWithSheets},
+	{name: "what values.update keeps and where a move lands", run: askWhatWritesKeep},
+	{name: "what a write past the size limits answers", run: askSizeLimits},
+	{name: "what a table does to the rules over its range", run: askTableRules},
+	{name: "whether developer metadata is a durable anchor", run: askDurableAnchor},
+	{name: "what a chart survives", run: askChartSurvival},
+	{name: "what a read sees where a pivot table sits", run: askPivotOnTheWire},
+	{name: "whether this server can reach a data source", run: askDataSourceReach},
+	{name: "the reads a wider field mask can fold in", run: askFoldedReads},
+	{name: "what a merge and a clear do to a pivot table", run: askPivotMergeClear},
+	{name: "how cell comments read back and fail", run: askCellComments},
+	{name: "what Google makes of a color scale", run: askColorScales},
+	{name: "what Google makes of typed table columns", run: askTypedColumns},
+	{name: "how many typed table adds a spreadsheet takes", run: askTableAddCount},
+	{name: "what a typed column does to a cell's own rule", run: askCellRuleUnderTyping},
+	{name: "what Google makes of a pivot definition", run: askPivotDefinition},
+	{name: "the unit the text limits count", run: askTextLimitUnit},
+}
+
 // only names the spikes to run, so re-probing a single question does not
 // mean re-running every other one. Each run creates a scratch
 // spreadsheet it cannot trash, so a narrower run is a smaller mess — and
-// a list rather than one letter, because a phase asking four questions
-// otherwise leaves four spreadsheets behind.
-var only = flag.String("only", "",
-	"run these spikes, comma-separated (A, B, C, E, F, G, H, I, J, K, L, M, N, P, Q, R, S, T, T12, T13, U); default runs all")
+// a list rather than one name, because asking four questions one run at
+// a time leaves four spreadsheets behind.
+var (
+	only = flag.String("only", "",
+		"run these spikes: spike names, comma-separated, as -list prints them; default runs all")
+	list = flag.Bool("list", false, "print the spike names and exit")
+)
 
 func main() {
 	flag.Parse()
+	if *list {
+		for _, sp := range spikes {
+			line("%s", sp.name)
+		}
+		return
+	}
 	ctx := context.Background()
 	if err := run(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "\nspikes: %v\n", err)
@@ -74,6 +128,10 @@ func main() {
 }
 
 func run(ctx context.Context) error {
+	which, err := chosen(*only)
+	if err != nil {
+		return err
+	}
 	ts, err := tokenSource(ctx)
 	if err != nil {
 		return err
@@ -81,61 +139,45 @@ func run(ctx context.Context) error {
 	client = oauth2.NewClient(ctx, ts)
 
 	title := "spike scratch " + time.Now().UTC().Format("2006-01-02 15:04:05")
-	first, second, err := setup(ctx, title)
-	if err != nil {
+	if err := setup(ctx, title); err != nil {
 		return err
 	}
-	line("scratch spreadsheet created; first sheet %q, second sheet %q", first, second)
+	line("scratch spreadsheet created; first sheet %q, second sheet %q", firstSheet, secondSheet)
 	line("NOTE: this run leaves the spreadsheet behind — drive.readonly cannot trash it.")
 	line("      Remove %q by hand.", title)
 
-	// A slice rather than a map: a transcript that changes order between
-	// runs cannot be diffed against the last one.
-	for _, p := range []struct {
-		letter string
-		probe  func()
-	}{
-		{"C", func() { spikeC(ctx, first, second) }},
-		{"E", func() { spikeE(ctx, first) }},
-		{"A", func() { spikeA(ctx); spikeShape(ctx) }},
-		{"B", func() { spikeB(ctx) }},
-		{"F", func() { spikeF(ctx) }},
-		{"H", func() { spikeH(ctx) }},
-		{"I", func() { spikeI(ctx) }},
-		{"G", func() { spikeG(ctx) }},
-		{"J", func() { spikeJ(ctx) }},
-		{"K", func() { spikeK(ctx) }},
-		{"L", func() { spikeL(ctx) }},
-		{"M", func() { spikeM(ctx) }},
-		{"N", func() { spikeN(ctx) }},
-		{"P", func() { spikeP(ctx) }},
-		{"Q", func() { spikeQ(ctx) }},
-		{"R", func() { spikeR(ctx) }},
-		{"S", func() { spikeS(ctx) }},
-		{"T", func() { spikeT(ctx) }},
-		{"T12", func() { spikeT12(ctx) }},
-		{"T13", func() { spikeT13(ctx) }},
-		{"U", func() { spikeU(ctx) }},
-		{"V", func() { spikeV(ctx) }},
-	} {
-		if wanted(p.letter) {
-			p.probe()
-		}
+	for _, sp := range which {
+		sec(sp.name)
+		sp.run(ctx)
 	}
 	return nil
 }
 
-// wanted reads the -only list. An empty list is every spike.
-func wanted(letter string) bool {
-	if strings.TrimSpace(*only) == "" {
-		return true
-	}
-	for _, want := range strings.Split(*only, ",") {
-		if strings.EqualFold(strings.TrimSpace(want), letter) {
-			return true
+// chosen is the spikes the -only list names, in the table's order, or
+// every spike for an empty list. A name no spike has is refused before
+// anything is created, since every run leaves a spreadsheet behind.
+func chosen(only string) ([]spike, error) {
+	var names []string
+	for _, name := range strings.Split(only, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			names = append(names, name)
 		}
 	}
-	return false
+	if len(names) == 0 {
+		return spikes, nil
+	}
+	for _, name := range names {
+		if !slices.ContainsFunc(spikes, func(sp spike) bool { return strings.EqualFold(sp.name, name) }) {
+			return nil, fmt.Errorf("no spike is named %q; -list prints the names", name)
+		}
+	}
+	var out []spike
+	for _, sp := range spikes {
+		if slices.ContainsFunc(names, func(name string) bool { return strings.EqualFold(sp.name, name) }) {
+			out = append(out, sp)
+		}
+	}
+	return out, nil
 }
 
 func tokenSource(ctx context.Context) (oauth2.TokenSource, error) {
@@ -184,11 +226,11 @@ func call(ctx context.Context, method, u string, body any) (int, string) {
 	return resp.StatusCode, strings.TrimSpace(string(data))
 }
 
-func setup(ctx context.Context, title string) (first, second string, err error) {
+func setup(ctx context.Context, title string) error {
 	status, body := call(ctx, http.MethodPost, sheetsBase+"/spreadsheets",
 		map[string]any{"properties": map[string]any{"title": title}})
 	if status != 200 {
-		return "", "", fmt.Errorf("create: HTTP %d: %s", status, body)
+		return fmt.Errorf("create: HTTP %d: %s", status, body)
 	}
 	var created struct {
 		SpreadsheetID string `json:"spreadsheetId"`
@@ -200,24 +242,24 @@ func setup(ctx context.Context, title string) (first, second string, err error) 
 		} `json:"sheets"`
 	}
 	if err := json.Unmarshal([]byte(body), &created); err != nil {
-		return "", "", err
+		return err
 	}
 	scratchID = created.SpreadsheetID
-	first = created.Sheets[0].Properties.Title
+	firstSheet = created.Sheets[0].Properties.Title
 	firstID := created.Sheets[0].Properties.SheetID
-	second = "Sidecar"
+	secondSheet = "Sidecar"
 
 	// A second sheet, a named range that deliberately shares the FIRST
 	// sheet's title, and a table. The named range points at the second
 	// sheet, so if an unquoted reference resolves to it the values come
 	// back from the wrong place and say so.
 	reqs := []any{
-		map[string]any{"addSheet": map[string]any{"properties": map[string]any{"title": second}}},
+		map[string]any{"addSheet": map[string]any{"properties": map[string]any{"title": secondSheet}}},
 	}
 	status, body = call(ctx, http.MethodPost, sheetsBase+"/spreadsheets/"+scratchID+":batchUpdate",
 		map[string]any{"requests": reqs})
 	if status != 200 {
-		return "", "", fmt.Errorf("addSheet: HTTP %d: %s", status, body)
+		return fmt.Errorf("addSheet: HTTP %d: %s", status, body)
 	}
 	var added struct {
 		Replies []struct {
@@ -231,26 +273,26 @@ func setup(ctx context.Context, title string) (first, second string, err error) 
 	_ = json.Unmarshal([]byte(body), &added)
 	secondID := added.Replies[0].AddSheet.Properties.SheetID
 
-	if err := put(ctx, a1.QuoteSheet(first)+"!A1:B3", [][]any{
+	if err := put(ctx, a1.QuoteSheet(firstSheet)+"!A1:B3", [][]any{
 		{"FIRSTSHEET-A1", "FIRSTSHEET-B1"},
 		{"FIRSTSHEET-A2", "FIRSTSHEET-B2"},
 		{"FIRSTSHEET-A3", "FIRSTSHEET-B3"},
 	}); err != nil {
-		return "", "", err
+		return err
 	}
-	if err := put(ctx, a1.QuoteSheet(second)+"!A1:B3", [][]any{
+	if err := put(ctx, a1.QuoteSheet(secondSheet)+"!A1:B3", [][]any{
 		{"NAMEDRANGE-A1", "NAMEDRANGE-B1"},
 		{"NAMEDRANGE-A2", "NAMEDRANGE-B2"},
 		{"NAMEDRANGE-A3", "NAMEDRANGE-B3"},
 	}); err != nil {
-		return "", "", err
+		return err
 	}
 
 	reqs = []any{
 		// The named range carries the first sheet's title and points at
 		// the second sheet.
 		map[string]any{"addNamedRange": map[string]any{"namedRange": map[string]any{
-			"name":  first,
+			"name":  firstSheet,
 			"range": a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 2, LastRow: 3}.GridRange(secondID),
 		}}},
 		// A named range whose name clashes with nothing, to tell "the
@@ -276,7 +318,7 @@ func setup(ctx context.Context, title string) (first, second string, err error) 
 	if status != 200 {
 		line("setup: some structure could not be added (HTTP %d): %s", status, first120(body))
 	}
-	return first, second, nil
+	return nil
 }
 
 func put(ctx context.Context, rangeA1 string, values [][]any) error {
@@ -316,8 +358,8 @@ func probe(ctx context.Context, what, rangeA1 string) {
 func whole(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // pace spaces out the calls of a question that makes many, so it stays
-// under Sheets' 60 reads and 60 writes a minute per user. Spike U's run
-// of 2026-10-09 lost two answers to a 429.
+// under Sheets' 60 reads and 60 writes a minute per user. Without it,
+// askPivotDefinition loses answers to a 429.
 func pace() { time.Sleep(1100 * time.Millisecond) }
 
 func first120(s string) string {
@@ -328,31 +370,28 @@ func first120(s string) string {
 	return s
 }
 
-func spikeC(ctx context.Context, first, second string) {
-	sec("Spike C: range syntax")
-	line("  the first sheet holds FIRSTSHEET-*; the named range %q points at %q, which holds NAMEDRANGE-*", first, second)
+func askRangeSyntax(ctx context.Context) {
+	line("  the first sheet holds FIRSTSHEET-*; the named range %q points at %q, which holds NAMEDRANGE-*", firstSheet, secondSheet)
 
-	probe(ctx, "quoted sheet title", a1.QuoteSheet(first)+"!A1:B1")
-	probe(ctx, "UNQUOTED title, shadowed by a named range", first+"!A1:B1")
-	probe(ctx, "bare named range name (no ! and no range)", first)
-	probe(ctx, "bare name, quoted", a1.QuoteSheet(first))
-	probe(ctx, "second sheet, quoted", a1.QuoteSheet(second)+"!A1:B1")
+	probe(ctx, "quoted sheet title", a1.QuoteSheet(firstSheet)+"!A1:B1")
+	probe(ctx, "UNQUOTED title, shadowed by a named range", firstSheet+"!A1:B1")
+	probe(ctx, "bare named range name (no ! and no range)", firstSheet)
+	probe(ctx, "bare name, quoted", a1.QuoteSheet(firstSheet))
+	probe(ctx, "second sheet, quoted", a1.QuoteSheet(secondSheet)+"!A1:B1")
 	// Which of the two rules is doing the work: does a sheet beat a
 	// named range, or does the "!" decide before either is consulted?
 	probe(ctx, "named range with no clash, bare", "Solo")
 	probe(ctx, "named range with no clash, with !A1:B1", "Solo!A1:B1")
 	probe(ctx, "named range with no clash, quoted bare", "'Solo'")
-	probe(ctx, "clashing name, sub-range of the named range", first+"!A2:B2")
+	probe(ctx, "clashing name, sub-range of the named range", firstSheet+"!A2:B2")
 	probe(ctx, "table reference SpikeTable[Column]", "SpikeTable[FIRSTSHEET-A1]")
 	probe(ctx, "table name alone", "SpikeTable")
-	probe(ctx, "malformed range", a1.QuoteSheet(first)+"!A1:B2:C3")
-	probe(ctx, "range past the sheet", a1.QuoteSheet(first)+"!A5000:B5001")
+	probe(ctx, "malformed range", a1.QuoteSheet(firstSheet)+"!A1:B2:C3")
+	probe(ctx, "range past the sheet", a1.QuoteSheet(firstSheet)+"!A5000:B5001")
 	probe(ctx, "R1C1", "R1C1:R1C2")
 }
 
-func spikeE(ctx context.Context, first string) {
-	sec("Spike E: error shapes")
-
+func askErrorShapes(ctx context.Context) {
 	status, body := call(ctx, http.MethodGet,
 		sheetsBase+"/spreadsheets/1NoSuchSpreadsheetIdXXXXXXXXXXXXXXXXXXXXXXX?fields=spreadsheetId", nil)
 	line("  %-46s -> HTTP %d  %s", "missing spreadsheet", status, first120(body))
@@ -364,7 +403,7 @@ func spikeE(ctx context.Context, first string) {
 	// always an editor, so this is expected to succeed — which is itself
 	// the answer: this shape cannot be observed with one account.
 	u := sheetsBase + "/spreadsheets/" + scratchID + "/values/" +
-		url.PathEscape(a1.QuoteSheet(first)+"!A1:B1") + "?valueInputOption=RAW"
+		url.PathEscape(a1.QuoteSheet(firstSheet)+"!A1:B1") + "?valueInputOption=RAW"
 	status, body = call(ctx, http.MethodPut, u, map[string]any{"values": [][]any{{"FIRSTSHEET-A1", "FIRSTSHEET-B1"}}})
 	line("  %-46s -> HTTP %d  %s", "write into a protected range (as owner)", status, first120(body))
 

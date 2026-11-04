@@ -41,7 +41,7 @@ func connect(t *testing.T, s *mcp.Server) *mcp.ClientSession {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ss.Close() })
-	// The client can ask the person, and the server asks nobody (§9a):
+	// The client can ask the person, and the server asks nobody (D-37):
 	// every tool the logging test drives is called through this client,
 	// so a question from any of them fails the test that made the call.
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, &mcp.ClientOptions{
@@ -58,7 +58,7 @@ func connect(t *testing.T, s *mcp.Server) *mcp.ClientSession {
 	return cs
 }
 
-// The surface this phase ships. It is written out so a tool appearing or
+// The surface this server ships. It is written out so a tool appearing or
 // disappearing is a decision somebody made rather than something that
 // happened.
 var readTools = []string{"find_in_spreadsheet", "get_spreadsheet", "read_cell_comments", "read_formatting", "read_range", "search_spreadsheets"}
@@ -78,7 +78,7 @@ var destructiveTools = []string{"clear_values", "delete_cell_comment", "delete_d
 // scope at login.
 var connectedTools = []string{"connect_data_source", "manage_data_source"}
 
-// allTools is the surface this phase ships, which is what the schema
+// allTools is the surface this server ships, which is what the schema
 // dump carries.
 func allTools() []string {
 	all := append(append(append(append([]string{}, readTools...), writeTools...), destructiveTools...), connectedTools...)
@@ -134,10 +134,10 @@ func TestToolsNameEachOther(t *testing.T) {
 		{"find_in_spreadsheet", "search_spreadsheets"},
 		{"read_range", "get_spreadsheet"},
 		{"get_spreadsheet", "read_range"},
-		// Phase 2's four overlap the same way: a formatting read is the
-		// other half of a values read, and a conditional format rule is
-		// attached to a range rather than written into one, so the tool
-		// that does not do it says which one does.
+		// The formatting tools overlap the same way: a formatting read is
+		// the other half of a values read, and a conditional format rule
+		// is attached to a range rather than written into one, so the
+		// tool that does not do it says which one does.
 		{"read_formatting", "read_range"},
 		{"format_cells", "manage_range"},
 		{"manage_range", "read_formatting"},
@@ -173,11 +173,11 @@ func TestReadOnlyModeKeepsTheReads(t *testing.T) {
 	}
 }
 
-// TestBothHalvesCarryTheGrid is §4.9 made a test. Clients disagree about
-// which half they show the model: one shows only structuredContent,
-// others show the text. A design that puts the addresses in one half
-// loses them on some client, silently, until a task goes strangely
-// wrong.
+// TestBothHalvesCarryTheGrid holds that every tool returns both halves
+// (D-21). Clients disagree about which half they show the model: one
+// shows only structuredContent, others show the text. A design that puts
+// the addresses in one half loses them on some client, silently, until
+// a task goes strangely wrong.
 func TestBothHalvesCarryTheGrid(t *testing.T) {
 	s, _ := newServer(t, config.Config{}, nil)
 	cs := connect(t, s)
@@ -251,9 +251,9 @@ func TestDumpSchemas(t *testing.T) {
 	// tool's schema change without the diff gate ever seeing it.
 	//
 	// Through tools.FullSurface rather than a configuration written out
-	// here. Written out, this test agreed with the command for three
-	// phases and then disagreed with it silently: phase 4's second gate
-	// was set in neither, and the tool behind it was missing from both.
+	// here. Written out, this test can disagree with the command
+	// silently: a gate set in neither leaves the tool behind it missing
+	// from both.
 	s, _ := newServer(t, tools.FullSurface(config.Config{}), nil)
 	var buf bytes.Buffer
 	if err := server.DumpSchemas(context.Background(), s, &buf, "test"); err != nil {
@@ -331,7 +331,7 @@ func TestResourcesRouteByTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(tmpls.ResourceTemplates) != 2 {
-		t.Fatalf("%d resource templates; §8 offers two", len(tmpls.ResourceTemplates))
+		t.Fatalf("%d resource templates, want two: the card and a sheet's used range", len(tmpls.ResourceTemplates))
 	}
 	// No static list: enumerating spreadsheets is a Drive listing.
 	res, err := cs.ListResources(ctx, nil)

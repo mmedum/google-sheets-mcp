@@ -134,9 +134,11 @@ type SheetRef struct {
 // Three rules, each of them a bug in a shipped server:
 //
 //   - No sheet is defaulted. Google names the first sheet in the
-//     account's language, so "Sheet1" does not exist on a Portuguese
+//     account's language, so "Sheet1" is "Página1" on a Portuguese
 //     account, and a description that offers it as an example teaches
-//     the model to guess.
+//     the model to guess. Checked by the live steps "no sheet at all"
+//     and "the card names every sheet".
+//     https://github.com/xing5/mcp-google-sheets/pull/94
 //   - A missing sheet is refused with the titles that do exist, because
 //     the API's own message for it says only "Unable to parse range".
 //   - The range is rebuilt from the parsed title rather than
@@ -149,7 +151,7 @@ type SheetRef struct {
 //     to whatever row that label points at now, which is what makes a
 //     label worth having: it survives rows being inserted above it and
 //     an A1 address does not. A1 still works everywhere, so an anchor is
-//     never the only way to reach anything (§6.4).
+//     never the only way to reach anything.
 func (s *Service) ResolveRange(ctx context.Context, ref Reference, sheet, rangeA1 string) (SheetRef, error) {
 	if name, ok := strings.CutPrefix(strings.TrimSpace(rangeA1), AnchorPrefix); ok {
 		return s.resolveAnchorRange(ctx, ref, sheet, name)
@@ -212,6 +214,11 @@ func (s *Service) findSheet(sp *gsheets.Spreadsheet, name string, ref Reference)
 			}
 		}
 	}
+	// Google answers a missing sheet with 400 "Unable to parse range",
+	// which does not say the sheet was the problem. Checked by the live
+	// steps "a sheet that does not exist" and "the shape of a Sheets
+	// error".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/get
 	return nil, Errorf("not_found", "no sheet named %q in this spreadsheet; it has %s", name, join(titles))
 }
 

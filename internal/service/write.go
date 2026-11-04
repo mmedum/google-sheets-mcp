@@ -16,7 +16,7 @@ import (
 
 // Input options as the caller spells them. The server never substitutes
 // one for the other: which is right depends on the data, and only the
-// caller knows whether 007 is a number or a product code (§17.3).
+// caller knows whether 007 is a number or a product code.
 const (
 	InputTyped   = "typed"
 	InputLiteral = "literal"
@@ -44,7 +44,7 @@ type WriteRequest struct {
 
 // ack is what the guard is told: the caller's two acknowledgments, and
 // the operator's setting for a formula that reaches outside the
-// spreadsheet, which no argument carries (§7.3).
+// spreadsheet, which no argument carries.
 func (s *Service) ack(overwrite, overwriteFormulas bool) plan.Ack {
 	return plan.Ack{
 		Overwrite: overwrite, OverwriteFormulas: overwriteFormulas,
@@ -88,7 +88,7 @@ func (r WriteResult) Render() string { return r.Summary }
 
 // Write answers write_values.
 //
-// The path is fixed (§7.3): resolve, read the target, guard, compare the
+// The path is fixed: resolve, read the target, guard, compare the
 // checkpoint, send one request, diff what came back, report. The read
 // before the write is what makes the guard possible, and it is the only
 // extra request an ordinary write costs.
@@ -292,11 +292,15 @@ func (s *Service) locate(ctx context.Context, spreadsheet, sheet, rangeA1 string
 		FirstRow: firstRow, FirstCol: firstCol,
 		LastRow: firstRow + rows - 1, LastCol: firstCol + cols - 1,
 	}
-	// A single cell is where the write starts, not how big it may be.
-	// Verified live: values.update given A1 and a three-by-two array
-	// wrote A1:B3, so a server that read A1 as a one-cell cap would
-	// refuse what Google accepts and force the caller to compute the
-	// far corner it is trying not to make them compute.
+	// A single cell is where the write starts, not how big it may be:
+	// values.update given A1 and a three-by-two array writes A1:B3, so a
+	// server that read A1 as a one-cell cap would refuse what Google
+	// accepts and force the caller to compute the far corner it is
+	// trying not to make them compute. A range smaller than the values
+	// is Google's 400 naming only a row, "tried writing to row [3]", so
+	// it is refused here with both shapes. Checked by the live step
+	// "what values.update makes of its input".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/update
 	if anchorOnly(named) {
 		named = rect
 	}
@@ -393,7 +397,7 @@ type witness struct {
 	where      string
 }
 
-// holds refuses an overwrite that carries no witness (§4.7).
+// holds refuses an overwrite that carries no witness (D-25).
 //
 // overwrite and overwrite_formulas replace whatever the cells hold when
 // the write lands, which after a refusal may be a collaborator's edit
@@ -460,7 +464,7 @@ func refuseWitnessed(r plan.Report, ack plan.Ack, w witness) error {
 // checkpointMatches compares a caller's checkpoint against the target as
 // it stands.
 //
-// Best effort and said to be (§4.7). Sheets has no atomic guard, so this
+// Best effort, and said to be. Sheets has no atomic guard, so this
 // narrows the window between a read and a write and cannot close it. The
 // refusal names the range, because a checkpoint is over a rectangle and
 // one taken from a read of a different rectangle can never match.
@@ -481,9 +485,11 @@ func checkpointMatches(expect, id string, g *grid.Grid, rect a1.Rect) error {
 }
 
 // tailLeft names the part of the caller's range the values did not
-// reach. It is not cleared: the API skips cells with no data, so
-// whatever was there is still there, and a caller who thought they had
-// replaced the range needs telling.
+// reach. It is not cleared: "when updating, values with no data are
+// skipped", so whatever was there is still there, and a caller who
+// thought they had replaced the range needs telling. Checked by the
+// live step "a range wider than the values leaves the rest alone".
+// https://developers.google.com/workspace/sheets/api/guides/values
 func tailLeft(t target) string {
 	if !t.named.Bounded() || t.named == t.rect {
 		return ""
@@ -555,10 +561,12 @@ func parseInput(v string) (option string, formulasEvaluated bool, err error) {
 // valuesOf takes the rows from whichever form the caller used, and
 // refuses a ragged array.
 //
-// Refused rather than sent: verified live, a short row leaves the cells
-// beyond it holding their previous values, so a caller who believed they
-// had replaced a rectangle would have replaced most of one. Neither
-// outcome is guessable from a result.
+// Refused rather than sent: Google takes a ragged array, and a short row
+// leaves the cells beyond it holding their previous values, so a caller
+// who believed they had replaced a rectangle would have replaced most of
+// one. Neither outcome is guessable from a result. Checked by the live
+// step "what values.update makes of its input".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/update
 func valuesOf(values [][]any, tsv string) ([][]any, error) {
 	switch {
 	case len(values) > 0 && tsv != "":

@@ -10,7 +10,7 @@ import (
 // addPivotTable, no updatePivotTable and no deletePivotTable. A pivot is
 // a field of one CellData, written through updateCells at the cell it is
 // anchored to, and removed by an updateCells naming that field with an
-// empty cell — which takes the whole computed output with it (spike M).
+// empty cell — which takes the whole computed output with it.
 //
 // The same reading/writing split as the chart types, and for the same
 // reason: an update replaces the pivot whole, so what this server does
@@ -70,7 +70,7 @@ func (p *PivotTable) Filters() []*PivotFilterSpec {
 // PivotGroup is one row or column grouping.
 //
 // SortOrder is not optional in practice: a group without one is refused
-// with "No sort order specified" (spike M), so every group this server
+// with "No sort order specified", so every group this server
 // builds carries one.
 type PivotGroup struct {
 	SourceColumnOffset int             `json:"sourceColumnOffset"`
@@ -83,8 +83,12 @@ type PivotGroup struct {
 // PivotGroupRule buckets a group's values rather than listing each one.
 // One of the three is set. Google allows one group with a rule per
 // source column. ManualRule is a grouping made by hand in Sheets, which
-// names every value of every group; it is kept raw, read as being there,
-// and never written here.
+// names every value of every group; it is kept raw and never built here.
+// An update that leaves the groups out sends it back as read, and Google
+// keeps the grouping; a group named by a number is refused, "Manual
+// group names must be strings". Checked by the live step "what Google
+// makes of a pivot definition".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/pivot-tables#ManualRule
 type PivotGroupRule struct {
 	DateTimeRule  *DateTimeRule   `json:"dateTimeRule,omitempty"`
 	HistogramRule *HistogramRule  `json:"histogramRule,omitempty"`
@@ -108,9 +112,13 @@ type HistogramRule struct {
 // PivotValue is one summarized column, or a calculated value.
 //
 // SourceColumnOffset and Formula are a union, and exactly one is set:
-// a value sending both is refused. So the offset is a pointer, which
-// sends a zero and leaves out an unset one. A formula value is
-// summarized by SUM or CUSTOM only.
+// Google refuses a value sending both, "oneof field 'value' is already
+// set". So the offset is a pointer, which sends a zero and leaves out an
+// unset one. A formula value is summarized by SUM or CUSTOM only.
+// Checked by the live steps "what Google makes of a pivot definition"
+// and "a pivot grouped by month, filtered to two regions, with two
+// calculated values".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/pivot-tables#PivotValue
 type PivotValue struct {
 	SourceColumnOffset *int   `json:"sourceColumnOffset,omitempty"`
 	Formula            string `json:"formula,omitempty"`

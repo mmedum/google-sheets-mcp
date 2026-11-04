@@ -7,8 +7,8 @@ import (
 )
 
 // A1 parsing is on the path of every call, several times: a range is
-// parsed, converted to a GridRange, and formatted back. §11 has no
-// target for it because it was never in doubt; the number is here so a
+// parsed, converted to a GridRange, and formatted back. It has no
+// target because it was never in doubt; the number is here so a
 // change that made it allocate would be visible rather than argued
 // about.
 

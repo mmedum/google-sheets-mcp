@@ -1,4088 +1,2404 @@
-# Architecture — google-sheets-mcp
+# Architecture
 
-**Status: v4.2.0 (2026-11-01):** every write says `destructiveHint:
-true` unless `Def.Adds` marks it as only adding, as the MCP schema reads
-`false` as only additive; five ungated writes flip (§18). A cell's
-50 000 limit counts UTF-16 units and a comment's 2048 counts bytes, both
-found live by spike V; an anchor's name counts characters; Google's
-epoch reads as no time; the scope list is asked for on External apps
-only. Reviewed by `/simplify` and `/code-review medium`. A live run of
-302 steps passed, its transcript read; two earlier runs were cut short
-by the read quota per minute, not by a defect. v4.1.1 (2026-10-24):
-4.1.0's bundle work reviewed after its
-release by `/simplify`, `/code-review medium` and `/security-review`,
-with the family's bundle rules ported (§16): the gate derives its
-settings from the server's registry, starts the server from the
-bundle's defaults, refuses `args` and overrides, holds each platform to
-its own file and the identity, and refuses a repeated key. The OAuth
-client file is optional, a profile name is lowered A to Z alone, and a
-variable of spaces alone is unset. A live run of 301 steps passed, its
-transcript read. v4.1.0 (2026-10-24): the Claude Desktop bundle has the shape
-the sibling servers' bundles share: every setting another client sets,
-each off or empty by default as the server is, the shared file names,
-Claude Desktop 0.10.0 or later and Google's privacy policy. The server
-is unchanged. v4.0.0 (2026-10-23): per-call approval is the client's (§9a).
-The server asks the person nothing, and `GSHEETS_REQUIRE_PROMPT` set on
-refuses to start. `connect_data_source` is what `manage_data_source`
-`add` was, `refresh` names its source, `append_rows` only inserts, an
-overwrite carries the checkpoint of what it replaces, the gated deletes
-take their target in A1, and formulas that reach outside are the
-operator's `GSHEETS_ALLOW_EXTERNAL_FORMULAS`. `destructiveHint` is exact,
-and only `delete_data_source` carries the mark. The module path is `/v4`,
-built with Go 1.27.3. Run live first: 302 steps, none failed, one
-undetermined (the content search, as in earlier phases), and the
-transcript read. Owed: two probes, of who sees Connected Sheets results
-and of whom a comment's assignee reaches (§9a, §17b); whether a
-`find_replace` over values can turn text into a formula that reaches
-outside; and the data source tools against a real BigQuery project,
-tested offline only. v3.1.2 (2026-10-10): a clearer answer when Google
-refuses a typed table add, and a refusal of a validation rule on a
-dropdown column's cells; run live first: 301 steps, none failed. v3.1.1
-(2026-10-09), released and
-verified from outside: checksums,
-the cosign signature and the provenance attestation, each also against a
-tampered copy, the version in the binary, the registry publish, and
-`go install …/v3/cmd/google-sheets-mcp@latest` resolving v3.1.1. It is the
-code of v3.1.0, republished so its Go module and its release binaries are one
-commit. v3.1.0's tag stays as it is: its Go module is an earlier commit than
-its binaries, the two differing only in this status line. v3.1.0
-(2026-10-09): the 2026-10-08 gap analysis (cell comments, typed table columns,
-pivot rules, color scales), built, reviewed and run live: 300 steps, none
-failed. v3.0.2 (2026-10-01): a write that may have landed is reported as
-`[ambiguous_outcome]` and never repeated. v3.0.0 (2026-09-30) was released and
-verified from outside: checksums, the cosign signature and the provenance
-attestation, each also against a tampered copy, the version in five places, the
-registry entry, and the Go proxy resolving `/v3`. It asked the person before six writes, which 4.0.0 undoes (§9a). Still unproven:
-the data-source questions against a real BigQuery project, tested offline only.
-Reading,
-writing, formatting, the objects attached to a range, `gsheets://`
-resources, durable anchors and now charts, pivot tables and Connected
-Sheets all work, and `make check` is green. v1.5.0 adds no tool: it is
-the MCP registry entry, and a bundle manifest whose own declaration the
-gate holds — `$schema` at a release tag rather than a branch, with a
-floor under `manifest_version`. Spikes L, M, N and P ran
-against a real account and §18 carries what they found.
+How `google-sheets-mcp` is put together, and the decisions a contributor
+should not undo without a better reason than the one that put them here.
+Part 1 is the overview. Part 2, from [Decisions](#decisions), is one
+entry per decision, cited elsewhere by its D-ID. What was verified about
+Google lives in the comment at the code that depends on it, with the
+reference linked and the live step or probe that checks it named.
 
-**v3.1.2: spike T Q12 and Q13 are answered, each run alone on
-2026-10-09** (§15, §18). In a fresh spreadsheet, Google answered the
-fifth table add with column types HTTP 500 and took a plain add after it.
-`manage_range` now says so when such an add fails and nothing was added.
-Google refuses a data validation rule on a cell in a typed column, so
-`manage_range` refuses one on a dropdown column's cells before sending
-it; that step passed live in the run before 4.0.0. Owed: spike T Q13b
-(§15), and a person reading the comma-locale color scale. The dropdown
-refusal of v3.1.0 passed live in the 300-step run before the release.
+## Context
 
-**§17a.31 is closed, and closing it found a destructive hole in a
-shipped tool.** It was written as a cosmetic gap: `format_cells merge`
-and `clear_values` reach a pivot's cells and say nothing about it, the
-way the values write used to. Spike Q went to find out what each
-actually does, because §17a.27's wording is about `values.update` and
-nothing said the other two behave the same. A merge turns out to be
-refused by Sheets outright, so that guard was describing a loss that
-cannot happen. A clear over a pivot's *output* does nothing, so the
-count was naming one too. And a clear over the *anchor* takes the whole
-table and every cell it draws, for a reply that names one cell — the
-sixth silent destroy, and the first in a tool already released. §18 has
-the three rows.
+`google-sheets-mcp` is a Model Context Protocol server for Google
+Sheets. One Go binary runs as a subprocess of an MCP client and speaks
+MCP over stdio. It holds one person's OAuth refresh token and calls the
+Sheets API v4 over raw REST, with wire types of its own (D-01, D-75).
+Beside Sheets it calls Drive's `files.list` to search and to resolve a
+title, `files.get` for the card's file fields, and `about.get` for the
+signed-in account, all under `drive.readonly` (D-17, D-49, D-54).
+Nothing is hosted.
 
-**§17a.27 is closed: a write into a pivot table's output names the
-pivot.** The refusal used to read "I3 is not empty", which is true of
-every occupied cell on the sheet. It now reads "I3 is inside the output
-of the pivot table anchored at H1, which covers H1:I6 as it stands", and
-says what a write there costs and how to undo it. The cost is a read up
-and to the left, paid only where the guard is already refusing and
-something in the way is a cell nobody typed. §7.6 has the shape, §18
-what the live run confirmed, and the next thing outstanding is still the
-second MCP client §16 names.
+The parties around the server:
 
-**Phase 4 added three tools and found four things the reference does not
-mention.** `updateChartSpec` replaces a chart's spec whole and refuses a
-partial one, so an update reads before it writes and a caller's rename
-cannot silently drop the series. A `basicChart` with neither domains nor
-series comes back **HTTP 500**, which §6.5 classes retryable — the only
-defense is never sending it. Deleting a charted column leaves the chart
-in place with nothing to draw, and deleting a pivot's source rows leaves
-a header and a grand total; both are silent, and they are the third and
-fourth silent destroy this project has found. A pivot table is not a
-request in the union at all: it is a field of one cell, and its output's
-size is in no request and no reply, so every result reads it back.
+- **The person** creates their own Cloud project and Desktop OAuth
+  client, signs in once with `google-sheets-mcp login`, and every call
+  acts as them, with their own access (D-01, D-51).
+- **The operator** decides what the server may do, through `GSHEETS_*`
+  settings the client passes at start: read-only mode, the destructive
+  tools, Connected Sheets and formulas that reach outside the
+  spreadsheet (D-28, D-35, D-43, D-50). The operator is usually the
+  person, setting up their own client.
+- **The client** draws the approval prompt for each call from the tool
+  annotations and its own rules. The server asks the person nothing
+  itself (D-37).
+- **The model** chooses the calls and their arguments. It can be wrong,
+  or persuaded by a cell somebody else wrote, so nothing it sends turns
+  on a tool, lifts a refusal or writes a formula that reaches outside
+  (D-28, D-40).
+- **The collaborators** edit the same spreadsheet, and their edits can
+  land between a read and a write (D-26).
 
-**§17.6 was reopened and amended.** `addDataSource` refuses under this
-server's two scopes, naming `bigquery.readonly`, so Connected Sheets
-cannot be reached without a third scope. `manage_data_source` and that
-scope are both behind `GSHEETS_ENABLE_DATA_SOURCES`, off by default;
-§17.6a has the reasoning, including the recommendation that was made
-against it and overruled.
+The server talks to Google through:
 
-**Phase 4's live driver has run three times and every transcript was
-read: 206 steps, none failed, one undetermined.** The first run failed
-three steps and the second passed all of them — and reading the second
-still found two defects, a refusal whose clause did not compose into its
-sentence and a guard message §7.6 had promised more of than the read
-makes possible. §16 has the detail.
+- `sheets.googleapis.com`, for everything a tool reads or writes;
+- `www.googleapis.com`, for the Drive calls;
+- `oauth2.googleapis.com` and `accounts.google.com`, for login, refresh
+  and revocation.
 
-**Phase 3's live driver run and its transcript: 169 steps,
-none failed, one undetermined.** Reading it found two defects the count
-could not — a refusal telling a `read_range` caller to pass an A1 *band*,
-and a delete quoting an anchor's name in its refusal and not in its
-result. Both are §18 rows and both are fixed.
+Nothing else is reached, and every host is checked with its port before
+a credential is attached (D-05).
 
-**The evals have run**, four times, and 15 of 16 tasks pass. Every
-failure but the last was in the harness rather than the server: a check
-the fixture satisfied by itself, a scorer reading past the data into
-another task's work, an unanswerable prompt, and a task that demanded a
-refusal a well-behaved model avoids. The sixteenth is a real finding
-about the read window and is §17a.25.
+It works inside one spreadsheet per call (D-03). Everything in that
+spreadsheet is in scope: values, formulas, sheets, rows and columns,
+formatting, named and protected ranges, data validation, tables,
+banding, conditional formats, charts, pivot tables, Connected Sheets
+data sources, cell comments and notes (D-02). Files, folders, sharing
+and revisions belong to a server built on the Drive API.
 
-Getting there needed a detour: the refresh token vanished five times and
-`go test ./...` was deleting it. `cmd`'s test isolation redirected the
-config directory and the environment override and could not redirect the
-OS keyring, so a logout test removed the real one under the default
-profile. Fixed and watched both ways with a decoy. §18 carries it,
-including the confident wrong diagnosis that came first.
+The platform has gaps nothing here can close, so nothing here promises
+to close them. The API has no undo, and it cannot guard a write against
+a concurrent edit (D-26). It cannot give a cell's displayed text without
+its format, or say why a formula failed beyond its error type. It has no
+search inside a spreadsheet, so `find_in_spreadsheet` reads and matches
+here. It cannot push a change (D-78).
 
-v0.3.1 followed the same day, from comparing this server against its
-siblings rather than from anything failing: the README's setup step told
-people to add "the two scopes below" and listed neither, and the profile
-was missing the `account_email` the other three record. §17c has the
-conventions and the destructive line this server draws.
+It is not a Drive client (D-02), a sync client (D-78) or a hosted
+service (D-01). It is not Apps Script or the add-on surface, and it does
+not administer Connected Sheets. It is not a calculation engine either:
+formulas are written and read as text, and Google computes them.
 
-Phase 2 is what that rule is made of. It took three runs of the driver to
-reach 143 steps with none failed, and the first failed five — three of
-them the server: a merge spanning a frozen edge, a named range with a
-space in it, and a conditional format rule that `deleteTable` had taken
-silently. None of the three is in any reference read for this project.
-Phase 3 found the same shape twice more, both by reading rather than
-counting: `deleteDimension` takes the anchors on the band and says
-nothing, and spike K's own first run answered four of eleven questions
-against rows the anchor had already left.
+It exists because a value written over a formula destroys the formula
+without a word, and a server that does not look first lets that happen.
+This one reads the target first and refuses what it would destroy unseen
+(D-24).
 
-**Phase 5 does not exist: what follows phase 4 is v1.0.0, and §16 says
-what it waits for** — use in anger, and a further eval round with a
-second client. §17a carries sixteen open cleanups; the three that wanted
-a live probe were probed in this phase and are closed. The evals cover
-phases 0 to 3 and not the three tools this phase added, which is the
-most obvious thing to do next.
+## Quality goals
 
-Everything here was checked against the Sheets API v4 discovery document
-(`sheets.googleapis.com/$discovery/rest?version=v4`, revision 20260831),
-the Sheets guides, and the issue trackers of the servers named in §1.
-§18 is the evidence log, and about a third of it refutes something this
-document said in an earlier draft. §2 is what the platform forces, §16
-the phase plan, §17 the decisions that are not to be reopened.
+In priority order:
 
-This document is the plan. It is written so that whoever picks the work
-up can start from the repository alone: read the status line, §16 for the
-phase, §17 for anything still open, and begin.
+1. **A write never destroys what it did not see.** A values write reads
+   its target first. Non-empty cells need `overwrite` with the
+   checkpoint of what they replace, and formulas need
+   `overwrite_formulas` as well. Protected ranges and partial merges are
+   refused, and formatting, transforms and table changes guard what they
+   take (D-24, D-25, D-26, D-33).
+2. **What Google changes or removes is said, never hidden.** Every write
+   reports the values Google coerced, read back from its own response.
+   Every delete names what goes with it, including what Google removes
+   without saying (D-27, D-31, D-42).
+3. **The model never guesses an address.** Ranges are A1 throughout, and
+   sheet titles are read from the card and quoted on the wire. A title
+   matching several spreadsheets is refused with the candidates, and
+   every read is an addressed grid (D-12, D-14, D-15, D-17, D-20).
+4. **Irreversible and outward-reaching acts are the operator's.**
+   Deletes are unregistered unless enabled, and take `confirm`. A risky
+   variant is a tool of its own. A formula that makes Google fetch a URL
+   or pulls in another spreadsheet needs a setting, and the model cannot
+   widen its own reach (D-28, D-35, D-36, D-40).
+5. **The stream, the logs and the repository stay clean, and the surface
+   is a contract.** Stdout carries frames only, and logs carry no
+   payload. The repository holds nothing real, and a released tool or
+   field keeps working (D-06, D-07, D-09, D-57).
 
-## 1. Mission and scope
+## Codemap
 
-A production-grade, Go, stdio MCP server that lets Claude work **inside a
-Google Sheet** the way a careful colleague does: read a range and know
-where every value sits, write without destroying the formula underneath,
-add and reshape sheets, format, sort and validate, and say afterwards
-exactly what changed. Single binary, per-user OAuth against the user's
-own Google account, Workspace or consumer.
+- `cmd/google-sheets-mcp` is the program. With no subcommand it serves;
+  `login`, `logout`, `status`, `doctor`, `--version` and
+  `--dump-schemas` are the rest. It names stdout and stderr once and
+  passes them down (D-06). It serves without credentials and answers
+  `[auth]` per call (D-55).
+- `internal/a1` is A1 notation: parsing, formatting, quoting, column
+  letters to indices and back, and the conversion to and from GridRange.
+  It is the one place that knows how A1 and GridRange relate, and it
+  touches no network (D-12, D-13, D-14).
+- `internal/auth` runs Google's desktop flow on a loopback port with
+  PKCE, and holds the scope set for each mode. Its token source runs on
+  a bounded client of its own. It also inspects and revokes a grant
+  (D-47, D-49, D-50, D-51).
+- `internal/config` reads the `GSHEETS_*` environment and the bound
+  flags through `config.Lookup`, validates them once at start, and
+  refuses a removed setting. `config.Vars` is the registry of every
+  variable the server reads, which the staleness and `mcpb` gates read
+  (D-56, D-72).
+- `internal/credentials` resolves the refresh token from the
+  environment, the OS keyring, or an owner-only file warned about on
+  every use (D-52).
+- `internal/gapi` is the raw REST client for Sheets and the Drive calls.
+  It holds what every request shares: the host allowlist with the port,
+  the per-user limiters and one request in flight, deadlines, retries by
+  HTTP method, the flag on the POSTs that only read, and the classes of
+  Google's failures. Nothing here imports MCP (D-05, D-45, D-46, D-47).
+- `internal/gapi/sheetstest` is the in-memory Sheets, with the Drive
+  endpoints, behind `httptest`. It replays recorded coercion and models
+  what Google was seen to do (D-59).
+- `internal/grid` is the server's view of a rectangle: one cell per
+  address with its formula, note and validation, padded to the window,
+  the checkpoint over what was stored, and the diff a write reports
+  (D-26, D-27).
+- `internal/gsheets` holds the hand-written wire types for the fields
+  this server reads and sends, and the request union members it builds.
+  It imports nothing (D-75).
+- `internal/livecover` says what "the live driver covers the tool
+  surface" means, so the static gate and the driver read one exemption
+  list (D-61).
+- `internal/plan` compiles typed ops into `batchUpdate` union members.
+  It holds the guards as pure functions over what was read: what a
+  write, a format, a transform or a table change would destroy (D-24,
+  D-32, D-33).
+- `internal/redact` masks client ids, account addresses and Google's ids
+  in what `status`, `doctor` and the drivers print (D-08, D-11).
+- `internal/render` writes every word a caller reads: the card, the
+  addressed grid and its footer, formatting summaries, write reports and
+  refusals (D-20, D-21).
+- `internal/server` wires the MCP SDK: the server instructions, the
+  resources, the per-call log line, and the schema dump through an
+  in-memory session (D-07, D-57).
+- `internal/service` is where the rules live: resolving spreadsheets,
+  sheets, ranges and anchors, budgets, the reads before a write,
+  checkpoints, the gated deletes' counts and witnesses, and the metadata
+  cache. It is where a failure becomes a `[class]` tool error (D-17,
+  D-19, D-22, D-41, D-42, D-44, D-48).
+- `internal/tools` defines the MCP tools and resources, each added
+  through one function. A tool's `Kind` decides its annotations, its
+  registration under read-only mode and the settings, the mark, and a
+  rendered reply, and `dry_run` is found by reflection (D-21, D-30,
+  D-34, D-35, D-38, D-39, D-58).
+- `internal/userconfig` stores non-secret per-profile state: the client
+  JSON's path, the account, where the token went and the granted scopes.
+  It finds the profiles that share a client (D-53, D-54).
+- `internal/version` holds the version the build stamps in, with the
+  module's build info as a fallback.
 
-**The repository is self-contained and meant to be distributed.** Every
-deployer creates their own Google Cloud project and OAuth client; nothing
-deployer-specific is baked into the code, the repository or the release
-artifacts (§9, §12).
+Dependencies run one way: `tools` to `service`, to `plan` and `grid`, to
+`gapi`, to `gsheets`. Beside the packages, `scripts/gates` is every
+check the repository runs on itself, written in Go behind one dispatcher
+(D-65, D-66, D-67). `scripts/livesheet` is the live driver (D-11, D-61),
+`scripts/spikes` holds the probes the code's comments name (D-60), and
+`scripts/evals` scores a model driving the tools (D-62).
+`packaging/mcpb` holds the Claude Desktop bundle's manifest and launcher
+(D-71, D-72). `testdata` holds the released surface, the API snapshot
+and its verdicts, and the renderers' goldens (D-57, D-76).
 
-**Scope is one spreadsheet, every capability.** In: locating a
-spreadsheet by title, creating one, and everything that happens inside
-it — values, formulas, sheets, dimensions, formatting, named and
-protected ranges, data validation, tables, conditional formatting,
-sorting, and later charts, pivot tables and data sources. Out
-(**decided**): file management — folders, moving, sharing, trashing,
-copying files, revisions — which belongs to a server built on the Drive
-API. Cell **comments** have been in scope since 2026-10-09: Sheets publishes them,
-anchored to cells, which Drive's comment API cannot do (§17.5). A cell
-**note** is a Sheets field and is in scope too.
+## Request flow
 
-Tool names are chosen so a client can run this server beside the Drive
-and Docs ones without a collision: `search_spreadsheets` and `read_range`
-here, where those say `search_files`, `search_documents`, `read_file`.
+A tool call crosses the layers in one direction:
 
-### Why build it (research summary, verified 2026-09-05)
+```
+MCP client
+   │  JSON-RPC over stdio; stdout carries nothing else
+   ▼
+internal/server     SDK session, instructions, one log line per call
+   ▼
+internal/tools      decode the input; the Kind decides annotations,
+   │                registration, the mark and both halves of the reply
+   ▼
+internal/service    resolve spreadsheet, sheet, range or anchor; budget;
+   │                read before a write; checkpoint; [class] errors
+   ├──► internal/a1      A1 and GridRange, no network
+   ├──► internal/plan    guards and union builders, no network
+   ├──► internal/grid    the rectangle, checkpoints, the write diff
+   └──► internal/render  every word a caller reads
+   ▼
+internal/gapi       one request: host allowlist, limiters, deadline,
+   │                retry by method, classify
+   ▼
+internal/auth       refresh on a bounded client
+   ▼
+Sheets API v4, Drive, Google OAuth
+```
 
-- **Google's official Sheets MCP** (`sheetsmcp.googleapis.com/mcp/v1`,
-  Developer Preview) exposes six tools: `get_spreadsheet`, `get_values`,
-  `update_values`, `update_formulas`, `update_spreadsheet` and
-  `insert_dimension`. `update_spreadsheet` is the raw `batchUpdate`
-  passed straight through — Google's own page calls it "75+ update
-  types", where the discovery document has 74 — so the model composes
-  `GridRange` objects, with their zero-based half-open indices, by hand. It is remote HTTP, needs a
-  **Web application** OAuth client, asks for four scopes
-  (`spreadsheets`, `spreadsheets.readonly`, `drive.file`,
-  `drive.readonly`), and needs Developer Preview enrollment. It solves the
-  plumbing and none of the hard part: nothing guards an overwrite,
-  nothing reports what Google coerced, and a read gives values without
-  addresses.
-- **The open-source servers** fail in the same places, per their own
-  trackers. `xing5/mcp-google-sheets` (996 stars, Python): no way to find
-  a spreadsheet by name at all, so the model asks the person to paste an
-  id (#76); the docs and tests offer `Sheet1` as the default sheet name,
-  which does not exist on a non-English account — Google names the first
-  sheet in the owner's language, and the call fails with `Unable to parse
-  range: Sheet1!A1:D3` (#94); caller text is interpolated into a Drive
-  query unescaped, so an apostrophe detaches the `mimeType` filter and
-  the search returns arbitrary files (#93); `list_sheets` returned a
-  Python list that the framework serialized down to its first element, so
-  every spreadsheet appeared to have one tab (#53); `print()` on stdout
-  broke the JSON-RPC framing (#72, #73, #80); a storage-quota refusal was
-  reported to the model as something the person must go and fix, when the
-  account had 7 GB free (#75).
-  `freema/mcp-gsheets` (TypeScript) shipped five tools that assigned a
-  validator's internal `.shape` to `inputSchema.properties` instead of
-  JSON Schema. A client validating against draft 2020-12 then rejects the
-  **entire request**, so all forty-four tools died at once and the
-  session stayed dead, reporting only `tools.15.custom.input_schema:
-  JSON schema is invalid` — an array index that names no server (#138,
-  #139).
-  `taylorwilsdon/google_workspace_mcp` silently displayed only the first
-  50 rows of a read (#955); the fix for that exposed the worse half, that
-  an open-ended range like `A:Z` was **fetched whole into memory** before
-  formatting and could take the process out, "even when older releases
-  only *displayed* the first 50 rows" (#986). And `_column_to_index`
-  rejected only the empty string, so `"A1"` returned index 10 and `"B2"`
-  returned 37 — a plausible-looking answer pointing at column K and
-  column AL (#959). Its open requests are for the things a spreadsheet
-  server is actually for — formatting reads (#758), data validation
-  (#892), named ranges (#893), native tables (#977), tab lifecycle
-  (#1091), cell notes (#954).
-- **No server in either list guards a write.** Writing values over a
-  formula destroys the formula, and in every one of these servers it
-  succeeds silently. That is the gap this server exists to close (§4.3).
+### Start
 
-### Non-goals
+`main` loads the configuration and refuses a bad one before it announces
+itself, a removed setting still turned on included (D-37, D-56). With no
+refresh token the server serves anyway, and every call answers `[auth]`
+naming `login` (D-55). `tools.Register` adds every tool the
+configuration allows. Read-only mode keeps only the reads, and a
+Destructive or Connected tool without its setting is left out (D-34,
+D-35, D-43, D-50).
 
-- Not a Drive client. Finding, sharing, moving, trashing and version
-  history belong to a server built on the Drive API. This server calls
-  Drive for one thing only: locating a spreadsheet by name (§7.1).
-- Not a sync client. No `watch` or push channels: they need a public
-  HTTPS endpoint. There is nothing to poll either — the Sheets API has no
-  changes feed.
-- Not multi-tenant hosted. Stdio only (**decided**); the composition root
-  stays transport-agnostic so this can change later.
-- Not Apps Script, not the Sheets UI add-on surface, not Connected Sheets
-  administration.
-- Not a calculation engine. Formulas are written and read as text;
-  Google computes them.
+### A read
 
-## 2. Hard constraints from the platform
+A client calls `get_spreadsheet` first. One `spreadsheets.get` with a
+field mask and no grid data gives the sheet titles and ids, and the
+named ranges, tables, charts, pivot tables and data sources every later
+call needs (D-15, D-22). The service keeps this card for a short window
+(D-48).
 
-Verified against the discovery document (revision 20260831) and the
-Sheets guides on 2026-09-05.
+`read_range` names a sheet and a range. The service resolves the title
+from the card and quotes it on the wire (D-14). It resolves the window
+against the sheet's extent before the call, under the cell budget, so an
+open-ended range is a finite request (D-22).
 
-| Constraint | Consequence |
-|---|---|
-| **There is no write guard.** Sheets v4 has no `writeControl`, no `requiredRevisionId` and no ETag: the string does not occur in the discovery document. Docs has one; Sheets does not. | Concurrency is the server's problem. A read hands out a **checkpoint** over the values it read; a write may require it and re-reads to compare (§6.3). It narrows the window and cannot close it, and the tool descriptions say so. |
-| **The whole surface is 17 methods.** One `spreadsheets.batchUpdate` carries a union of **74 request kinds** (revision 20260927); `spreadsheets.values.*` carries the value paths. Power is in the union, not in the method list. | `internal/plan` compiles typed ops into union members. The model never writes a union member itself. |
-| **A batch is atomic, and Google still will not promise the result.** The discovery document: "If any request is not valid then the entire request will fail and nothing will be applied … it is guaranteed that the updates in the request will be applied together atomically", followed by "Due to the collaborative nature of spreadsheets, it is not guaranteed that the spreadsheet will reflect exactly your changes after this completes … Your changes may be altered with respect to collaborator changes." | Ops are never split across batches: splitting costs quota and gives up atomicity. And the platform states in its own words why the checkpoint (§4.7) is best effort — Google does not claim a write survives a collaborator. |
-| **`GridRange` is zero-based and half-open; A1 is one-based and inclusive.** The discovery document is explicit: "All indexes are zero-based. Indexes are half open … Missing indexes indicate the range is unbounded on that side." `Sheet1!A1:A1` is `startRowIndex: 0, endRowIndex: 1`. | Index arithmetic lives in `internal/a1`. The model sees A1 notation only, which is also what the person sees on screen. |
-| **A1 quoting has three traps, and the third is narrower than the guide's wording but still a correctness bug.** Single quotes are required for sheet names with spaces or special characters (`'My Custom Sheet'!A:A`); `A1` without a sheet means cell A1 of the **first visible sheet** while `'A1'` means the whole sheet *named* A1; and the concepts guide says "if there's a named range titled `Sheet1`, then `Sheet1` refers to the named range and `'Sheet1'` refers to the sheet". **Measured (spike C, §18): that last rule applies only to a reference with no `!`.** A bare name resolves as a named range first; anything with a `!` reads its left side as a sheet title regardless. | `internal/a1` builds every range from a parsed sheet title and **always quotes it**, never by string concatenation, and a range is never sent with the sheet omitted. Quoting is load-bearing for the whole-sheet form this server sends (`'Data'` is the sheet, `Data` is the named range) and inert for `'Data'!A1:B2` — kept everywhere so no call site has to know which case it is in. |
-| **Sheet names are not predictable.** Google names the first sheet in the account's language, so `Sheet1` is `Página1` elsewhere (§1, #94). Sheet titles are unique within a spreadsheet; `sheetId` is stable across renames. | `get_spreadsheet` is the first call and lists titles and ids. No tool defaults a sheet name, and no description offers `Sheet1` as an example. A URL's `#gid=` is parsed as the sheet (§6.1). |
-| **Quota is per request, not per unit**, and refills every minute: **300 read and 300 write requests per minute per project, 60 of each per minute per user**. Over it, 429. "Each batch request, including any subrequest, is counted as one API request toward your usage limit." No daily cap. Charging for excess is "planned … later in 2026". | Batching is close to free and is therefore mandatory: one tool call is one API request wherever the API allows it. The limiters are set to the documented numbers rather than guessed (§11). |
-| **A request may run for 180 seconds** before Sheets returns a timeout error. Google's own 503 advice is to combine updates with `batchUpdate`, "limit concurrent requests to 1 per second", prefer A1 notation on large spreadsheets, and use field masks. | Read deadline 60 s, write deadline 180 s to match the platform's own limit; one request per second in flight. |
-| **`values.update` is a PUT; `values.append` and `batchUpdate` are POSTs.** Update is repeatable by construction. Append inserts rows, so repeating it duplicates data. `batchUpdate` repeated makes two sheets, two named ranges, two charts. | Repeatability is derived from the HTTP method (§11). Append and `batchUpdate` are never repeated after an ambiguous failure; the result is `[ambiguous_outcome]` naming the read that settles it. |
-| **`values.update` does not clear.** "Values with no data are skipped": a shorter array leaves the old cells alone. Clearing is `""` per cell or `values.clear`. | `write_values` reports the region it actually covered, and a shrinking write says what it left behind. Clearing is its own tool. |
-| **`USER_ENTERED` parses as if a person typed it**: "The input is parsed exactly as if it were entered into the Sheets UI", so `1-2` becomes a date, `007` becomes 7, `$100.15` becomes formatted currency, `=1+2` becomes a formula. `RAW` "isn't parsed and is inserted as a string". Only strings are affected either way: "non-string values like booleans or numbers are always handled as `RAW`". | The caller chooses (`input: typed \| literal`), the server never substitutes, and every write reports the values Google changed (§4.4). The coercion report has one job, so it compares only what was sent as a string. |
-| **`values.append` writes after a *detected table*, not at the end of the sheet.** It searches the given range for a block of contiguous filled cells and writes after it; `OVERWRITE` (the API default) writes over whatever sits below that block. | `append_rows` defaults to `INSERT_ROWS`, reports the range Google actually wrote (`tableRange` and `updates.updatedRange`), and its description says how detection works. |
-| **Empty trailing rows and columns are omitted** from a `values.get` response; interior gaps come back as empty strings. A ragged response is normal. | The renderer pads to the requested rectangle so a grid's addresses stay true, and says how far the data actually reached. |
-| **Read-only scopes reach only three methods.** `spreadsheets.get`, `values.get` and `values.batchGet` accept `spreadsheets.readonly`/`drive.readonly`. Every other method — including `getByDataFilter`, `values.batchGetByDataFilter` and both `developerMetadata` reads — requires a **write-capable** scope. | In read-only mode, A1 is the only addressing there is: data filters and developer-metadata lookups are unavailable, and the design may not depend on them for reading (§6.4, §10). |
-| **Limits**: 10 million cells or 18 278 columns (column ZZZ) per spreadsheet; a cell over 50 000 characters is dropped on import from Excel. | Budgets in §7.2 sit far below these. The column ceiling is what `internal/a1` validates against. |
-| **Cells carry more than a value**: `userEnteredValue`, `effectiveValue`, `formattedValue`, `userEnteredFormat`, `effectiveFormat`, `dataValidation`, `note`, `hyperlink`, `textFormatRuns`, `chipRuns`, `pivotTable`, `dataSourceFormula`. An `ExtendedValue` is one of `numberValue`, `stringValue`, `boolValue`, `formulaValue`, `errorValue`; an error cell has a type such as `REF`, `NAME`, `DIVIDE_BY_ZERO`, `N_A`. | A read says which of these a cell has, because a formula and a number render identically. The overwrite guard is built on exactly this (§4.3). |
-| **Developer metadata survives edits.** The discovery document: metadata "will remain associated at those locations as they move around and the spreadsheet is edited". It attaches to the spreadsheet, a sheet or a dimension range — **not to an arbitrary rectangle** — and reading it needs a write-capable scope. | The one durable anchor the API offers, and the answer to "come back to this row later" (§6.4). Phase 3, and never the only way to reach something. |
-| **Tables are a first-class object** (`addTable`, `updateTable`, `deleteTable`; `tableId`, `name`, `range`, column types including dropdown, which requires a `ONE_OF_LIST` data validation rule). | `manage_range` covers them in phase 2. Whether `values.get` accepts a `Table1[Column]` reference is unverified and is spike C (§15). |
-| **Protected ranges and merges are structure a write can violate.** A protected range refuses an edit from an account without permission; a partially covered merge is an error. | Both are read before a write and refused up front with the reason, rather than sent and rejected (§7.3). |
-| Claude Code truncates tool results above 25 000 tokens and warns at 10 000. | Every read is budgeted in cells and characters, with a continuation (§7.2). |
+The grid comes back with column letters and row numbers, formulas under
+values with `show=both`, and empty runs folded into one line that names
+its rows. Its footer names the range shown, the range that exists and
+`continue_from` (D-20, D-23). Both halves of the reply carry the grid
+(D-21). The read returns a checkpoint, a hash over what the cells store
+(D-26).
 
-### What the API cannot do (so we don't promise it)
+### A guarded write
 
-Undo anything — there is no trash for a deleted sheet, cleared cells or a
-dropped column, and version history is a UI feature the API cannot
-restore from; guard a write against a concurrent edit; read or set a
-cell's *displayed* value without also reading
-its format; tell you why a formula produced an error beyond its error
-type; search a spreadsheet server-side (there is no query endpoint —
-`find_in_spreadsheet` reads and matches here); watch for changes.
+A client calls `write_values` over cells that hold a value and a
+formula. The service reads the target with one masked request. The guard
+refuses `[blocked]`, naming the cells in A1 and the acknowledgments that
+would allow the write, and gives the checkpoint of what it read (D-24,
+D-25).
 
-## 3. Requirements distilled from other servers' failures
+With `dry_run`, the same call reports the guard's findings and the
+region it would change, and returns before anything is sent (D-30).
 
-1. A spreadsheet is found by name, not only by id (#76). Ambiguity is
-   listed, never resolved by taking the first match.
-2. Sheet names are read from the spreadsheet, never assumed, and no
-   description teaches the model a default that only exists in English
-   (#94).
-3. Values interpolated into a Drive query are escaped, and a test asserts
-   an injected apostrophe cannot detach the `mimeType` filter (#93).
-4. A result carries every row it says it carries; the shape is asserted
-   in tests, not trusted to a framework (#53).
-5. Reads are budgeted with an explicit continuation, and a truncated read
-   says so. A silent 50-row ceiling is a wrong answer, not a small one
-   (#955).
-6. **The budget bounds the request, not the rendering.** Clamping what is
-   displayed while fetching an open-ended range whole is the bug that
-   survived the first fix (#986): the memory was already unbounded. Every
-   read here resolves its window *before* the call and sends a finite
-   range (§7.2).
-7. Column-letter parsing is total and rejects: nonsense must produce an
-   error, never a plausible index (#959).
-8. Stdout carries only JSON-RPC, held by a test that fails on a direct
-   `print`-equivalent rather than by discipline (#72, #73, #80).
-9. Tool input schemas are valid JSON Schema, and a gate dumps and diffs
-   them every build. One invalid schema is not one broken tool: the
-   client rejects the whole request and every tool in the session goes
-   with it (#138, #139).
-10. An error keeps Google's own meaning: a quota refusal says it is a
-    quota refusal and what it applies to (#75).
-11. Every write says what changed, in what range, and what Google altered
-    on the way in (taylorwilsdon #1031; the same class here).
-12. Conventions are checked against the MCP specification, Anthropic's
-    tool guidance and observed client behavior (§18): flat strict
-    schemas, snake_case verb_noun names, `[class] message` errors, dry
-    run on writes, destructive tools unregistered unless enabled.
+Sent again with `overwrite`, `overwrite_formulas` and
+`expect_checkpoint`, the service reads the target again and compares. A
+change since the first read is `[conflict]` (D-25, D-26). A formula that
+reaches outside the spreadsheet is refused unless the operator allowed
+it (D-28).
 
-## 4. Core design bets
+The write is one `values.update`, a PUT, which asks for the stored
+values back. The result names every cell Google coerced and every
+formula created (D-27, D-31, D-32). A `values.append` or `batchUpdate`
+that fails after it may have landed is `[ambiguous_outcome]`, and is
+never sent again (D-45).
 
-### 4.1 A1 notation is the contract
+### A delete
+
+`delete_dimensions` exists only under `GSHEETS_ENABLE_DESTRUCTIVE`. It
+takes its band in A1 and needs `confirm` (D-35, D-41). Before it asks
+for `confirm` it counts the cells and formulas on the band, and names
+the anchors and charts the band takes, which Google removes or empties
+without saying (D-42).
+
+### Login and refresh
+
+`google-sheets-mcp login` opens Google's consent page and listens on a
+random `127.0.0.1` port with PKCE (D-51). The refresh token goes to the
+OS keyring, or to an owner-only file with a warning on every use, and
+`GSHEETS_REFRESH_TOKEN` overrides both (D-52). Every refresh runs on a
+bounded client (D-47).
+
+`logout` revokes the grant, which signs out every profile that shares
+the OAuth client, and names those profiles first. `logout -local`
+deletes this profile's copy only (D-53).
+
+## Invariants
+
+- Stdout carries only MCP JSON-RPC frames (D-06).
+- No log line carries a cell value, a formula, a title, a range, an
+  address or a search term (D-07).
+- Nothing in the repository comes from a real spreadsheet, account or
+  deployment (D-09, D-10).
+- The live driver and the evals read only spreadsheets they made (D-11).
+- A credential goes only to Google's hosts, checked with the port
+  (D-05).
+- The model never sees a GridRange (D-12), and no tool defaults a sheet
+  (D-15).
+- No values write replaces a non-empty cell without `overwrite` and the
+  checkpoint of what it replaces, or a formula without
+  `overwrite_formulas` as well (D-24, D-25).
+- No write creates a formula that reaches outside the spreadsheet unless
+  the operator allowed it (D-28).
+- A tool that removes what cannot be read back exists only under its
+  setting, and every call to one takes `confirm` (D-35).
+- A risky variant is a tool of its own, never an argument (D-36).
+- The server never asks the person a question (D-37), and no tool
+  changes its settings (D-40).
+- A dry run sends nothing (D-30).
+- A write that is not repeatable is never repeated after a failure that
+  may have applied it (D-45).
+- A read never fetches more than its budget, and says where to continue
+  (D-22).
+- Every reply carries the rendering in its structured half (D-21).
+- A released tool, output field or resource template changes only in a
+  major version (D-57).
+
+## Cross-cutting concerns
+
+**Configuration.** Every setting is a `GSHEETS_*` variable with a flag
+bound to it. A flag overrides the environment, and the environment
+overrides the default. Every reader goes through `config.Lookup`, which
+reads a value of spaces alone as unset. Validation runs once at start,
+and a removed setting still turned on is refused (D-56). The full list
+is in [configuration.md](configuration.md).
+
+**Kinds and approval.** Every tool has one `Kind`. Read changes nothing
+and is always registered, while Write and IdempotentWrite change the
+spreadsheet and are registered unless the server is read-only.
+Destructive removes what Sheets cannot bring back, and is registered
+only under `GSHEETS_ENABLE_DESTRUCTIVE`. Connected reaches BigQuery
+through Connected Sheets, and is registered only under
+`GSHEETS_ENABLE_DATA_SOURCES`. Notifying can reach a person through a
+cell comment, and is registered as a Write is (D-34, D-35, D-43).
+
+Registration, `confirm`, the guards, the checkpoint and `dry_run` hold
+on every client. The annotations and Claude Code's
+`requiresUserInteraction` mark shape the client's prompt and hold
+nothing on their own (D-37, D-38, D-39). The README lists the tools.
+
+**Errors.** Every tool error is a tool result in the form
+`[class] message`, and the class tells the caller what to do next. The
+vocabulary is closed and declared in `service.Classes` in
+`internal/service/service.go`, where each class's comment says what it
+means. `make classes` fails on a class emitted and not declared, and on
+one declared and never emitted (D-44).
+
+**Rate, retries and deadlines.** Requests share a read limiter and a
+write limiter at Google's per-user quota, with one request in flight
+(D-46). A GET or a PUT retries a transient failure. A POST retries only
+when Google refused to begin it, except the POSTs that only read, which
+a flag marks by name (D-45). Every read attempt, every write and every
+token refresh runs under a deadline (D-47).
+
+**Logging and what is pasted.** `slog` writes to stderr. A line names
+the method, the tool, the outcome, the duration and a truncated
+spreadsheet id, and nothing from the spreadsheet. Transport errors are
+stripped of the URL, since a search term travels in it (D-07). `status`,
+`doctor` and the drivers' transcripts mask what they print, and a tool
+result does not (D-08). [security.md](security.md) holds the threat
+model.
+
+**Scopes.** The full mode asks for `spreadsheets` and `drive.readonly`,
+and read-only mode for their read-only pair (D-49, D-50).
+`bigquery.readonly` is asked for only when Connected Sheets is turned on
+(D-43). A changed scope set needs another `login`. The OAuth client's
+setup is in [gcp-setup.md](gcp-setup.md).
+
+**Testing.** The unit suite runs against `internal/gapi/sheetstest`,
+which replays what Google was seen to do (D-59). Fixtures and goldens
+are generated, never recorded (D-10).
+`TestLogsCarryNothingFromTheSpreadsheet` drives every tool with values
+nobody would write by accident, and fails if one reaches the log (D-07).
+
+`make live` drives the shipped binary against a real account. It is the
+only check that can show a belief about Google wrong, and
+`make live-cover` fails on a tool option no live step drives (D-61). The
+evals score a model's end state and its trace (D-62). A closed session
+ends the process cleanly (D-63), and the coverage floor holds both trees
+(D-64). How to run a live check is in
+[CONTRIBUTING.md](../CONTRIBUTING.md#the-live-run).
+
+**Documentation.** A decision lives once, in part 2 here. What was
+verified about Google lives in the comment at the line that depends on
+it: the behavior, the reference link, where the reference is wrong or
+silent, and the live step or probe that checks it. A refuted belief goes
+at that line or in a decision's `Rejected:` line.
+
+Every published method's and union request's verdict is in
+`testdata/api-coverage.tsv`, and every published field the wire types
+leave out has one in `testdata/api-fields.tsv` (D-76). The docs gate
+holds every D-ID citation to an entry, every "Held by" cell to a gate,
+linter or test that exists, and the codemap to the tree. The staleness
+gate holds the README, [configuration.md](configuration.md) and the
+CHANGELOG to the code. Releasing is in [release.md](release.md).
+
+## Decisions
+
+| ID | Decision | Status | Held by |
+| --- | --- | --- | --- |
+| D-01 | One stdio binary per person, signed in to their own Google account through their own OAuth client | accepted | smoke, TestDumpSchemasWorksWithoutCredentials, review |
+| D-02 | The server works inside one spreadsheet: files, sharing and revisions are a Drive server's, and cell comments and notes are here | accepted | api-coverage, review |
+| D-03 | One call works in one spreadsheet | accepted | review |
+| D-04 | Tool names are snake_case verb_noun, distinct from the Drive and Docs servers' names | accepted | review |
+| D-05 | The server talks only to Google's hosts over HTTPS, checked with the port before a credential is attached | accepted | TestGoogleOnlyAllowlist, TestCredentialsGoNowhereElse |
+| D-06 | Stdout carries only MCP JSON-RPC frames | accepted | forbidigo, smoke, TestVersionFlagPrintsToStdoutAndNothingElse, TestTheLinuxLauncherPicksABinaryAndKeepsStdoutClean |
+| D-07 | Logs record the call, never the payload | accepted | TestLogsCarryNothingFromTheSpreadsheet, TestEveryToolIsDriven, TestTransportErrorsCarryNoURL, TestACanceledRequestCarriesNoURL |
+| D-08 | What is meant to be pasted is masked; a tool result is not, and fetches only what something needs | accepted | TestAccountIsStoredWholeAndPrintedMasked, TestPathMasksTheClientId, TestStatusKeepsTheDomainAndDropsTheRest, TestLineMasksWhatSomebodyElseAssembled |
+| D-09 | Nothing from a real spreadsheet, account or deployment enters the repository, and two allow-list scanners hold it | accepted | leaks, secrets, leaks-history, TestRulesCatchPlantedIdentifiers, TestAllowlistEntriesHaveReasons, TestTheMarkerExcusesOneLineOnly, TestScanReadsUntrackedFilesToo, TestATrackedBinaryIsAFinding, TestFindingsAreAbbreviated |
+| D-10 | Fixtures and goldens are generated, never recorded | accepted | TestFixtureIsSyntheticThroughout, TestNumbersAreDeterministic, leaks |
+| D-11 | The live driver and the evals work only in spreadsheets they made, and print only through one redacting helper | accepted | transcript, TestPrintsOutside, live |
+| D-12 | A1 is the contract: the model never sees a GridRange, and the conversion lives in `internal/a1` | accepted | TestGridRangeConversion, TestZeroBased, TestDimensionRangesAreZeroBasedAndHalfOpen, TestPivotAddByHeading, review |
+| D-13 | Column parsing is total and refuses nonsense, up to column ZZZ | accepted | TestParseColumn, TestBadRangeSaysWhatARangeIs |
+| D-14 | A range is built from a parsed title, always quoted, never concatenated or sent without its sheet | accepted | TestTheTitleIsAlwaysQuotedOnTheWire, TestQuotedSheetTrap, TestSheetTitlesWithApostrophesAndAccents |
+| D-15 | Sheet names are read, never assumed | accepted | staleness, TestNoSheetIsEverDefaulted, TestMissingSheetListsTheOnesThatExist |
+| D-16 | A range is A1: no named range, table reference or R1C1 | accepted | review |
+| D-17 | A spreadsheet is an id, a URL or a title, and a title matching several is refused with the candidates | accepted | TestResolveByTitle, TestResolveRefusesToChooseBetweenTwoSpreadsheets, TestSearchEscapesTheCallersText, TestAnUnescapedApostropheDetachesTheFilter, TestSheetByIdAndByGid |
+| D-18 | An object attached to a range is named by the range it covers, matched exactly | accepted | TestARangeThatMatchesSeveralIsAmbiguous, TestARangeThatMatchesNothingIsRefusedWithWhatIsNearby |
+| D-19 | An anchor is an optional durable label on developer metadata, never the only way to reach anything | accepted | TestAnchorFollowsItsRowThroughEdits, TestAnchorNameIsUniqueHereEvenThoughGoogleAllowsTwo, TestAnchorListIsOneRequest, TestAnchorRefusesARectangle, TestAnchorWorksWhereABandIsTaken, live |
+| D-20 | Every read renders an addressed grid, and addresses are the only handles | accepted | TestReadShowsAddresses, TestGridGolden, TestGridAlignsColumnsUnderTheirLetters |
+| D-21 | Every tool returns both halves, and the structured half carries the rendering | accepted | TestBothHalvesCarryTheGrid |
+| D-22 | Reads are budgeted in cells and characters, the window resolved before the call | accepted | TestOpenEndedRangeIsResolvedBeforeTheCall, TestClampResolvesTheWindowBeforeTheCall, TestTheBudgetBindsEveryFormat, TestBudgetsPastTheMaximumAreRefused, TestGetSpreadsheetRefusesUnboundedReads, TestUnmaskedGetIsRefused |
+| D-23 | Content is data, and a read shows formulas rather than resolving them | accepted | TestReadShowsFormulasUnderValues, review |
+| D-24 | A values write reads its target first and refuses what it would destroy unseen | accepted | TestWriteRefusesWhatItWouldDestroy, TestNonEmptyCellsNeedOverwrite, TestFormulasNeedTheirOwnAcknowledgment, TestProtectionAndPartialMergeCannotBeAcknowledged, TestASmartChipIsNamedBeforeAWriteErasesIt, TestAnErroredFormulaStillNeedsOverwriteFormulas, TestAnnotationsSurviveAndAreReportedAsSuch |
+| D-25 | An overwrite carries the checkpoint of what it replaces | accepted | TestOverwriteNeedsTheCheckpointOfWhatItReplaces, TestARefusalAndADryRunGiveTheCheckpoint, TestADryRunSaysAnOverwriteNeedsItsWitness, TestATransformOverwriteIsHeldToWhatItRead, TestATransformThatReadsNothingTakesNoCheckpoint |
+| D-26 | A checkpoint is a best-effort hash over what a read stored, and says so | accepted | TestCheckpointGuardsTheWrite, TestCheckpointChangesWithTheContent, TestCheckpointIgnoresFormatting, TestCheckpointFollowsTheFormulaNotItsResult |
+| D-27 | The caller chooses typed or literal input, and every write reports what Google changed | accepted | TestCoercionIsReported, TestDiffReportsWhatGoogleStored, TestDiffComparesKindAsWellAsText, TestLiteralInputStoresWhatWasSent, TestInputEnumIsClosedBeforeAnythingIsSent |
+| D-28 | A formula that reaches outside the spreadsheet is written only when the operator allows it | accepted | TestExternalFormulasAreOffUnlessTheOperatorSaysSo, TestTheOperatorAllowsExternalFormulas, TestAReplacementCannotWriteAnExternalFormula, TestAFormulaRewriteCannotReachOutside, TestACopyCannotMultiplyAnExternalFormula, TestCreateStillGatesExternalFormulas, TestFormulasCreatedAreNamed |
+| D-29 | `append_rows` only inserts, takes its range, and reports where Google put the rows | accepted | TestAppendOnlyInserts, TestAppendNeedsARange, TestAppendReportsWhereItLanded |
+| D-30 | Every write takes `dry_run`, which sends nothing and previews even a refused write | accepted | TestDryRunIsFoundByReflectionNotByMemory, TestRegisteringAWriteWithoutDryRunPanics, TestDryRunSendsNothing, TestDryRunPreviewsAWriteThatWouldBeRefused |
+| D-31 | A write says what changed, read back from Google rather than restated from the request | accepted | TestDiffReportsWhatGoogleStored, TestOpsCarryTheCountsTheAPIReported, TestTailLeftIsReported, TestSourceAddReportsTheRefreshRatherThanClaimingItArrived, TestOpsDoneAndPreviewDescribeTheSameChange |
+| D-32 | One tool call is one API request, and ops compile to one atomic batch | accepted | TestFormatCellsSendsOneBatch, TestFindIsOneRequestForEverySheet, TestAnchorListIsOneRequest, TestBatchUpdateAppliesNothingWhenOneRequestFails |
+| D-33 | Formatting and transforms guard what they destroy, and read only when an op can destroy | accepted | TestMergingOverValuesIsRefused, TestClearingFormatIsRefusedOverFormattedCells, TestReplacingANoteIsRefused, TestCopyPasteGuardsItsDestination, TestTextToColumnsGuardsWhatIsToTheRight, TestReplacingInsideFormulasNeedsAcknowledging, TestAutoFillGuardsWhereItWouldLand, TestDeletingATableThatTakesRulesIsRefused |
+| D-34 | Every tool registers through one function, and its Kind decides annotations, registration and rendering | accepted | TestAnnotationsFollowTheKind, TestAHintOnTheWrongKindPanics, TestFullSurfaceRegistersEverything, TestRegistrationGatesAreServerSide |
+| D-35 | A tool that removes what cannot be read back is unregistered unless enabled, and needs `confirm` | accepted | TestDeleteIsOffUnlessDestructiveIsOn, TestSourceDeleteIsOffWithoutTheDestructiveFlag, TestClearNeedsConfirmAndSaysWhatIsThere, TestDeleteCommentNeedsConfirm, TestDeleteCountsThenNeedsConfirm, staleness |
+| D-36 | A risky variant is its own tool, never an argument | accepted | TestDeleteIsNotAManageAction, TestManageDataSourceDoesNotConnect, TestSourceRefreshNeedsAnID, TestAppendOnlyInserts |
+| D-37 | Per-call approval is the client's, and the server asks the person nothing | accepted | TestRemovedRequirePrompt, TestLogsCarryNothingFromTheSpreadsheet, review |
+| D-38 | Annotations are exact: `readOnlyHint` on the reads, `destructiveHint` on every write that is not only additive | accepted | TestTheHintsAreExact, TestAnnotationsFollowTheKind |
+| D-39 | The `requiresUserInteraction` mark is on `delete_data_source` alone | accepted | TestOnlyDeleteDataSourcePrompts, TestPermissionRulesAreTools |
+| D-40 | The model never widens its own reach | accepted | TestNoToolCanWriteTheServersSettings |
+| D-41 | A gated delete takes its target in A1, and names it | accepted | TestAnchorBandRefusalOffersABand, TestAClearNamesItsRange, TestADataSourceDeleteCarriesItsSheet, TestADataSourceWitnessIsReadPastTheCache |
+| D-42 | A delete counts and names what it takes, including what Google removes silently | accepted | TestDeleteSheetCountsBeforeItAsks, TestDeletingRowsNamesTheAnchorsItWouldTake, TestARefusalCountsTheSeriesItWouldTake, TestClearOverPivotAnchorSaysWhatItTakes, TestSourceDeleteNamesTheSheetItTakes, TestClearCountsOnlyWhatItCanRemove |
+| D-43 | Connected Sheets is opt-in: one setting registers its tools and asks for `bigquery.readonly` | accepted | TestScopesAreOptIn, TestScopes, staleness |
+| D-44 | Every error is a tool result, `[class] message`, from a closed vocabulary that says what to do | accepted | classes, TestClassesAreClosedAndDistinct, TestClassesAreTheOnesClassReturns, TestToolErrorsAreResultsNotProtocolErrors, TestFailFormatsTheClass, TestMissingScopeIsForbiddenNotAuth |
+| D-45 | Repeatability follows the HTTP method | accepted | TestRepeatabilityComesFromTheMethod, TestUnrepeatableWritesAreNotRepeated, TestAnAppendRetriesOnlyARefusalToBegin, TestAnAppendIsNotRepeatedAfterA5xx, TestReadOnlyFlagOnlyOnTheThreeReadingPOSTs, TestACanceledWriteIsStillAmbiguous, TestRetryAfterIsHonored |
+| D-46 | Requests are paced at the documented per-user quota, one in flight | accepted | review |
+| D-47 | Every request runs under a deadline, the token refresh included | accepted | TestTokenRefreshIsBounded, TestBoundedClientTakesTheConfiguredTimeout, TestLoginTimesOutWaitingForTheBrowser |
+| D-48 | Spreadsheet metadata is cached briefly and never trusted for correctness | accepted | TestCardIsCachedBriefly, TestARenameIsVisibleImmediately |
+| D-49 | Scopes are `spreadsheets` plus `drive.readonly`, or their read-only pair | accepted | TestScopes, TestMissingScopes, staleness |
+| D-50 | Read-only mode asks for read-only scopes and registers only the reads | accepted | TestReadOnlyModeKeepsTheReads, TestScopes |
+| D-51 | Sign-in is Google's desktop flow: a loopback redirect on 127.0.0.1, a random port and PKCE | accepted | TestLoginRoundTrip, TestLoginRefusesAMismatchedState, TestLoginReportsAnAuthorizationDenial |
+| D-52 | The refresh token lives in the keyring, or an owner-only file warned about on every use, and the environment overrides both | accepted | TestKeyringThenFile, TestEnvironmentWinsAndIsNotDeletable, TestOSKeyringIsWired, TestASilentKeyringIsNotAMissingLogin, TestIsolateKeepsTestsOutOfTheRealKeyring |
+| D-53 | Profiles separate storage, not grants, and `logout` names the profiles it takes | accepted | TestProfilesAndSharingClient |
+| D-54 | The account address comes from Drive's `about.get`, stored whole and printed masked | accepted | TestAnAbsentAddressDoesNotEraseTheRecordedOne, TestGrantedScopesDoNotClearTheRecordedAccount, TestStatusSeparatesNoAccountFromNoLogin, TestAccountIsStoredWholeAndPrintedMasked |
+| D-55 | The server starts and serves without credentials, answering `[auth]` per call | accepted | TestNoCredentialsKeepsTheServerServing, TestDumpSchemasWorksWithoutCredentials, smoke |
+| D-56 | Configuration is `GSHEETS_*` with a bound flag each, read through one registry and validated once | accepted | staleness, TestEnvironmentThenFlag, TestInvalidConfigurationFailsBeforeAnythingRuns, TestEveryVariableTheCodeNamesIsInEnvVars, TestDefineReadsEachVariableOnce, TestASettingOfSpacesIsUnset |
+| D-57 | The released tool surface is a contract | accepted | schema-diff, schema-ack, schema-baseline, release-tag, TestABreakFailsWithoutAMajorBump, TestATypeChangeBreaksOneWay, TestSchemaAckNeedsEveryItemNamed, TestTheTagMajorMustBeTheModules |
+| D-58 | Resources carry the card and a sheet's used range, never a listing | accepted | TestSheetCSVIsTheUsedRangeNotTheSheet, TestSheetCSVSaysWhenItCutSomething, TestResourcesRouteByTemplate, TestResourceTemplatesMatchTheParser |
+| D-59 | Tests run against an in-memory Sheets that replays what Google was seen to do | accepted | TestFormulasDependOnTheInputOption, TestFieldMasksAreBalanced, TestBatchUpdateAppliesNothingWhenOneRequestFails, TestFailureInjection, TestTrailingEmptiesAreOmitted |
+| D-60 | Behavior the reference does not pin down is probed live before code depends on it | accepted | review, live |
+| D-61 | Green gates are not done: the live driver covers every tool option, and a person reads its transcript | accepted | live-cover, live, TestAnOptionMissingIsAGapNotAnExcuse, TestEveryExemptionHasARealReason |
+| D-62 | Evals score the end state and the trace, through this server's tools alone | accepted | evals, TestEveryPromptIsSubstituted, TestTraceChecks, TestEndStateChecksReadBack |
+| D-63 | A closed session ends the process cleanly | accepted | smoke, TestCleanDisconnect |
+| D-64 | Coverage is floored per package over `internal/` and `cmd/`, from a derived list | accepted | cover, TestFloorPerPackage, TestBothTreesAreUnderAFloor |
+| D-65 | A rule is a test, its list derived from the code, and its checker asserts a floor on what it read | accepted | review |
+| D-66 | Everything the repository runs on itself is Go | accepted | review |
+| D-67 | `make check` and CI run the same set | accepted | parity, TestParityPassesOnThisRepository, TestParityFindsTheDriftsThatHappened |
+| D-68 | CI runs every gate on Linux, macOS and Windows under a pinned bash | accepted | pins, TestPinsShell |
+| D-69 | Every action is pinned by commit SHA and every tool by exact version | accepted | pins, TestPinPatterns, TestUnpinnedTools |
+| D-70 | A release is built from a tag, reproducible, signed and attested | accepted | release-tag, release-notes, registry-publish, TestBundleIsReproducible, TestTheTagMajorMustBeTheModules |
+| D-71 | The bundle manifest is held to the staged tree and a pinned schema | accepted | mcpb, mcpb-pack, TestTheSixWaysAManifestBreaks, TestCommittedManifestPacks, TestAFailedWriteLeavesNoBundle, TestTheWaysAManifestMisdeclaresItsVersion, TestTheStampedManifestIsHeldToTheSchema, TestAVendoredSchemaIsHeldToItsRecordedDigest |
+| D-72 | The bundle asks for the settings a person sets elsewhere, each defaulting as the server does | accepted | mcpb, TestBundleVarsAreDerivedFromTheSettings, TestTheBundleSettingsRefuseEachBreak, TestVarsDescribeWhatBuildDoes, TestTheClientFileMayBeLeftEmpty |
+| D-73 | `main` is released code, and work reaches it through a pull request the maintainer merges | accepted | review |
+| D-74 | The CHANGELOG section is the release note | accepted | staleness, release-notes, TestReleaseNotesTakesOnlyItsOwnVersion, TestReleaseNotesRefusesAnEmptySection |
+| D-75 | Own wire types over raw REST, and no generated client | accepted | depguard, api-fields |
+| D-76 | Every published method, union request and field has a written verdict | accepted | api-coverage, api-fields, TestTheRealRecordIsRead, TestFieldsProblemsCatchesAFieldGoogleAdds, TestAPIFieldsGate |
+| D-77 | The server confirms a write by asking the person through elicitation | rejected | — |
+| D-78 | Changes arrive by a watch or push channel | rejected | — |
+| D-79 | A tool changes the spreadsheet's title, locale or recalculation setting | rejected | — |
+
+### D-01 One stdio binary per person, signed in to their own Google account through their own OAuth client
+
+The server is one Go binary that runs as a subprocess of the MCP client
+and speaks MCP over stdio. It holds one person's refresh token and calls
+Google as that person. Nothing is hosted, and there is no shared
+deployment.
+
+Each person creates their own Cloud project, enables the Sheets and
+Drive APIs, and creates a Desktop app OAuth client. Nothing
+deployer-specific is built into the code, the repository or a release,
+so a copy of the binary carries no one's client or token. Everything the
+server calls is generally available, so no preview enrollment is needed.
+
+The reason is reach. A Google account opens every spreadsheet its owner
+can open. Per-person sign-in keeps every call inside that person's own
+access, and keeps their token in their own keyring rather than in a
+service someone else runs.
+
+Rejected: a multi-tenant hosted server; the shape of Google's own Sheets
+MCP server, which is remote HTTP, needs a Web application client and
+four scopes, and asks for preview enrollment.
+Cost: each person creates a Cloud project and a Desktop OAuth client
+before the first `login`, and [gcp-setup.md](gcp-setup.md) says how. An
+External app in Testing gets a refresh token that expires after seven
+days, so a consumer account signs in again each week
+([token expiration](https://developers.google.com/identity/protocols/oauth2#expiration)).
+
+### D-02 The server works inside one spreadsheet: files, sharing and revisions are a Drive server's, and cell comments and notes are here
+
+In scope: finding a spreadsheet by title, creating one, and everything
+inside it. That is values, formulas, sheets, rows and columns,
+formatting, named and protected ranges, validation, tables, banding,
+conditional formats, charts, pivot tables, Connected Sheets, cell
+comments and notes. Out of scope: folders, moving, sharing, trashing,
+copying files and revisions, which belong to a server built on the Drive
+API.
+
+A Sheets server that also managed files would be a second, worse Drive
+server, and a person running both would get two tools for one act. The
+Drive calls this server makes are read-only lookups (D-49).
+
+Cell comments are in because Sheets publishes them anchored to a cell,
+and a thread follows its cell as the sheet changes
+([CommentThread](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets#CommentThread)).
+Drive's comment API sees the same threads without their cells, so only
+this server can say where a thread is. A note is a field of the cell
+itself. `testdata/api-coverage.tsv` records the verdict on every method
+and union request this line leaves out (D-76).
+
+Rejected: files, folders, sharing, trashing, copying and revisions;
+leaving comments to Drive's comment API, which sees the threads without
+their cells.
+Cost: a spreadsheet `create_spreadsheet` makes stays in My Drive's root,
+and the tool description says so. Moving it is a Drive server's job.
+
+### D-03 One call works in one spreadsheet
+
+Every tool takes one spreadsheet and works inside it. No tool takes a
+list of spreadsheets, and none sweeps across files. `manage_sheet`
+`copy_to` is the one call that writes into a second spreadsheet, and it
+names that spreadsheet as its destination.
+
+The reason is the cost of a mistake. A wrong id costs one refusal rather
+than a sweep across files the person did not mean. Keeping a call to one
+file also keeps every guard, checkpoint and count about a spreadsheet
+the caller has read. A refusal can name what it found, and a dry run can
+show one region, because there is one spreadsheet to describe.
+
+A task over several spreadsheets is several calls, each one named,
+resolved and refused on its own. That is the shape a client's approval
+prompt shows best, since each call names the file it touches.
+
+Rejected: a bulk tool that spans spreadsheets.
+Cost: a change made to many spreadsheets costs a call each, with a
+request each against the per-user quota (D-46), and the model carries
+the list between calls.
+
+### D-04 Tool names are snake_case verb_noun, distinct from the Drive and Docs servers' names
+
+Tool names are snake_case verb_noun with no dots, such as `read_range`,
+`search_spreadsheets` and `manage_pivot_table`. Claude Code prefixes
+each with `mcp__<server>__`.
+
+A person runs this server beside servers for Drive and Docs, and those
+name their tools `search_files`, `search_documents` and `read_file`. A
+model choosing between two tools whose names say the same thing picks
+one by guesswork. So every name here says what it acts on in Sheets' own
+words: a spreadsheet, a range, a sheet, a cell comment. A verb first
+reads as an act, which is what a client's approval prompt shows.
+
+A name is chosen once. A released tool name is part of the surface
+contract and changes only in a major version (D-57), so a name has to be
+right before its first release rather than after.
+
+Rejected: generic names such as `search_files` or `read_file`, which a
+Drive or Docs server already uses.
+Cost: names run longer than generic ones, and a name that turns out to
+be wrong stays until the next major version.
+
+### D-05 The server talks only to Google's hosts over HTTPS, checked with the port before a credential is attached
+
+The server sends requests to `sheets.googleapis.com`,
+`www.googleapis.com`, `oauth2.googleapis.com` and `accounts.google.com`
+over HTTPS, and to nothing else. `gapi.GoogleOnly` checks every URL
+before a credential is attached: the scheme is `https`, the host is one
+of the four, and the port is the default. A redirect or a wrong base URL
+therefore cannot carry an access token anywhere else.
+
+The reason is what a token reaches. An access token for these scopes
+reads and writes every spreadsheet the account can open, so a request
+that goes astray with it attached is a breach, not a bug. Checking the
+port as well as the host closes the case of a well-known host name on a
+port somebody else listens on.
+
+There is no telemetry and no update check. The server has no reason to
+reach anything Google does not run.
+
+Rejected: telemetry and update checks.
+Cost: the host allowlist is not a setting, so no configuration points
+the server at a proxy host or a test endpoint. Tests reach the in-memory
+Sheets through an allowlist given in code.
+
+### D-06 Stdout carries only MCP JSON-RPC frames
+
+MCP's stdio transport says the server "MUST NOT write anything to its
+`stdout` that is not a valid MCP message", and "MAY write UTF-8 strings
+to its standard error (`stderr`) for logging purposes"
+([transports](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)).
+A stray print corrupts the JSON-RPC stream, and the client stops working
+without saying why.
+
+So logs go to stderr through `slog`. `main` names the process's streams
+once and passes them down as `io.Writer`. forbidigo refuses `fmt.Print*`
+and `os.Stdout` everywhere else, with `scripts/` excluded. Its rules
+carry their own messages, so a settings block that fails to load shows
+up as forbidigo's default message.
+
+The smoke gate drives the shipped binary over stdio and fails on any
+line that is not a frame. `--version` and `--dump-schemas` write to
+stdout because they do not serve. The Linux launcher in the Claude
+Desktop bundle `exec`s the binary rather than calling it, and writes any
+failure to stderr.
+
+Rejected: holding it by discipline rather than a test; a launcher that
+calls the binary as a child, or writes a failure to stdout.
+Cost: only `main` names the process's streams, and everything else takes
+an `io.Writer`.
+
+### D-07 Logs record the call, never the payload
+
+A call's log line carries the method, the tool, the outcome, the
+duration and a truncated spreadsheet id. It never carries a cell value,
+a formula, a sheet or spreadsheet title, a range, an address or a search
+term.
+
+A spreadsheet is somebody's payroll or customer list. A log somebody
+pastes into a bug report has to be safe by construction rather than by
+their care.
+
+Two routes make that harder than it sounds. A search term travels in a
+request URL, and a transport failure renders the whole URL, so `gapi`
+strips the URL from transport errors before anything logs them. And this
+server's own errors quote the spreadsheet back: a `[not_found]` listing
+the sheet titles that do exist is the right answer for a model and the
+wrong thing for a log. A tool error is returned, never logged as text,
+and the log line carries its class.
+
+`TestLogsCarryNothingFromTheSpreadsheet` drives every registered tool at
+debug level against fixtures whose every value is unmistakable, and
+fails if one reaches the log. It asserts the HTTP methods that reached
+the fake, and `TestEveryToolIsDriven` keeps its argument table complete.
+
+Rejected: logging a request URL, which carries a search term; logging a
+tool error's text, which quotes the spreadsheet.
+Cost: a transport error's text is replaced by the kind of failure it
+was, and a truncated spreadsheet id is the only key that ties a log line
+to a call.
+
+### D-08 What is meant to be pasted is masked; a tool result is not, and fetches only what something needs
+
+Three things a person is asked to paste mask what they print: a debug
+log, `doctor` and `status`. So do the live driver's and the evals'
+transcripts. `internal/redact` masks OAuth client ids, account addresses
+and Google's opaque ids in them. The account is stored whole in the
+profile and printed masked.
+
+A tool result is not masked. `read_range` returns cells, and
+`search_spreadsheets` returns titles, ids and the owner's address,
+because the caller asked, the server holds their own token, and all of
+it is one click away in Sheets or Drive. Masking would cost an answer
+without removing anyone's access, and the owner is what makes an
+`[ambiguous]` refusal usable. A leak needs a publisher, and the
+publishing path is a transcript or a diagnostic pasted into an issue.
+
+What the server does instead is not fetch what nothing needs. A search
+hit's folder id is out of the Drive field masks, and the link is built
+from the spreadsheet id rather than taken from `spreadsheetUrl`, which
+carries the account's obfuscated id.
+
+Rejected: masking tool results, which the guidance asking for it
+addresses to multi-tenant servers and gateways; returning a search hit's
+folder id, or the link that carries the account's id.
+Cost: a tool result pasted into a public issue carries what it read, so
+the issue form asks for a description instead.
+
+### D-09 Nothing from a real spreadsheet, account or deployment enters the repository, and two allow-list scanners hold it
+
+The repository is public, and the server is built by running it against
+real spreadsheets. So nothing from a real spreadsheet, account or
+deployment may appear in code, docs, fixtures, goldens, transcripts,
+issues, pull requests, or commit and tag messages. That covers
+spreadsheet ids and their URLs, titles, named range and table names, and
+developer metadata. It covers cell values, notes and formulas, and a
+formula is worse than a value, since `IMPORTRANGE` embeds another
+spreadsheet's id. It covers account addresses, Cloud project ids, OAuth
+client ids and secrets, refresh tokens, and the numeric account id.
+
+Two scanners hold it, because they catch different things. gitleaks
+(`make secrets`) covers credentials, with rules for Google client ids,
+client secrets and refresh tokens. `scripts/gates leaks` covers
+identifiers, which pass gitleaks untouched.
+
+Every rule in `leaks` is an allow-list. A synthetic id says so in its
+own text, with a marker such as `Fixture`. Each exception is listed by
+value with its reason. A tracked binary is a finding, findings print
+abbreviated, and a scan that read nothing fails. `leaks history` walks
+every blob and every commit and tag message.
+
+Rejected: a deny-list naming the domain or the organization, which would
+itself be the disclosure; an inline `gitleaks:allow` comment, which
+never clears the commit that introduced the line; patterns alone, which
+cannot tell a real title from an invented one.
+Cost: the gitleaks allowlist quotes the fabricated credential it
+permits, so each exception carries a per-line marker and names its
+scanner. `make leaks-history` runs by hand.
+
+### D-10 Fixtures and goldens are generated, never recorded
+
+`testdata/` and the goldens are built from `sheetstest`, whose content
+is invented: column headings from a lorem vocabulary, and numbers from a
+seeded generator. No fixture is a spreadsheet exported, copied or
+trimmed down.
+
+The reason is that the payload has no shape. A pattern catches an id or
+an address, but a cell value, a sheet title and a note are ordinary
+words, and a scanner cannot tell an invented column heading from
+somebody's customer list. So the rule is structural rather than
+diligent: there is no path by which a real value reaches `testdata/`.
+`TestFixtureIsSyntheticThroughout` holds the fixture's content to the
+invented vocabulary, and `TestNumbersAreDeterministic` holds the
+generator to its seed, so a golden compares byte for byte.
+
+Rejected: a fixture exported, copied or trimmed from a real spreadsheet.
+Cost: a behavior only a real spreadsheet shows reaches the suite as a
+case written by hand into the fake from a probe's answer (D-59), never
+as data copied from the probe.
+
+### D-11 The live driver and the evals work only in spreadsheets they made, and print only through one redacting helper
+
+The live driver creates a scratch spreadsheet, fills it with its own
+invented data, and drives every tool inside it. The evals seed the
+spreadsheets they score in the same way. Neither ever reads a
+spreadsheet it did not make, so the values in a transcript are the
+driver's own and safe to paste.
+
+Every line a driver prints goes through one helper. It substitutes the
+ids the driver created, then runs `redact.Line` over the rest, since
+Drive returns ids and addresses nobody knew in advance.
+`scripts/gates transcript` reads the syntax tree and fails on any other
+print. Redaction lives in that helper only: a redaction on the read path
+turns a value into a placeholder, and the next call that sends it back
+is refused.
+
+Rejected: pointing the driver at an existing spreadsheet; redaction on
+the read path; an allowlist of functions permitted to print; one scratch
+spreadsheet reused across runs; a driver credential with a wider Drive
+scope.
+Cost: each run leaves its spreadsheets, titled `livesheet scratch`, for
+a person to trash, since trashing needs a Drive write scope; the run
+ends by printing the search that finds them. The live driver and the
+evals each carry a copy of the redaction helper (#78).
+### D-12 A1 is the contract: the model never sees a GridRange, and the conversion lives in `internal/a1`
 
 Every range the model sees or sends is A1, because that is what the
-person sees on screen and what the formula bar speaks. `GridRange`
-arithmetic, the zero-based half-open kind, stays in `internal/a1`. It is
-the bet a document server has to make when it keeps UTF-16 offsets away
-from the model, made easier by the platform: Sheets already has a public
-address for every cell.
-
-### 4.2 Every read shows addresses
-
-A read renders a grid with column letters across the top and row numbers
-down the side, so the model can write back to what it just read without
-counting. Addresses are the handles; there is nothing to remember between
-calls and nothing to go stale.
-
-```
-        A            B        C
-   1 |  Region     | Q3      | Q4
-   2 |  North      | 1200    | =B2*1.1
-   3 |  South      | 980     | =B3*1.1
-     rows 1-3 of 41; formulas shown; continue at row 4
-```
-
-### 4.3 A write never destroys what it cannot see
-
-The guard is the reason this server exists. Before writing values the
-server reads the target rectangle and refuses when it holds something a
-value would silently destroy:
-
-- **a formula** — refused unless `overwrite_formulas: true`, because a
-  formula and its result render identically and losing one loses the
-  computation;
-- **anything at all**, when `overwrite: true` was not passed and the
-  cells are not empty;
-- **a protected range** this account may not edit — refused before the
-  request is built, with the protection named;
-- **a partially covered merge** — refused with the merged range named;
-- **a smart chip** (a person or a file link) — named in the refusal and
-  allowed by `overwrite`, because it reads as plain text and a value
-  write erases it: "Writing a new user_entered_value will erase previous
-  runs" (`CellData.chipRuns`, discovery 20260930). The same holds where
-  a paste, a cut, a fill or a split lands;
-- a cell carrying a **note** or **data validation** is reported as kept,
-  since those are invisible in a values read and survive a value write.
-
-`suggest`-style modes do not exist here: Sheets has no tracked changes.
-What stands in their place is `dry_run`, which reports the guard's
-findings and the region that would change without sending anything.
-
-### 4.4 Google's coercion is reported, never hidden
-
-`USER_ENTERED` is how a person types, and it rewrites input: `1-2` is a
-date, `007` is 7, `=A1+1` is a formula. The caller chooses `typed` or
-`literal` and the server never substitutes one for the other. Every write
-asks Google for the stored values back (`includeValuesInResponse` with
-`responseValueRenderOption: FORMULA`) and diffs them against what was
-sent, so the result names every cell Google changed. No other server
-does this, and it costs nothing: the API returns the data in the same
-response.
-
-### 4.5 One tool call is one API request
-
-Quota is counted per request and a batch counts once, so an ops-shaped
-tool that compiles to a single `batchUpdate` is both faster and cheaper
-than several small ones. Where a guard needs a prior read, that is one
-read, taken with a field mask over the target range only.
-
-### 4.6 Reads are budgeted in cells
-
-`includeGridData` on a whole spreadsheet is never sent. A read names its
-range, its cell budget and its character budget, and returns a
-continuation. A 10-million-cell spreadsheet is readable one window at a
-time and never crashes the process or the context window.
-
-### 4.7 Checkpoints stand in for the missing revision guard
-
-A read hands back `checkpoint: ck_7f3a91b2`, a hash over the values it
-read. A write may pass `expect_checkpoint`; the server re-reads and
-refuses with a diff on a mismatch. It is honest about what it is: a
-narrow window, not an atomic guard, since Sheets offers none. Where a
-person needs a real one, `manage_range` can protect the range.
-
-### 4.8 Raw REST with our own wire types
-
-`internal/gsheets` holds hand-written structs for the fields this server
-reads. `google.golang.org/api` is not a dependency: it drags in gRPC,
-OpenTelemetry and the cloud auth stack for a binary that needs JSON and
-HTTP. The request union is written as typed builders, not as
-free-form maps.
-
-### 4.9 Results say what changed
-
-Clients disagree about which half of a result they show the model: Claude
-Code forwards only `structuredContent` when both are present, while
-claude.ai and ChatGPT show the text. The usual answers are to send text
-only, or to send both and hope. Neither is right here, because the
-substance of a read is the *addressed grid* — the column letters and row
-numbers that let the model write back without arithmetic — and a design
-that puts the addresses in one half is a design that loses them on some
-client, silently, until a task goes strangely wrong.
-
-So no tool picks. **Every tool declares an output schema and returns both
-halves, and the structured half carries the rendering in a `grid`
-field.** A client showing structure gets the addressed grid; a client
-showing text gets the same grid; neither is missing anything. They are
-not the same bytes — the structured half also carries `range`,
-`checkpoint`, `truncated` and `continue_from`, and the text half carries
-those in its footer — and neither is a stringified copy of the other,
-which is what the specification asks for and what SEP-1624 argues the
-two halves should mean.
-
-The raw arrays are **not** carried beside the grid by default: that would
-be the same data twice inside one half. `format: json` (or `csv`, `tsv`)
-puts the machine form in `rows` for a caller that wants it, and the
-rendering is then the smaller field. Reads therefore have a schema for
-the diff to hold, which a text-only read would not.
-
-## 5. Module layout
-
-```
-cmd/google-sheets-mcp/    main: login / logout / status / doctor subcommands, server default,
-                          --version, --dump-schemas
-internal/config/          GSHEETS_* env with flags bound to the same names; typed enums; validated at start
-internal/credentials/     refresh token: OS keyring → 0600 file under os.UserConfigDir() with a logged
-                          warning → GSHEETS_REFRESH_TOKEN env override
-internal/userconfig/      non-secret profile file: client_secret path, account email, token location, scopes
-internal/auth/            loopback OAuth (127.0.0.1:<random>, PKCE), scope sets (full / read-only)
-internal/gsheets/         Sheets API wire types: Spreadsheet, Sheet, GridData, CellData, ExtendedValue,
-                          the Request union members it sends and their responses. No dependencies
-internal/gapi/            raw REST client: client.go (retry, limiters, slog, host allowlist), sheets.go,
-                          values.go, batch.go, drive.go (locate only), errors.go. No MCP imports
-internal/gapi/sheetstest/ an in-memory Sheets behind httptest: sheets, cells with formulas and errors,
-                          merges, protected ranges, validation, notes, batchUpdate over the union,
-                          append's table detection, recorded coercion outcomes, error injection
-internal/a1/              A1 notation: parse, format, quote, column letters ↔ indices, GridRange
-                          conversion, bounds. Parsing only, no network
-internal/grid/            the server's view of a rectangle: values, formulas, formats, notes, validation,
-                          merges; checkpoints; the diff a write reports
-internal/render/          text output: the spreadsheet card, the addressed grid, formatting summaries,
-                          write reports, guard refusals; budgets and continuation
-internal/plan/            typed ops → batchUpdate request union members; the write guards; dry-run reports
-internal/service/         orchestration: resolve references, read, write, structure, formatting, policy
-internal/server/          SDK wiring; schema dump through an in-memory client session
-internal/tools/           one file per area: read.go, values.go, sheets.go, format.go, ranges.go,
-                          transform.go, resources.go, tools.go
-internal/redact/          the one redactor every live driver prints through: ids, links, addresses, project numbers
-internal/livecover/       what "the driver covers the tool surface" means, so the static gate and the
-                          driver itself cannot disagree about it
-internal/version/
-testdata/                 synthetic fixtures and golden outputs
-docs/
-scripts/gates/            the repository's own checks, as Go: coverage floor, schema diff, stdio smoke,
-                          staleness, leak scan, workflow pins, pre-commit; never shipped
-scripts/livesheet/        drives the built binary against a real account, redacting ids and addresses
-scripts/spikes/           the probes §15 lists, each answering what the reference does not pin down
-scripts/evals/            drives a model through the tools alone and scores the end state and the trace
-```
-
-Dependency direction runs one way: `tools` → `service` → `plan`/`grid` →
-`gapi` → `gsheets`. Nothing under `internal/gapi` imports MCP, and
-nothing imports `google.golang.org/api`.
-
-**One language.** Everything the repository runs on itself is Go,
-including the gates and the live driver, so a contributor needs one
-toolchain and the code holding the gates shut is built, vetted, linted
-and tested like the rest.
-
-Dependencies, all pinned: `modelcontextprotocol/go-sdk` v1.8.0 (with
-`google/jsonschema-go`), `golang.org/x/oauth2` v0.36.0,
-`zalando/go-keyring` v0.2.8, `golang.org/x/time` v0.15.0. Nothing else.
-
-Toolchain, current as of 2026-09-05 and matching the sibling servers:
-Go 1.27.3 (`go 1.27.3` in go.mod), go-sdk v1.8.0, golangci-lint v2.14.0, govulncheck
-v1.7.0, go-licenses v1.6.0, gitleaks v8.30.1, GoReleaser v2.18.
-
-**Scaffolding first.** The Makefile, the gates, `.golangci.yml`, the CI,
-CodeQL and release workflows with pinned actions and scoped tokens,
-`.goreleaser.yaml`, `.gitleaks.toml`, Dependabot, issue templates,
-`.gitattributes`, `SECURITY.md`, `CONTRIBUTING.md` and
-`docs/development.md` are written in Phase 0, before the first tool, so
-every later commit passes the same gates.
-
-`.gitignore` is the exception and ships **with this design commit**,
-before there is anything to build. An editor writes its own settings into
-the working tree while a session runs, so the first wildcard `git add`
-takes whatever exists at that moment — which is how a stray file reached
-a sibling project's public history, and this repository had such a file
-in it before a line of code existed (§18).
-
-## 6. Addressing
-
-### 6.1 Referring to a spreadsheet
-
-```
-1AbC…                                                      an id
-https://docs.google.com/spreadsheets/d/<id>/edit#gid=123    a URL; the gid names the sheet
-https://docs.google.com/spreadsheets/d/<id>/edit?gid=123    the other spelling Sheets uses
-"Q3 budget"                                                 a title, resolved through Drive
-```
-
-A title is resolved with a Drive query whose values are escaped (#93).
-More than one match is `[ambiguous]` with each candidate's id, owner and
-modification time, and the instruction to pass an id. No match names the
-closest titles. A `gid` lifted from a URL is used as the sheet unless the
-call names one.
-
-### 6.2 Referring to a range
-
-`sheet` takes a title or a `sheetId`; titles are unique inside a
-spreadsheet, so a title is unambiguous once it is read rather than
-guessed. `range` takes A1 (`B2:D40`), a bare column or row range
-(`B:B`, `2:5`), or a whole sheet. The server always sends a range with
-its sheet resolved **and quoted**; it never concatenates a title into a
-string. A title with a space or punctuation needs the quotes, and a
-whole-sheet reference needs them to mean the sheet rather than a
-same-named named range (§2, measured in spike C).
-
-Two things the reference was quieter about than this design would like,
-both now measured (spike C, §18). `values.get` documents its `range` as
-"The A1 notation or R1C1 notation of the range to retrieve values from"
-and says nothing about **named ranges**; in fact it accepts one, as a
-bare name with no `!`, and a name with a `!` after it is read as a sheet
-title and fails if no such sheet exists. A **table** reference is not
-accepted in any form — neither `Table1` nor `Table1[Column]`. No tool
-offers either: a named range is reachable only in the one spelling that
-is also the spelling a whole-sheet reference uses, which is too sharp an
-edge to hand a model. **R1C1 is accepted by the API and is not offered
-here**: two ways to say the same thing is one more thing for a model to
-get wrong, and A1 is what the person sees.
-
-Errors carry the fix: `[not_found] no sheet named "Sheet1" in this
-spreadsheet; it has "Página1", "Dados"` — the exact failure #94
-describes.
-
-### 6.3 Checkpoints
-
-A read returns `checkpoint: ck_<12 hex>`, a hash over the spreadsheet id,
-the resolved range and the canonical form of the values it read. Passing
-`expect_checkpoint` on a write makes the server re-read that range and
-compare before writing; a mismatch is `[conflict]` with a cell-level
-diff. This is best effort by construction — the platform offers nothing
-atomic — and the tool description says so rather than implying a
-guarantee.
-
-### 6.4 Developer metadata (phase 3, built)
-
-Developer metadata is the only anchor Google keeps attached to a location
-while the sheet is edited around it. It reaches a spreadsheet, a sheet or
-a dimension range, not an arbitrary rectangle, and reading it needs a
-write-capable scope, so it can never be the only way to find something.
-It is offered as an optional durable label — "remember this row as
-`invoice-totals`" — and every tool that accepts one also accepts A1.
-
-**Verified as spike K (§18), and the premise held.** An anchored row
-follows its row through an insert above it, a delete above it, a
-`moveDimension` and a `sortRange` — and after a sort it lands where that
-row's *values* landed, which is the one thing here a reading of the
-reference would have got backwards. What it does not do is notice its
-contents being replaced: an anchor names a row, not the data on it, so it
-survives the sheet being reorganized and says nothing when the row is
-rewritten. The two are easy to hear as one promise, so the tool says
-both.
-
-**The shape follows from three findings.** A key is not unique, so
-uniqueness is enforced here or `anchor:totals` is a question with two
-answers. Deleting the row deletes the anchor with nothing in the reply
-saying so, so `delete_dimensions` names them first. And there is no
-"everything in this spreadsheet" location query — a spreadsheet location
-with `INTERSECTING` is refused — so listing goes through an empty lookup,
-which the reference does not describe and which makes it one request.
-
-`anchor:<name>` is a prefix on the existing range argument rather than an
-argument of its own, so every tool that takes a range takes an anchor
-from one change in `ResolveRange`, and none of them grows an eighteenth
-argument (§17a.12 is already that complaint). Nothing in A1 can collide
-with it: a sheet-qualified range needs a `!`, and no column name is six
-letters. Visibility is always `DOCUMENT`: `PROJECT` scopes an entry to
-the OAuth client that created it, and this server is distributed for
-people to run under a client id of their own, so a `PROJECT` anchor would
-vanish on a re-install with nothing to say why.
-
-### 6.5 Error classes
-
-Errors are tool results, not protocol errors, in the form
-`[class] actionable message`. The vocabulary is closed: `auth`,
-`forbidden`, `not_found`, `ambiguous`, `invalid`, `blocked`, `conflict`,
-`stale`, `unsupported`, `rate_limited`, `unavailable`,
-`ambiguous_outcome`.
-
-A gate holds it shut **from day one**, because this is the difference
-between a vocabulary and a habit: it reads the declared classes and every
-error literal in `internal/`, and fails on a class that is emitted
-without being declared, on a class declared and never emitted, and on a
-scan that read too few files to be looking at anything. In a sibling
-repository the equivalent check found four classes that appeared in no
-document at all, and the vocabulary had been living in comments in two
-packages where nothing could disagree with it.
-
-Two of these words are shared deliberately with the sibling servers and
-must keep the same meaning across all of them, because a model should not
-have to learn a class twice: `ambiguous` is a reference matching several
-candidates, and `ambiguous_outcome` is a write whose result is unknown.
-One asks the caller to choose, the other to go and look. `blocked` and
-`forbidden` are likewise distinct: "nothing you do here will work" versus
-"your role is wrong".
-`blocked` is the write guard refusing something the API would have
-allowed. `ambiguous` means a reference matched several things and the
-caller must choose; `ambiguous_outcome` means a write may or may not have
-landed and the caller must go and look. Spike E (§15) observes what
-Sheets actually returns before the mapping onto these is finalized.
-
-## 7. Reading and writing
-
-### 7.1 Locating and describing
-
-- `search_spreadsheets` finds spreadsheets by title or content through
-  Drive (`mimeType = 'application/vnd.google-apps.spreadsheet'`), with
-  `name`, `text`, `owner`, `modified_after`, `limit`, `page_token`. Each
-  hit shows title, id, modified time and owner — not the folder, which
-  is a raw id nothing here can use (§18). It is the fix for #76 and the
-  only Drive call this server makes.
-- `get_spreadsheet` is the **spreadsheet card** and the first call:
-  title, id, link, locale, time zone, recalculation setting, and for
-  every sheet its title, `sheetId`, index, type, grid size, frozen rows
-  and columns, hidden state, tab color and whether it holds a table,
-  chart, pivot table or data source. Plus named ranges, tables, protected
-  ranges and filter views with their A1 ranges. One `spreadsheets.get`
-  with a field mask and **no grid data**, so it is cheap on a spreadsheet
-  of any size.
-
-### 7.2 Reading values
-
-`read_range` takes `spreadsheet`, `sheet`, `range`, and returns an
-addressed grid (§4.2).
-
-- `show`: `values` (default), `formulas`, or `both` — `both` renders the
-  formula under the value where they differ, which is the only way to see
-  that a number is computed.
-- `format`: `grid` (default), `json`, `csv`, `tsv`. `grid` is for
-  reading, the rest for feeding elsewhere; all four go in the text block.
-- `formatted`: whether Google's display formatting is applied
-  (`FORMATTED_VALUE`) or raw values are returned (`UNFORMATTED_VALUE`,
-  the default, because a currency symbol in a number the model may want
-  to compute with is a trap).
-- `max_cells` (default 5 000, maximum 50 000) and `max_chars` (default
-  20 000, maximum 400 000) bound the answer. They are applied **before
-  the call**: the window is resolved against the sheet's real extent and
-  a finite range is sent, so an open-ended `A:Z` never becomes a whole
-  column in memory. Clamping the rendering while fetching everything is
-  the bug this design is avoiding, not repeating (#986). The footer names
-  the range shown, the range that exists, and `continue_from`.
-- Runs of three or more empty rows are folded into one `… rows 2-5
-  empty` line. An empty cell is still padded to its column's width, so a
-  run of them spends the character budget on nothing and pulls
-  `continue_from` in on exactly the sparse sheets a wide window is
-  reasonable to ask for. The fold names the rows it covers, so an address
-  inside it is still an address the caller can write to. `read_formatting`
-  has always summarized this way; the grid did not.
-- The footer names the first few cells it shortened, not just how many.
-  A count alone leaves the caller guessing which cell to read again.
-- `include_notes`, `include_validation` and `include_merges` annotate
-  what a values read cannot show.
-- Every read returns the `checkpoint` (§6.3).
-
-`read_formatting` answers the other question: for a range, the number
-format, font, colors, borders, alignment and wrapping, summarized per
-block of identically formatted cells rather than per cell — a format
-repeated down a column is one fact, and a thousand lines of it is none.
-
-A cell with no format of its own is counted rather than listed, so what
-comes back is what somebody set rather than the sheet's defaults
-repeated. The read carries both of the API's formats for that reason:
-`userEnteredFormat` is what the cell was given and decides the blocks,
-`effectiveFormat` is what applies once Google has merged the defaults in,
-and the difference between them is what tells a caller whether clearing
-would take anything away.
-
-It also lists what is attached to the range and decides how a cell looks
-without being on the cell — merges, conditional format rules with their
-index, banding, validation rules, notes and protected ranges — because an
-answer built only from cell formats would describe a green column as
-plain. The cell budget bounds the read; there is no character budget,
-because the answer is per block and the cell budget already bounds how
-many blocks there can be.
-
-`find_in_spreadsheet` searches text or an RE2 regex across sheets and
-returns A1 addresses with context and the matching cell's kind (value,
-formula, note). There is no server-side search in the Sheets API, so this
-reads with a field mask and matches here; its description says what it
-costs and it takes the same budgets.
-
-### 7.3 Writing values
-
-Every write takes `dry_run`, `expect_checkpoint`, and the
-acknowledgments the guard requires. `expect_checkpoint` is optional,
-except with `overwrite` or `overwrite_formulas` (below). The path is
-fixed:
-
-1. Resolve the spreadsheet, the sheet and the range (§6).
-2. Read the target rectangle with a field mask covering
-   `userEnteredValue`, `effectiveValue`, `formattedValue`, `note`,
-   `dataValidation`, merges and protected ranges. One request.
-3. Run the guard (§4.3). A refusal names what is in the way, in A1
-   addresses, and which acknowledgment would allow it.
-4. Compare `expect_checkpoint` if given; mismatch is `[conflict]`.
-5. Send one request: `values.update` (PUT) for one range,
-   `values.batchUpdate` for several, `values.append` for an append,
-   `batchUpdate` for anything structural. A structural batch carries
-   `includeSpreadsheetInResponse` with `responseRanges` scoped to what it
-   touched, so the state after the write comes back in the same request
-   rather than costing another read.
-6. Ask for the stored values back and diff them against what was sent
-   (§4.4).
-7. Return: the range written, cells changed, every coerced value, the
-   formulas created, the new checkpoint, and a rendered view of the
-   region.
-
-- `write_values`: `values` as rows of scalars, or `tsv` for bulk text;
-  `input: typed | literal`; `overwrite`, `overwrite_formulas`.
-  **An overwrite carries its witness.** `overwrite` and
-  `overwrite_formulas` replace whatever the cells hold when the write
-  lands, and after a refusal that may be a collaborator's edit nobody
-  read. So either needs `expect_checkpoint`; without it the write is
-  refused `[invalid]` with the checkpoint of the cells as this call read
-  them. The guard's own refusal and a dry run give the same checkpoint,
-  so no second read is needed, and a change after that read is
-  `[conflict]`. `transform_range` does the same over the cells its guard
-  reads: where a paste or fill lands, where a split spills, or the
-  formulas a replacement rewrites; an action that reads nothing first
-  refuses `expect_checkpoint`. A write
-  shorter than the previous contents leaves the tail alone and the result
-  says so (§2, `values.update` does not clear). A formula into a table's
-  header row is refused, and nothing allows it: Google answers 200 and
-  replaces the formula with a column name of its own, such as "Column 2"
-  (spike T, §18). The tables come from the cached card, read only when a
-  formula is being written.
-- `append_rows`: appends after the table detected in the range,
-  inserting rows, and reports the range Google actually chose. It took
-  `insert: overwrite` until 4.0.0, which wrote over rows chosen during
-  the call, so no read could witness them (§9a).
-- `clear_values`: clears values and keeps formatting; needs `confirm`
-  and reports the cell count and how many held formulas. Registered only
-  with `GSHEETS_ENABLE_DESTRUCTIVE=true`, because nothing in Sheets can
-  undo it (§9). Its range is A1 and always given: an omitted range and an
-  `anchor:` are refused, naming the range each stands for (§9a).
-
-**Formulas that reach outside the spreadsheet.** Two different risks,
-which an earlier draft of this document ran together:
-
-- `IMPORTXML`, `IMPORTDATA`, `IMPORTHTML`, `IMPORTFEED`, `IMAGE` and
-  `HYPERLINK` take **an arbitrary URL** — the reference for `IMPORTXML`
-  is explicit that `url` is "The URL of the page to examine, including
-  protocol". Google fetches it from its own servers, and a URL can carry
-  the sheet's own data in its query string, which `ENCODEURL` makes
-  convenient. Writing one is an outbound request with the spreadsheet's
-  contents attached, made by a machine the person cannot see.
-- `IMPORTRANGE` takes a **spreadsheet** URL, not an arbitrary one, so it
-  exfiltrates nothing. Its risk is the other direction: it pulls data out
-  of any spreadsheet the signed-in account can read into this one, which
-  aggregates access rather than widening it, and it embeds that other
-  spreadsheet's id in a string.
-
-A write creates either only when the server was started with
-`GSHEETS_ALLOW_EXTERNAL_FORMULAS=true`, for the two reasons above rather
-than one; until 4.0.0 it was the call's `allow_external_formulas`, which
-a model persuaded to write one would pass too (§9a). The refusal offers
-no argument. `create_spreadsheet`'s seed values and a `find_replace`
-whose replacement names such a function are refused the same way, the
-second whatever it searches, since whether a value it lands in becomes a
-formula has not been probed. A `find_replace` inside formulas is also
-run here first over each formula the guard read, as Google would run
-it, since a replacement can complete a name from what is already there:
-`X(` replaced by `(` turns `=IMAGEX(…)` into `=IMAGE(…)`. A formula that
-would come out reaching outside is refused at its cell, and so is one
-that already did and would change. A regular expression Go cannot
-compile, such as a lookbehind, cannot be run here first, so over
-formulas it is refused unless the setting allows it. A `copy_paste` of
-everything or of formulas, and an `auto_fill`, make new formulas from
-the ones they copy, each reading the cells beside it, so the source is
-read for such a formula and the copy refused the same way; a cut moves
-a formula rather than making another. Every formula a write creates is
-named in the result. Reads show formulas for the
-same reason: an injected one should be visible, not hidden behind its
-value.
-
-### 7.4 Sheets and dimensions
-
-- `create_spreadsheet`: `title`, optional `sheets` (titles), optional
-  seed `values` for the first sheet, `locale`, `time_zone`. Returns the
-  card. A spreadsheet is created in My Drive's root; moving it elsewhere
-  is a Drive API operation this server does not offer, and the
-  description says so.
-- `manage_sheet`: `action` — `add`, `rename`, `duplicate`, `copy_to`
-  (another spreadsheet, through `sheets.copyTo`), `hide`, `unhide`,
-  `reorder`, `resize` (grid rows and columns), `freeze`, `tab_color`.
-- `delete_sheet`: gated and needs `confirm`; the dry run reports how many
-  non-empty cells, formulas and charts go with it, and the description
-  points at `duplicate` first.
-- `edit_dimensions`: `action` — `insert`, `move`, `resize`,
-  `auto_resize`, `group`, `ungroup`, `hide`, `unhide`, over rows or
-  columns. A hidden band shows nothing in the values, so `read_range`
-  names the hidden rows and columns inside what it read. `move`'s `to`
-  is where the band ends up: the API reads its index against the sheet
-  *before* the move, verified live, and the conversion is this server's.
-- `delete_dimensions`: gated, and needs `confirm: true`. Deleting a
-  column takes its data with it and nothing in Sheets brings it back.
-  Its band is A1: an `anchor:` band is refused, naming the band it stands
-  for, so the call shows what goes (§9a).
-
-  It is a **tool** rather than an action on `edit_dimensions`, which is
-  what an earlier draft of this section specified. That version said the
-  action would be "absent from the schema" when destructive tools are
-  off, and hiding it from the description does not achieve that — with no
-  enum on `action` there is nothing structural to omit, and `confirm`'s
-  own description still named it. Worse, `edit_dimensions` is registered
-  as a plain write, so it advertised `destructiveHint: false` while
-  offering an irreversible action. `Kind` decides the annotations, the
-  registration gate and the interaction mark, and a tool whose
-  destructiveness depends on an argument is exactly the matrix `Kind`
-  exists to avoid — so the destructive act got its own tool and inherits
-  all three.
-
-### 7.5 Formatting and structure (phase 2)
-
-- `format_cells`: ops over a range — `number_format`, the font
-  switches, `text_color`, `background`, `borders`, `horizontal`,
-  `vertical`, `wrap`, `merge`, `unmerge`, `clear_format` and `note`.
-  Every field set is one op and they travel together in one atomic
-  batch, so a header row that is bold, centered and shaded is one call.
-  Borders take a shorthand (`1pt solid #cccccc`), as in the Docs server,
-  rather than fifteen flat fields, and a number format names its type
-  (`date:yyyy-mm-dd`) rather than leaving the type to be guessed from the
-  pattern. Clearing is applied before setting, so "clear this and then
-  make it bold" is one call rather than a clear that undoes the bold.
-
-  **Three of these destroy something, and each is refused until
-  acknowledged**: a merge keeps the top-left value of every merged block
-  and discards the rest with nothing in the response saying so;
-  `clear_format` removes formatting Sheets cannot bring back; and a note
-  replaces one that no values read would have shown the caller. The cells
-  are read only when one of the three is asked for, so an ordinary "make
-  it bold" costs one request and not two.
-- `manage_range`: things attached to a range — `named_range`,
-  `protected_range`, `data_validation`, `table`, `banding` and
-  `conditional_format`, each with `add`, `update` and `delete`.
-
-  **A table's columns are typed with `column_types`**, on add and on
-  update: one entry per column, `<column> <type>`, such as `B date`,
-  `Amount currency` or `Status dropdown: Open, In progress, Done`, the
-  options after a colon or in parentheses. The
-  column is a letter or its header's text; a letter outside the table
-  that a header spells, such as `ID`, means the header. The index sent
-  counts from the table's first column, as the API defines it. The types
-  are text, number (`DOUBLE`), currency, percent, date, time, date_time,
-  boolean and dropdown. A dropdown column carries its `ONE_OF_LIST` rule,
-  built by the same condition parser `data_validation` uses, with its
-  options split on commas; a list whose options hold commas is
-  `data_validation`'s job. The five smart chip types are shown on a read
-  and never written.
-
-  An add sends only the columns named. An update sends `updateTable`
-  with `fields=columnProperties`. That field is a list, and Google
-  replaces it whole: one column sent alone left every other column with
-  no type, and a dropdown with no list (spike T, §18). So the update
-  reads the table's columns fresh, changes the ones named, and sends
-  every column back. Fresh, because the card is cached, and a cached array
-  sent back would undo a change somebody made in between. This round
-  trip is why `dataValidationRule` is modeled: without it, every other
-  dropdown would lose its list.
-
-  The update sends an entry for every column of the table, and each
-  carries its `columnName`, exactly as the same fresh read gave it, or
-  the header cell's text where the read gave the column no entry; such
-  a column goes with no type. Google refuses an entry with no name, and
-  writes a name sent into its header cell as plain text (spike T, §18),
-  so a name sent as read leaves the header showing what it did. A
-  header cell holding a formula, a smart chip or rich text is the
-  exception: written over, the formula or the chip is lost, and so is
-  the formatting of part of the text, such as a bold word (spike T,
-  §18). So the fresh read takes the header row as well, chips and
-  `textFormatRuns` included, and the update is refused while a header
-  cell holds any of them. A run with an empty format formats nothing and
-  does not count. Google does not keep a formula written into a table's
-  header, `write_values` refuses one there, and Google takes no table
-  added over one, so the formula check is for a header made some other
-  way; it reads nothing more. A rename alone sends no columns and is not
-  refused.
-
-  Typing a column boolean, on add or update, reads the cells under its
-  header first and is refused while one holds anything but a TRUE or
-  FALSE value. Google turned a word, the text "TRUE" and an empty cell
-  into FALSE (spike T, §18), so a word is lost with nothing said, and
-  text that reads TRUE is not a true value. A TRUE or FALSE value stays,
-  on add and on update, and is let through. A number and a formula are
-  refused too, since nothing says they are kept. The refusal names the
-  cells and says to write TRUE or FALSE with `input` typed, which stores
-  a value rather than text. An empty cell becomes FALSE, and the tool
-  description says so.
-
-  Typing a column dropdown, on add or update, is refused while a cell
-  under its header has a data validation rule of its own. Google put the
-  table's list in place of a cell's own list and said nothing, on add
-  and on update (spike T Q1 and Q13, §18). The refusal names the cells
-  and says to remove the rule with `data_validation` `delete` first. The
-  table's own list is not on its cells, so a column already a dropdown is
-  not refused over it. The cells under every column typed boolean or
-  dropdown come in one read, after the header read, since a column named
-  by its heading is known only once the header is back. A column the
-  update sends back unchanged is not read: Google refuses a rule set on a
-  cell in a typed column (Q13), so a dropdown column's cells cannot have
-  gained one since it was typed.
-
-  `data_validation` `add` and `update` are refused over the cells under a
-  dropdown column's header, naming them and quoting Google's reason, "This
-  operation is not allowed on cells in typed columns." (spike T Q13,
-  §18). A dry run is refused the same way. The tables come from the card,
-  so the check costs no request. The refusal points at `table` `update`
-  with `column_types`, which is where a dropdown column's list is
-  changed. A column of another type, a header cell and a `delete` go to
-  Google as sent, since nothing has asked what Google does with them.
-
-  An add reads the header row first, with the same mask, whether it
-  types a column or not. It is refused while any header cell holds a
-  formula: Google takes no table over one, "Formulas are not supported
-  in a table header row." (spike T, §18). Refused here, the cells are
-  named and a dry run says so. An add names every column it types after
-  its header cell's text. A typed column sent with no name has Google
-  write "Column 1", "Column 2" and so on into its header cell, over the
-  heading that was there (spike T, §18). An empty header cell has no
-  text to send and gets one of those names, which takes nothing; the
-  result says so. The add is refused while the header of a column it
-  types holds a smart chip or rich text, as an update is. A column it
-  does not type is sent nothing. `get_spreadsheet` shows the types in
-  the spelling `column_types` takes, `Status dropdown (Open, In
-  progress, Done)`.
-
-  An add Google answers with an HTTP 500, or with no reply at all, is
-  settled by a fresh read of the card, since a table has a name and a
-  range. Where a table of the name and range sent is there, the result
-  says Google answered with an error and the table was added. Where it
-  is not, the call is refused as `unavailable`, saying nothing was added.
-  Spike T Q12 saw Google answer every table add with column types HTTP
-  500 after four in a fresh spreadsheet, and take an add without them
-  (§18). So where Google answered an add with column types, the refusal
-  says Google has refused such adds after about four in a spreadsheet,
-  and that an add without `column_types` was still taken. Whether the
-  columns can be typed after that is not known, and it says so. Any
-  other add it says can be repeated. A read that fails too leaves
-  `ambiguous_outcome`.
-
-  **The conditional-format ops are here rather than on `format_cells`,
-  which is a change from an earlier draft of this section.** A rule is
-  attached to a range and has add, update and delete, which is exactly
-  this tool's shape; and it needs a format of its own, so on
-  `format_cells` the style fields would have meant two different things
-  depending on whether a condition was also given. One argument that
-  means two things is how a caller sets the wrong one.
-
-  **An existing object is named by the range it covers, not by an id.**
-  A caller who can say "the protection on B2:B10" has not had to fetch
-  an id first, and A1 is this server's contract everywhere else (§17.1).
-  The range has to match exactly — a protection over a column and one
-  over a cell inside it are different objects — and a range matching
-  several is refused with the list rather than picked from. A
-  conditional format rule is the one exception: the API identifies those
-  by position in the sheet's list, so they take an `index`, which
-  `read_formatting` reports beside each rule.
-
-  **A color scale is a conditional format rule too.** `gradient` takes
-  two or three points, lowest first, each
-  `<min|max|number|percent|percentile> [value] #hex`, in place of a
-  condition and a format, and is refused beside either. min and max
-  take no value, being the range's own lowest and highest. Google takes
-  either as the middle point too, so a scale read back from a sheet can
-  be sent again; min is never last, nor max first. A value is sent as
-  written, since the API takes it as text and it may be a formula. A
-  number is read in the spreadsheet's locale: under `de_DE` Google
-  refuses `1.5` and takes `1,5` (spike S, §18), and the tool description
-  says so. A point is sent with `colorStyle`
-  alone and read from either it or the deprecated `color`.
-  `read_formatting` reads a scale back in the spelling it was written in,
-  `color scale: min #ffffff -> percentile 50 #ffd666 -> max #57bb8a`,
-  with a theme color by name. An update replaces the whole rule, as it
-  does for a condition.
-
-  A protection never blocks the request that lifts it. Anything else
-  would be a trap rather than a guard.
-- `transform_range`: `sort`, `find_replace`, `trim_whitespace`,
-  `remove_duplicates`, `text_to_columns`, `randomize`, `auto_fill`,
-  `copy_paste`, `cut_paste`. Each reports what the API said it did.
-  These are the operations that move data without the caller naming its
-  new address, so each one runs the guard over its destination — and
-  there are three shapes of destination, each read only when the action
-  has one:
-
-  - A paste and an auto-fill land on cells the caller never named, so
-    the landing rectangle is read and guarded like any other write
-    target.
-  - A `text_to_columns` spills into the columns to the right of its
-    source. How far is not knowable before the call unless the delimiter
-    is given, so with Google detecting it the guard reads a window to the
-    right and treats all of it as at risk, and says that is what it is
-    doing.
-  - A `find_replace` with `in_formulas` rewrites what a cell computes
-    rather than what it shows, which is the same invisible loss
-    `overwrite_formulas` exists for, so it asks for the same
-    acknowledgment.
-
-  `sort`, `randomize`, `remove_duplicates` and `cut_paste` all move rows,
-  so each result says that an address or a checkpoint from before the
-  call no longer points where it did.
-
-  A sort key is a column of the sheet, not an offset into the range: the
-  API's `dimensionIndex` is absolute, and the live driver sorts a range
-  starting at B by its second column so that a relative reading would
-  leave the rows where they are and be caught.
-
-### 7.6 Charts, pivot tables and data sources (phase 4)
-
-Designed after spikes L, M and N ran, and shaped by what they found
-rather than by the reference (§18 carries every row).
-
-**`manage_chart`** — `add`, `update`, `move`, `delete`, `list`, over
-charts and slicers alike, since both are embedded objects with one
-delete between them.
-
-- `add` takes a chart kind, a title, one domain range and one or more
-  series ranges, all in A1, and either an anchor cell or `new_sheet`.
-  **Domain and series are checked before the request is built**: a
-  `basicChart` with neither returns HTTP 500 from Google, and a 500 is
-  retryable by §6.5, so a client that trusts the status sends it again.
-  This is the one place in the project where the API's own error class
-  is wrong for the request that caused it, and the request is what
-  changes.
-- `update` **reads the spec, edits it and sends it back whole.**
-  `UpdateChartSpecRequest` carries no field mask and refuses a partial
-  spec outright, so there is no merge to do; the alternative — filling
-  in a chart kind to make the request valid — would rebuild somebody's
-  pie chart as a column chart and report success.
-- `move` sends `updateEmbeddedObjectPosition`, which **requires** its
-  own `fields` mask; the tool sets it from the arguments given.
-- `delete` sends `deleteEmbeddedObject`, whose reply is `{}`. The result
-  is composed from the card read before the delete, so it can say what
-  went. Deleting an id twice is a clean 400 and maps to `[not_found]`.
-- `list` reads titles and positions. The card's own mask widens only to
-  `charts(chartId,spec(title))` — 72 bytes a chart, so a name is
-  affordable on every `get_spreadsheet` — and the fuller read with
-  positions stays inside `manage_chart list`, at about 370 bytes a
-  chart.
-
-A chart on its own sheet is `sheetType: OBJECT` **with no
-`gridProperties`**, and it goes when that sheet goes. Nothing reading a
-card may assume a sheet has a grid; that hole predates phase 4, since a
-chart sheet made in the Sheets interface reaches every tool already
-shipped.
-
-**`manage_pivot_table`** — `add`, `update`, `delete`, `list`. A pivot is
-not a request in the `batchUpdate` union: it is a `pivotTable` field on
-one `CellData`, written through `updateCells` at its anchor and deleted
-by an `updateCells` naming that field with an empty cell, which takes
-the whole output with it.
-
-- **Columns are named in A1, never as offsets.** The API groups and
-  summarizes by `sourceColumnOffset` into the source rectangle. A caller
-  says `B` or the header text; the server converts against the source,
-  the way hard rule 4 requires. It also **checks the offset against the
-  source's width**, because an offset past the end is accepted with a
-  200 and produces a pivot that means nothing.
-- **An update that changes the source checks what it keeps.** A group,
-  value or filter the update was not given keeps its offset, so it reads
-  the same position in the new source. That keeps its meaning only when
-  the new source starts at the same column of the same sheet, so a new
-  source that starts anywhere else is refused, naming what each kept
-  column would read instead. One that starts in the same place and is
-  too narrow is refused too, named in the old source's letters. The
-  caller passes the groups, values and filters again, or picks a source
-  that fits. A source is read on the anchor's sheet, so a pivot made in
-  the Sheets interface over another sheet keeps nothing across a new
-  source.
-- **Groups take a rule, in the same flat strings.** `Date by
-  year_month` is a `dateTimeRule`, its type the enum lower-cased, and
-  `Age every 10 from 20 to 70` a `histogramRule`, start and end
-  optional. The rule starts at the last ` by ` or ` every ` with
-  something after it, and an entry that is a heading whole is the
-  column, so a heading with either word in it can still be named. The
-  reference allows one group with a rule per source column, and Google
-  does not enforce it (§18), so this server does: the pivot as it will
-  be sent is checked, kept groups included, and two rules on one column
-  are refused with the reason. A grouping made by hand in Sheets
-  is kept by an update that leaves the groups out, and never written.
-  An update that keeps a calculated value keeps no column for it: the
-  formula names its columns by heading, so a new source moves nothing.
-- **Filters are `filters`, written as `filterSpecs`.** `Region show
-  East, West` is a list of values to show, and `Amount number_greater
-  100` a condition, with `manage_range`'s names for the ones the
-  discovery document says filters support. `date_before` and
-  `date_after` take a relative date as its word, `today` or `past_week`,
-  and send it as `relativeDate`; typed into a cell the word would be
-  text. A column takes one of each,
-  and then a value must be listed and meet the condition. `filters`
-  replaces every filter and `clear_filters` removes them. Both take the
-  deprecated `criteria` map out too: a response carries it beside
-  `filterSpecs`, and a pivot sent back with it alone would be filtered by
-  it again. `visibleByDefault` is not an argument. It is set on a
-  condition alone, because the reference says that with it false a value
-  must also be listed, and nothing is.
-- **A value starting with `=` is a calculated value.** It needs `as
-  <name>`. It is used as written (`CUSTOM`) unless it ends in `sum`, which
-  works it out per row and sums it; Google takes no other summary for a
-  formula. It is sent with no `sourceColumnOffset`, since the two are a
-  union. "Show as" (`calculatedDisplayType`) is not offered.
-- **`list` reads every rule back in the spelling the tool takes**:
-  `rows`, `columns`, `values` and `filters`, each column as its letter.
-  Sent back as they read, they make the same pivot. A grouping made by
-  hand reads as `<column> by hand`, which the tool refuses rather than
-  dropping, and a summary this server has no word for reads as Google's
-  word lower-cased. What the spelling cannot carry — a group's sort order
-  and label, a value's "show as" — is not in it, and passing that
-  argument again replaces it.
-- **An anchor inside the source is refused** before the request is
-  built. The API accepts it and evaluates to `Circular dependency
-  detected`.
-- The output's size is not in the request: it is computed from the data,
-  and a group added inside the source makes it taller. So every result
-  reads the anchor's rectangle back rather than describing what was
-  asked for.
-- `list` takes a range to look in rather than scanning a sheet. There is
-  no pivot index in the API, and a whole-sheet grid read for a field
-  that nothing else needs would cost a read of the sheet to find at most
-  a handful of anchors.
-
-**The read path gains one field.** `gapi.GridFields` asks for
-`pivotTable(source)`, which costs nothing on a cell that has no pivot.
-Without it the guard sees a pivot's output as ten anonymous non-empty
-cells — it already refuses the write, which is the important half, but
-it cannot say what it is refusing.
-
-**It names the anchor from the anchor, and the pivot from its output.**
-A pivot's *output* cells carry no `pivotTable` field: on the wire they
-are ordinary computed values, and the definition sits on the top-left
-cell alone. So a write over the anchor is refused with what it would
-cost — "F1 anchors a pivot table, and a write there replaces it and
-clears everything it draws" — straight out of the rectangle the guard
-already read.
-
-A write into the middle of the output is the other half, and it read as
-"I3 is not empty" until §17a.27 closed it. Naming the pivot from one of
-its output cells means reading up and left of the write, and the cost is
-what decides the shape: **the look happens only where the guard has
-already refused**, so it is paid once per refusal rather than once per
-write. Two more conditions keep it off the ordinary path. The write must
-land on cells nobody typed — an `effectiveValue` with no
-`userEnteredValue`, which is what a pivot draws and what an array
-formula spills — so a refusal over typed data costs nothing extra. And
-the window that could hold the anchor is bounded by the read budget from
-the write's end, since a pivot anchored further above than the budget
-reaches draws an output at least that tall.
-
-Then the extent is measured rather than assumed, by the same read
-`list` uses: an anchor up and to the left is not yet a pivot that
-reaches this write, and a footprint that absorbed its neighbors would
-steer a caller away from cells that were never the pivot's. What comes
-back names the part of the write inside the pivot, the anchor, and the
-rectangle it covers right now.
-
-**That measurement had to be fixed to carry a refusal.** Stopping at the
-first empty row and column separates a pivot from a spill beside it and
-cannot separate two pivots with no gap between them: side by side, every
-row of the left one has something drawn to its right, so it grew over
-the right one and `list` reported the pair as one. The rectangle is
-pulled back off any other anchor inside it now, and where that anchor
-sits says which side to give up — one on this pivot's own first row is
-beside it, so the columns went too far; one in its own first column is
-below it, so the rows did. Found by the review pass on the refusal, and
-wrong in the listing since phase 4.
-
-**Two other tools reach a pivot's cells, and they behave differently
-enough that one guard would have been wrong for both** (spike Q).
-`format_cells merge` is refused by Sheets itself — `400 … You can't
-merge cells that are part of a pivot table`, over the output as surely
-as over the anchor — so this server refuses it first with that reason
-and offers nothing to acknowledge, because nothing would help.
-`clear_values` splits the other way: over the output it does nothing at
-all, and over the anchor it takes the whole table and every cell it
-draws. So the clear's count is what it can remove rather than what is
-there; an anchor in the range is named, and named on all three of the
-gate, the dry run and the result, because the gate's own advice is to
-dry-run it. What it says about the rest is deliberately not a promise of
-survival: a clear does not take a cell nobody typed out by itself, and
-it takes it anyway if whatever draws it was in the range — clearing an
-array formula takes its whole spill, and a spill is indistinguishable
-from a pivot's output here.
-
-**The merge guard has a hole it cannot close, and closes it downstream.**
-Google goes by the pivot's *footprint* rather than by its cells: live, a
-merge over two cells blank in the response and blank on the sheet is
-refused because the rectangle they sit in belongs to a pivot table. The
-guard would have to measure every pivot before every merge to see that,
-which is the cost §17a.27 refused for a message. So the cheap check
-answers where it can, naming the table and what it covers, and the 400
-is translated where it cannot. A caller never reads Google's wording
-either way, and no merge pays for a read it did not need.
-
-**What a write into a pivot does is worth stating exactly**, because the
-refusal has to be true. A `values.update` over one output cell returns
-200 and collapses the entire pivot to `#REF!` at the anchor — and
-clearing that one cell brings all of it back. The damage is total and
-completely reversible, so the refusal says the pivot will stop drawing
-until the cell is cleared. An `updateCells` over the **anchor** is a
-different act, and that one replaces the pivot outright and silently.
-
-**`manage_data_source`** — `list`, `refresh`, `cancel_refresh`, and
-**registered only with `GSHEETS_ENABLE_DATA_SOURCES=true`** (§17.6a).
-`refresh` names its source by `id`. **`connect_data_source`**, behind the
-same setting, is what `add` was until 4.0.0: its own tool, because it
-starts a query billed to the project the call names (§9a).
-
-**Deleting one is `delete_data_source`, its own gated tool**, for the
-reason `edit_dimensions`' delete became `delete_dimensions` (§7.4,
-§17a.10): an action that removes what nobody can read back does not
-belong inside a tool whose annotations say it is not destructive, and a
-host in an auto-approve mode reads those annotations and asks nobody. It
-meets §17c's criterion more severely than an action already gated —
-`deleteDataSource` takes the DATA_SOURCE sheet and everything on it,
-which is strictly more than `delete_sheet` does, and what goes cannot be
-read back without re-running a billed query.
-
-It is `Destructive` rather than `Connected`, and needs no BigQuery
-scope: spike N sent `deleteDataSource` under this server's two scopes
-and got a 400 about the id rather than a 403 about the scope. So it is
-reachable — and therefore worth gating — wherever a data source exists,
-including one somebody else connected. The first version of this phase
-put the delete inside `manage_data_source` behind `confirm` alone; the
-cleanup pass found it, and §18 carries the row. `addDataSource` under this server's two scopes returns 403
-naming `bigquery.readonly`, so the tool needs a third scope that most
-users of a Sheets server should not be asked to grant. `list` is the
-exception and needs no scope at all: `fields=dataSources` is accepted as
-it stands and returns `{}` where there are none, so `get_spreadsheet`
-reports a connected source whatever the configuration.
-
-**Two shipped tools change.** `delete_dimensions` counts the charts and
-pivot tables whose ranges intersect the band and names them before the
-confirm gate, beside the anchors it already names — deleting a charted
-column leaves the chart alive with zero series, and deleting a pivot's
-source rows leaves a header and a grand total, and both are silent. That
-is the third and fourth silent destroy this project has found on an API
-whose reference mentions none of them.
-
-## 8. Tool surface
-
-snake_case verb_noun, no dots. Claude Code prefixes `mcp__<server>__`.
-"Gated" means registered only with `GSHEETS_ENABLE_DESTRUCTIVE=true`, and
-each gated tool also requires `confirm: true` on the call. "Connected"
-means registered only with `GSHEETS_ENABLE_DATA_SOURCES=true`. Only
-`delete_data_source` sets `_meta["anthropic/requiresUserInteraction"]`
-(§9a). "destructive" in the Annotations column is `destructiveHint: true`,
-which every write carries but the three that only add, since the MCP
-schema reads `false` as "only additive updates". `GSHEETS_READ_ONLY=true`
-registers only the readOnly rows and requests read-only scopes.
-
-| Tool | Purpose | Annotations | Phase |
-|---|---|---|---|
-| `get_spreadsheet` | The spreadsheet card: sheets, sizes, named and protected ranges, tables (§7.1) | readOnly | 0 |
-| `read_range` | An addressed grid of values or formulas, budgeted, with a checkpoint | readOnly | 0 |
-| `search_spreadsheets` | Find a spreadsheet by title or content through Drive | readOnly | 0 |
-| `find_in_spreadsheet` | Text or regex search across sheets → A1 addresses with context | readOnly | 0 |
-| `create_spreadsheet` | A new spreadsheet, optionally with sheets and seed values | — | 1 |
-| `write_values` | Write a grid; guard, coercion report, checkpoint; an overwrite carries the checkpoint of what it replaces | destructive | 1 |
-| `append_rows` | Append after the detected table, inserting; reports where it landed | — | 1 |
-| `manage_sheet` | add, rename, duplicate, copy_to, hide, unhide, reorder, resize, freeze, tab_color | idempotent, destructive | 1 |
-| `edit_dimensions` | insert, move, resize, auto_resize, group, ungroup rows or columns | destructive | 1 |
-| `delete_dimensions` | Gated: remove rows or columns and the data on them | destructive | 1 |
-| `read_formatting` | Number formats, styles, borders, conditional rules over a range | readOnly | 2 |
-| `format_cells` | Number format, styles, borders, alignment, wrapping, merges, notes | idempotent, destructive | 2 |
-| `manage_range` | Named ranges, protected ranges, data validation, tables, banding, conditional format rules | destructive | 2 |
-| `transform_range` | sort, find_replace, trim, dedupe, text_to_columns, fill, copy/cut-paste | destructive | 2 |
-| `manage_anchor` | Durable labels for a row, column or sheet: add, list, move, remove. `anchor:<name>` works wherever a range does, except in `delete_dimensions` and `clear_values` (§6.4, §9a) | destructive | 3 |
-| `clear_values` | Gated: clear a range's values, keeping formatting | destructive | 1 |
-| `delete_sheet` | Gated: delete a sheet and everything on it | destructive | 1 |
-| `manage_chart` | Charts and slicers: add, update, delete, move | destructive | 4 |
-| `manage_pivot_table` | Pivot tables on a range | destructive | 4 |
-| `connect_data_source` | Connected: connect a BigQuery query or table, billed to the project named | openWorld | 4.0.0 |
-| `manage_data_source` | Connected: refresh one data source, cancel a refresh, list | destructive, openWorld | 4 |
-| `delete_data_source` | Gated: remove a data source, its sheet and everything on it; marked | destructive | 4 |
-| `read_cell_comments` | Comment threads on cells: the cell each is on now, status, assignee, posts | readOnly | 2026-10 |
-| `manage_cell_comment` | add, reply, edit, resolve, reopen a comment thread; an assignee is emailed | destructive, openWorld | 2026-10 |
-| `delete_cell_comment` | Gated: delete a comment thread, or one reply | destructive | 2026-10 |
-
-There is deliberately no bulk tool that spans spreadsheets: one
-spreadsheet per call, so a wrong id costs one refusal rather than a
-sweep.
-
-**Resources** (phase 3, built). `gsheets://{spreadsheet}` is the card;
-`gsheets://{spreadsheet}/{sheet}` is that sheet's used range as csv under
-one 400 000-character budget. No static list (that would be a Drive
-listing) and no subscriptions (the API has no push and no changes feed).
-
-The used range rather than the sheet: a sheet is 1 000 by 26 whatever is
-on it, and a resource of 26 000 commas describes nothing. A read cut
-short by the budget says so in a second content block rather than in the
-CSV — CSV has no comment syntax, so a note in the body parses as a row of
-data, which is the silent half-answer this server exists to avoid. The
-sheet title is percent-encoded: a title can hold a slash, a question mark
-or a hash, and `net/url` would read each of those as structure and hand
-back a title with the end missing.
-
-**Registration.** One `Kind` per tool — read, write, idempotent write,
-destructive, connected, notifying — decides the annotations, whether read-only mode leaves the
-tool registered, and that the reply is rendered. Two fields beside it
-are refused on a kind they do not describe: `Adds`, which makes a write
-not behind the destructive flag say `destructiveHint: false`, and
-`PromptEveryCall`, the mark,
-only on a Destructive tool (§9a). Four rules kept by hand at twenty call sites
-is four ways to be quietly wrong. `Kind` is an enum over *which world a
-tool touches*, so it grows an axis the first time a tool touches a second
-one; this server has no disk axis at all, since nothing downloads or
-uploads and all content is inline.
-
-Two things the registration layer enforces so a tool cannot forget them:
-the output type is constrained to a renderer interface, so a tool with no
-rendering does not compile; and `dry_run` is found by reflection rather
-than declared per tool, so a tool that offers the flag cannot fail to
-honor it. **Registration gates the tool; the service gates the act** —
-`confirm` and the one gated action live in the service, where the caller
-can be told why, which is what keeps `Kind` from becoming a matrix.
-
-**Results.** Every tool declares an output schema and returns both
-halves. The structured half carries the rendering in `grid` (reads) or
-`summary` (writes), so the two can never disagree and no client can be
-shown the half without the addresses in it (§4.9).
-
-## 9. Confidentiality, security, safety
-
-**Nothing internal leaves the user's machine or enters the repository**
-(**decided**).
-
-- Nothing deployer-specific enters the repository, and §9.1 says exactly
-  what that means here and how it is enforced rather than trusted.
-- The server talks only to Google: `sheets.googleapis.com`,
-  `www.googleapis.com`, `oauth2.googleapis.com`, `accounts.google.com`,
-  over HTTPS, checked against an allowlist **with the port** before any
-  credential is attached. No telemetry, no update checks.
-- Logs carry method, tool, outcome, duration and a truncated spreadsheet
-  id. They never carry cell values, formulas, sheet or spreadsheet
-  titles, ranges, search terms or addresses. Two routes make that harder
-  than it sounds, and both are closed deliberately: a search term reaches
-  a log inside a request URL, so transport errors are stripped of it; and
-  **this server's own error messages quote the data back** — a
-  `[not_found]` that lists the sheet titles which do exist is the right
-  answer to give a model and the wrong thing to write to a log. A tool
-  error is returned, never logged as its text; the log line carries its
-  class. A test drives every registered tool at debug level against
-  fixtures whose every value is unmistakable — a nonsense word, never
-  "test" — and fails if any of it appears, refusals included, because a
-  refusal is where a message is most tempted to quote what it refused.
-  Its argument table is kept complete by a second test, and it asserts
-  the **HTTP methods that reached the fake** rather than the list of
-  calls somebody remembered to write: a guarantee stated over a surface
-  decays every time the surface grows, and in a sibling repository this
-  same test had quietly stopped covering eight newer tools, including the
-  only ones taking an email address.
-- Destructive tools are unregistered unless enabled **and** need
-  `confirm: true`; annotations are hints a client may not trust, so every
-  gate is server-side.
-- The refresh token lives in the OS keyring, or a 0600 file with a
-  warning on every use; `logout` revokes and deletes it.
-
-| Risk | What limits it |
-|---|---|
-| Destroying a formula with a value | The guard refuses a write over any formula without `overwrite_formulas`, and `both` shows formulas under values so the model can see them first (§4.3). |
-| Destroying data with no way back | Sheets has no trash and the API cannot restore version history. Clearing and deleting are gated **and** need `confirm`; the dry run counts what would be lost; `duplicate` is offered first. |
-| A silent, wrong conversion | Every write reports what Google coerced, read back from the write's own response (§4.4). |
-| Overwriting someone else's concurrent edit | Checkpoints (§6.3), stated as best effort; `manage_range` can protect a range, which is the only real guarantee. |
-| Data leaving through a formula | `IMPORTXML`, `IMPORTDATA`, `IMPORTHTML`, `IMPORTFEED`, `IMAGE` and `HYPERLINK` take an arbitrary URL, which Google fetches from its own servers with whatever the sheet puts in the query string. A write creates one only when the server was started with `GSHEETS_ALLOW_EXTERNAL_FORMULAS=true`, and every formula a write creates is named in the result (§7.3). |
-| Data arriving from a spreadsheet the person did not name | `IMPORTRANGE` reads any spreadsheet the signed-in account can open, into this one. The same setting, for a different reason: it aggregates the account's access rather than widening the file's (§7.3). |
-| A collaborator's edit replaced unseen | An overwrite carries `expect_checkpoint`, the checkpoint of the cells it replaces as the refusal or a dry run read them, so a change after that read is `[conflict]` (§7.3). |
-| Instructions hidden in cells | Reads return content as data and the server never acts on it. Formulas are shown rather than resolved, so an injected instruction is visible. |
-| Acting on the wrong spreadsheet or sheet | Ids are the contract; a title matching several spreadsheets is `[ambiguous]` with candidates; sheet names are read, never assumed (#94); no tool defaults a sheet. |
-| Quota exhaustion | One request per tool call, limiters set to the documented 60/minute per user, batch compilation, and budgeted reads (§11). |
-| A stalled request hanging the server | Every attempt, token refresh and batch runs under a deadline; the token source carries its own client, because the oauth2 refresh otherwise runs on `http.DefaultClient`, which has none. |
-| Secrets or someone's data in the repository | §9.1: gitleaks and the leak gate in pre-commit and CI, synthetic fixtures, and a live driver that works only in a spreadsheet it filled itself. |
-
-### 9.1 What may never enter the repository, and what stops it
-
-This server is built by running it against a real spreadsheet, so every
-one of the following reaches a terminal during ordinary development — a
-`doctor` run, a failing test, a pasted error — and from there it is one
-careless copy into a fixture, a golden file, an issue or a commit
-message. A rule kept by remembering to look is not a rule.
-
-Never, in code, docs, fixtures, goldens, transcripts, issues, pull
-requests, commit and tag messages, or logs:
-
-- **Spreadsheet ids and the URLs carrying them** —
-  `docs.google.com/spreadsheets/d/<id>`, with or without `#gid=`.
-- **Sheet and spreadsheet titles**, named range and table names, and
-  developer metadata keys and values. These are business vocabulary:
-  a tab called "Q3 pipeline — <customer>" names a customer.
-- **Cell values of any kind**, and the notes beside them. This is the
-  payload, and it is the thing this server exists to touch.
-- **Formulas**, which are worse than values: `IMPORTRANGE` embeds
-  *another* spreadsheet's id inside a string, so a formula copied into a
-  fixture leaks a second document nobody was thinking about.
-- **Account addresses, Cloud project ids, OAuth client ids and secrets,
-  refresh tokens**, and the 21-digit Google account id.
-- Any reference to another project, repository, account or machine the
-  maintainers use.
-
-Two gates, because they catch different things. **gitleaks** covers
-credentials, in the pre-commit hook and in CI, with rules for Google
-client ids, client secrets and refresh tokens on top of its defaults.
-Two things about it are known in advance rather than discovered: an
-exception goes in `.gitleaks.toml` scoped to the literal value, **not**
-as an inline `gitleaks:allow` comment, because the CI scan walks a pull
-request's commits and a comment added later never clears the commit that
-introduced the line; and the two scanners will flag each other's
-fixtures, since the allowlist has to quote the fabricated credential it
-permits, which is then a credential-shaped string sitting in a tracked
-file. Both need a per-line marker, and each exception says which scanner
-it is for.
-**`scripts/gates leaks`** covers identifiers and data, which are not
-secrets and therefore pass gitleaks untouched — a spreadsheet id in a
-fixture leaks what somebody works on rather than a password. Its design
-is fixed here:
-
-- **Every rule is an allow-list.** A deny-list naming the domain, the
-  organization or the account to watch for would itself be the
-  disclosure.
-- **A synthetic fixture says so in its own text.** Ids carry a marker
-  (`…Fixture…`) that a base64url id issued from random bytes cannot
-  contain by chance, so the exception list does not grow with every test.
-  The marker is the rule that scales; the allowlist is the part that
-  rots.
-- **Exceptions are listed by value, each with its reason**, and a test
-  asserts every entry *has* one. An entry without a reason is how a gate
-  quietly stops working.
-- **The shape rule covers every identifier the APIs use, not the one that
-  came to mind.** A spreadsheet id is base64url with letters and digits,
-  so a rule demanding a capital and a digit catches it — and misses the
-  purely numeric ones beside it: the 21-digit Google account id, and a
-  Drive permission id, which is twenty digits with no letter. A sibling
-  shipped exactly that hole and a numeric id reached a transcript before
-  it was found. Sheets' own small integers (`sheetId`, `tableId`,
-  `metadataId`) identify nothing outside their spreadsheet and are not in
-  scope; the two above are.
-- **A committed binary is a finding**, not something to scan: its symbol
-  table buries the line that matters.
-- **Findings are abbreviated** in the gate's own output, so CI logs and
-  terminals do not reprint the leak.
-- **"Found nothing" and "looked at nothing" must not print the same
-  sentence.** A scan that reads zero files fails — and so does every
-  other gate here that counts what it read. A guard that has caught
-  nothing is working; a guard that looked at nothing reports the same
-  thing and is not.
-- **`leaks history` walks every blob and every commit and tag message**,
-  from the message down — the author and tagger lines above it are git's
-  own, and an identity is public in every repository by construction. It
-  runs before the repository is made public and after anything is removed
-  from it in a hurry, because a leak deleted from the tip is still in the
-  log.
-
-**Every line a driver prints goes through one redacting helper, and a
-gate reads the syntax tree to say so** (`scripts/gates transcript`). The
-promise that a transcript is safe to paste held by luck until this
-existed: nothing stopped a step calling `fmt.Println` directly, and a
-step that did would look exactly like the ones that do not. It found one
-on its first run — the spike probes printed raw, and their first two runs
-were redacted by hand afterwards, which is the same job done worse. A
-sibling found the matching gap from the other side, where a renderer
-began printing a person's name somewhere its redactor had never been
-told about.
-
-**Fixtures are generated, never recorded.** `testdata/` and the goldens
-are built from `sheetstest`, whose content is invented — column headings
-from a lorem vocabulary, numbers from a seeded generator. No fixture is
-ever a spreadsheet exported, copied or trimmed down. The rule is
-structural rather than diligent: there is no path by which a real value
-reaches `testdata/`.
-
-**The live driver never reads a spreadsheet it did not write.** It
-creates a scratch spreadsheet, fills it with its own synthetic data,
-exercises every tool inside it, and trashes it. So the values in a
-transcript are the driver's own and are safe to paste into a commit
-message. Redaction of ids, links and addresses is a second line of
-defense and lives in the **print helper only** — a redaction on the read
-path corrupts a value the driver feeds back into the next call, which is
-a mistake a sibling project made and had to undo. Pointing the driver at
-an existing spreadsheet is not offered.
-
-**The evals seed their own data too** (phase 3), for the same reason:
-a task is scored against a spreadsheet the harness built.
-
-### 9a. Per-call approval is the client's
-
-From 4.0.0 the server asks the person nothing. From 3.0.0 to 3.1.2 it put
-a form with no fields to the person, through MCP form elicitation, before
-seven writes: the five deletes, `manage_data_source` `add` and a
-`refresh` of every source. The family's standard dropped the question on
-2026-10-22, on evidence re-checked on 2026-10-23 against the 110
-most-used MCP servers, and the maintainer approved this port on
-2026-10-23 (§14, §18 "Per-call approval"):
-
-- The specification puts consent to each tool call on the host. It lets
-  a server ask through elicitation, but never makes the answer consent:
-  the client gathers it "from the user or other sources".
-- Most widely used servers confirm nothing themselves: 83 of the 91 with
-  risky writes among the 110. The 8 that ask each pick their own scope,
-  from one tool to every write.
-- Clients answered the question with nobody there (a Claude Code
-  `Elicitation` hook once installed; Codex with full access accepts a
-  form with no fields), did not draw it (Claude Code's VS Code
-  extension, and by open user reports Claude Desktop's Code tab), or
-  left it hanging (Cowork). No client's allow and ask rules match it.
-- A question on every call is answered without reading, and one expired
-  mid-run in a sibling server while 68 messages were deleted.
-
-What stays is what holds on every client:
-
-1. **Registration.** A Destructive tool exists only with
-   `GSHEETS_ENABLE_DESTRUCTIVE=true`, and `connect_data_source` and
-   `manage_data_source` only with `GSHEETS_ENABLE_DATA_SOURCES=true`. A
-   client that runs with nobody watching gets neither.
-2. **`confirm: true`** on every delete. It is a witness that the caller
-   meant this delete, never approval: the model sets it.
-3. **Guards and witnesses.** The write guard (§4.3), protected ranges
-   and merges, and the checkpoint an overwrite carries (§7.3).
-4. **`dry_run`** on every write.
-5. **Annotations, exact.** `readOnlyHint` is on the six reads and
-   nothing else, since VS Code prompts on every tool without it.
-   `destructiveHint` is true on every write but the three that only add,
-   `create_spreadsheet`, `append_rows` (it only inserts, §7.3) and
-   `connect_data_source`, since the MCP schema reads `false` as "the tool
-   performs only additive updates": the five Destructive tools, and the
-   eleven writes not behind the destructive flag that change or remove
-   what is there, such as `write_values`, `manage_sheet` or
-   `manage_cell_comment`. Codex prompts by it, and claude.ai documents
-   that it decides its own prompt. Those eleven stay out from behind the
-   flag: what they remove is read and named first (§17c). A write says
-   true unless `Def.Adds` marks it as only adding, and `add` refuses that
-   mark on a read or a Destructive tool.
-6. **The mark.** `delete_data_source` alone carries Claude Code's
-   `anthropic/requiresUserInteraction`, so Claude Code prompts on every
-   call whatever the operator's rules say and refuses it where nobody
-   can be asked (`-p`, dontAsk). It takes the DATA_SOURCE sheet, and
-   Google unlinks every table, pivot table, formula and chart built on
-   the source: something other objects depend on, which Sheets cannot
-   undo. `delete_sheet` is not marked: the file stays, the editor's
-   version history can restore a sheet, and removing scratch tabs is a
-   delete done many times in a row. Neither are `clear_values`,
-   `delete_dimensions` or `delete_cell_comment`, which are repeated
-   deletes of one thing, where a mark brings back a prompt per call.
-   `Def.PromptEveryCall` sets it, and `add` refuses it on anything but a
-   Destructive tool. For every other tool the operator decides in Claude
-   Code with `permissions.allow` and `ask`; the README gives `ask` rules
-   for the writes that delete, start a billed query or can email
-   someone, and the staleness gate holds each name there to a
-   registered tool.
-7. **What a client's prompt shows.** A client's prompt shows the call's
-   arguments, so where the question used to say what a write meant, the
-   arguments now carry it:
-   - `delete_dimensions` takes its band in A1. An `anchor:` band, which
-     resolves when the call runs, is refused `[invalid]` naming the band
-     it stands for now.
-   - `clear_values` takes its range in A1, always. An omitted range,
-     which meant the whole sheet, and an `anchor:` are refused, each
-     naming the range it stands for now. A whole sheet named in A1 is
-     still a clear.
-   - An overwrite carries `expect_checkpoint`, the checkpoint of the
-     cells it replaces (§7.3).
-   - `delete_data_source` takes `sheet`, the title of the sheet the
-     source made, beside its `id`: a data source id means nothing to a
-     person, and the tab is what goes. It is compared with the card,
-     read past the cache before a mismatch is refused `[conflict]`. A
-     dry run without it names the sheet. A call without `id`, or with
-     one the spreadsheet does not have, lists each source and its
-     sheet, since with only the destructive flag on nothing else lists
-     them.
-   - `connect_data_source` already carries what the question showed:
-     `project`, which is charged, and the `query` or the `table` it
-     runs. It changes nothing that exists, so there is nothing to read
-     and compare.
-8. **Every risky variant is its own tool, never an argument.** A client
-   remembers its approval per tool, never per argument value, so a
-   variant riding inside an approved tool goes unseen:
-   - `connect_data_source` is what `manage_data_source` `add` was. It
-     starts a query billed to the project the call names, now and on
-     every refresh, so an approval of a refresh no longer covers it.
-   - `refresh` needs `id`. Refreshing every source, reached by leaving
-     `id` out, ran every query again; it is refused, listing the ids.
-     `cancel_refresh` with no `id` stays, since it stops billing.
-   - `append_rows` lost `insert: overwrite`, which wrote over rows
-     chosen during the call, so no read could witness them.
-     `write_values` writes over known addresses.
-   - `allow_external_formulas` is gone as an argument. A formula that
-     makes Google fetch a URL, or an `IMPORTRANGE`, is written only when
-     the server was started with `GSHEETS_ALLOW_EXTERNAL_FORMULAS=true`,
-     on every write, `find_replace`, copies and fills included (§7.3).
-9. **The model never widens its own reach.** No tool writes this
-   server's settings, turns a tool on or lifts a refusal.
-   `TestNoToolCanWriteTheServersSettings` walks every package
-   `internal/server` reaches, tests aside, and fails if one imports the
-   profile, the credentials, the sign-in, `os`, `os/exec` or `syscall`,
-   with a floor on how many it read.
-
-The test client declares form elicitation and fails any call the server
-asks about, so every tool the logging test drives is held to asking
-nobody; the live driver does the same and fails the step.
-
-`GSHEETS_REQUIRE_PROMPT`, which refused the asking writes on a client
-that could not ask, went with the question. A configuration that still
-turns it on is refused at start: ignoring it would allow what its owner
-set it to stop. Leave `GSHEETS_ENABLE_DESTRUCTIVE` and
-`GSHEETS_ENABLE_DATA_SOURCES` off for a client that runs with nobody
-watching.
-
-**Waiting on live probes.** Who can read what `connect_data_source`
-puts in a spreadsheet: whether a collaborator without BigQuery access
-sees the results. Until it is run, the tool's documentation says only
-that it puts the query's results in a sheet of the spreadsheet. And
-whether a comment's assignee or an address its text names is notified,
-or given access, when the spreadsheet is not shared with them; until
-then `manage_cell_comment` reaches any address, recorded in §17b.
-
-## 10. Auth, config, process model
-
-- **Setup**, in the order `doctor` checks it: create a Cloud project →
-  enable the **Google Sheets API** and the **Google Drive API** (the
-  latter only for `search_spreadsheets`) → consent screen (**Internal**
-  for Workspace; **External + Testing** for consumer accounts, which
-  means re-running `login` weekly) → add the scopes, on an External app
-  only → create a **Desktop app** OAuth client → download
-  `client_secret.json` → `login` → `doctor`.
-- **No Developer Preview enrollment is needed.** Everything this server
-  uses is GA. Google's own Sheets MCP is in the preview program and is
-  a comparison (spike D), not a dependency.
-- **Scopes.** Full: `spreadsheets` plus `drive.readonly`. Read-only:
-  `spreadsheets.readonly` plus `drive.readonly`. `drive.file` is not
-  requested: it reaches only files the app created or the person opened
-  through the Picker, which a stdio server cannot show. Full `drive` is
-  not requested either — this server does not manage files. A
-  missing-scope 403 becomes `[forbidden] missing scope …; re-run
-  google-sheets-mcp login`.
-- **Read-only mode is a real restriction, not a label**: with
-  `spreadsheets.readonly` the API itself refuses `getByDataFilter`,
-  the data-filter value reads and both developer-metadata reads (§2), so
-  those paths are unavailable and the tools that would use them are not
-  registered.
-- **OAuth flow**: Google's documented desktop flow, loopback
-  `127.0.0.1:<random port>` with PKCE. **Token storage**: OS keyring →
-  0600 file with a stderr warning → `GSHEETS_REFRESH_TOKEN` override.
-  **Profiles** (`GSHEETS_PROFILE`) keep separate secrets, tokens and
-  accounts under `GSHEETS_CONFIG_DIR` — separate *storage*, and not a
-  separate **grant**. Google revokes the grant rather than the token, so
-  `logout` under one profile signs the account out of every profile
-  sharing that OAuth client (measured; §18). `logout` says so and names
-  them, and `logout -local` deletes the stored copy without revoking.
-- **Settings** (`GSHEETS_*` env, each with a bound flag): `PROFILE`,
-  `CLIENT_SECRET`, `REFRESH_TOKEN`, `CONFIG_DIR`, `LOG_LEVEL`,
-  `LOG_FORMAT`, `READ_ONLY`, `ENABLE_DESTRUCTIVE`, `MAX_CELLS`,
-  `MAX_CHARS`, `HTTP_TIMEOUT` (per read attempt, default `60s`),
-  `WRITE_TIMEOUT` (default `180s`, matching Sheets' own processing
-  limit). Operational flags: `--version`, `--dump-schemas`.
-- **Startup**: warm the token off the startup path; on failure log and
-  **keep serving**, with `[auth]` on every tool, because a server that
-  exits shows the person "failed to connect" and the model never learns
-  why. `doctor` checks credentials, the token exchange, granted scopes,
-  the Sheets API, the Drive API, and — given a spreadsheet reference —
-  `spreadsheets.get` and a one-cell read.
-- **Transport**: stdio (**decided**).
-
-## 11. Reliability
-
-- **Retries.** Reads retry on 429, 5xx and network errors with
-  exponential backoff and full jitter, capped at 30 s, five attempts,
-  honoring `Retry-After`; Google's own guidance for both 429 and 503 is
-  truncated exponential backoff. Repeatability is **derived from the HTTP
-  method**: GET and PUT may be repeated, a POST only when the call site
-  says why. So `values.update` retries and `values.append` and
-  `batchUpdate` do not — appending twice duplicates rows and a repeated
-  `addSheet` makes two sheets. A refusal to *begin* (429) proves nothing
-  was applied and is repeatable; any 5xx, 503 included, or a cut
-  connection is `[ambiguous_outcome]`, which says to read the spreadsheet
-  before repeating the write.
-- **POSTs that only read.** Three of them: `spreadsheets.getByDataFilter`,
-  `values.batchGetByDataFilter` and `developerMetadata.search`. Beside
-  them sit two POSTs that do write — `values.batchClearByDataFilter` and
-  `values.batchUpdateByDataFilter` — so the method alone is wrong in one
-  direction and a name pattern is wrong in both: "get" reads like a read
-  on a method that is a POST only because a filter is too long for a
-  query string. Deriving write-ness from the method would put a read on
-  the write limiter, refuse to retry it, and block it under the dry-run
-  context — three wrong answers from one inference. So the method decides
-  by default, an explicit `readOnly` flag on the request marks the
-  exceptions, and a test over this package's syntax tree allows that flag
-  only on those three methods **by name**. The flag is the one field here
-  that can be set *wrongly* rather than merely forgotten: absent from a
-  search it costs speed, present on a real write it lets that write run
-  during a preview.
-- **Limiters.** Two buckets at the documented per-user quota: 60 reads
-  and 60 writes per minute, with a small burst, and at most one request
-  in flight at a time, which is Google's own advice for avoiding 503s.
-  Taken inside the retry loop, once per attempt.
-- **Batching.** Every ops tool compiles to one `batchUpdate`; a batch and
-  all its subrequests count as one request against quota, so the design
-  never splits work that could travel together.
-- **Deadlines.** `GSHEETS_HTTP_TIMEOUT` (60 s) per read attempt;
-  `GSHEETS_WRITE_TIMEOUT` (180 s) for a batch, because Sheets itself
-  allows a request to run that long. The token refresh runs under a
-  bounded client of its own.
-- **Memory.** Reads are windowed by cells with field masks; nothing holds
-  a whole spreadsheet.
-- **Caching.** Spreadsheet metadata coalesced for 5 s by id; the sheet
-  title → id map for the same window; writes invalidate. Never for
-  correctness.
-- **Targets, measured 2026-09-06 by `make bench`** on an AMD Ryzen 7 PRO
-  7730U, Go 1.27.1, linux/amd64, against the fake. The request counts
-  hold and the timings are all comfortably inside their targets — but
-  measuring moved the target, because the cost is not where the target
-  was written.
-
-  | What | 5 000 cells (the default budget) | 50 000 cells (the maximum) |
-  |---|---|---|
-  | Decode the response | **7.2 ms**, 1.7 MB, 33 001 allocs | **83 ms**, 17 MB, 329 886 allocs |
-  | Build the grid | 0.8 ms | 7.5 ms |
-  | Render it addressed | **0.73 ms**, 490 KB | 6.7 ms |
-  | The write guard over it | **0.04 ms**, 536 B, 25 allocs | 0.42 ms, 1 KB, 50 allocs |
-
-  **Rendering was never the expensive half.** §11 has said "rendered
-  under 20 ms" since the plan was written, and rendering a 5 000-cell
-  read takes 0.73 ms — 27 times inside the target. Decoding the JSON that
-  carried those cells takes ten times longer, and at the maximum budget
-  it takes 83 ms, which is the same order as the network round trip that
-  delivered it. Nothing here can make that much faster; it is the shape
-  of the wire, and it is the number to quote when somebody asks what
-  raising `max_cells` costs. The target stands, and now it names the
-  right half.
-
-  **The guard's flat profile is literal.** 25 allocations over 5 000
-  cells and 50 over 50 000 — the cost of a guarded write does not grow
-  with the rectangle, only with what it finds. It reached that during
-  this measurement rather than before it: the guard formatted an A1
-  address for every cell and kept ten, which was 28 000 allocations on a
-  5 000-cell write and 298 000 on a 50 000-cell one. **13.7× faster and
-  1 121× fewer allocations**, over three passes, and each pass is worth
-  more than the number.
-
-  The first was wrong in a way only the benchmark could show: it asked
-  whether *any* finding set was full, and on a rectangle of plain values
-  three of the four sets stay empty, an empty set is not full, and every
-  address got built anyway. The measurement did not move, which is how
-  the mistake was found — a reading of the code would have called it
-  fixed. The second worked and left the cap in two places: the loop
-  named every set a cell could land in, so a set added later without its
-  clause would be counted correctly and never named, and a message going
-  quiet is not a failure anything catches. The third moved the decision
-  into `Cells.AddCell`, which takes the coordinates instead of the
-  address and formats one only if it will keep it. Nothing outside the
-  type knows the cap now, and it is a further 1.6× faster than the
-  version that did.
-
-  The counts are unchanged: the card is one request, a 5 000-cell read is
-  one request, a guarded write is two. `a1.Parse` is 61–143 ns and
-  allocates nothing except for a quoted sheet title; `CheckDestination`,
-  which every formatting call pays, is 14 ns and allocates nothing at
-  all.
-
-## 12. Distribution and setup
-
-- **Artifacts.** GoReleaser builds linux, darwin and windows on amd64 and
-  arm64 from a `v*` tag; `checksums.txt` signed with a keyless Sigstore
-  certificate (a cosign 3 bundle); an SBOM per archive; a build
-  provenance attestation; `-trimpath` and `mod_timestamp` so a rebuilt
-  tag is byte-identical; never a draft. `go install …@latest` is the
-  second path, with the version from `debug.ReadBuildInfo()` since
-  `go install` applies no ldflags.
-- **The Claude Desktop bundle.** Every release carries a `.mcpb`, which
-  is a deflate zip: `manifest.json` at the root, the binaries under
-  `server/`, and the license and README beside them. Opening it installs
-  the server and asks for the OAuth client JSON, so the alternative to
-  shipping one is asking a person to hand-edit a config file.
-
-  **Packed here, in Go** (`scripts/gates/mcpb.go`), rather than by the
-  official Node CLI: an interpreter `make check` needs is a prerequisite
-  nobody declared, and the standard library writes a zip. What the CLI
-  buys is validation against the published schema, and that is not the
-  validation worth having — a manifest whose `entry_point` names a binary
-  nobody staged is well formed by any schema and produces a bundle that
-  installs and then does nothing. `validateManifest` holds it to the
-  staged tree instead: `entry_point` and every command name a program
-  the packer stages, never `LICENSE` or `README.md`; every command
-  starts with `${__dirname}/` (§18); `entry_point` is the file the
-  default command runs; every claimed platform runs the file staged for
-  it, so a deleted `win32` override is refused rather than running the
-  macOS binary; and every `${user_config.x}` an env value or an argument
-  spends is declared. The claimed platforms are exactly the ones the
-  staged table has an entry point for, `server.type` is `binary`, and
-  `name` is the server's own. Each is broken on purpose in the tests and
-  watched being refused.
-
-  **The gate, the packer and the registry entry run one function**,
-  `committedManifest`, which reads the manifest, the launcher, go.mod,
-  LICENSE and README once from one root, and refuse in its words. It
-  refuses a key repeated in one object, or two equal but for case, since
-  Go's decode merges a repeated key and matches one in any case while
-  the validator and the host keep each as written. The registry entry
-  takes its description from that read. The packer holds the stamped
-  document it ships to the vendored schema again, and writes the bundle
-  to a temporary file beside it, renamed only once the archive and its
-  close succeed, so a failed pack leaves nothing under the name a
-  release publishes.
-
-  A manifest names a command per *platform* and has no key for the
-  architecture, so every platform it claims has to work on both. macOS
-  gets a universal binary, kept out of the ordinary archives with `ids`
-  so the release page does not offer a fourth macOS download. Windows
-  gets amd64, which arm64 runs under emulation. Linux gets both binaries
-  and a launcher that reads `uname -m` and **`exec`s** the right one —
-  not a call, because the server talks MCP over that process's stdio —
-  writing any failure to **stderr**, because a line of English on stdout
-  corrupts the JSON-RPC session before the client's first request.
-
-  **The version comes from one place** and is checked in five: the bundle
-  filename, the archive filenames, the manifest inside the bundle, the
-  binary's own `--version` and `checksums.txt`. The committed manifest
-  carries `0.0.0-dev` and the packer refuses any other value, so a
-  manifest in the tree cannot claim a stale version; the real one goes in
-  through a JSON decode and encode rather than a substitution over text.
-
-  **Packing runs as the universal binary's post hook**, the one point
-  where every binary exists and `checksums.txt` has not been written —
-  and that is only half of what puts it in that file. The checksum step
-  covers goreleaser's own artifacts, and a file a hook dropped into
-  `dist/` is not one, so the bundle is also named in `checksum.extra_files`
-  and in `release.extra_files`. Being in `checksums.txt` is what gets it
-  signed, since the signature is over that file. The first snapshot build
-  here agreed about the version in four places and left it out of the
-  fifth, which is exactly the shape of shipping unsigned while looking no
-  different — found by checking rather than by reading.
-
-  **The bundle asks for what a person sets in another client's
-  configuration**: the OAuth client file, the profile, read-only, the
-  destructive switch, Connected Sheets and external formulas, each under
-  its variable's name without `GSHEETS_`, lowercased, which gives the
-  family's bundles the same keys. The keys come from `config.Vars`, the
-  registry of every variable the server reads, the removed one and the
-  two read outside Define included. Logging, the read budgets, the
-  timeouts, the config directory and the refresh token are left out,
-  each with its reason in `gates mcpb`; the gate fails on a variable
-  with no verdict, a reason for one the server does not read, and an
-  `env` key that is left out or no setting. Every setting passes by
-  `mcp_config.env`: `mcp_config.args` is `[]`, and a platform override
-  carries no `env` or `args`, an empty one included (§18). Each switch
-  defaults to the server's own default, off, and the profile and the
-  client file to `""`, which the server reads as unset: an empty client
-  file takes the path `login` recorded for the profile, and the field
-  says a file picked there must be that client, since the refresh token
-  belongs to it. The gate starts `config.Load` from the environment the
-  defaults give and from none, and names each field that differs.
-  Claude Desktop approves each tool, and a person can set a tool to
-  always allow, so a switch left off is the one guard a bundle install
-  keeps (§18). No combination of the fields is refused: read-only leaves
-  the destructive and Connected Sheets switches nothing to register and
-  external formulas no write to allow, so those fields say so. The gate
-  starts every set of the switches, each turned from its default, and
-  holds the ones Build refuses to a declared list, empty here, both
-  ways. The profile field says the rule Build's refusal says,
-  `config.ProfileRule`. The bundle stages `server/google-sheets-mcp-darwin`,
-  `server/google-sheets-mcp.exe`, `server/google-sheets-mcp-linux-amd64`,
-  `server/google-sheets-mcp-linux-arm64` and `server/launch-linux.sh`,
-  with `LICENSE` and `README.md` at the root, and names Google's privacy
-  policy. It declares no `tools` list, which would be display only and
-  wrong for most installs, since three settings change what registers.
-- **Branches and pull requests.** `main` is released code and is never
-  pushed to directly, release commits included. Work on a short topic
-  branch; the maintainer pushes, opens the pull request and merges once
-  CI is green on three platforms. Tags are pushed one at a time — GitHub
-  drops tag events past the third in one push.
-- **Workflow hardening.** Every action pinned to a full commit SHA with
-  the version in a trailing comment — GitHub's hardening guide is
-  explicit that "pinning an action to a full-length commit SHA is
-  currently the only way to use an action as an immutable release", and
-  it now also offers repository and organization policies that *require*
-  it. **And every tool an action installs pinned beside it**, with a
-  comment saying which half is load-bearing: `cosign-release`,
-  `syft-version`, and the GoReleaser version as an exact string. Never a
-  `~>` range. `goreleaser-action`'s own default is `~> v2`, which floats
-  across an entire major line, and narrowing one to `~> v2.18.0` is still
-  a range: a sibling once recorded that narrowing *as the fix* and was
-  still floating afterwards, which is why this is a gate and not a habit. `permissions: contents: read` at the top of every workflow,
-  raised per job; `persist-credentials: false` on checkouts; CodeQL on
-  push, pull request and weekly; Dependabot weekly for gomod and actions.
-  A gate asserts all of it, because a comment cannot hold a version shut.
-- **CI shape, from four failures that cost sibling projects weeks.**
-  `shell: bash` on every job, because PowerShell read `-coverprofile=cov.out`
-  as a file named `cov` and the suite carried on. No gate conditioned on
-  `runner.os`: a platform in the matrix that no gate reads is a platform
-  nobody is testing, which is how the previous bug survived — the
-  coverage step was Linux-only. `cancel-in-progress` excludes `main`
-  (`github.ref != 'refs/heads/main'`), or a merged commit carries a
-  killed run and a later bisect walks a green history with a hole in it.
-- **Documentation set.** README, this file, `docs/configuration.md`,
-  `docs/security.md`, `docs/development.md`, `CONTRIBUTING.md`,
-  `SECURITY.md`, `CHANGELOG.md` (Keep a Changelog; the release workflow
-  lifts the section verbatim). Apache-2.0.
-
-## 13. Testing
-
-- **Unit, table-driven, no network.** `internal/gapi/sheetstest` is an
-  in-memory Sheets behind `httptest`: sheets with grid data, formulas,
-  error values, merges, protected ranges, data validation and notes; the
-  `batchUpdate` union; append's table detection; `values.update`'s
-  skip-don't-clear semantics; ragged responses with trailing empties
-  omitted; error injection (429, 5xx, a cut connection, a 180-second
-  timeout).
-
-  **The fake does not invent Google's parser.** `USER_ENTERED` coercion
-  is *recorded* from spike A and replayed, never simulated. A fake built
-  from the documentation inherits the documentation's errors, and a
-  sibling project shipped a search bug that its entire test suite agreed
-  with (§18).
-- Specific tables: every A1 shape and every malformed one, including
-  column letters past ZZZ and the `'A1'`-versus-`A1` trap; GridRange
-  conversion round trips; the guard matrix (empty / value / formula /
-  merge / protected / validated × acknowledgments); checkpoint
-  mismatch; the coercion diff; append with and without a gap below the
-  table; budgets and continuation; Drive query escaping (#93).
-- **Fixtures and goldens are generated from `sheetstest`, never
-  recorded** from a real spreadsheet (§9.1). The vocabulary is invented
-  and the numbers come from a seeded generator, so there is no path by
-  which somebody's data reaches `testdata/`.
-- **Coverage floor** 80% per package, with the list **derived** from
-  `go list ./internal/...` and exemptions named with reasons. A
-  hand-written list silently stops covering new packages.
-- **Schema dump and diff** in CI against `testdata/schema-baseline.json`,
-  the surface of the CHANGELOG's newest release, recorded in that
-  release's commit by `make schema-baseline VERSION=vX.Y.Z`. Breaking,
-  at any depth (`threads[].cell` as much as `threads`): a tool, resource
-  or field removed; an input that takes fewer types than it did, or no
-  longer takes a value it listed; an output that may return a type it
-  did not, or may be missing where it was required; or an input newly
-  required where its parent was already there. Types are compared one
-  way, as JSON Schema 2020-12 reads them (§18): a list of types allows
-  any of them, an integer is a number, and no type or the schema `true`
-  is any type. So an input that becomes nullable or takes a number for
-  an integer breaks nobody, and an output that may now be null does.
-  An output that may carry a value it did not list, or an input newly
-  limited to a list, is named without failing: whether either breaks a
-  caller depends on what the server did before. A break fails the gate
-  unless the module path's major version is above the baseline's. The
-  gate also fails when the baseline is not the newest release's, and,
-  with nothing under `[Unreleased]`, when the build differs from it at
-  all, which proves a release commit recorded the baseline rather than
-  relabeling it. `schema-baseline` refuses a build stamped as another
-  version, a CHANGELOG with entries still unreleased, and a break unless
-  the release is a new major version. It used to build the last tag in a
-  worktree and compare top-level fields, so a lost nested output field
-  passed. The baseline was recorded from the v3.0.2 tag, whose dump
-  already carried output schemas and its version.
-- **Stdio smoke** without credentials, closing stdin the moment the last
-  message is written, asserting a clean exit code — the SDK reports a
-  closed session as JSON-RPC -32004 with the EOF only in the message
-  text, so `errors.Is(err, io.EOF)` does not catch it and a sleeping
-  smoke test never sees the bug.
-- **Identifier scan** (`scripts/gates leaks`, in the pre-commit hook and
-  in CI): the tree, and on demand every blob and message in the history.
-  §9.1 is its specification, including why every rule is an allow-list.
-- **Live driver** `scripts/livesheet`: every tool and every op against
-  one scratch spreadsheet it **creates, fills with its own synthetic
-  data**, and trashes, so a transcript carries nobody's values (§9.1);
-  ids, links and addresses are replaced by placeholders in the print
-  helper. A phase is not done until it has run **and its transcript has
-  been read** — a sibling's driver twice reported "all calls behaved as
-  expected" while three results were wrong, because it checked whether
-  calls succeeded, not whether they told the truth. The mechanized half
-  of that fix is inherited rather than rediscovered:
-
-  - **The driver's coverage of the tool surface is a gate, not a
-    claim**, and it is checked twice because the two halves catch
-    different things. `scripts/gates live-cover` reads the driver's
-    source, so it runs in CI where there are no credentials and fails
-    when somebody adds an option without a step. The driver itself
-    records what it actually sent and checks the same thing against the
-    tool list the server publishes, which is the authoritative half: a
-    step can exist in the source and never execute — sitting in a slice
-    nobody passes to `run`, or behind a condition that was false — and
-    the static half counts it as covered. Demonstrated by removing one
-    `run` call, after which the static gate still reported 26 of 28.
-    Both read the exemption list in `internal/livecover`, so an option
-    excused in one is excused in the other. Together they found the
-    promise below already broken: 14 of 28 options had never touched the
-    network.
-  - **Every step carries `expect_error` and a `why`.** An expected
-    refusal proves as much as a success, and a success where a refusal
-    was expected is a failure. That alone caught two of the three.
-  - **A result that asserts state is read back and compared.** All three
-    wrong results were a result describing the state from *before* the
-    write.
-  - **Anything eventually consistent is polled, and says which it saw.**
-    Here that is Drive's index: a spreadsheet created a second ago may
-    not be findable by `search_spreadsheets` yet, and one read cannot
-    tell indexing lag from a broken search. The driver retries, and if it
-    never sees the new file it prints a loud line saying this run cannot
-    tell the two apart, rather than printing an empty result and moving
-    on.
-  - What no driver catches is a result that is internally consistent and
-    wrong. That is what the evals are for, which is why they score the
-    trace as well as the end state: a task can be completed by a model
-    that guessed a range and was lucky.
-- **Agent evals** (phase 3), about fifteen tasks through `claude -p` with
-  only this server's tools: find a spreadsheet by name; total a column
-  and write the total; add a sheet and copy a filtered subset into it;
-  append a row without disturbing what is below; fix a formula; format a
-  header row; sort by a column; add a dropdown; refuse to overwrite a
-  formula and say why; refuse an unasked external formula; handle a
-  non-English sheet name; read the tail of a 40 000-row sheet. Scored on
-  the end state read back through the server and on the trace: no
-  invented ranges, no guessed sheet names, no acknowledgment passed
-  unasked.
-
-  **Two rules for writing those tasks, inherited 2026-09-06 from a
-  sibling's first full eval run rather than from its plan.** Two of its
-  thirteen tasks could never have passed, and neither failure was a
-  server defect: one asserted a file on disk under a name the server
-  deliberately does not use, and one asserted a grant to an address at
-  IANA's reserved documentation domain, which the platform refuses. Both
-  asserted an end state the world does not permit.
-
-  - **Every task answers "what does this check when the world says no?"**
-    Where the end state cannot exist, score the trace instead and *print*
-    which half went unchecked. A task that says "I could not verify this
-    half" is worth more than one that fails for ever or one that quietly
-    checks nothing. Here that bites on anything asserting an absence,
-    anything needing a second account — the protected-range refusal, and
-    sharing, which is not even this server's — and anything resting on
-    Drive's indexing lag, which is the `search_spreadsheets` task. A task
-    that polls beats a task that fails.
-  - **A prompt containing an unsubstituted placeholder is refused, and a
-    unit test walks the whole table.** That sibling's first run passed
-    two tasks while sending the agent a literal `{folder}`: one found the
-    file by name across the account and one wanted a refusal and got one
-    for the wrong reason. That is the end-state-versus-trace problem
-    happening inside the harness built to catch it, so the guard belongs
-    in `go test` where it costs nothing rather than in a live run that
-    costs ten minutes and an account.
-
-  One of them is an **A/B rather than a task**: the same reads with the
-  rendering inside the structured half, and with rows alone, counting the
-  tool calls needed to complete something that writes an address back.
-  §4.9 is reasoning, not measurement — the sibling number behind the
-  original rule was measured on *prose* reads on Claude Code 2.1.259 and
-  has not been re-measured, and a grid is a different claim from a
-  paragraph. The harness counts tool calls already, so this costs one
-  run and settles what the reasoning currently assumes.
-- **Benchmarks** (`make bench`): A1 parsing, grid rendering of 10 000
-  rows, the guard over a large rectangle.
-- **CI on Linux, macOS and Windows** from the first commit, with every
-  gate reading every platform (§12): a check that runs on one OS while
-  the matrix claims three is worse than no check, because the matrix is
-  what people trust. `.gitattributes` pins LF so goldens compare byte for
-  byte.
-
-## 14. Confirmed decisions and their consequences
-
-| Decision | Consequence in the design |
-|---|---|
-| Deployer-owned Cloud project and OAuth client; nothing internal in the repository | §9, §10, §12 |
-| Inside the spreadsheet only; files, sharing and revisions are the Drive server's, and cell comments are here | §1, §7.4, §17.5 |
-| A1 is the contract; GridRange math is server-side | §4.1, §6.2, `internal/a1` |
-| Every read shows addresses | §4.2; the grid renderer, and no handle memory to go stale |
-| A write never destroys what it cannot see | §4.3; the guard, its acknowledgments, and the dry run |
-| Google's coercion is reported, never hidden | §4.4; `includeValuesInResponse` on every write |
-| Checkpoints stand in for the absent revision guard, and say they are best effort | §4.7, §6.3 |
-| One tool call is one API request; ops compile to one batch | §4.5, §11 |
-| Destructive tools gated **and** confirmed, because Sheets has no undo | §8, §9 |
-| External-fetch formulas are the operator's to allow, never an argument (2026-10-23) | §7.3, §9, §9a |
-| Per-call approval is the client's: the server asks nobody, annotations are exact, the mark is on `delete_data_source` alone, and every risky variant is its own tool (2026-10-23) | §8, §9a |
-| An overwrite carries the checkpoint of what it replaces (2026-10-23) | §7.3 |
-| Raw REST, own wire types, no generated client | §4.8, §5 |
-| Every tool returns both halves, and the structured half carries the rendering, so no client is shown the half without the addresses | §4.9, §8, §18 |
-| Stdio only | No HTTP auth design |
-| Phases end in a tagged release and wait for an explicit "go" | §16 |
-
-## 15. What must be verified live
-
-Everything in §2 comes from the discovery document or a guide. Seven
-things have behavior the reference does not pin down, and each runs at
-the start of the phase that builds the code depending on it — a spike
-whose subject does not exist yet is a spike that gets skipped and then
-forgotten. Results go into §18.
-
-- **A. The coercion matrix** (phase 1, **run 2026-09-06**): what
-  `USER_ENTERED` does to `1-2`, `007`, `=1+2`, `$100.15`, `TRUE`,
-  `'0123`, `2026-09-05`, a 60 000-character string, and what `RAW` does
-  to the same. The recorded answers are the fake's replay table. Run
-  with a second half the plan had not asked for and needed: what
-  `values.update` does when the range and the array disagree about size.
-- **B. Append's table detection** (phase 1, **run 2026-09-06**): where
-  `append_rows` writes on a sheet with a gap below the block, with
-  `OVERWRITE` and with `INSERT_ROWS`, and what `tableRange` reports.
-- **C. Range syntax** (phase 0, **run 2026-09-06**; results in §18, and
-  the probe is `scripts/spikes`): whether `values.get` accepts a named
-  range (its reference documents only A1 and R1C1) and a table reference
-  (`Table1[Column]`); that a quoted title behaves as documented; that a
-  named range really does shadow a same-named sheet when the title is
-  unquoted, which is the one trap here that fails silently rather than
-  loudly; and what a bad range's error actually says.
-- **D. Google's Sheets MCP** (any phase, needs preview enrollment):
-  connect once, dump its tools and schemas, record what `get_values`
-  returns for a formula and an error cell. Keeps §1 honest. Nothing
-  depends on it.
-- **E. Error shapes** (phase 0, **run 2026-09-06**, partially: three of
-  the six shapes need a second account, a read-only token or a
-  sustained quota breach and are recorded as unobserved): the status, status string and message
-  for a missing spreadsheet, a missing sheet, a bad range, a protected
-  range, a read-only scope attempting a write, and a 429. The
-  troubleshooting page documents only 400, 500 and 503, so the class
-  mapping in §6.5 is otherwise built from the Drive API's documented
-  error vocabulary rather than from Sheets itself.
-
-  **The 429 was observed on 2026-09-07**, unplanned and by this
-  repository's own doing: four runs of the live driver inside a few
-  minutes, on top of the spikes, spent the sixty-reads-per-minute-per-user
-  allowance. `spreadsheets.get` came back `HTTP 429 RESOURCE_EXHAUSTED
-  (RATE_LIMIT_EXCEEDED): Quota exceeded for quota metric 'Read requests'
-  and limit 'Read requests per minute per user'`. The class mapping made
-  it `[rate_limited]` and the message said to retry shortly, which was
-  true — the next run passed. Two of the six shapes are still
-  unobserved: a second account, and a read-only token attempting a
-  write.
-- **F. Checkpoint economics** (phase 1, **run 2026-09-06**, rejected):
-  whether Drive's `files.get` `version` field changes on every Sheets
-  edit, which would give a cheaper spreadsheet-wide staleness check than
-  re-reading a range. `modifiedTime` was read in the same poll.
-- **H. Creating with a sheets list** (phase 1, **run 2026-09-06**): added
-  during phase 1 rather than planned. Whether `spreadsheets.create`'s
-  `sheets` are added beside the one Google always makes or are the whole
-  set — which decides what `create_spreadsheet` promises and where its
-  seed values land.
-- **I. What a values write keeps, and where a move lands** (phase 1,
-  **run 2026-09-06**): also added during the phase, both questions raised
-  by a review of code that had already assumed an answer. Whether
-  `values.update` leaves a cell's note and validation rule alone, which
-  decides whether the guard's "the write removed notes on A1" is true;
-  and whether `moveDimension`'s `destinationIndex` is read against the
-  sheet before or after the move.
-- **G. Size behavior** (phase 2, **run 2026-09-06**): what a write past
-  10 million cells or column ZZZ returns, and how a 50 000-character cell
-  round-trips. All three answered, and the first run of the probe
-  answered none of them properly — it measured the length of a JSON body
-  and called it the length of a cell, and it asked for 18 279 columns on
-  a 1 000-row sheet, where 18.3 million cells trips the cell ceiling
-  before the column one. Both were visible only by reading the
-  transcript. Results in §18.
-- **J. What a table does to the rules over its range** (phase 2, **run
-  2026-09-06**): added during the phase, and not from the plan — the live
-  driver watched a conditional format rule disappear across an `addTable`
-  and a `deleteTable` and could only see that it was gone by the end.
-  Counted after every step, the probe puts it on the delete.
-- **K. Whether developer metadata is a durable anchor** (phase 3, **run
-  2026-09-06**): §6.4 offers "remember this row as `invoice-totals`" and
-  the reference says only where metadata may attach, never what happens
-  when the sheet moves under it. An anchor that follows a row and one
-  that holds a row *number* are different features, and the second points
-  at somebody else's data after one insert. So the probe mutates the
-  sheet — insert, delete, move, sort, a values write — and reads the
-  location back out of `developerMetadata.search` after each, alongside
-  what is on that row now. Results in §18. Its first run answered four of
-  the eleven questions against rows the anchor had already left, which
-  looked like a verdict and was a stale constant; every step that names a
-  row now asks where the anchor is at that moment.
-- **L. What a chart is once it exists, and what it survives** (phase 4,
-  **run 2026-09-07**): whether `updateChartSpec` merges or replaces,
-  since it carries no field mask; what a chart's source range does when
-  the column under it is deleted; what `deleteEmbeddedObject` says it
-  did; and what the card's `charts(chartId)` mask leaves unread. Results
-  in §18. Its first run answered the invalid-spec question against the
-  wrong half of the request: both probes omitted a position, so the API
-  refused them on the position and never looked at the spec, under a
-  heading that said "spec".
-- **M. What a pivot table is on the wire** (phase 4, **run 2026-09-07**):
-  a pivot is not a `batchUpdate` request at all but a field of
-  `CellData`, and its output "is computed dynamically", so its footprint
-  is in no request. What the server's own grid mask sees over that
-  output decides whether the write guard can see a pivot at all. Results
-  in §18. Its first run asked two invalid-pivot questions that both came
-  back "No sort order specified", because the probe left out a
-  `sortOrder` and a validation order this server did not know about
-  answered first.
-- **N. Whether a data source is reachable at all** (phase 4, **run
-  2026-09-07**): `addDataSource` "requires an additional
-  `bigquery.readonly` OAuth scope" and a BigQuery source needs a
-  billing-attached Cloud project. §17.6 had fixed this server's scopes
-  at two. So the spike asks not how the tool should be shaped but
-  whether its calls can be made, and what a caller sees when they
-  cannot. Results in §18, and they reopened §17.6.
-- **P. The three deferred cleanups that wanted a probe** (phase 4, **run
-  2026-09-07**): §17a.7, §17a.15 and §17a.20 were each left undecided
-  under hard rule 12, because the fake returns whatever a test asks it
-  for and so cannot say whether a field mask is accepted. Phase 4 is the
-  phase with a live run. All three are answered and all three are now
-  closed in §17a. Its first run reported §17a.20 unsupported on a mask
-  whose parentheses this spike had got wrong by one; the mask is printed
-  and balance-checked before it is sent now.
-- **Q. What a merge and a clear do to a pivot table** (§15.Q, §17a.31,
-  **run 2026-09-09, and it found a sixth silent destroy**): §17a.27 gave the values write a refusal that names the
-  pivot it is protecting, and two other tools reach the same cells and
-  still say nothing about them — `format_cells merge` calls them
-  "discard ... not empty", and `clear_values` counts them into "removes
-  4 non-empty cell(s)" before its confirm gate. Neither refusal can be
-  written until this runs. The wording §17a.27 uses is spike M's finding
-  about `values.update`, and nothing says a merge or a clear behaves the
-  same way. Results in §18.
-- **R. Cell comments** (**run 2026-10-09**, before the comment tools
-  were built): what a read returns under a field mask, where a thread's
-  anchor goes when rows move, how an assignee reads back, what a bad id
-  answers, and whether a failed comment write is a 400 or a 200 that only
-  `commentUpdateState` admits. Results in §18.
-- **S. Color scales** (**run 2026-10-09**): what a scale sent with
-  `colorStyle` alone reads back as, which midpoint types are taken,
-  whether the refusals the fake makes are Google's, what a number value
-  means under a comma-decimal locale, and what a percent or percentile
-  value outside 0 to 100 does. Results in §18.
-- **T. Typed table columns** (**run three times, 2026-10-09, then Q12
-  and Q13 each alone**): whether a sparse
-  `columnProperties` is taken on add, whether a dropdown with no rule is
-  refused, whether an update with `fields=columnProperties` replaces the
-  whole array, whether a column name sent, or left out, rewrites the
-  header cell, what a type change does to a number format, a per-cell
-  validation and the cells of a boolean column, whether a header cell
-  can hold a formula and what an update sending the names as read does
-  to it, to a header in rich text and to a person chip, and whether an
-  entry with a name and no type is taken. Results in §18. It left four
-  answers owed: whether one column sent with its name replaces the
-  array, what a dropdown does to a per-cell list and a boolean column
-  to a word, what an update does to a header in rich text, and why the
-  live run's add of three typed columns was a 500. So it now sends Q3
-  again with a name (Q3b) and Q5 with names, prints every read whole,
-  asks what an add does to a formula header it does not type (Q10), and
-  bisects the 500 (Q11): the driver's own request on a plain sheet and
-  on one frozen as the driver's was, then each column type alone, all
-  with names and without. Q11 spaces its calls a second apart, since
-  Sheets allows 60 writes a minute per user; run it with `-only T`.
-  The second run answered Q3b: Google replaces the whole list. It
-  answered Q5: a boolean typing turns a word, the text TRUE and an empty
-  cell into FALSE; Q5b asks what it does to a TRUE or FALSE value, on
-  update and on add. It answered Q7 for rich text: a name sent as read
-  drops its runs; Q7 now asks the same of a whole-cell format. It
-  answered Q10: Google takes no table over a formula in its header row.
-  It answered Q11 without explaining it: the live run's add was taken,
-  and every add after the seventh table in the spreadsheet was a 500,
-  requests just taken included. So Q12 makes a fresh spreadsheet and
-  adds tables three seconds apart until one fails or twelve are taken,
-  then deletes one and tries the failed add again, at once and a minute
-  later, and a plain add last. It tells a count from timing. Owed, then:
-  Q5b, Q7's whole-cell format and Q12.
-  The third run answered Q5b: a TRUE or FALSE value stays under a
-  boolean typing, on update and on add, and an add turns a word and an
-  empty cell into FALSE, as an update does. So the refusal over text is
-  right, and a true or false value needs none. It answered Q7: a format
-  set on a whole header cell stays. Q11 did as before: on a new sheet,
-  the driver's add and four single types were taken, and every add after
-  those five was a 500. Q12 is not answered. Its first add met a 429 on
-  the per-minute write quota right after Q11, and a plain add after it
-  was taken, so a count is still not told from timing. It is a selector
-  of its own now: run `-only T12` alone, a minute after any other
-  spike's writes. Q13 came later, with the refusal of a dropdown over
-  cells with a rule of their own: run alone with `-only T13`, it asks
-  whether an update typing a column dropdown drops its cells' own lists,
-  as Q1's add did, and whether an update sending a dropdown column back
-  unchanged drops a list a cell in it was given since.
-  Q12, run alone, answered the 500. In a fresh spreadsheet, four adds of
-  the driver's three typed columns were taken three seconds apart, and
-  the fifth was a 500. With the first table deleted it was a 500 again,
-  at once and a minute later, and a plain add with no column types was
-  then taken. So Google stops taking table adds with column types after
-  about four, here in a spreadsheet of one sheet. What it counts is not
-  known: Q11's spreadsheet took more, across two sheets (§18). Q13, run
-  alone, answered both. An update typing a column dropdown dropped the
-  lists its cells had of their own, as an add does. Google refused a
-  list on a cell of the dropdown column, "This operation is not allowed
-  on cells in typed columns.", so an update sending the column back has
-  no such list to drop. Q13b, in the same selector, asks whether a
-  rule's removal is refused there too, a rule over a range only half in
-  the column, and a rule on a column typed text. Owed: Q13b.
-- **U. Pivot grouping rules, filters and calculated values** (**run
-  2026-10-09**, two answers owed): what Google answers for each refusal
-  `manage_pivot_table` makes first — a value with an offset and a
-  formula, a formula averaged, two rules on one column, a histogram's
-  interval and bounds, a condition only data validation takes — what
-  labels a date and a histogram rule draw, what a condition alone shows
-  with `visibleByDefault` false and true, which filter forms a pivot
-  reads back with, whether a filter takes a relative date, and whether a
-  grouping made by hand survives being sent back with other values.
-  Results in §18. A 429 cut off two of U9's questions, an item in two
-  groups and two groups of one name; they stay in the spike.
-
-## 16. Delivery phases
-
-Each phase ends in a tagged release and waits for an explicit "go". Each
-phase is one session: the next one starts from this repository alone.
-
-**Phase 0 — skeleton, gates and reading (v0.0.1). Done 2026-09-06,
-including the live work: spikes C and E ran, the live driver ran (32
-steps, 0 failed, 1 undetermined — Drive's content index, distinguished
-from a broken search rather than guessed), and the configuration surface
-profiles, read-only scopes and `logout` was exercised against a real
-account. Not tagged: `main` is the maintainer's, and CI has never run on
-macOS or Windows.** Scaffolding (§5,
-§12): Makefile, golangci, govulncheck, go-licenses, gitleaks, goreleaser,
-CI, CodeQL and release workflows, Dependabot, templates, `CONTRIBUTING.md`.
-`login/logout/status/doctor`; `config`, `credentials`, `userconfig`,
-`auth`; `gapi` with `spreadsheets.get`, `values.get`, `values.batchGet`
-and the Drive locate call; `internal/a1` complete with its table tests;
-`grid` and `render` for the card and the addressed grid; `sheetstest`
-with sheets, cells and ranges; tools `get_spreadsheet`, `read_range`,
-`search_spreadsheets`, `find_in_spreadsheet`; the gates green on three
-platforms — smoke, schema dump and diff, staleness, leak scan, workflow
-pins, coverage floor, and the closed error-class gate (§6.5), which is
-built now rather than as a later cleanup because it costs an afternoon
-and is the difference between a vocabulary and a habit; spikes C and E;
-a live run whose transcript is read.
-
-**Phase 1 — writing values and sheets (v0.1.0). Done 2026-09-06,
-including the live work: spikes A, B and F ran, spike H was added and
-ran, and the live driver ran five times (83 steps, 0 failed, 1
-undetermined — Drive's content index again). Reading each transcript
-found something the green count hid: a `sheetId: 0` on every create, a
-reorder off by one, three counts that were zero for a reason the step
-could not see, a coercion line that read as no change, and a guard hole
-where a formula showing `#REF!` needed only `overwrite`. The review
-passes then found four more, including a `dry_run` that could not
-preview any write the guard refused. Not tagged: `main` is the maintainer's.** Spikes A, B and F
-first. Then `create_spreadsheet`, `write_values`, `append_rows`,
-`manage_sheet`, `edit_dimensions`, and the gated `clear_values` and
-`delete_sheet`; the guard, the coercion diff, checkpoints and `dry_run`;
-`sheetstest` grows the write paths and the recorded coercion table;
-`scripts/livesheet` covers every tool. Plus the three §17a decisions the
-phase owed: one `service.Budget`, the scratch-file cleanup, and the three
-error classes that were declared and not yet emitted.
-
-**Phase 2 — formatting and structure (v0.2.0). Done 2026-09-06,
-including the live work: spike G ran, spike J was added and ran, and the
-live driver ran the whole surface — 143 steps, 0 failed, 1 undetermined
-(Drive's content index again), 157 of 159 tool options exercised.** `read_formatting`, `format_cells`,
-`manage_range` and `transform_range`, with a step in the driver for every
-option of each.
-
-It took three runs of the driver. The first failed five steps: three were
-the server and two were the driver's own expectations, and §18 carries
-the split. The second failed four, and the reason is worth writing down —
-an edit to the driver had never reached disk, because the script making
-it aborted on a later assertion and wrote nothing, so two steps that
-looked fixed were not. The third failed two: a merge band that had been
-assumed to hold values held none, so the merge it was supposed to refuse
-simply succeeded. A step that asserts about values now writes them
-itself.
-The three server findings — a merge across a frozen edge, a named range
-with a space in it, and `deleteTable` taking the conditional format rules
-over its range — are all guarded now, and none of them appears in any
-reference read for this project. Spike G's first run is the sharper
-lesson: it answered none of its three questions properly and printed
-something that looked like an answer to each.
-
-Spike G was written first in the plan and second in fact. That is a
-deviation and it is recorded rather than smoothed over: the questions it
-asks — the column ceiling, the ten-million-cell ceiling, a cell at
-exactly 50 000 characters — bear on the refusals this server writes
-before sending, not on the shape of the four tools. It cost nothing here,
-and the ordering in the plan is still the right one.
-
-The union builders for formatting, validation, protection, tables,
-banding and conditional formatting are in `internal/plan`, and the guard
-now covers what formatting and the transforms destroy: a merge's
-discarded values, a cleared format, a replaced note, a paste's landing
-rectangle, a split's spill to the right, and a replacement inside
-formulas. Plus the §17a decision the phase owed: the structural tools'
-English moved into the renderer.
-
-**Phase 3 — resources, anchors, evals, performance (v0.3.0). Done
-2026-09-06, including the live work: spike K ran, the live driver ran
-(169 steps, 0 failed, 1 undetermined) and the evals ran four times (15 of
-16 tasks passing). Every transcript was read and every one of them found
-something no count would have: two wording defects in the driver's run,
-four harness defects across the eval runs, and one real finding about the
-read window (§17a.25). Not tagged: `main` is the maintainer's.**
-`gsheets://` resources; developer metadata as durable anchors (§6.4); the
-agent evals and the fixes they force; `make bench` and the numbers in
-§11; `/simplify` and `/code-review high` over the tree, with findings
-resolved or recorded in §17a.
-
-Spike K ran first, which is the ordering §15 asks for and phase 2 got
-wrong. It answered the question §6.4 had been assuming since the design:
-an anchored row survives an insert above, a delete above, a
-`moveDimension` and a `sortRange`, and after a sort it lands where its
-row's *values* landed. Deleting the row deletes the anchor and the reply
-says nothing — the second silent delete this project has found, after
-phase 2's `deleteTable`, and `delete_dimensions` now names them first.
-
-Its first run answered four of eleven questions against rows the anchor
-had already left. A probe whose whole subject is that the row moves had
-hardcoded row 2 in four steps, so "0 matches" read as a verdict on row
-lookups and was a stale constant. Every step that names a row now asks
-where the anchor is at that moment. That is the third time in three
-phases that reading a transcript found what counting it could not.
-
-`make bench` moved a target rather than confirming one. §11 has said "a
-5 000-cell read rendered under 20 ms" since the design; rendering takes
-0.73 ms and decoding the response takes ten times longer. It also found
-the guard formatting an A1 address for every cell in the target and
-keeping ten — 28 000 allocations on a 5 000-cell write, now 25. The
-first fix for that was wrong and the benchmark is what said so: the
-number did not move.
-
-**Phase 4 — charts, pivots, data sources (v0.4.0). Done 2026-09-07,
-including the live work: spikes L, M, N and P ran, the live driver ran
-five times (206 steps, 0 failed, 1 undetermined — Drive's content index
-again), and both review passes ran with every finding fixed. Not tagged:
-`main` is the maintainer's.** `manage_chart`,
-`manage_pivot_table`, `manage_data_source`, each verified live before it
-is designed in detail. Then the discovery document is diffed against what
-the client calls, and every union member is either used or
-listed here as deliberately out.
-
-**The diff, run 2026-09-07 against revision 20260831: 54 of the 69 are
-built and 15 are not.** Each of the fifteen is out for a reason, and the
-reasons fall into four groups.
-
-**A gate holds this now rather than this paragraph doing it.**
-`testdata/api-surface.json` is what Google publishes, written by `gates
-api-diff` from the discovery documents; `testdata/api-coverage.tsv` is
-one verdict per item, by hand; and `gates api-coverage` runs offline in
-`make check` and holds the two files and the code to each other. A
-published item with no verdict fails, a verdict for something no longer
-published fails, a request some builder constructs while the record
-calls it out fails, and a verdict of `used` that no code backs fails.
-So a capability Google adds stops the build rather than aging quietly
-into a paragraph that used to be true — which is what §17a.26 says about
-claims a comment holds. The groups below are why; the file is the
-record.
-
-*A filter view is a saved view of somebody else's screen* —
-`addFilterView`, `updateFilterView`, `deleteFilterView`,
-`duplicateFilterView`, `setBasicFilter`, `clearBasicFilter`. The card
-reports the filter views a spreadsheet has, because one changes what a
-person sees when they open it. Creating them is a preference rather than
-data, and a model that leaves a saved filter behind has changed how the
-spreadsheet looks to everyone who opens it next.
-
-*Four are a second way to do something this server already does*, and
-the second way is worse. `appendCells` appends without the table
-detection `values.append` does, so `append_rows` would lose the answer
-to "where did it land". `appendDimension` adds rows at the end, which
-`manage_sheet resize` covers with a size the caller states rather than a
-count they have to work out. `pasteData` takes a delimited string and
-splits it, where `write_values` takes the grid the caller already has.
-`insertRange` and `deleteRange` shift cells sideways within a
-rectangle — the operation a spreadsheet interface calls "insert cells,
-shift right" — and every shape of it this server offers moves whole rows
-or columns, where what moves is visible in the address rather than in
-the option.
-
-*Two are cosmetic on an object this server manages*:
-`updateEmbeddedObjectBorder` puts a border on a chart, and
-`updateDimensionGroup` collapses a group that `edit_dimensions group`
-creates. Both are worth having and neither is worth a nineteenth
-argument yet.
-
-*One is out because §17.6a drew the line where it did*:
-`updateDataSource` changes a source's query in place, which is the one
-Connected Sheets verb `manage_data_source` does not offer. Delete and
-add is two calls and one refresh, and it cannot half-apply a query
-change to a sheet somebody is reading.
-
-*And one is a decision rather than an omission*:
-`updateSpreadsheetProperties` renames the file, changes its locale and
-its recalculation setting. Renaming is Drive's, and §1 says so. The
-locale decides how every number in the spreadsheet is parsed and
-displayed, and changing it under somebody is a rewrite of the whole
-file's meaning that no result could summarize.
-
-**Three runs of the driver, and each of the first two found something
-the count could not.** The first failed three steps: a `stackedType` on
-a LINE chart, which Google refuses outright and this server now refuses
-first; an `updateSlicerSpec` with no field mask, which the code had
-never set while a comment three lines above claimed it did; and a step
-whose own assumption was wrong, asserting that a two-series chart under
-a one-column delete would be left with nothing to draw.
-
-That third one is the finding, because the step was wrong *and* the
-server was: the refusal had been saying "nothing to draw" for every
-chart the band touched. It counts now. The second run passed 206 steps
-and reading it found two more things a pass hides — a refusal whose
-clause did not compose into its sentence ("the chart(s) "X", which would
-be left with nothing to draw in place"), and the guard refusing a write
-into a pivot's *output* as merely "not empty", which is true, less
-useful than it looked in §7.6, and now §17a.27.
-
-That is four phases in four where reading a transcript found what
-counting it could not, and the first two here were in the fake as much
-as the server: a unit test cannot refuse a request the fake accepts, and
-the fake accepted both.
-
-**The evals cover the new tools now: 18 tasks, 18 passing.** Three were
-added — charting a column, summarizing with a pivot table, and the one
-that matters most, a write aimed into a pivot table's output. That last
-is the phase 4 half of what the formula task does for phase 1: the model
-is told to put a number in a cell, the cell is inside something a values
-read makes look ordinary, and what is scored is whether the guard
-refused before anything landed. It did.
-
-Reading the run found two things the count did not, and neither is a
-failure. The pivot refusal reads `[blocked] G3 is not empty`, which is
-true and says nothing about the pivot table it is protecting — §17a.27,
-now demonstrated rather than described. And a model handed a
-`checkpoint` by a read passed it back to a write as `checkpoint`, which
-that tool spells `expect_checkpoint`: it cost a call, and it came back
-as a schema validation message rather than one of §6.5's twelve classes,
-which is the first path found where a caller sees a message from outside
-this server's vocabulary. §17a.28a carries it.
-
-**The two review passes found nineteen things between them and every one
-was fixed.** `/code-review high` found eleven, of which three matter
-beyond their own line: a listing field that could never be populated
-against the real API and passed its test only because the fake ignores
-field masks (§17a.29); an `add` that replaced an existing pivot table
-and its whole output in silence; and a pivot's reported footprint
-absorbing anything computed below and right of it, which handed a caller
-a rectangle of cells to avoid that were never the pivot's.
-
-`/simplify` found eight, and its best is one no gate could have caught:
-`manage_data_source` carried a `delete` that removes a whole sheet under
-a `Kind` whose annotations say `destructiveHint: false`, reachable with
-`GSHEETS_ENABLE_DESTRUCTIVE` off. §17c states the criterion this
-project already applies three times; the delete met it more severely
-than an action already gated, and the fix is the split §17a.10 made
-once before. The same pass also found a phrasing literal being used as a
-control flag, where rewording a preview would have silently switched a
-branch.
-
-**v1.0.0** waited for use in anger and a further eval round with a second
-client. **Amended 2026-09-07: neither is waited for, on the maintainer's
-decision.** The eval round happened — 18 tasks covering charts, pivot
-tables and the guard that protects one — and the second client did not.
-
-What that changes is what 1.0.0 claims. It is a promise about the tool
-surface rather than a report on how much use the server has had: the
-twenty-one tools, their arguments and their error classes are stable,
-and a breaking change to any of them needs a major version. The schema
-diff gate is what makes that a promise rather than an intention, and it
-has been running since phase 0.
-
-What it does not claim is written here so nobody has to infer it: this
-server has not been driven by a second MCP client, and Claude Desktop
-via the `.mcpb` bundle is the obvious one. Every eval result in this
-document comes from one client, and §13's own argument — that a green
-count and a correct result are different things — applies to that too.
-
-### Closing a phase
-
-1. `make check` green on three platforms; the live driver run **and its
-   transcript read**; in phase 3 the evals; the review passes done, with
-   findings resolved or recorded in §17a with the reason.
-2. The status line updated, the phase marked done in §16 with the date,
-   what was verified added to §18, the `CHANGELOG.md` entry written.
-3. Released per `docs/development.md`: a "Release N.N.N" commit on a
-   topic branch, a pull request, CI green, merge, then the tag pushed on
-   its own.
-4. Stop and wait for "go".
-
-**Asking the person (v3.0.0). Built 2026-09-30.** The server asks the
-person through the client before the six writes of §9a. The set is the
-one the maintainer chose from the family's elicitation review: the four
-tools that take `confirm`, plus the two data source actions that spend
-money. Fixed on the way: `delete_data_source` declared `confirm`
-required in its schema, so a dry run without it was refused before the
-server saw it; the SDK version stamp and §5's pins still said v1.7.0;
-and `GSHEETS_ENABLE_DESTRUCTIVE`'s row in `docs/configuration.md` named
-two of the four tools it registers. The live driver now declares
-elicitation, prints every question, accepts, and declines one
-`delete_sheet`; a confirmed step fails if the server did not ask.
-Breaking, so the module path moves to `/v3`.
-
-The review found no path to these writes around the ask, and three
-things fixed here: a `clear_values` answer bound its range only through
-the quoted head, which is cut at 120 characters, so two ranges on a long
-sheet title bound alike, and the whole range is now bound; the question
-left out the pivot tables a clear takes whole and the charts a deleted
-band empties; and a `delete_data_source` whose id was not on a cached
-card asked without naming the sheet it takes, and is now read again and
-refused `[not_found]` if it is still absent. The question is built only
-when it will be put or checked, so a client that cannot ask costs no
-extra read.
-
-**Cell comments, color scales, typed table columns and pivot rules
-(v3.1.0, republished as v3.1.1, both 2026-10-09). Live run 2026-10-09
-evening: 300 steps, 0 failed, 1 undetermined**, the content search,
-undetermined in earlier phases too.
-The transcript was read. The typed-table steps ran in
-a spreadsheet of their own, so no earlier table add could draw Google's
-500 there, and every one passed: the add of three typed columns was
-taken, the header row read "Item", "Amount", "Due" and "Status" after
-the add and after the update, the update kept the dropdown's list, and
-the card showed the types. The refusals of a formula into a header, a
-boolean column over text and a table over a formula heading each came
-back as expected. Under `de_DE`, Google refused a color scale point of
-`1.5` and took `1,5`; which value `1,5` colors from is for a person to
-read in that spreadsheet. The step added since, a dropdown typed over
-cells with a list of their own, was refused, as it must be, in the run
-before 4.0.0. Still owed: that reading of the comma-locale scale. Spike
-T Q12 and Q13 ran alone the same evening (§15).
-
-**Per-call approval (v4.0.0). Built 2026-10-23. Live run the same day:
-302 steps, 0 failed, 1 undetermined**, the content search again.
-The family's standard dropped the server's question on 2026-10-22 and
-the maintainer approved this port on 2026-10-23; §9a is the design and
-§18 "Per-call approval" the evidence. The question, its signed state,
-the `[blocked]` answers and `GSHEETS_REQUIRE_PROMPT` are gone. The test
-client and the live driver both declare elicitation and fail a call the
-server asks about. The live driver gets an overwrite's checkpoint from
-a dry run of the same call, starts a second server with
-`GSHEETS_ALLOW_EXTERNAL_FORMULAS=true` for the one write that needs it,
-and drives the refusals of an anchor band, an omitted clear range and a
-replacement naming `IMAGE`. Breaking, so the module path moves to `/v4`.
-
-The transcript was read. No step put a question to the person. An
-overwrite without its checkpoint was refused `[invalid]` naming it, and
-went through with the checkpoint a dry run of the same call gave.
-`IMPORTRANGE` was refused naming the setting, and written by the second
-server. A `find_replace` of `1` by `2` inside formulas was refused
-naming the `IMPORTRANGE` it would rewrite. The three refusals named the
-band, the whole sheet and the setting. Not driven: the three data source
-tools, which need a BigQuery project, and Claude Code's prompt on
-`delete_data_source`, which a person has to see.
-
-**What Q12 and Q13 found, built in (v3.1.2).** A table add with
-column types that Google answers HTTP 500, and that a read finds did not
-land, says Google has refused such adds after about four in a
-spreadsheet, and that an add without `column_types` was still taken
-(§7.5). `data_validation` `add` and `update` are refused over a dropdown
-column's cells with Google's reason, from the card's tables (§7.5). The
-live driver asks for that refusal on the typed table's dropdown column.
-Both refusals on a typed table's dropdown passed live in the run before
-4.0.0. Owed: spike T Q13b (§15).
-
-**The family's bundle and settings rules (after 4.1.0, unreleased).
-Reviewed 2026-10-24.** `/simplify`, one agent over reuse, quality,
-efficiency and altitude, `/code-review medium` and `/security-review`
-ran over `v4.0.0..family-rules`. The security review found nothing at
-confidence 8 or above. The other two found nine things to fix and three
-to keep. Each fix has a test that fails on the code before it, except
-the deletions:
-
-- A pack that failed part way left a truncated `.mcpb` under the
-  release's name. It writes a temporary file beside it and renames it
-  once the archive is whole.
-- The floor on `config.Vars` was typed in both config test packages. It
-  is one constant.
-- The launcher's install hint parsed go.mod with its own pattern. It
-  takes `modulePath(root)`, which is tested with Windows line endings.
-- The registry entry read the manifest a second time, past the
-  repeated-key refusal. It reads through `committedManifest`, as the
-  gate and the packer do.
-- A test copied the packer's lookup of its sources, two config tests
-  copied `Load`, and the gate and the packer each worded the problems
-  their own way. Each is one function now, and the packer's refusal is
-  the gate's.
-- A placeholder check no run could reach, and `TestTheOldLayoutIsRefused`,
-  which repeated the unstaged-name cases, are deleted.
-- The configuration page was held to the profile rule alone. It is held
-  to every bundle field rule.
-
-The family's sweep of the sibling servers' reviews found five more that
-apply here, fixed the same way:
-
-- `fieldDiff` reported a differing unexported slice or map only when no
-  named field differed, and compared a pointer by address. It reports
-  any such difference, and compares what a pointer points to.
-- The repeated-key refusal missed two keys equal but for case, which
-  Go's decode matches to one field. It refuses those, quotes a key
-  holding a dot or a bracket in the path it names, and refuses a
-  document its walk cannot read.
-- The name scan read `EnvPrefix + "ENABLE_" + kind` as a variable. A
-  run another operand completes is a prefix.
-- The live driver read `GSHEETS_PROFILE` with its own `os.Getenv` and
-  typed `"default"`, and `userconfig` kept a second `DefaultProfile`.
-  Both use config's.
-- Eight files typed a variable's name whole, a guard's refusal and the
-  smoke test's environment among them. Each uses config's constant or
-  `EnvPrefix`. The scan now refuses a name typed whole and a server
-  variable read with `os.Getenv` or `os.LookupEnv`.
-
-Kept, with the reasons:
-
-- `configDiff` stays a one-line wrapper over `fieldDiff`, which keeps the
-  gate's call typed. The family decided it.
-- `Lookup` trims a path the environment gives, while a flag's value is
-  used as written. A path that truly begins or ends with a space is not
-  supported, and `Build` trims what it reads either way.
-- Nothing holds the fields' sentences that read-only leaves the other
-  switches nothing to do (§17a.34).
-
-## 17. Open decisions
-
-None. The seven below were decided on 2026-09-05 and are kept here so
-they are not reopened.
-
-1. **A1 everywhere.** The model never sees a `GridRange`. Where the API
-   needs one, `internal/a1` builds it.
-2. **The guard is on by default.** Overwriting anything non-empty needs
-   `overwrite: true`; overwriting a formula needs `overwrite_formulas:
-   true` as well. Two acknowledgments rather than one, because the
-   formula case is the one that loses work invisibly.
-3. **`input` is explicit and never substituted.** `typed` is
-   `USER_ENTERED`, `literal` is `RAW`. The default is `typed`, because
-   that is what a person typing would get, and the coercion report is
-   what makes it safe.
-4. **Checkpoints, not locks.** Best-effort staleness detection, stated as
-   such. Protected ranges are offered as the real guarantee.
-5. **Comments are out; notes are in.** A cell note is a Sheets field. A
-   comment thread is a Drive resource, reachable for any file through a
-   server built on the Drive API. Revisit in phase 4 only if
-   cell-anchored comments turn out to be reachable and useful.
-   **Amended 2026-10-09: comments are in.** Sheets published them in
-   2026-09 as five batchUpdate requests and a comments view on
-   `spreadsheets.get`, each thread anchored to a cell that it follows as
-   the sheet changes. Drive's comment API sees the same threads without
-   their cells (spike R, §18). The owner chose three tools:
-   `read_cell_comments`, `manage_cell_comment`, open-world because an
-   assignee is emailed, and `delete_cell_comment`, gated and asking.
-6. **No `drive.file`, no full `drive`.** `spreadsheets` plus
-   `drive.readonly`; file management belongs to the Drive server.
-   **Amended 2026-09-07 by §17.6a**, which adds a third scope for one
-   gated tool. The rule above still holds for everything else: no scope
-   is added to reach a file, and none is added by default.
-
-6a. **`bigquery.readonly`, requested only when
-   `GSHEETS_ENABLE_DATA_SOURCES=true`** (decided 2026-09-07, after spike
-   N). `addDataSource` refuses under this server's two scopes with `403
-   … Please include bigquery.readonly scope`, and refreshing a real
-   BigQuery source needs it too; the 200s spike N got from `refresh` and
-   `cancel` came from a spreadsheet with nothing to refresh and prove
-   nothing. So Connected Sheets cannot be reached at all without it.
-
-   The scope is real and the recommendation against taking it was
-   weighed and overruled: a Sheets server whose login screen asks for
-   BigQuery is asking most of its users to grant access to a product
-   they do not have, for a tool that needs a billing-attached Cloud
-   project before it does anything. What settles it is that the cost is
-   avoidable — the scope is requested only when the setting is on, so
-   the default login is unchanged and a user who wants Connected Sheets
-   opts in and logs in again. `doctor` says which scopes the token
-   actually carries, so the "I turned it on and it still fails" case
-   answers itself.
-
-   `list` is deliberately outside the gate. `fields=dataSources` is
-   accepted under the existing scopes, so `get_spreadsheet` reports that
-   a spreadsheet is connected to a data source for every user, at no
-   cost and no consent.
-7. **Go directive `go 1.27.3`**, matching the sibling servers.
-8. **A tool result is not masked; the artifacts meant to be pasted are**
-   (decided 2026-09-06, after the live run raised it). `read_range`
-   returns cells and `search_spreadsheets` returns titles, ids and the
-   owner's address, because the caller asked, the server holds their own
-   token, and all of it is one click away in the Sheets or Drive
-   interface — masking would cost an answer without removing anyone's
-   access, and the owner is what makes an `[ambiguous]` refusal usable.
-   What the server does instead is not fetch what nothing needs, and
-   mask the three things that *are* meant to be pasted: a debug log,
-   `doctor` and `status`. §18 carries the reasoning and the sources.
-
-## 17a. Deferred cleanups
-
-Seventeen open, eleven closed. A closed entry keeps its text and the decision that
-closed it, so nobody reopens a question that was answered. Five of the
-open ones were raised by phase 2's own review passes and are recorded
-here rather than fixed in passing; two of those (entries 12 and 14) are
-about phase 1's tools as much as phase 2's, and entry 14 is left alone
-because changing it would alter behavior that was verified live and
-cannot be verified again yet.
-
-1. **The live driver cannot trash the spreadsheets it creates.**
-   **Decided 2026-09-06: accept the manual cleanup, and make it one
-   search.** §17.6 asks for `drive.readonly` and trashing needs a
-   write-capable Drive scope, so the two options written here were a
-   driver-only credential with a wider scope or living with the mess. A
-   third was considered and rejected: reusing one scratch spreadsheet
-   across runs would leave exactly one file forever, and it would also
-   mean a driver whose results can be explained by the last run. A
-   correctness driver buys isolation with tidiness, not the other way
-   round. So every file it makes carries the prefix `livesheet scratch`,
-   and the run ends by printing the Drive search that finds all of them.
-   A run leaves two: the scratch spreadsheet, and the one
-   `create_spreadsheet` makes, which cannot be tested without making one.
-2. **Three error classes are declared and not yet emitted** — `blocked`,
-   `conflict` and `unsupported`. **Closed 2026-09-06:** the write guard
-   emits `blocked`, the checkpoint emits `conflict`, and
-   `edit_dimensions delete` emits `unsupported` when destructive tools
-   are off. The gate's `plannedClasses` list is empty, and it still
-   reads from both sides, so a class listed there and emitted anyway is
-   as much a failure as one declared and never emitted.
-3. **`cmd/` is under a lower coverage floor than `internal/`.** It was
-   outside the coverage profile entirely until phase 1's audit —
-   `-coverpkg=./internal/...` and a gate that derived its package list
-   the same way — so 571 lines of `login`, `logout`, `status` and
-   `doctor` had no tests and nothing could report that they had none. It
-   is now measured, at 48% against a floor of 40. What is left uncovered
-   opens a browser, holds a token or serves stdio; the live driver and
-   the smoke gate cover those against the real thing. Raising the floor
-   to `internal/`'s 80 needs either a fake OAuth endpoint or a way to
-   drive `serve` in-process, and neither is phase 2's business.
-4. **The fetch window is bounded by cells, the rendering by
-   characters.** At the default budgets they land within a few rows of
-   each other, but a caller who raises `max_cells` — which the tool
-   description invites — fetches rows that no rendering can reach, and
-   the next continuation re-reads from where the render stopped. A
-   character-aware row cap would fix it and could under-fetch if the
-   estimate is wrong, so it waits for phase 3, where `make bench`
-   measures rather than guesses. **Still open**, and phase 1 met it
-   once: a test asserting the cell default had to raise the character
-   budget out of the way to see it.
-5. **Budget policy sat at three altitudes.** **Closed 2026-09-06, before
-   the five write tools were written rather than after.**
-   `service.Budget` defaults and clamps in one place, `max_matches` has
-   a maximum for the first time, and an over-range budget is refused
-   rather than silently reduced — a caller who asks for 200 000 cells
-   and gets 50 000 reads a footer describing a window they never asked
-   for. The tools pass the caller's numbers through untouched.
-6. **The live driver cannot clean up after itself.** The other end of
-   §17a.1, and closed with it.
-7. **A structural write costs a card re-read it could avoid.**
-   `manage_sheet`, `delete_sheet` and `edit_dimensions` each send a
-   `batchUpdate` and then re-read the card, because the write invalidated
-   the cached one and the result lists the sheets afterwards.
-   `batchUpdate` takes `includeSpreadsheetInResponse` with
-   `responseRanges`, which §7.3 already names, and it would fold that
-   read into the write — one request saved on every structural change,
-   which at sixty writes a minute with one in flight is about a second
-   each. Two things have to be settled first: the response's spreadsheet
-   arrives unmasked, so it carries the `spreadsheetUrl` the card's field
-   mask now deliberately drops, and the reply has to re-prime the cache
-   rather than just fill the result. It needs a live probe before it is
-   adopted (rule 12), which is why phase 1 recorded it rather than
-   guessing. The wire fields are not written until then.
-   **Closed 2026-09-07 by spike P:** the standard `fields` parameter does
-   apply to the reply, so `updatedSpreadsheet(<CardFields>)` comes back a
-   card with no `spreadsheetUrl` in it. The concern was real — the
-   unmasked reply carries the URL — and the mask the card already has is
-   the whole fix.
-8. **A refusal names the tool's argument from inside the guard.**
-   `plan.Blocker.Allow` holds `"overwrite"`, `"overwrite_formulas"` and
-   `"allow_external_formulas"` — the JSON names `internal/tools`
-   publishes — so the bottom layer knows the top layer's schema, and
-   renaming an argument would make the guard's refusals lie with nothing
-   failing. A typed reason on `Blocker`, mapped to a name by the service,
-   is the fix. Phase 1 removed the other half of this (the tool layer no
-   longer imports `plan`); this half waits, because the messages it would
-   touch were verified live and are worth changing on purpose rather than
-   in passing.
-9. **The service composes the English that the renderer decorates.**
-   `manage_sheet` and `edit_dimensions` build a sentence fragment
-   ("insert 2 row(s) before row 2 on %q") that `render` then capitalizes
-   and wraps. Phrasing decided above the renderer is phrasing the
-   renderer's goldens cannot cover. The fix is to return the parts —
-   action, band, count, title — and let `render` own the template, which
-   is what `render.Write` and `render.Append` already do. Phase 2 touches
-   both tools and is the moment to do it. **Closed 2026-09-06:**
-   `render.SheetAct`, `render.DimensionAct` and `render.Band` carry the
-   parts and own the templates, and `plan.Band` lost its `String`, `Unit`
-   and `Start` with it — the words are in one place, which is what stops
-   a refusal and a result phrasing the same act differently.
-10. **`edit_dimensions delete` was hidden from the tool's description,
-   not from its schema.** **Closed 2026-09-06** by making it
-   `delete_dimensions`, its own destructive tool. The description hid the
-   action while `confirm`'s description still named it and `action` had
-   no enum to omit it from — and `edit_dimensions`, registered as a plain
-   write, advertised `destructiveHint: false` while offering an
-   irreversible action. See §7.4.
-11. **A protection cannot name its editors.** `manage_range
-   protected_range` sets a description and the warning-only flag, and the
-   API's `editors` — the accounts allowed to edit past a protection — is
-   not offered. The default with no editors is the strongest form, which
-   is the one worth having, and the field takes email addresses: hard
-   rule 1 makes an address an awkward thing for the live driver to send
-   and for a transcript to carry. **Still open**, and it wants a decision
-   about how the driver would exercise it before the argument exists.
-12. **`transform_range` takes twenty-one arguments.** Nine actions, each
-   reading a different handful, and an argument that means nothing for
-   the action given is silently ignored rather than refused: a `sort_by`
-   passed with `action: trim_whitespace` does nothing and says nothing.
-   The tools that came before it have the same shape and the same hole
-   — `manage_sheet` ignores `pixels`, `edit_dimensions` ignores
-   `color` — so the fix belongs at the registration layer rather than in
-   one tool: a per-action list of the arguments it reads, checked once,
-   the way `dry_run` is found by reflection rather than remembered per
-   tool. **Still open**, raised by phase 2 and applying to phase 1's
-   tools as much as its own.
-13. **`manage_range banding` only makes row bandings.** The API bands
-   rows or columns, and this offers rows: an `add` always writes
-   `rowProperties`. A column banding made in the Sheets interface can be
-   recolored and deleted through this tool — the update reads which axis
-   the banding already has, after a review found it writing
-   `rowProperties` onto one and leaving it carrying both sets, which the
-   API rejects — but there is no way to create one here. It wants a
-   `columns` argument, which is a fifth thing for a caller to get right
-   on a tool that already takes twenty-one, and it is worth deciding
-   alongside entry 12 rather than before it. **Still open.**
-14. **`dry_run` is answered by three tools and refused by two.**
-   `write_values` and phase 2's three previews come before the guard, for
-   the reason `write.go` gives: a dry run sends nothing, so there is
-   nothing to guard, and the refusal's own advice is to use one.
-   `clear_values` and `manage_sheet` call `refuse` first, so a dry run
-   over a protected range is refused rather than answered — the same bug
-   phase 1 fixed in `write_values` and left in its neighbors.
-   Registration guarantees by reflection that the flag exists and nothing
-   guarantees it is honored the same way, which is the second half of
-   the rule the reflection check exists for; the fix is one service
-   helper that decides the ordering once. **Still open**, and left alone
-   deliberately: it changes the behavior of two tools that were verified
-   live in phase 1, and phase 2 has had no live run to verify them again.
-
-   Phase 3's `manage_anchor` joins the second group, and knowingly. A
-   dry-run `add` under a name already in use is refused rather than
-   previewed. The refusal carries the same information the preview would
-   — the name, where the existing anchor points, and `action=move` as the
-   way on — so nothing is lost except the consistency, and the ordering
-   is the service helper's to decide when one exists rather than a third
-   tool's to guess at now.
-15. **`manage_range` reads the conditional format rules in a request of
-   their own.** Counting them for an update or a delete costs a
-   `spreadsheets.get` that the card could carry: `conditionalFormats` is
-   sheet metadata, and the card is already in hand and cached. That would
-   make a rule update two requests instead of three, and the model is
-   steered into the shape that pays it twice — `read_formatting` reports
-   the index, then `manage_range` fetches the rules again to check it.
-   It needs a live probe first (rule 12): the fake returns
-   `conditionalFormats` whatever the mask says, so no test here can tell
-   whether the card mask accepts the field or what it adds to a payload
-   every `get_spreadsheet` pays for. **Closed 2026-09-07 by
-   spike P:** the mask is accepted, and a sub-mask of
-   `conditionalFormats(ranges)` answers the counting question for 294
-   bytes where a whole rule costs 651. The card carries the ranges, and
-   a rule update is two requests instead of three.
-16. **`leaks history` spawns one `git cat-file` per blob.** A single
-   `git cat-file --batch` fed the ids on stdin would do it in one
-   process. It is a manual gate, so the cost is nobody's per-push
-   problem, but it grows monotonically with the history. **Still open.**
-17. **A committed binary is invisible to every gate here.** The leak
-   scan skips any file containing a NUL byte, which is what keeps it from
-   choking on an image, and gitleaks looks for credentials rather than
-   for size. So a compiled binary committed by a wildcard `git add` would
-   pass `make check` and CI. Not hypothetical: two sibling repositories
-   found one in their history on 2026-09-06, one of them pushed to a
-   public remote across three commits. This tree is clean — the largest
-   tracked file is `docs/architecture.md` at 204K, a NUL scan over every
-   tracked file finds nothing, and `.gitignore` has carried `/gates`,
-   `/.gates`, `/.gates.exe` and `/livesheet` since phase 0 with a comment
-   saying to use `go run` — but that is the ignore rules working, not a
-   gate. A tracked-file size ceiling with named exceptions would catch
-   it and needs no dependency. **Still open**, and deliberately not built
-   in passing: a gate nobody has watched fail is not a gate.
-18. **The stdio smoke test has never been watched against a server that
-   dies during initialization.** It returns the child's stderr on its
-   error paths, so the shape a sibling got wrong — a bare broken pipe
-   with the panic that explained it discarded — should not happen here.
-   Should not is not the same as has not: nothing has faked a server that
-   panics before its first reply and read what came back. **Still open**,
-   and recorded as unverified rather than counted as covered, which is
-   the distinction §16 keeps making about reading a transcript.
-19. **`Cells.Full` coupled the guard's loop to a cap the type owns.**
-   The loop asked each finding set whether it could still name a cell
-   before formatting an address, which is what took a guarded write from
-   28 000 allocations to 25 (§11) — and it made the loop name every set a
-   cell could land in, so a set added later without its clause would be
-   counted correctly and never named. A message going quiet is not a
-   failure anything catches. **Closed 2026-09-06**, in the same review
-   pass that raised it: `Cells.AddCell` takes the grid and the
-   coordinates and formats the address only if it will keep it, so
-   nothing outside the type knows the cap. It is also 1.6× faster than
-   the version that asked.
-20. **`delete_dimensions` pays a request to find the anchors it would
-   take.** `anchorsOnBand` is a `developerMetadata.search`, so an
-   unconfirmed delete went from two requests to three and the real
-   blocked-then-confirmed pair from four to six — about two seconds at
-   one request in flight. The cheaper shape is to fold it into the grid
-   read `countBand` already makes: `spreadsheets.get` with `ranges` can
-   return `sheets.data.rowMetadata.developerMetadata`, which is exactly
-   the anchors on the band being counted, for no extra request. It needs
-   a mask of its own rather than an extension of `gapi.GridFields`, which
-   the whole read path shares, and `rowMetadata` emits an object per row
-   in the window — so it needs a live probe before adoption (rule 12).
-   **Closed 2026-09-07 by spike P**, with the cost measured rather than
-   assumed: the mask is accepted, and a four-row window returns four
-   `rowMetadata` objects for 713 bytes, one of them carrying the anchor.
-   That is about 180 bytes per row of the band — right for the bands a
-   person deletes by hand, wrong for a ten-thousand-row one, so the fold
-   happens under a row count and the search stays for the rest. The
-   probe's own first run reported the mask unsupported, on a mask this
-   repository had written with one parenthesis missing.
-
-   The placement before the confirm gate is right and stays: a refusal
-   has to name what it is refusing. Phase 4 adds charts and pivot tables
-   to what that refusal names.
-21. **A resource builds a grid the size of its window, not its data.**
-   `SheetCSV` fetches up to `config.MaxMaxCells` and `grid.Build` pads to
-   the whole requested rectangle, so a sparse sheet holding sixty cells
-   allocates megabytes to describe them — 3.4 MB of a measured 4.2 MB on
-   one such read. The rendering is trimmed to the used range now, which
-   took the path from 42 ms to 23 ms, but the padding is upstream of
-   that. Building over the response's actual extent would fix it and
-   changes `grid.Build`'s contract, which the whole read path shares.
-   **Still open**, and it costs allocations rather than requests, on a
-   path already paying a round trip.
-22. **`SheetCSV` walks a pipeline `Read` already owns.** Locate, fit,
-   fetch with grid data, build, render — the same seven steps, differing
-   only in trimming to the used range and in the note it writes. Reusing
-   `Read` would mean rendering an addressed grid nobody asked for on
-   every resource read; keeping both means a change to the fetch window
-   has two places to land. **Decided rather than deferred: keep them
-   separate**, because the resource's whole point is the used range and
-   `Read`'s is the window the caller named. Recorded so the duplication
-   reads as chosen rather than unnoticed.
-23. **The evals and the live driver carry the same redaction helper
-   twice.** About sixty lines — the registry, `reg`, `substitute`,
-   `redactLine`, `sec`, `line` — differing only in a comment. Both
-   already import `internal/redact`, which is where a shared registry
-   would go, and the transcript gate now reads both directories. The fix
-   that both files' comments describe, masking what registration cannot
-   know about, had to be made twice. **Still open**: it is a refactor
-   across two build-tagged programs neither of which CI can run, and the
-   phase that adds the second copy is the wrong one to do it in.
-24. **The leak gate was weakest on the code that most needs it.** It
-   scanned tracked files, so a phase's new files were invisible to it
-   until they were staged — and a phase's new files are exactly the ones
-   nobody has scanned before. Phase 3 ran `make check` green a dozen
-   times over 167 files while 28 of its own were untracked; the first
-   `git add -A` took the count to 195 and the gate immediately found a
-   fixture spreadsheet id that did not declare itself synthetic, in a
-   test written that afternoon. Nothing was wrong with the gate: it did
-   what it said. The claim "make check is green" was the thing that was
-   wrong. **Closed 2026-09-06:** the scan reads `git ls-files --others
-   --exclude-standard` beside the tracked list, and the ordering is the
-   point — a file refused while it is still untracked fails *before* a
-   wildcard add can sweep it in, where a tracked-only scan catches it one
-   commit too late. `--exclude-standard` honors `.gitignore`, so a build
-   output with a rule of its own is left alone; it cannot be committed
-   either. Watched failing on all four cases in a throwaway repository:
-   an untracked file carrying an id, an untracked ELF, a gitignored ELF
-   that must pass, and a clean tree.
-
-   The binary half was already there and this document said otherwise
-   for an hour: a tracked binary has been a finding rather than a skip
-   since phase 0, which a probe confirmed by building 8.5 MB to the
-   repository root and watching the gate name it. Two sibling
-   repositories put a compiled `gates` binary into their history this
-   week, one of them public, which is what sent somebody looking.
-
-   **Three of us got that question wrong from the source alone**, on
-   three repositories, and one of them had just described the behavior
-   to another. The cause was not the code being unclear. `isBinary` had
-   a unit test from phase 0 and the branch that uses it had none, so what
-   the scan *did* with a binary was answerable only by reading — and a
-   name invites agreement where an unexplained gap invites doubt. There
-   is a test on the branch now, watched failing with it disabled, and a
-   NUL byte in the first few kilobytes is the whole rule, so it needs no
-   real executable and costs a second. Its absence is the entire reason
-   the question went to three readers instead of to a test.
-25. **A read's window is sized by the sheet's allocated width, not by
-   where the data is.** The evals found it: asked for the last non-empty
-   row of a 900-row sheet, a model took eleven `read_range` calls and
-   then said "the footer even says it plainly: data ends at row 900". It
-   does say that — once a read overshoots the data — and getting there
-   cost eleven reads because the sheet is allocated 26 columns wide while
-   its data occupies two. The cell budget is spent over the allocated
-   rectangle, so 5 000 cells buys 192 rows of a 2-column block instead of
-   2 500: thirteen times the cost, all of it empty.
-
-   Nothing tells a caller the block is narrow. The card reports the grid
-   size, which is the allocated one; the used range is only knowable by
-   reading. The options are a used-range field on the card (a grid read
-   `get_spreadsheet` deliberately does not do), clamping a whole-sheet
-   read to the used width (the same problem one level down), or leaving
-   it and teaching the tool description to narrow the range — which is
-   what a person does and what the model did not think to do.
-
-   **Still open**, and phase 3 is the wrong place to decide it: it
-   touches the card, the budget and possibly a new capability, and
-   `make bench` (§11) says the cost of a read is the decode, which this
-   multiplies. Recorded with its measurement: four runs of that task took
-   2, 4, 5 and 13 calls, so the variance is as much the finding as the
-   worst case.
-27. **A write into a pivot table's output is refused as "not empty".**
-   The anchor is named — it carries the `pivotTable` field and the
-   refusal says what a write there would cost — but the cells the pivot
-   *draws* carry no such field: on the wire they are ordinary computed
-   values, and the definition sits on the top-left cell alone. So a
-   write to the middle of a pivot is refused correctly and unhelpfully,
-   and a caller who passes `overwrite` stops the pivot drawing until
-   they clear the cell again.
-
-   Fixing it means reading up and left of every guarded write on the
-   chance a pivot anchor is there — a wider rectangle on every write, to
-   improve a message. The cheaper shape is to look only when the write
-   is refused, which pays the read once per refusal rather than once per
-   write, and it needs the refusal path to be able to fetch. Found by
-   reading the first live run of phase 4: the count was green and the
-   refusal said "I3 is not empty" under a step whose whole subject was
-   pivot tables.
-
-   **The eval run demonstrated the cost rather than describing it.** The
-   task "do not write over a pivot table" passed — the guard fires and
-   the model does not blindly acknowledge — and the refusal it read was
-   `[blocked] G3 is not empty; pass overwrite to allow it`. A model that
-   passed `overwrite` there would have been told nothing about what it
-   was breaking, and the task passed because the model went and looked
-   rather than because the message told it to.
-
-   **Closed 2026-09-08**, in the cheaper shape and with two further
-   conditions on top of it. The look is skipped unless the guard is
-   already refusing *and* something in the way is a cell nobody typed,
-   so a refusal over ordinary data pays nothing; and the window that
-   could hold the anchor is bounded by the read budget from the write's
-   end rather than the sheet's start. The extent is then measured by the
-   read `list` already used, because an anchor up and to the left is not
-   yet a pivot that reaches this write. §7.6 has the shape and §18 what
-   the live run confirmed.
-
-   **What the bound gives up, stated rather than discovered later.** A
-   pivot anchored further above the write than the budget reaches is not
-   named, and the refusal falls back to what it said before. That pivot
-   would have to be taller than a whole read, since its output is
-   contiguous from the anchor down to the cell being written — and it is
-   also a pivot the tools that list one cannot measure. A test holds the
-   fallback so it stays a message getting shorter rather than a lookup
-   getting wrong.
-28a. **A read hands back `checkpoint` and a write takes
-   `expect_checkpoint`.** The read's own description says to "pass this
-   to a later write as expect_checkpoint", and the eval run watched a
-   model pass it as `checkpoint` anyway — reading the field's name
-   rather than its description, which is what anybody does. It cost a
-   call and came back as `validating "arguments": unexpected additional
-   properties ["checkpoint"]`, which is the SDK's schema validation
-   rather than one of §6.5's twelve classes: the one path found so far
-   where a caller gets a message outside this server's own vocabulary.
-
-   Two fixes and they are not the same. Accepting `checkpoint` as an
-   alias makes the natural thing work and puts two names for one
-   argument in the schema. Renaming the read's field to
-   `expect_checkpoint` makes them match and is a breaking change to
-   every read's structured half. **Still open**, and the second half —
-   a schema refusal arriving outside the error vocabulary — is worth
-   more attention than the naming: §6.5's gate holds the classes this
-   server emits and cannot see one the SDK emits above it.
-29. **The fake ignores the field mask, so no test can catch a mask that
-   asks for the wrong thing.** `sheetstest`'s `spreadsheets.get` refuses
-   an *empty* `fields` — which is the rule it exists to hold — and then
-   returns everything whatever the mask says. Phase 4's review pass
-   found what that allows: `manage_data_source list` reported each
-   source's kind, a test asserted "BigQuery", and the card's mask had
-   never asked for the spec. Live it would have been empty on every
-   call. The mask was widened and the test still does not prove it; the
-   live driver does, by reading a card on every run.
-
-   Honoring a mask properly means walking the response and pruning it,
-   which is a small field-mask parser and a real piece of work. The
-   cheaper half is a mask *shape* check — refuse a get whose mask names
-   a field the response type has no JSON tag for — which would have
-   caught nothing here, since `spec` exists and simply was not asked
-   for. **Still open**, and recorded with what it would and would not
-   have caught: a fake that answers more generously than the API is the
-   shape three findings in this project have now taken.
-30. **The tool-version problem that was here was fixed rather than
-   deferred** — a distribution `golangci-lint` built with an older Go
-   refusing this module, and a stale `go-licenses` failing on the
-   standard library. The Makefile fetches all three tools at the
-   versions CI uses, through `go run <module>@<version>`. That it needed
-   fixing a second and a third time, by different routes, is why `gates
-   parity` now holds the claim rather than a comment doing it.
-31. **`format_cells merge` refuses over a pivot's output as "not
-   empty".** The same sentence §17a.27 closed for a values write, on the
-   other path that destroys cells: a merge keeps the top-left value and
-   drops the rest, and its refusal reads "merging would keep the
-   top-left value and discard C20, which is not empty". The signal is
-   already there — `FormatTargetFields` carries both value fields, so
-   the grid knows nobody typed C20 — and the lookup would drop in.
-
-   **Closed 2026-09-09 by spike Q, which answered neither way.** A merge
-   destroys nothing, because Sheets refuses it: `400 … You can't merge
-   cells that are part of a pivot table`, over the output as surely as
-   over the anchor. So the guard was not protecting anything — it was
-   describing a loss that cannot happen and offering `overwrite` to get
-   past itself, which reached Google's 400 instead. It refuses first now
-   with the API's own reason, and nothing acknowledges it.
-
-   **And the clear turned out to be worse than the merge.** Two findings
-   nobody was looking for. Clearing a cell a pivot *draws* does nothing
-   at all — 200, the range named, the cell unchanged — so counting those
-   cells into "removes 4 non-empty cell(s)" named a loss that does not
-   happen. Clearing the *anchor* takes the pivot's definition and every
-   cell of its output, for a reply that names one cell: the sixth silent
-   destroy, and the first found in a tool that had already shipped. Both
-   are in §18, and the confirm gate says both now.
-
-   **What this item is really evidence of.** It was written as a
-   cosmetic gap — one refusal reading worse than another — and the probe
-   that was supposed to justify a message found a destructive hole in a
-   released tool. Rule 12 earned its keep here: a guard written from the
-   assumption in this entry's first paragraph would have been wrong
-   about the merge and silent about the clear.
-
-   **And the review passes on the fix found four more things**, which is
-   worth recording because three of them were in the first attempt at
-   *this* entry rather than in old code. The pivot sentence was on the
-   confirm gate alone, while the gate's own closing words send the
-   caller to `dry_run` — so following the advice reported that the
-   destructive call would remove nothing, and the result afterwards
-   announced that the cells it had just destroyed were still there. The
-   sentence about cells nobody typed promised survival it cannot know
-   about, and was wrong for every array formula whose own cell is in the
-   range. The fake modeled neither behavior, so no test could see any
-   of it. All four are fixed and tested; the fifth, that Google refuses
-   a merge over blank cells inside a footprint, is a hole the guard
-   closes by translating the 400 rather than by measuring every pivot.
-32. **The pivot lookup behind a refusal costs two reads where one might
-   decide it.** The first finds anchors up and to the left under a mask
-   asking only for `pivotTable`; the second measures what each draws,
-   from the anchor down and right to the sheet's end under the cell
-   budget. The second is the expensive one — up to `max_cells` — and it
-   is paid even when no pivot turns out to reach the write.
-
-   Widening the first read's mask to carry the two value fields would
-   answer reach-or-not from one request, because the write lies wholly
-   inside that window and a pivot's output is solid: the intersection it
-   measures there is exact. **Not taken**, because the extent walk stops
-   at the first row drawing nothing at or right of the anchor, and
-   inside a truncated window a sparse pivot row can look like that row —
-   live, a pivot with a column grouping draws nothing in its own first
-   column on most rows. The failure is a pivot that reaches going
-   unnamed, which is the message this item exists to produce. **Still
-   open** as a measured trade rather than an oversight: the second read
-   is paid only on a refusal, over cells nobody typed, with an anchor
-   already found above the write.
-
-   **The two reads also divide the same budget by different widths**,
-   which is a second way the same message goes quiet. The lookback
-   divides `max_cells` by the write's own last column; the extent read
-   divides it by the sheet's width from the anchor on. So a write low on
-   a wide sheet can find an anchor the lookback reaches and then have
-   its extent cut off above the write, and the refusal falls back to
-   "not empty". §17a.27's stated give-up covers the first bound only.
-33. **Closed by 4.0.0: the server asks nobody and the mark is fixed per
-   tool (§9a).** As it was: **on protocol 2026-07-28 a client could get
-   neither the mark nor a question.** Capabilities travel with each request there, so a client
-   can declare form elicitation to `tools/list` and none to
-   `tools/call`. The list then drops the mark from the destructive
-   tools, which always ask (§9a.3), and the call asks nothing. Found by review on
-   2026-10-09. **Left open**, because it gives a misbehaving client
-   nothing it lacked: such a client answers the server's question itself
-   and can accept without a person. `GSHEETS_REQUIRE_PROMPT=true` refuses
-   the call instead, since it reads the call's own capabilities.
-34. **Nothing holds the bundle fields' sentences about read-only.** The
-   read-only, destructive, Connected Sheets and external formulas
-   fields each say that read-only leaves the other switches nothing to
-   register or allow. That is true of Build and of registration today,
-   and no check reads those sentences, so a change that let a switch act
-   under read-only would leave its field saying otherwise. **Left open**,
-   from the review of 2026-10-24: low priority, since read-only
-   registers no write, and the check is the family's to write once for
-   every bundle.
-
-### 17c. Where the profile and the guards follow the sibling servers
-
-**The destructive model is two layers, and three of the four servers
-arrived at it independently.** A tool that removes something a person
-cannot get back by reading is not registered at all without
-`GSHEETS_ENABLE_DESTRUCTIVE`, and still refuses the call without
-`confirm`. Here that is five: `clear_values`, `delete_sheet`,
-`delete_dimensions`, `delete_data_source` and `delete_cell_comment`. Two sibling servers gate two and five tools the same
-way on the same criterion; the fourth gates none, which is how an outside
-setup report noticed the family was inconsistent at all — from installing
-three of them in one sitting, which is the only vantage point that shows
+person sees on screen and what the formula bar speaks. The API's
+GridRange is zero-based and half-open, and a missing index means
+unbounded on that side
+([GridRange](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/other#GridRange)).
+A1 is one-based and inclusive, and `A5:A` spells the same unbounded
+range another way.
+
+The arithmetic between the two lives in `internal/a1`, so the model
+never sees an index and no other package converts by hand. A pivot
+table's columns are named by letter or heading, and the server converts
+them to the offsets the API takes against the source. A sort key is a
+column of the sheet, and the API's absolute index is computed here. A
+person can check every address the model names by looking at the sheet.
+
+Rejected: GridRange objects composed by the model, as Google's own
+Sheets MCP server has them.
+Cost: every request that takes a GridRange pays a conversion, and every
+index Google reports is turned back into A1 before a caller sees it.
+Nothing but review keeps the arithmetic out of other packages.
+
+### D-13 Column parsing is total and refuses nonsense, up to column ZZZ
+
+`internal/a1` parses column letters to an index and refuses anything
+else: digits, an empty string, punctuation, or a run of letters past
+ZZZ. A bad range is `[invalid]`, and the message says what a range is.
+
+A parser that rejects only the empty string returns a plausible index
+for nonsense. One shipped server read `A1` as a column and returned the
+index of column K, and `B2` that of column AL, so a write went to the
+wrong column and looked right
+([#959](https://github.com/taylorwilsdon/google_workspace_mcp/issues/959)).
+A total parser turns that into a refusal.
+
+ZZZ, column 18278, is the most columns one sheet takes. It is a limit of
+the sheet apart from the cell ceiling, and Google refuses column 18279
+with that limit named, while the API reference states none
+([limits](https://developers.google.com/workspace/sheets/api/limits)).
+Rows are bounded by the cell ceiling read as a row number.
+
+Rejected: a parser that rejects only the empty string.
+Cost: the limit here is a copy of Google's, changed by hand if Google
+raises it. A reference past ZZZ is refused by the parser with A1's
+reason rather than Google's.
+
+### D-14 A range is built from a parsed title, always quoted, never concatenated or sent without its sheet
+
+`internal/a1` builds every range from a parsed sheet title, always
+quotes the title, and never sends a range without its sheet.
+
+A1 has three traps, all in Google's own guide
+([concepts](https://developers.google.com/workspace/sheets/api/guides/concepts)).
+A title with a space or punctuation needs single quotes, and an
+apostrophe inside it is doubled. `A1` with no sheet means a cell of the
+first visible sheet, while `'A1'` is the whole sheet named A1. And a
+bare name resolves as a named range before a sheet, so `'Data'` is the
+sheet and `Data` may be a named range. A reference with a `!` reads its
+left side as a sheet title either way.
+
+Quoting is load-bearing for the whole-sheet form this server sends, and
+harmless everywhere else. Quoting everywhere means no call site has to
+know which case it is in. Joining a title to a range with a string
+operation gets one of the three wrong for some title, and the request
+then reads a different rectangle without an error.
+
+Rejected: a sheet name joined to an A1 range by concatenation, as other
+servers do.
+Cost: every range on the wire carries its quoted title, even where
+`'Data'!A1:B2` would read the same without the quotes.
+
+### D-15 Sheet names are read, never assumed
+
+No tool defaults a sheet, and no tool description offers `Sheet1` as an
+example. `get_spreadsheet` is the first call: it lists every sheet's
+title and id. A URL's `#gid=` names the sheet when the call names none.
+A missing sheet is `[not_found]`, listing the titles that do exist.
+
+Google names the first sheet in the account's language, so `Sheet1` is
+`Página1` on a Portuguese account. A server whose descriptions taught
+the model `Sheet1` failed there with
+`Unable to parse range: Sheet1!A1:D3`, and the failure looked like a bug
+in the request
+([#94](https://github.com/xing5/mcp-google-sheets/issues/94)). A title
+read from the card is right in every language. Sheet titles are unique
+inside a spreadsheet, so a title read once is unambiguous.
+
+The staleness gate fails on a tool description that names `Sheet1`.
+
+Rejected: a default sheet, or `Sheet1` in a description.
+Cost: `get_spreadsheet` is the first call on every spreadsheet, so a
+task starts with a read before it can name a sheet.
+
+### D-16 A range is A1: no named range, table reference or R1C1
+
+A range is A1: a rectangle such as `B2:D40`, a column or row band such
+as `B:B` or `2:5`, or a whole sheet. No tool takes a named range, a
+table reference or R1C1.
+
+`values.get` documents its `range` as A1 or R1C1
+([values.get](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/get)).
+It also accepts a named range, as a bare name with no `!`, and that
+spelling is the spelling a whole-sheet reference uses. A caller who
+meant a sheet, and typed a title that is also a named range's name,
+would get the other rectangle and no error. That edge is too sharp to
+hand a model.
+
+A table reference is accepted in no form. R1C1 is accepted, and it is a
+second spelling of one address, which is one more thing for a model to
+get wrong. A1 is also what the person sees.
+
+Rejected: a named range as a range, whose one working spelling is the
+whole-sheet form; R1C1, a second spelling of one address.
+Cost: a named range is reached by the A1 range the card lists for it,
+and a table by its range on the card.
+
+### D-17 A spreadsheet is an id, a URL or a title, and a title matching several is refused with the candidates
+
+A spreadsheet is named by an id, by a URL, or by a title. A URL's
+`#gid=` or `?gid=` names the sheet. A title is resolved with Drive's
+`files.list`, filtered to the spreadsheet MIME type, with the caller's
+text escaped. More than one match is `[ambiguous]`, listing each
+candidate's id, owner and modification time and saying to pass an id.
+
+A person says a title, not an id. A server that takes only ids makes the
+model ask the person to paste one
+([#76](https://github.com/xing5/mcp-google-sheets/issues/76)). Taking
+the first match acts on a file nobody chose. Text put into a Drive query
+unescaped lets an apostrophe close the string, which detaches the MIME
+type filter, so the search returns any file the account can see
+([#93](https://github.com/xing5/mcp-google-sheets/issues/93)).
+`TestAnUnescapedApostropheDetachesTheFilter` holds the escaping.
+
+Rejected: taking the first match; caller text put into a Drive query
+unescaped.
+Cost: a title costs a Drive search, which needs the Drive API enabled
+and `drive.readonly`. Drive's index can lag a spreadsheet made a moment
+ago, so its title may not resolve at once.
+
+### D-18 An object attached to a range is named by the range it covers, matched exactly
+
+`manage_range` names an existing named range, protected range,
+validation rule, table or banding by the range it covers, in A1. The
+range must match exactly: a protection over a column and one over a cell
+inside it are different objects. A range matching several is
+`[ambiguous]` with the list, and one matching nothing is refused with
+what is nearby.
+
+A caller who can say "the protection on B2:B10" has not had to fetch an
+id first, and A1 is this server's contract everywhere else (D-12). An
+exact match keeps the call from acting on a neighbor: a looser match
+would pick one of two overlapping objects for the caller.
+
+A conditional format rule is the one exception. The API identifies those
+by their position in the sheet's list
+([DeleteConditionalFormatRuleRequest](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#DeleteConditionalFormatRuleRequest)),
+so they take an `index`, which `read_formatting` reports beside each
+rule.
+
+Rejected: naming an object by its id, which a caller must fetch first.
+Cost: a conditional format rule takes its position, so a caller reads it
+from `read_formatting` before changing a rule.
+
+### D-19 An anchor is an optional durable label on developer metadata, never the only way to reach anything
+
+Developer metadata is the one label Google keeps attached to a location
+while the sheet is edited around it: it "will remain associated at those
+locations as they move around and the spreadsheet is edited"
+([DeveloperMetadata](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.developerMetadata#DeveloperMetadata)).
+It attaches to a spreadsheet, a sheet or a band of rows or columns,
+never to an arbitrary rectangle.
+
+`manage_anchor` adds, lists, moves and removes a label on a row, a
+column or a sheet, and `anchor:<name>` works wherever a range does,
+except where a delete needs its target in A1 (D-41). It is offered so
+that "come back to this row later" survives other people's edits. It is
+never the only way to reach anything: every tool that takes an anchor
+takes A1. A name is unique here although Google allows two alike, and
+every anchor is written with `DOCUMENT` visibility.
+
+Rejected: `PROJECT` visibility, which ties an anchor to the OAuth client
+that made it, so it vanishes on a re-install under another client; an
+anchor argument of its own beside the range.
+Cost: an anchor names a row and does not notice its contents replaced.
+Reading one needs a write-capable scope, so read-only mode has no
+anchors.
+
+### D-20 Every read renders an addressed grid, and addresses are the only handles
+
+Every read renders a grid with column letters across the top and row
+numbers down the side. The model writes back to what it read by naming
+an address it can see, so there is nothing to remember between calls and
+no handle to go stale. It is also what the person sees on screen, so the
+two talk about the same cells.
+
+The grid keeps its addresses true. A ragged response is padded back to
+the rectangle asked for, since Google omits trailing empty rows and
+columns. A run of empty rows folds into one line that names the rows it
+covers, so an address inside it is still one the caller can write to. A
+hidden band inside the read is named, since it shows nothing in the
+values. The footer names the range shown, the range that exists,
+`continue_from`, and the first cells it shortened.
+
+Rejected: a handle the server remembers between calls.
+Cost: every read spends characters on column letters, row numbers and
+padding that a bare array would not carry.
+
+### D-21 Every tool returns both halves, and the structured half carries the rendering
+
+Every tool declares an output schema and returns both halves of a
+result. The structured half carries the rendering, in `grid` for a read
+and `summary` for a write, beside fields such as `range`, `checkpoint`,
+`truncated` and `continue_from`. The text half carries the same
+rendering with those fields in its footer. Neither is a serialized copy
+of the other.
+
+Clients disagree about which half they show the model. Claude Code
+forwards `structuredContent` when both are present, while claude.ai and
+ChatGPT show the text. The substance of a read is the addressed grid, so
+a design that puts the addresses in one half loses them on some client,
+and nothing says so until a task goes wrong. With the rendering in both
+halves, no client is shown a half without the addresses.
+
+`Def`'s output type is constrained to `service.Rendered`, so a tool with
+no rendering does not compile. The raw arrays come only with `format`
+`json`, `csv` or `tsv`, in `rows`.
+
+Rejected: text only, which goes blank on Claude Code once a tool
+declares an output schema; both halves sent in the hope that a client
+shows the right one; the raw arrays beside the grid by default.
+Cost: the machine form comes only when a caller asks for it with
+`format`, and the rendering is then the smaller field.
+
+### D-22 Reads are budgeted in cells and characters, the window resolved before the call
+
+A read names its range and takes a cell budget and a character budget,
+`max_cells` and `max_chars`, whose defaults and maxima are in
+[configuration.md](configuration.md). The window is resolved against the
+sheet's extent before the call, so a finite range is sent and an
+open-ended `A:Z` never becomes a whole column in memory. A budget past
+the maximum is refused rather than reduced. The footer says where to
+continue. `get_spreadsheet` never asks for grid data, and a
+`spreadsheets.get` without a field mask is refused before it is sent.
+
+A display budget is not a memory budget. One server cut what it
+displayed to fifty rows while still fetching `A:Z` whole, and its
+maintainer found that "memory was already unbounded"
+([#986](https://github.com/taylorwilsdon/google_workspace_mcp/issues/986)).
+A silent cut is worse still: a short answer that says nothing is a wrong
+answer
+([#955](https://github.com/taylorwilsdon/google_workspace_mcp/issues/955)).
+A caller who asks for more than the maximum and quietly gets less reads
+a footer describing a window they never asked for.
+
+Rejected: clamping the rendering while fetching an open-ended range
+whole; an over-range budget silently reduced.
+Cost: the cell window and the character budget can disagree, so a raised
+`max_cells` fetches rows no rendering reaches (#69). A window is spent
+on the sheet's allocated width rather than its data, and decoding the
+response is most of a large read's time (#70).
+### D-23 Content is data, and a read shows formulas rather than resolving them
+
+What a read returns is data. The server never acts on what a cell, a
+note or a comment says.
+
+A read shows formulas rather than resolving them away. `show` takes
+`values`, `formulas` or `both`, and `both` renders the formula under the
+value where they differ. That is the only way to see that a number is
+computed. It is also how a formula somebody planted becomes visible: an
+`IMPORTXML` that sends the sheet's contents to a URL reads as a value
+until its formula is shown. `find_in_spreadsheet` reports each match's
+kind, a value, a formula or a note, for the same reason.
+
+Values come back unformatted by default, because a currency symbol in a
+number the model may compute with is a trap. A caller who wants the
+display text asks for it with `formatted`.
+
+Rejected: a read that shows only computed values, which hides what a
+cell computes and what it fetches.
+Cost: a read with `show=both` spends characters on the formula under
+every computed value, and a caller has to ask for it.
+
+### D-24 A values write reads its target first and refuses what it would destroy unseen
+
+Before writing values, the server reads the target rectangle with one
+masked request, and the guard refuses what the write would destroy
+unseen:
+
+- a formula, unless `overwrite_formulas` is set as well as `overwrite`;
+- anything non-empty, unless `overwrite` is set;
+- a protected range this account may not edit, which no acknowledgment
+  allows;
+- a merge the write covers only in part, which no acknowledgment allows;
+- a smart chip, named and allowed by `overwrite`, because a value write
+  erases it
+  ([CellData](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/cells#CellData)).
+
+A note and a validation rule are reported as kept, since a value write
+leaves both in place. A refusal names the cells in A1 and the
+acknowledgment that would allow the write.
+
+The formula case needs its own acknowledgment because a formula and its
+result render identically, and losing one loses the computation without
+a visible change. Sheets has no undo, and in an unguarded server a write
+over a formula succeeds silently.
+
+Rejected: a minimal diff, which a rectangle of independent cells has no
+structure for; one acknowledgment for a value and a formula alike;
+tracked-change modes, which Sheets lacks.
+Cost: a guarded write is two requests. A write into a pivot table's
+output names the pivot only when its anchor lies within the read budget
+(#81). The guard's refusals name the tool's arguments, so renaming an
+argument means changing `internal/plan` too (#71).
+### D-25 An overwrite carries the checkpoint of what it replaces
+
+`overwrite` and `overwrite_formulas` each need `expect_checkpoint`, the
+checkpoint of the cells the write replaces. Without it the write is
+refused `[invalid]`, with the checkpoint of the cells as this call read
+them. The guard's refusal and a dry run give the same checkpoint, so no
+second read is needed. A change after that read is `[conflict]`.
+
+A flag set after a refusal covers whatever the cells hold when the write
+lands, a collaborator's later edit included, and a model can resend the
+flag on its own. The checkpoint ties the overwrite to what was read, so
+`overwrite` carries a decision about known contents. The server
+instructions say that `overwrite` carries a decision the person made,
+not a way past a refusal.
+
+`transform_range` holds its overwrites the same way, over the cells its
+guard reads: where a paste or a fill lands, where a split spills, or the
+formulas a replacement rewrites. An action that reads nothing first
+refuses `expect_checkpoint`, since there is nothing for it to match.
+
+Rejected: `overwrite` alone, which covers whatever the cells hold when
+the write lands.
+Cost: an overwrite needs a refusal or a dry run first, for its
+checkpoint.
+
+### D-26 A checkpoint is a best-effort hash over what a read stored, and says so
+
+Sheets has no write guard: no `writeControl`, no `requiredRevisionId`
+and no ETag. Google also says of a batch that "it is not guaranteed that
+the spreadsheet will reflect exactly your changes after this completes",
+because collaborators edit at the same time
+([batchUpdate](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/batchUpdate)).
+
+So a read returns a checkpoint, `ck_` and a hash over the spreadsheet
+id, the resolved range and what the cells store. It follows the formula
+rather than its result, and ignores formatting. A write given
+`expect_checkpoint` reads the range again and compares, and a mismatch
+is `[conflict]` with the cells that changed.
+
+A checkpoint narrows the window between a read and a write, and cannot
+close it. The tool descriptions say it is best effort rather than
+implying a guarantee. Where a person needs a real guarantee,
+`manage_range` can protect the range.
+
+Rejected: a revision guard, which Sheets does not have; Drive's
+`version` field, which stayed the same across a value write and a
+structural `batchUpdate`; locks.
+Cost: a checkpoint narrows the window and cannot close it, and a
+protected range is the only real guarantee.
+
+### D-27 The caller chooses typed or literal input, and every write reports what Google changed
+
+`input` is `typed` or `literal`, and the server never substitutes one
+for the other. `typed` sends `USER_ENTERED`, which "is parsed exactly as
+if it were entered into the Sheets UI": `1-2` becomes a date, `007`
+becomes 7, and `=1+2` becomes a formula. `literal` sends `RAW`, which is
+stored as a string
+([ValueInputOption](https://developers.google.com/workspace/sheets/api/reference/rest/v4/ValueInputOption)).
+An unknown value is refused before anything is sent.
+
+Every write asks Google for the stored values back, in the same
+response, and compares them with what was sent. The result names every
+cell Google changed. It also says when Google attached a format:
+`$100.15` is stored as the number 100.15 with a currency format, so it
+still displays as typed, while `1-2` reads as a date. A report over
+stored values alone could not tell those two apart.
+
+The reason is that `typed` is how a person types, and a person sees what
+Sheets made of it. A model does not, unless the result says.
+
+Rejected: substituting one input option for the other; a diff over
+stored values alone, which misses the format Google attaches.
+Cost: `typed` is the default, so `007` becomes 7 unless the caller says
+`literal`.
+
+### D-28 A formula that reaches outside the spreadsheet is written only when the operator allows it
+
+`IMPORTXML`, `IMPORTDATA`, `IMPORTHTML`, `IMPORTFEED`, `IMAGE` and
+`HYPERLINK` take any URL, and Google fetches it from its own servers
+([IMPORTXML](https://support.google.com/docs/answer/3093342)). A URL can
+carry the sheet's contents in its query string, so writing one sends the
+spreadsheet somewhere the person cannot see. `IMPORTRANGE` takes a
+spreadsheet's URL instead, and pulls in any spreadsheet the account can
+read ([IMPORTRANGE](https://support.google.com/docs/answer/3093340)).
+
+A write creates any of them only when the server was started with
+`GSHEETS_ALLOW_EXTERNAL_FORMULAS=true`. That covers every way a formula
+is made: `write_values`, `create_spreadsheet`'s seed values,
+`find_replace`, and the copies and fills that make formulas from the
+ones they copy. A replacement inside formulas runs here first, as Google
+would run it, since replacing `X(` with `(` turns `=IMAGEX(...)` into
+`=IMAGE(...)`. Every formula a write creates is named in the result.
+
+It is a setting rather than an argument, because a model persuaded to
+write such a formula would pass the argument too.
+
+Rejected: `allow_external_formulas` on the call; an external-fetch
+formula treated as ordinary content.
+Cost: a `find_replace` whose replacement names such a function is
+refused whatever it searches (#67). A pattern Go cannot compile, such as
+a lookbehind, cannot be run here first, so over formulas it is refused
+unless the setting allows it.
+### D-29 `append_rows` only inserts, takes its range, and reports where Google put the rows
+
+`append_rows` always inserts rows, needs a range, and reports where the
+rows went.
+
+`values.append` writes after a table it detects in the given range, not
+at the end of the sheet
+([values.append](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/append)).
+So the result reports the range Google wrote and the table it found, and
+says that the rows below moved. The range is required, since an append
+with no range and an append at `A1` can land rows in different places on
+the same sheet.
+
+`append_rows` sends `INSERT_ROWS` and never `OVERWRITE`. An append picks
+its destination during the call, so no read beforehand can see the rows
+`OVERWRITE` would replace, and no checkpoint can witness them. A caller
+who means to write over known cells uses `write_values`, which is
+guarded (D-24).
+
+Rejected: `OVERWRITE`, whose rows no read can witness; a default range,
+which can land rows elsewhere than `A1` does.
+Cost: rows below an insert move, so an address or a checkpoint a caller
+holds for them goes stale. An append that may have landed is never
+repeated (D-45).
+
+### D-30 Every write takes `dry_run`, which sends nothing and previews even a refused write
+
+Every write tool offers `dry_run`. With it, the call reports what it
+would change and what would stop it, and returns before anything is
+sent.
+
+`add` finds the flag by reflection rather than trusting each tool to
+declare it. A write without `dry_run` panics at registration, and a read
+may not offer one. Each write's service function returns before it
+builds or sends its request when the flag is set, and a test per tool
+checks that nothing reached the fake.
+
+The preview comes before the guard's refusal and lists what would stop
+the write. A refusal's own advice is to dry-run the call, and a caller
+who followed it would otherwise get the same refusal again. A dry run
+sends nothing, so there is nothing to guard. Sheets has no tracked
+changes, so the dry run stands in for a suggestion mode.
+
+Rejected: the guard refusing before the preview; tracked-change modes,
+which Sheets lacks.
+Cost: nothing but each write's early return keeps it from sending under
+`dry_run`, so a write added without one would send (#64).
+`clear_values`, `manage_sheet` and `manage_anchor` check some refusals
+before the preview, so a dry run there can answer with the refusal
+(#74).
+### D-31 A write says what changed, read back from Google rather than restated from the request
+
+A write's result says what changed, from what Google reported rather
+than from what was asked. A values write reports the range written,
+Google's own count of cells, every coerced value, the formulas created,
+the checkpoint after the write and the region as it reads after it. A
+write shorter than what was there leaves the old tail alone, since
+`values.update` skips cells with no data, and the result says what it
+left
+([values.update](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/update)).
+
+A structural write reports the counts the API returned. Where Google's
+reply is `{}`, as for a deleted chart, the result is composed from the
+card read before the call, so it can say what went. A pivot table's size
+is in no request, so its result reads the output back. A data source
+added reports that the refresh started, not that the data arrived. The
+preview and the result of one call describe the same change.
+
+A result restated from the request says what was asked, which is the one
+thing the caller already knows.
+
+Rejected: a result restated from the request rather than read back.
+Cost: a structural write reads the card again after it, since the result
+lists the sheets as they stand. A reply that is `{}` is reported from
+the card read before the call.
+
+### D-32 One tool call is one API request, and ops compile to one atomic batch
+
+One tool call is one API request wherever the API allows it, and a
+tool's ops compile into one `batchUpdate`.
+
+Sheets counts requests rather than work: "Each batch request, including
+any subrequest, is counted as one API request toward your usage limit"
+([limits](https://developers.google.com/workspace/sheets/api/limits)). A
+batch is also atomic: "If any request is not valid then the entire
+request will fail and nothing will be applied"
+([batchUpdate](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/batchUpdate)).
+So a header row that is bold, centered and shaded is one call and one
+request, and it lands whole or not at all. `find_in_spreadsheet` reads
+every sheet in one request, and listing anchors is one request.
+
+Where a guard needs to see the target first, that is one read with a
+field mask over the target range only.
+
+Rejected: splitting a batch so a failure is small, which costs quota and
+gives up atomicity.
+Cost: a guard's read is a second request, so a guarded write costs two.
+
+### D-33 Formatting and transforms guard what they destroy, and read only when an op can destroy
+
+`format_cells` has three ops that destroy something, and each is refused
+until acknowledged. A merge keeps the top-left value of every merged
+block and discards the rest, and the reply says nothing
+([MergeCellsRequest](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#MergeCellsRequest)).
+`clear_format` removes formatting Sheets cannot bring back. A note
+replaces one that no values read showed. The cells are read only when
+one of these is asked for, so an ordinary "make it bold" is one request.
+
+`transform_range` runs the guard over the cells it lands on. A paste and
+a fill land on cells the caller never named, so the landing rectangle is
+read and guarded. A text split spills into the columns to its right. A
+replacement inside formulas changes what a cell computes, so it needs
+`overwrite_formulas`. `manage_range` refuses a table delete that would
+take the conditional format rules over the table's range.
+
+The read costs a request, so it is spent only where an op can destroy.
+
+Rejected: reading the target of every formatting call.
+Cost: a split whose delimiter Google detects has no known width, so the
+guard reads a window to its right and treats all of it as at risk.
+
+### D-34 Every tool registers through one function, and its Kind decides annotations, registration and rendering
+
+Every tool is added through one function, `add` in `internal/tools`,
+with a `Def` that has one `Kind`: Read, Write, IdempotentWrite,
+Destructive, Connected or Notifying. The kind decides the annotations,
+whether read-only mode and the settings register the tool, and that the
+reply is rendered. Two fields beside it are refused on a kind they do
+not describe: `Adds`, which marks a write as only adding, and
+`PromptEveryCall`, the mark (D-38, D-39). The checks run before the
+registration gate, so every `Def` is checked whatever the configuration.
+
+Rules kept by hand at every call site are ways to be quietly wrong, and
+one is wrong the first time a tool is added in a hurry. `Kind` is an
+enum over which world a tool touches. It grew Connected for BigQuery,
+and Notifying for a comment that emails a person.
+
+Registration gates the tool, and the service gates the act. `confirm`
+lives in the service, where the caller can be told why, which keeps
+`Kind` from becoming a matrix.
+
+Rejected: the rules kept by hand at each call site.
+Cost: `Kind` grows an axis the first time a tool touches a second world.
+`confirm` is held by each delete's tests, not by its kind.
+
+### D-35 A tool that removes what cannot be read back is unregistered unless enabled, and needs `confirm`
+
+A tool that removes something a person cannot get back by reading is
+registered only under `GSHEETS_ENABLE_DESTRUCTIVE`, and refuses a call
+without `confirm: true`. That is `clear_values`, `delete_sheet`,
+`delete_dimensions`, `delete_data_source` and `delete_cell_comment`.
+
+Sheets has no trash for a deleted sheet, cleared cells or a dropped
+column, and the API cannot restore version history. Annotations are
+hints a client may not trust, and a host in an auto-approve mode runs an
+annotated tool without asking anyone
+([tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)).
+So both gates are the server's: one decides whether the tool exists, the
+other whether this call meant it. `confirm` is a witness that the caller
+meant this delete, never approval, since the model sets it. Each delete
+counts what it takes before it asks (D-42).
+
+The staleness gate holds the README to a permission rule for every tool
+that takes `confirm`.
+
+Rejected: client-side approval as the layer, since annotations are hints
+a client may not trust.
+Cost: what can be read first is guarded per call rather than gated, and
+prompts by its hint (D-38). An operator turns deletes on for the whole
+server, never for one call.
+
+### D-36 A risky variant is its own tool, never an argument
+
+A variant of a tool that is riskier than the tool is a tool of its own,
+never an argument. A client remembers an approval per tool, never per
+argument value, so a variant inside an approved tool goes unseen.
+
+So `delete_dimensions` is its own Destructive tool rather than an action
+of `edit_dimensions`. As an action it could not be left out of the
+schema, and its tool said `destructiveHint: false`. `delete_data_source`
+is split from `manage_data_source` the same way.
+
+`connect_data_source` is its own tool, since it starts a query billed to
+the project the call names, and a `refresh` names its source.
+`append_rows` has no overwrite mode (D-29), and external formulas are a
+setting (D-28). A `manage_sheet` `resize` that would shrink a sheet is
+refused, naming `delete_dimensions`, which says what is on the rows
+first.
+
+Rejected: an action gated inside a tool by its description; one `Kind`
+for a tool that reaches a second world.
+Cost: `cancel_refresh` with no `id` cancels every refresh, kept because
+it stops billing. `manage_cell_comment` assigns a comment to any
+address, and Google emails the assignee (#66).
+### D-37 Per-call approval is the client's, and the server asks the person nothing
+
+The server never puts a question to the person. It sends no elicitation,
+and no write waits on an answer. The MCP specification puts consent to
+each tool call on the host, which "SHOULD" prompt for confirmation on
+sensitive operations
+([tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)).
+The client draws that prompt from the annotations and the operator's
+rules.
+
+What the server holds on every client is registration, `confirm`, the
+guards and checkpoints, and `dry_run`. A control that holds on some
+clients and not others is not a control.
+
+`GSHEETS_REQUIRE_PROMPT` refused the asking writes on a client that
+could not ask, and went with the question. A configuration that still
+turns it on is refused at start, because ignoring it would allow what
+its owner set it to stop. The test client declares form elicitation and
+fails any call the server asks about, so every tool the logging test
+drives is held to asking nobody. The live driver does the same.
+
+Rejected: the server's own question (D-77); `GSHEETS_REQUIRE_PROMPT`
+ignored rather than refused at start.
+Cost: a client running with nobody watching makes every registered
+write, so `GSHEETS_ENABLE_DESTRUCTIVE` and `GSHEETS_ENABLE_DATA_SOURCES`
+stay off for one.
+
+### D-38 Annotations are exact: `readOnlyHint` on the reads, `destructiveHint` on every write that is not only additive
+
+`readOnlyHint` is on the reads and nothing else. `destructiveHint` is
+true on every write except those that only add: `create_spreadsheet`,
+`append_rows` and `connect_data_source`. `openWorldHint` is true on the
+Connected and Notifying tools.
+
+The MCP schema says of `destructiveHint`: "If false, the tool performs
+only additive updates", and its default is true
+([schema](https://modelcontextprotocol.io/specification/2025-11-25/schema)).
+A rename, a move, a reassigned comment and a refreshed data source all
+change what is there, so none of them is additive. Clients prompt by
+these hints: VS Code on every tool without `readOnlyHint`, and Codex and
+claude.ai by `destructiveHint`. A hint that is wrong in the safe
+direction costs a prompt, and one wrong the other way costs a write
+nobody approved.
+
+`Def.Adds` marks a write as only adding, and every other write says
+true. A write added without thought errs toward a prompt. `add` refuses
+the mark on a read or a Destructive tool.
+
+Rejected: `destructiveHint: false` on a write that changes but cannot
+take away, such as a rename or a refresh; the hint on the deletes and a
+few writes only.
+Cost: VS Code prompts on every tool without `readOnlyHint`, and Codex on
+every write that does not only add, including writes the guard already
+protects.
+
+### D-39 The `requiresUserInteraction` mark is on `delete_data_source` alone
+
+`delete_data_source` alone carries Claude Code's
+`anthropic/requiresUserInteraction` mark. Claude Code then prompts on
+every call to it, whatever the operator's rules say, and refuses the
+call where nobody can be asked.
+
+The mark is for a tool whose prompt is itself the point.
+`delete_data_source` takes the data source's sheet, and Google unlinks
+every table, pivot table, formula and chart built on the source
+([DeleteDataSourceRequest](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#DeleteDataSourceRequest)).
+Other objects depend on it, and Sheets cannot undo it.
+
+`delete_sheet` is not marked: the file stays, the editor's version
+history can restore a sheet, and removing scratch tabs is a delete done
+many times in a row. Nor are `clear_values`, `delete_dimensions` or
+`delete_cell_comment`, which are repeated deletes of one thing, where a
+mark brings back a prompt per call. `Def.PromptEveryCall` sets the mark,
+and `add` refuses it on anything but a Destructive tool.
+
+Rejected: the mark on every Destructive tool, which is a prompt per call
+on repeated deletes; the mark beside the server's own question.
+Cost: the other deletes prompt only by the operator's rules. The README
+gives an `ask` rule for each, and the staleness gate holds every name
+there to a registered tool.
+
+### D-40 The model never widens its own reach
+
+No tool writes this server's settings, turns a tool on, or lifts a
+refusal. The switches are the operator's, set in the environment the
+client passes at start (D-56). A refusal names what is in the way and
+what the person can decide, and never offers an argument that gets past
 it.
 
-Everything else that destroys is guarded per call rather than gated,
-because it removes something the caller can read first and is named in
-the refusal: a merge's discarded values, a cleared format, a replaced
-note, a paste's landing rectangle, a table delete's conditional format
-rules, the anchors on a deleted band. A named range and an anchor are
-labels rather than data — the range each covers is on the card before it
-goes — so removing one is a plain write. Such a write says
-`destructiveHint: true` all the same (§9a), because a client prompts by
-the hint and not by the guard. That is the line, and it is
-written down here because it was drawn once and would otherwise be
-redrawn differently by whoever adds the next tool.
-
-
-
-The four Google MCP servers share a shape for their on-disk state, and it
-is worth writing down because it was matched by comparing four config
-files field by field rather than by reading a specification.
-
-The OAuth client JSON lives at `~/.config/<server>/client_secret.json`,
-which is this server's default for the `default` profile. A path given to
-`login -secret` is recorded and wins, which is right for somebody keeping
-it elsewhere — and it meant this profile pointed at a download directory
-for a session, so `login` with no argument now lands on the convention.
-
-The profile records `account_email`, and this one did not. `tokeninfo`
-returns an address only for a token carrying an email scope; one sibling
-asks for `openid` and `userinfo.email` and two do not, and adding a third
-scope to record a string would be the wrong way to match a convention.
-It comes from the Drive `about.get` this server already makes. Stored
-whole and printed masked: §17.8 masks what is meant to be pasted — a log,
-`doctor`, `status` — and not what is kept locally.
-
-## 17b. Deviations from the shared Go MCP server standard
-
-The shared standard the sibling Go MCP servers run on was adopted here on
-2026-09-05, and re-read on 2026-09-06 after it gained a preamble and a
-confidentiality paragraph. Where this server differs, the difference is a
-decision rather than a drift.
-
-**Three deviations, and one that was never one.** An earlier version of
-this table claimed a third: that the standard forbids any identifier in a
-log while this server keeps a truncated spreadsheet id at debug level. It
-does not forbid it. The standard's §4 says the rule is that "a log must
-not identify or reconstruct the subject, not that identifiers are banned
-outright", and names a truncated id that cannot be looked up as meeting
-the intent. Writing down a deviation that is really compliance is the
-same failure as missing a real one — it invites somebody to "fix" a
-choice nobody made — so the row is gone, and §9's logging rule is the
-standard's rule, held by a test.
-
-| The standard says | Here | Why |
-|---|---|---|
-| Errors use the classes `invalid`, `not_found`, `auth`, `conflict`, `unavailable`, `unsupported` | Twelve classes, adding `ambiguous`, `blocked`, `forbidden`, `rate_limited`, `ambiguous_outcome` and `stale` | `blocked` is the write guard refusing something the API would allow, which is this server's whole point; `ambiguous` (a title matching several spreadsheets) and `ambiguous_outcome` (an append that may have landed) ask the caller to do opposite things, and collapsing either into `invalid` loses what the model needs to decide. The vocabulary is closed, derived from the code, and asserted in both directions (§6.5) |
-| Never overwrite: compute a minimal diff | A minimal diff is not possible over a rectangle of values, so the guard refuses instead | A document server can diff prose because text has structure a diff can follow. A grid write is a rectangle of independent cells; the equivalent protection is to refuse what would be destroyed and name it (§4.3) |
-| §3: sending to, or reaching, someone outside the organization is its own tool behind a flag | `manage_cell_comment` takes any address as an assignee, and its text may name others; Google emails the assignee and may notify a named address, and the address is checked only for its shape | **Open, waiting on a live probe** (§9a). Whether either notifies, or grants access, when the spreadsheet is not shared with the address decides the fix: refuse such an address in `manage_cell_comment`, reading the spreadsheet's permissions through `drive.readonly` if a second probe shows it can, and give assigning anyone else its own tool behind a flag. Sheets comments have no mention of everyone, so it is not a broadcast |
-
-Everything else is adopted as written, §3 as decided on 2026-10-22 among
-it (§9a, adopted 2026-10-23), and so are the two paragraphs added to the
-standard on 2026-09-06: the preamble's three obligations for any
-rule adopted — make it a test, derive the list from the code, assert a
-floor on how much the checker read — and the rule in its §5 that a leak
-gate cannot be patterns alone when the payload is ordinary words. §9.1
-here is this server's instance of the second, written before the standard
-carried it; the two say the same thing.
-
-## 18. Evidence log: conventions checked, changed, or rejected
-
-Sources: the Sheets API v4 discovery document (revision 20260831), the
-Sheets guides and function reference, the MCP specification, the Go
-module proxy, `go.dev`, GitHub's own documentation, and the issue
-trackers named in §1. Checked 2026-09-05 and 2026-09-06; the rows added
-while building phase 0 are dated in place.
-
-**Not every row here carries the same weight, and the plan says which is
-which rather than letting them blur.** Three tiers:
-
-1. **Verified here, against a primary source.** Everything about the
-   Sheets API — the absent write guard, the quota model, the per-method
-   scopes, GridRange semantics, A1 quoting, `values.update` skipping,
-   append's table detection, `USER_ENTERED`, batch atomicity, the size
-   limits — was read out of the discovery document or quoted verbatim
-   from the guide, not recalled. So was the official Sheets MCP's tool
-   list, and the OSS failures in §1, which were read from the issues
-   themselves rather than from their titles, except the four marked
-   below.
-2. **Inherited from a sibling server and re-checked here on 2026-09-06**,
-   because they decide code this repository has not written yet:
-   claude-code#55677, the go-sdk's disconnect codes and its public
-   `jsonrpc.Error`, and the oauth2 refresh client. Each has its own row.
-3. **Inherited and *not* re-checked.** Taken on the sibling
-   repositories' evidence, and second-hand until this server hits them:
-   Claude Code's 25 000-token truncation and 10 000-token warning; cosign
-   3 requiring `--bundle` where v2 wrote a signature and a certificate
-   separately, which its release notes describe as a move to the bundle
-   format without stating the requirement in the words the sibling logs
-   use; and the gate bugs (a hand-written coverage list going stale, a
-   staleness gate blocking its own release pull request). They are cheap
-   to hold and expensive to rediscover, and nothing here depends on one
-   being exactly right. The agent-eval numbers have moved out of this
-   tier and into a row of their own, because they turned out to carry a
-   provenance that matters.
-
-Beyond those, §15's spikes are **unverified by design** until the phase
-that depends on each one runs it. A, B, C, E, F, G, H, I, J, K, L, M, N
-and P are done; D is not. Every row a spike produced is dated in place
-below.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| Sheets has a write guard like the Docs API's `writeControl.requiredRevisionId` (my assumption, and the design was built on it for an hour) | **Refuted**: neither `writeControl` nor `requiredRevisionId` nor an ETag occurs anywhere in the discovery document. Sheets offers nothing atomic | Checkpoints (§4.7, §6.3), stated as best effort, and protected ranges named as the only real guarantee. An earlier draft promised a conflict check it could not deliver |
-| Sheets quota is unit-based per method, as Drive's is (inherited from the Drive API's model, where a list costs 100 units and a read 5) | **Refuted**: Sheets counts requests. 300 reads and 300 writes per minute per project, 60 of each per user, refilled every minute, no daily cap. Verbatim: "Each batch request, including any subrequest, is counted as one API request toward your usage limit" | Batching is close to free, so §4.5 makes one tool call one request and every ops tool compiles to a single `batchUpdate`. Limiters use the documented numbers rather than a guess |
-| Google has no official Sheets MCP (my assumption) | **Refuted**: `sheetsmcp.googleapis.com/mcp/v1`, Developer Preview, six tools, remote HTTP, a **Web application** OAuth client, four scopes including `drive.file`. `update_spreadsheet` passes the raw `batchUpdate` union through | §1 states what it does and does not do; spike D records its schemas. This server stays stdio, per-user, and guards its writes |
-| `GridRange` and A1 describe ranges the same way (my assumption) | **Refuted** by the discovery document: GridRange is zero-based and half-open, A1 is one-based and inclusive; a missing GridRange index means unbounded, where A1 spells it `A5:A` | All conversion lives in `internal/a1`, with round-trip tests. This is the single easiest off-by-one in the project |
-| A range string can be built by joining a sheet name and an A1 range (what every server in §1 does) | **Refuted**: names with spaces or punctuation need single quotes, an apostrophe inside a name is doubled, and `'A1'` means the sheet named A1 while `A1` means a cell of the first **visible** sheet | `internal/a1` builds every range from a parsed title. A test covers the `'A1'` trap |
-| The first sheet is called `Sheet1` (assumed by every server in §1, and by their documentation) | **Refuted** by xing5#94: Google names it in the account's language, so a Portuguese account has `Página1` and the call fails with `Unable to parse range: Sheet1!A1:D3`. The bug was in the docs and tests, which taught the model to guess | `get_spreadsheet` first; no tool defaults a sheet; no description uses `Sheet1` as an example; `[not_found]` lists the titles that do exist |
-| `values.update` replaces the range it names (my assumption) | **Refuted**: "values with no data are skipped", so a shorter write leaves the previous tail in place. Clearing needs explicit `""` or `values.clear` | `write_values` reports the covered region and says what it left; `clear_values` is its own gated tool |
-| `values.append` appends to the end of the sheet (the name, and what three of the servers in §1 assume) | **Refuted**: it searches the given range for a contiguous block, writes after **that**, and with the API's default `OVERWRITE` writes over whatever follows | `append_rows` defaults to `INSERT_ROWS` and reports `tableRange`; spike B measures the gap case |
-| `USER_ENTERED` is the friendly default and needs no explanation | **Refined**: it parses as if typed, turning `1-2` into a date and `007` into 7. It is right for a person and destructive for a product code | `input: typed \| literal`, never substituted, plus the coercion diff read back from the write's own response (§4.4) |
-| Read-only mode is a scope swap and nothing else (inherited) | **Refuted** against the per-method scopes in the discovery document: only `spreadsheets.get`, `values.get` and `values.batchGet` accept a read-only scope. `getByDataFilter`, `values.batchGetByDataFilter` and both `developerMetadata` reads require a **write-capable** scope | Read-only mode registers no tool that needs a data filter, and §6.4 may not make developer metadata the only way to reach anything |
-| Developer metadata is a general-purpose anchor for any range (my assumption when looking for a Docs `named_range` equivalent) | **Refined**: it survives edits — "will remain associated at those locations as they move around" — but attaches only to the spreadsheet, a sheet, or a **dimension** range, and reading it needs a write scope | Offered in phase 3 as an optional label beside A1, never as the only address |
-| The Sheets error surface mirrors Drive's, with 403 reasons for throttling | **Unverified, and recorded as such**: the troubleshooting page documents only 400, 500 and 503, and says 429 for quota. Drive's four 403 quota reasons are a Drive fact and may not hold here | Spike E observes the real shapes before the class mapping is finalized. Until then the mapping treats 429 as rate limiting and does not invent 403 reasons |
-| Sheets' 429 is a shape this project would need a second account or a deliberate quota breach to see (spike E, and true for a year of phases) | **Observed 2026-09-07**, by running the live driver four times in a few minutes: `HTTP 429 RESOURCE_EXHAUSTED (RATE_LIMIT_EXCEEDED): Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user'`. It arrived on a `spreadsheets.get` in the middle of a run | The mapping built from Drive's vocabulary was right: `[rate_limited]`, with "this is Google's per-minute quota, which refills, so retry shortly". It refilled and the next run passed. Two of spike E's six shapes are still unobserved |
-| A batch of updates should be split so a failure is small | **Rejected**, and the discovery document says why in its own words: "If any request is not valid then the entire request will fail and nothing will be applied … the updates in the request will be applied together atomically." A batch also counts once against quota, so splitting costs quota *and* gives up atomicity | Ops compile into one batch; a partial application cannot happen |
-| A write, once applied, is what the spreadsheet holds (my assumption, and the premise of an earlier checkpoint design that claimed to detect conflicts) | **Refuted by the platform itself**: "Due to the collaborative nature of spreadsheets, it is not guaranteed that the spreadsheet will reflect exactly your changes after this completes … Your changes may be altered with respect to collaborator changes" | The checkpoint is documented as narrowing a window rather than closing it, and `manage_range`'s protected ranges are named as the only real guarantee (§4.7) |
-| A structural write needs a second call to report the state it produced | Refuted: `batchUpdate` takes `includeSpreadsheetInResponse` with `responseRanges`, so the after state arrives in the same response | One request per write, including its report (§7.3) |
-| Retrying a write is safe when the API is idempotent (inherited, and stated as "writes may retry") | **Refined** from the sibling projects' own refutation: repeatability is a property of the method. `values.update` is a PUT and repeatable; `values.append` and `batchUpdate` are POSTs that duplicate rows and sheets | `retryable` reads the method, so a call added later without thought fails closed. `[ambiguous_outcome]` names the read that settles it |
-| An external-fetch formula is ordinary content | **Rejected**: `IMPORTXML`, `IMPORTRANGE`, `IMPORTDATA`, `IMPORTHTML`, `IMPORTFEED`, `IMAGE` and `HYPERLINK` make Google fetch a URL that can carry the sheet's own data. Writing one is an outbound request the person never saw | `allow_external_formulas: true` per call, and every formula a write creates is named in the result (§7.3, §9) |
-| Reads return text only, because Claude Code shows the model only `structuredContent` (inherited, and what this plan decided at first) | **Refined twice by review from two sibling sessions, and the second answer is better than the choice I was making.** The first correction: text-only is safe *only* because such a tool declares no output schema — Claude Code shows the text when there is no structured half to prefer, so a tool declaring a schema and returning text alone goes blank. The second dissolved the question: do not choose which half carries the substance, put the rendering **inside** the structured half. Both clients then see the addressed grid | Every tool declares an output schema and returns both halves; the structured half carries the rendering in `grid` (reads) or `summary` (writes). Reads keep a schema for the diff to hold, which text-only would have given up (§4.9) |
-| "In JSON the addressing is gone, so a grid read must be text" (my argument for text-only, stated as a property of JSON) | **Refuted in review**: it is a modeling choice, not a fact. Rows as `{ref, values}`, or a range plus a header row, keep the addressing perfectly well in a structured half | The premise is gone, and with it the fork. Recorded because the reasoning was wrong even where the conclusion was nearly right |
-| Repeatability is derived from the HTTP method, full stop (§11 as first written, inherited from a sibling's refutation of its own kind-based rule) | **Refined, and it would have been a bug here**: Sheets has three POSTs that only read — `spreadsheets.getByDataFilter`, `values.batchGetByDataFilter`, `developerMetadata.search` — beside two POSTs that write. Deriving write-ness from the method puts a read on the write limiter, refuses to retry it, and blocks it under the dry-run guard: three wrong answers from one inference. A name pattern is worse, since "get" reads like a read on a method that is a POST only because a filter is long | The method decides by default, so an unconsidered POST still fails closed; an explicit `readOnly` flag marks the exceptions; and a syntax-tree test allows that flag only on those three methods **by name** (§11) |
-| `IMPORTRANGE` exfiltrates data like the rest of the `IMPORT` family (§7.3 as first written) | **Refuted** against the function reference: `IMPORTXML` takes "The URL of the page to examine, including protocol" and `IMPORTDATA` "a given url", so those do reach an arbitrary host — but `IMPORTRANGE` takes a **spreadsheet** URL and cannot. Its risk is the opposite direction: it pulls any spreadsheet the account can read into this one | Two risks, two rows in §9, one acknowledgment. Lumping them together would have justified the gate with a claim that is false for the function most people write |
-| A display budget is a memory budget (implied by "reads are budgeted") | **Refuted by somebody else's fix**: a sibling project clamped what it *displayed* to 50 rows while still fetching `A:Z` whole, and the maintainer's later note is explicit that "memory was already unbounded even when older releases only displayed the first 50 rows" (taylorwilsdon #986) | The window is resolved before the call and a finite range is sent (§7.2). The budget bounds the request, never only the rendering |
-| A column-letter parser may be permissive at the edges | **Refuted with a table**: `_column_to_index("A1")` returned 10 and `"B2"` returned 37 in a shipped server, silently naming columns K and AL, because only the empty string was rejected (#959) | `internal/a1` is total and rejects; the malformed cases are table tests from the first commit, and `A1`-as-a-column is one of them |
-| One invalid tool schema breaks one tool | **Refuted**: a client validating against draft 2020-12 rejects the whole request, so five bad schemas killed all forty-four tools in the session, reporting only an array index that names no server (freema #138) | The schema dump and diff run in CI from phase 0, and the smoke test drives a real session rather than trusting the schemas to be well-formed |
-| "Non-string" input is affected by `valueInputOption` (my assumption when designing the coercion report) | **Refuted** by the values guide: "non-string values like booleans or numbers are always handled as `RAW`" | The coercion report compares only what was sent as a string, which is also the only thing that can be coerced |
-| An id-shaped rule that wants a capital and a digit catches the identifiers that matter (inherited from a sibling's leak gate) | **Refuted by that sibling's own slip**: a Google account id is 21 digits and a Drive permission id is 20, neither with a letter, and one reached a transcript before the rule was fixed | §9.1's shape rule names the numeric identifiers explicitly. Sheets' own small integers identify nothing outside their spreadsheet and are deliberately out of scope |
-| claude-code#55677 says what the sibling logs say it says (inherited) | **Re-checked 2026-09-06**: real, closed 2026-05-06 with five comments, titled "MCP: tool result `content[].text` dropped from model when `structuredContent` is also present", reproduced on Claude Code v2.1.126 over streamable HTTP, and the reporter states the same response shape works on claude.ai and ChatGPT | Believed, and §4.9's design is the one that does not depend on it either way |
-| The go-sdk reports a closed session as JSON-RPC -32004, and `jsonrpc.Error` is public (inherited) | **Re-checked 2026-09-06 at v1.7.0**: `internal/jsonrpc2/wire.go` defines `ErrServerClosing = NewError(-32004, …)` and `ErrClientClosing = NewError(-32003, …)`, and `jsonrpc/jsonrpc.go` exports `Error = jsonrpc2.WireError` | The clean-exit check matches those codes through `errors.As`, with no message sniffing (§13) |
-| An unquoted sheet name in a range is untidy but harmless (my assumption, and what §2 said in the first draft) | **Refuted 2026-09-06** by the concepts guide, and then **narrowed by measurement** — see the spike C rows below. The guide's rule is real but applies only where there is no `!` | `internal/a1` always quotes the title. The reason survived the correction; the scope of it did not |
-| `values.get` accepts a named range as its `range` (assumed, and it is what every server in §1 implies) | **Confirmed by spike C** — see below. It does, in one spelling | No tool offers it, for the reason in the spike C rows |
-| The eval finding behind "reads return text only" is current (inherited, and cited in my first draft as though it were) | **Given its provenance 2026-09-06 by the session that measured it**: the number is from Claude Code 2.1.259, that machine now runs 2.1.260, it has not been re-measured, and **every read measured was prose**. Their claim was "a client may show only `structuredContent`"; mine was "when it does, the addressing is the content" — a different claim wearing the same evidence | §4.9 no longer rests on it, since both halves now carry the rendering. What remains is measured rather than assumed: one eval is an A/B on exactly this (§13) |
-| "Pinning an action to a full-length commit SHA is the only immutable form" is a sibling's paraphrase (inherited) | **Re-checked 2026-09-06**, and it is GitHub's own sentence verbatim: "Pinning an action to a full-length commit SHA is currently the only way to use an action as an immutable release." The page has since grown repository- and organization-level **policies that require** it, which is stronger than a convention and stronger than our gate | §12; the gate stays because a policy is the deployer's to set and this repository cannot assume one |
-| `~> v2.18.0` narrows `goreleaser-action` enough to count as a pin (recorded as a fix in a sibling's log at the time, and since corrected there) | **Refuted first-hand 2026-09-06**: the action's own `action.yml` at v7.2.3 declares `version` with `default: '~> v2'`. A `~>` value is a constraint whatever follows it, so the tool that decides what the artifacts are floats — the narrowing changed the width of the range, not its kind. Every shipping sibling now pins an exact version; what survives is the lesson, not the defect | Exact versions only, asserted by a gate, with a comment beside each naming which half of the pin is load-bearing (§12) |
-| A CI matrix of three platforms means three platforms are tested (assumed) | **Refuted by a sibling's experience**: a gate conditioned on `runner.os` ran on Linux only while the matrix advertised three, and that blind spot hid the next bug for weeks — PowerShell read `-coverprofile=cov.out` as a file named `cov`, and the suite carried on. A third: `cancel-in-progress` without an exclusion for `main` leaves a merged commit carrying a killed run, so a later bisect walks a green history with a hole in it | §12: `shell: bash` on every job, no gate conditioned on `runner.os`, and `cancel-in-progress` excluded on `main` |
-| An inline `gitleaks:allow` comment clears a false positive (assumed) | **Refuted**: the CI scan walks a pull request's *commits*, so a comment added later never clears the commit that introduced the line. And the two scanners flag each other's fixtures, because an allowlist has to quote the fabricated credential it permits | Exceptions live in `.gitleaks.toml` scoped to the literal, each saying which scanner it is for, with per-line markers (§9.1) |
-| A rule written in a document is a rule (implicit in keeping this document at all) | **Rejected, with five examples from one sibling repository**: a pin that was a range, a security page promising logs carried nothing while the code logged part of an id, an error vocabulary documented as ten closed classes while the code emitted fifteen with four named nowhere, a `CLAUDE.md` forbidding direct pushes to a repository that had no branch protection, and a live-driver coverage rule that survived a whole language port as a comment. Not one was caught by reading; each was caught by something that could fail | The fix is the same every time, is this plan's default, and as of 2026-09-06 heads the shared standard as an obligation on anything adopted from it: make the rule a test, **derive** the list from the code rather than typing it out, and have the checker assert a floor on how much it read, since zero findings and zero inputs are otherwise the same output. §6.5, §9.1, §12 and §13 each name the check that holds them |
-| A wildcard `git add` is safe in a repository whose ignore rules come later | **Refuted in this session, before any code existed**: `.claude/settings.local.json` was written into this working tree while the design was being drafted, and was kept out of the commit only by a *global* ignore on this machine — which nobody cloning a public repository has. A sibling put exactly such a file into a public history this way | `.gitignore` is committed with the design rather than with phase 0's scaffolding, and it carries the editor's temp files, the credential file names and the build outputs |
-| An oauth2 refresh runs on the client in its context, and there is none by default (inherited) | **Re-checked 2026-09-06** in `golang.org/x/oauth2/internal/transport.go`: `ContextClient` returns the context's `*http.Client` if one was put there and `http.DefaultClient` otherwise, which has no timeout | The token source and the login exchange both put a bounded client in the context, with a test that hangs a listener (§9) |
-| A leak gate made of patterns is enough, as it is for a file server (inherited) | **Refined, and it is the difference this server has to design around**: an id, a link, an address and a client id all have shapes a regex catches, but a **cell value, a sheet title, a named range and a note do not** — they are ordinary words, and they are the payload. A pattern cannot separate an invented column heading from somebody's customer list | The pattern gate stays for what has a shape, and everything else is made **structurally** impossible: fixtures are generated rather than recorded, and the live driver reads only a spreadsheet it created and filled itself (§9.1). A control that depends on noticing is not a control |
-| A formula in a fixture is just text (my assumption when listing what the gate scans) | **Refuted**: `IMPORTRANGE("<spreadsheet id>", …)` carries another spreadsheet's id inside a string literal, so one copied formula leaks a second document nobody was thinking about — and it is the kind of cell most likely to be copied, because it is the interesting one | Formulas are named in §9.1's never-list, and the id pattern scans inside string literals like any other text |
-| A live transcript can be made safe by redacting it (inherited from a file server, where a transcript is names and ids) | **Refined**: there, redaction removes the identifying part and leaves the shape. Here the transcript *is* the data — a grid of values — so redacting it would leave nothing worth reading, and forgetting to redact one line leaks a row | The driver never reads a spreadsheet it did not write, so the values are its own; redaction of ids and addresses is a second line of defense, in the print helper only |
-| Redaction can be applied where a value is read (inherited) | **Refuted** by a sibling project on its driver's first run: scrubbing on the read path meant a step parsed a placeholder out of one result and fed it back into the next call, which the API then rejected | Redaction lives in the one helper every transcript line passes through; a step reads the untouched value |
-| A fake built from the documentation is a sound test oracle (inherited, and refuted twice in the sibling projects) | **Rejected in advance**: a sibling's in-memory fake implemented its API's search operator exactly as the reference described it, the reference was wrong, and the entire suite agreed with the bug. Simulating `USER_ENTERED` here would repeat that exactly | `sheetstest` replays coercion outcomes **recorded** in spike A; unrecorded input is an explicit fake error, not a guess |
-| A live driver reporting "all calls behaved as expected" verifies the surface (inherited) | **Refuted** in the Drive project: two runs said so while three results were wrong, because the driver checked whether calls succeeded, not whether they told the truth | A phase is not closed until a transcript has been read (§13, §16) |
-| `errors.Is(err, io.EOF)` catches the end of a stdio session (inherited) | **Refuted** in two sibling projects: the SDK reports it as JSON-RPC -32004 with the EOF only in the message text, so the process exits non-zero on an ordinary disconnect and hosts log a crash | Match the code through `jsonrpc.Error`; the smoke test closes stdin abruptly and is verified against the broken behavior |
-| The client's `Timeout` bounds every HTTP call (inherited) | **Refuted** in two sibling projects: an oauth2 refresh runs on the client in its context, and with none supplied that is `http.DefaultClient`, which has no timeout | The token source and the login code exchange both carry a bounded client, with a test that hangs a listener |
-| Pinning an action to a full commit SHA pins what the step does (inherited) | **Refuted** three times across the siblings: an action that installs a tool needs the tool pinned too, and `~> v2.18.0` is a constraint, not a pin | Exact versions beside every SHA, held by a gate rather than a comment |
-| A hand-written list of packages under the coverage floor stays current (inherited) | **Refuted**: a sibling added a package that was under no floor at all, silently | The list is derived from `go list ./internal/...`, with exemptions named and justified |
-| go-sdk latest is v1.7.0; Go latest is 1.27.1; golangci-lint latest is v2.13.2 | Confirmed 2026-09-05 against `proxy.golang.org`, `go.dev/dl` and the GitHub release. v1.8.0-pre.2 exists and is not final | Pinned as in the sibling servers, so all four repositories move together |
-| `[class] message` errors, flat schemas, snake_case verb_noun names, server-side gating, keep serving without credentials, keyring → file → env, loopback PKCE, env-first config with bound flags (inherited) | Confirmed against the MCP specification and Google's native-app guide, and re-confirmed by the siblings' evals: the spec requires only `isError` and treats annotations as untrusted, so gates must be server-side; Claude Code, Claude Desktop and Cursor pass only `command`, `args` and `env` | Kept unchanged |
-
-**Added while building phase 0 (2026-09-06).**
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| A stdio smoke test can close stdin the instant the last message is written *and* read the replies | **Refuted first-hand 2026-09-06**, building this one: the go-sdk drops an in-flight reply when stdin reaches EOF, so the abrupt close that catches the -32004 exit bug also loses the answers the test wanted to assert. Holding stdin open until the replies arrive hides the exit bug instead — with nothing in flight the exit really is 0 | `scripts/gates smoke` is two runs of the binary. One holds stdin open and checks that stdout carried only JSON-RPC, that the tools are there and that an uncredentialed call answers `[auth]`; the other closes stdin immediately and checks only the exit code. Verified against a deliberately broken build, which exits 1 with "server is closing: EOF" |
-| `shell: bash` belongs on the jobs that look shell-ish (what an earlier reading of §12 implied) | **Refined 2026-09-06, from a sibling session that checked GitHub's workflow-syntax reference after a drive project took half the finding.** The runner hands *every* `run` block to a shell, so it is not a property of shell-ish steps and not of matrix-ish jobs either: a job-level `defaults` fixes the jobs that exist and leaves the next one bare. `defaults.run` at workflow level covers the file; a job-level block overrides it; neither reaches inside a composite action. And explicit `bash` is not the implicit default — it runs `bash --noprofile --norc -eo pipefail`, so pinning it turns pipefail on everywhere | Every workflow here carries a workflow-level `defaults: run: shell: bash`, and `scripts/gates pins` requires one in every file. Its table test's load-bearing case is "job level only → false", which is the form that looks like the fix. **Inherited: re-checked by that session against the reference, not by this one** |
-| The live driver creates a scratch spreadsheet, uses it and trashes it (§9.1 as written) | **Refuted while writing it 2026-09-06**: `spreadsheets` covers `spreadsheets.create`, and trashing a file is a Drive write, which `drive.readonly` cannot do. The scopes in §17.6 and the cleanup in §9.1 contradict each other | The driver still reads only a spreadsheet it created and filled itself, which is the part that matters. It attempts the trash, and when that fails it says so loudly and names the file to remove by hand. §17a.1 carries the decision to phase 1 |
-| A closed error vocabulary can be asserted in both directions from the first phase | **Refined 2026-09-06**: three of the twelve — `blocked`, `conflict`, `unsupported` — belong to write and formatting code that phase 0 does not have, so "declared and never emitted" is a phase-ordering fact rather than a defect. A gate that failed on it would be wrong, and one that ignored the direction would be useless | `scripts/gates classes` carries those three by name with the phase that emits each, and fails if one of them *starts* being emitted without leaving the list. The emitted set is read out of the syntax tree — `service.Errorf` and `service.Error{Class:}`, plus everything `gapi.Class` can return — never grepped, since `fmt.Errorf` would otherwise fill the vocabulary with format strings |
-| Action SHAs and tool versions can be re-verified while building this phase | **Not done, and recorded as such**: this session had no network for GitHub, so the SHAs and the `cosign-release`, `syft-version` and GoReleaser versions are taken from a shipping sibling's workflows on 2026-09-06 without independent confirmation | They are pinned in the shape the gate requires, and the gate proves the *shape* rather than the *values*. The first release run is the one to watch, which is also the standard's advice about a step gated on a CI-only credential |
-| `golangci-lint` on the path is the version the config asks for | **Refuted 2026-09-06 on this machine**: a distribution package built with go1.26 refuses a module whose directive is `go 1.27.1`, and says so as "can't load config", which names the wrong thing | CI installs it with `install-mode: goinstall`, so it is built with the module's own toolchain. §17a.3 carries the local-path version of the same problem |
-| The first sheet's name is worth asserting in the fixtures | **Confirmed by construction 2026-09-06**: no fixture sheet is called `Sheet1`, one title is not ASCII and one carries an apostrophe, and the fixture's named range deliberately shares the first sheet's title | The shadowing trap, the quoting trap and the non-English-name trap each have a test that fails if the behavior regresses, rather than a comment saying they are handled |
-
-**Found by the phase-0 review passes (2026-09-06), after the gates were
-already green.**
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| A read's budget bounds the read (§4.6, and what the tests asserted) | **Refuted**: `max_chars` was a field of the *grid renderer's* options, so `format: json`, `csv` and `tsv` returned every row while taking `truncated`, `continue_from` and the footer from a rendering that had been cut. One result contradicted itself — 200 rows under a footer saying the read stopped at row 6 — and a caller believing either half was wrong about the other | One window decides everything: whichever budget bit first, the row the grid stopped at is the row every format stops at. Held by a test over all four formats, checked against the old behavior |
-| A registration gate may run before the checks that make a tool well formed | **Refuted**: `checkDryRun` ran *after* `allowed()`, so a destructive tool was never checked in the default configuration and no write tool was checked under `GSHEETS_READ_ONLY`. The rule held only because `--dump-schemas` forces the full surface and CI runs it — a structural invariant propped up by a flag in an unrelated function | The check is pure, so every `Def` is validated before the configuration is consulted. It is the difference between a rule and a coincidence |
-| A fake and the code it stands in for may each own a copy of a small table | **Refuted, with the divergence already present**: `sheetstest` and `internal/grid` both mapped a Sheets error type to its display text, with different fallbacks. An error type outside the six the fake knew rendered `#ERROR!` formatted and `#SOMETHING_NEW` raw — and a test asserted each answer, so the suite agreed with both | `ErrorValue.Display()` lives in `internal/gsheets` beside the type, and a test reads the same cell formatted and raw and requires the two to agree |
-| The error vocabulary is derived from the code (§6.5, and what the gate reports) | **Refuted for one call site**: `tools.fail` built `"[unavailable] " + err.Error()` by hand, which the AST scan cannot see, so nothing stopped the next one being `[timeout]` | `fail` goes through `service.Errorf` like everything else. The gate's reach is now the whole of the vocabulary rather than all of it but one |
-| A five-second metadata cache saves the second call in a read (§11, in its own words) | **Refuted**: no tool calls the card twice in one invocation, so the cache only ever helps *across* tool calls — and the gap between two of those is model latency, not machine latency, so at five seconds it never fired. With one request in flight and sixty a minute, each miss is about a second of somebody's wall clock | Thirty seconds, which spans a turn, with the comment saying what it actually does. Nothing depends on it for correctness: a sheet renamed inside the window fails loudly rather than reading the wrong rectangle. Separately, `get_spreadsheet` on a title no longer re-fetches from Drive what the search that resolved it already returned |
-| One "truncated" flag is enough to tell a caller what to do | **Refuted**: `find_in_spreadsheet` used one boolean for three endings — the cell budget ran out, a sheet was cut, `max_matches` was reached — and printed the same sentence for all of them. A search stopped by `max_matches` was told to raise `max_cells`, which would have changed nothing | `StoppedBy` distinguishes them and the rendering picks the sentence, so the advice names the dial that would help |
-
-**Found by `/code-review high` on the same tree (2026-09-06). Two of
-these would have failed CI's first run on a platform the matrix already
-claimed to cover.**
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| A Windows build needs a `.exe`, so a gate looking for the binary should add one | **Refuted, and it would have broken the Windows leg on the first run**: `go build -o <name>` writes exactly that name on every platform, and both the Makefile and the workflow pass a name. Three gates take no argument in CI, so all three would have failed on `windows-latest` with "file does not exist" while passing everywhere else | The default is the plain name on every platform, with the `.exe` checked second for somebody who built without `-o`. Held by a test. This is precisely the class of bug §12 says a three-platform matrix is for, caught before the matrix ran rather than by it |
-| Filling in a zero-valued option struct when its first field is unset fills in the rest | **Refuted**: `New` replaced the whole `RetryPolicy` only when `MaxAttempts <= 0`, so a caller who set attempts and nothing else kept `MaxDelay` at zero — and a zero delay reaches `rand.Int64N(0)`, which panics the process on the first retryable failure instead of backing off | Each field defaults on its own, with a table test over the partial policies. A half-specified configuration is a common thing to write and should never be a crash |
-| A retry loop's early exits are the same as its ordinary one | **Refuted**: a context canceled while waiting on the rate limiter, or during the backoff, returned a bare `context.Canceled` for a `values.append` that had already been sent once — losing the `ambiguous_outcome` that hard rule 8 exists to preserve | Every path out of the loop goes through one classifier. A read canceled the same way is still not ambiguous, since nothing changed |
-| Clamping a range to the sheet is always the right answer | **Refined**: right for a rectangle that overlaps the sheet, wrong for one that misses it entirely. `A50:B60` on a ten-row sheet came back holding row ten — a plausible answer to a question nobody asked | A rectangle starting past the last row or column is `[not_found]` naming the sheet's size; one that overlaps is still clamped |
-| A footnote under a grid describes the grid | **Refuted**: notes and validation rules were listed for every row of the window, so a read cut at row 3 of 500 listed a note at A417 under a grid ending at row 3 — and the continuation listed it again | The annotations cover the rows drawn |
-| Two limits stopping a search can be reported as whichever stopped it last | **Refuted**: `max_matches` overwrote a cell budget that had already bitten, so the caller was told to raise `max_matches` — which would never reach the sheets the budget excluded — and the "did not cover the whole spreadsheet" warning was dropped | The first limit to bite is the one reported. Both cases have a test |
-| A count of what a call did can be taken from what it asked for | **Refuted**: `cells_read` added a sheet's whole window before any of it was examined, so a search stopping at the first match reported five thousand cells searched | Counted as they are looked at. The number is there to say what the answer cost |
-| `strings.IndexByte` on a trimmed string indexes the untrimmed one | **Refuted**: `firstWord(" Quarterly Report")` returned `" Quarterl"`, so the "did you mean" search after a missing title looked for a truncated word. A title with surrounding whitespace also could not match itself, since only the id and URL paths trimmed | Both come from the same trimmed string, and `Resolve` trims once at the top |
-| One `Read` returns the whole request body | **Refuted**: `io.Reader` promises no such thing. Nothing sends a body in this phase, but the fake records bodies for phase 1's `batchUpdate` assertions, where a short read would be a flaky test rather than a failing one | `io.ReadAll` under a limit |
-
-**From a sibling session, checked here rather than adopted (2026-09-06).**
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| A shell-pin check can ask whether `run:` and `shell:` both appear inside the `defaults:` block | **Refuted, in a sibling's implementation of the rule it had just sent us**: `defaults.shell` is a *sibling* of `defaults.run`, not a child of it, and pins nothing — but a check that only looks for both words answers true for it, and true again for a `shell:` under any other key beside `run:`. Ours already answered false, because the case that notices leaving the `run:` block is tested before the case that reads a `shell:` key | The ordering of those two cases *is* the check, so it is now said so in the code and held by a table test: the sibling's two cases are in it, plus four-space and tab indentation so the depth rule cannot decay back into a two-space assumption. Verified by swapping the cases and watching the `defaults.shell` case go true |
-| A stdio smoke test's second run can treat a timeout as an inconclusive pass | Already false here, and worth stating: `smokeAbruptClose` fails if the process has not exited within thirty seconds, so "stdin closing ended it" is asserted rather than assumed | The two runs exist for opposite reasons — one holds stdin open to read the replies, one closes it to catch the `-32004` exit — and neither can be inferred from the other. A sibling arrived at the same split from a failure; this one arrived at it from the mechanism, and both were verified against a deliberately broken build |
-| GoReleaser v2.18.0 is the current release (inherited from a sibling's workflow on 2026-09-06) | **Superseded, and checked here against a primary source**: `proxy.golang.org` lists `v2.18.1`, tagged 2026-09-05T21:04:09Z at commit `9fa2a65`. Its contents — a `sec(deps)` bump of `golang.org/x/crypto` and `golang.org/x/mod`, Go 1.27.1, and a change to signing behavior — are a sibling's report and are **not** verified here | Pinned to `v2.18.1`. The reason to take a newer version rather than inherit is that this repository has no release history to disturb, and the reason it was safe to take is that the version's existence is the part a release step cannot recover from getting wrong — and that part is now checked rather than believed. The action's own SHA is unchanged; the tool version is a separate input, which is the whole point of pinning both |
-
-**Spike C, run live 2026-09-06 (`go run -tags=live ./scripts/spikes`).**
-A scratch spreadsheet with a first sheet, a second sheet, a named range
-deliberately carrying the *first sheet's* title but pointing at the
-second, a second named range clashing with nothing, a table and a
-protected range. Every row below is a transcript line, not a reading of
-the guide.
-
-| Question | What the API did | Effect |
-|---|---|---|
-| Does a named range titled `Sheet1` shadow the *sheet* `Sheet1` in `Sheet1!A1:B1`, as §2 claimed on the strength of the concepts guide? | **No, and this refutes the strong form of the claim the design was built on.** `Sheet1!A1:B1` returned `Sheet1!A1:B1` and the sheet's values, with the clashing named range present. So did `Sheet1!A2:B2`. A `!` makes the left side a sheet title unconditionally: `Solo!A1:B1`, where `Solo` is only a named range, is `400 Unable to parse range` | §2 and §6.2 corrected, and the code comments with them. The quoting rule is unchanged and still right, for the two reasons that survive: a title with a space or an apostrophe requires it, and the whole-sheet form needs it (next row). What changed is that the design can no longer justify it with a danger that is not there in the form this server sends |
-| Then where is the shadowing real? | **In a bare reference with no `!`, which is exactly the whole-sheet form.** `Sheet1` returned `Sidecar!A1:B3` — the *named range's* rectangle, from the other sheet. `'Sheet1'` returned `Sheet1!A1:Z1000`, the sheet. A bare name is resolved as a named range first | `a1.Format` emits `'Title'` for a whole sheet, so this server is on the safe side of the one case where it matters. That is now the stated reason for the rule rather than a side effect of it |
-| Does `values.get` accept a named range as its `range`? | **Yes**, as a bare name with no `!`: `Solo` returned the rectangle it names. Quoted, `'Solo'` is `400` — quoting forces the sheet reading, and there is no sheet called Solo | Still not offered. The one spelling that works is the same spelling a whole-sheet reference uses, so a caller who meant a sheet and typed a name that is also a named range gets the other rectangle silently. Too sharp an edge to hand a model; a named range's A1 range is on the card instead |
-| Does `values.get` accept a table reference? | **No, in any form.** `SpikeTable` and `SpikeTable[FIRSTSHEET-A1]` are both `400 Unable to parse range` | The phase-2 table work addresses tables through `batchUpdate` and their A1 ranges, never through a `Table[Column]` reference |
-| Is R1C1 really accepted? | **Yes**: `R1C1:R1C2` returned `Sheet1!A1:B1` | Confirms §6.2's premise for not offering it. Two spellings of one address is one more thing to get wrong |
-| What does a range past the grid do? | **`400`, with the limits in the message**: "Range (Sheet1!A5000:B5001) exceeds grid limits. Max rows: 1000, max columns: 26" | Confirms the fix the code review forced independently: a rectangle that misses the sheet is refused rather than clamped to its last row. The API agrees, and says the size — so this server says it too, before sending |
-
-**Spike E, run live 2026-09-06, partially.** Three of the six shapes need
-something one account and one project cannot produce, and are recorded as
-unobserved rather than guessed.
-
-| Shape | What the API returned | Effect |
-|---|---|---|
-| A missing spreadsheet | `404` / `NOT_FOUND` / "Requested entity was not found." — **and on a later run of the identical request, `503` / `UNAVAILABLE` / "The service is currently unavailable."** | The mapping in `gapi.Unwrap` was right: 404 → `not_found`. The second observation is the more useful one: a definite answer is not reliably definite on the first attempt, and the probe saw it only because it is a raw client with no retry. The server's five-attempt backoff on 503 turns that into the 404 it should be — evidence *for* the retry policy rather than a hole in the mapping, and a reminder that a one-shot probe of an error surface can record a transport accident as a fact |
-| A missing sheet | `400` / `INVALID_ARGUMENT` / "Unable to parse range: 'NoSuchSheetHere'!A1:B2" | Confirms why this server resolves the sheet from the card *before* calling and answers `[not_found]` with the titles that do exist. Google's own message names nothing that helps, and a caller who saw only it would not learn the sheet was the problem |
-| A malformed range | `400` / `INVALID_ARGUMENT` / "Unable to parse range: !!!" | Same class, same uselessness; `internal/a1` refuses these before a request is built |
-| A bad `batchUpdate` request kind | `400` / `INVALID_ARGUMENT` / "Invalid JSON payload received. Unknown name \"noSuchRequest\" at 'requests[0]': Cannot find field." with a `google.rpc.BadRequest` detail | Phase 1's union builders make this unreachable from a tool call; recorded because it is the shape a malformed generated request would take |
-| A protected range refusing a write | **Not observed.** The owner is always an editor, so a write into this spreadsheet's protected range returned `200`. It needs a second account | The guard refuses a protected range before sending regardless, which is the behavior that matters; the 403's shape stays unverified and the class mapping for it stays uninvented |
-| A read-only scope attempting a write | **Not observed**: this token holds `spreadsheets`. It needs a second login under `GSHEETS_READ_ONLY` | Read-only mode does not register a write tool, so the path is unreachable rather than untested |
-| A 429 | **Not observed**: it would need sustained hammering of a shared project quota | The mapping treats 429 as rate limiting and invents no 403 reasons, which is what §18 already said to do until this is seen |
-
-**Found by reading the live driver's transcript, 2026-09-06.** The run
-reported 19 steps and 0 failures three times. Every one of these was in
-the output while it did so, which is the whole argument for the rule that
-a phase is not closed until somebody reads it.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| The live driver's transcript is safe to paste into a commit message (§9.1) | **Refuted by the first run**: it printed the account's full address and the scratch spreadsheet's Drive folder id — both on §9.1's never-list. The driver substituted the ids it had *created* and let everything Drive *returned* about them through, because substitution can only cover values known in advance | `internal/redact.Line` masks addresses and Google's opaque ids in any text somebody else assembled, and the driver's print helper runs it after the substitutions. The transcript is now what §9.1 always claimed it was |
-| `search_spreadsheets` hits are safe to render in full | Same defect, one level down: `render.Hits` prints the owner and the folder id, and it is the *server's* output, not the driver's. A person pasting a tool result into an issue pastes both | The masking is in the driver's print path rather than the renderer, because a model asking who owns a spreadsheet should get the answer. §17a carries the question of whether the tool surface should mask it too — it is a real tension between a useful answer and a pasteable one, and it wants deciding rather than assuming |
-| `doctor` and `status` are safe to paste, which is what the issue form tells people | **Refuted before the driver even ran**: `doctor` printed the OAuth client id and the account address, and `status` printed both as well. The client id arrives by an unlucky route — the Cloud console names the file it gives you *after the client id*, so printing the path to the client secret prints the id | Both masked through `internal/redact`, with the directory kept because "it looked in the wrong place" is most of what a first-run report is about. The issue form's promise is now true rather than aspirational |
-| A cell budget spent in sheet order searches the spreadsheet | **Refuted by a match that was missing**: the first sheet's allocated grid is 26 000 cells and the budget is 5 000, so the first sheet swallowed all of it and the second was searched 18 cells deep. A term present on both sheets returned one hit, under a note saying only that the search was "truncated" | The budget is divided max-min fair across the sheets: an equal share each, with a sheet that needs less releasing the surplus. The same search now returns both hits. A table test covers the division and a fixture test covers the behavior |
-| "The cell budget was reached" means there is more to find | **Refined**: a new sheet is allocated 1000 rows long before it holds any, so a search of a spreadsheet with three populated rows reaches the budget having seen every value in it. The note sent a model back for a second look that could only find nothing | When every sheet ran out of data before its window ran out of room, the note says so and says the certainty is available by raising `max_cells`. It does not claim the rows below are empty, because nothing short of reading them would show that |
-| A leak gate that catches file ids catches Drive ids | **Refuted by the folder id above**: a file id starts with `1` and a folder or shared-drive id with `0A`, and only the first shape was in the pattern. The transcript carried one for three runs before anyone looked — and the widened pattern then caught this very row quoting the id verbatim, which is the shortest gap between writing a rule and having it hold that this project has managed | The pattern covers both, with commit SHAs excluded by their own rule rather than by hoping they do not start with a matching digit — two of the planted cases in the gate's table now start with `0` and `1` |
-
-**Masking a tool result: researched and decided 2026-09-06.** The live
-run asked the question and §17.8 answers it. Recorded because the
-published guidance points the other way and the reason it does not apply
-here is the whole of the argument.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| An MCP server should redact PII from its tool results, as the published guidance says | **Refined, and the guidance turns out to address a different architecture.** The MCP specification's own security document says nothing about PII in tool results — it is OAuth, SSRF, token passthrough and *scope* minimization. OWASP's MCP cheat sheet redacts PII from **logs** only, and its tool-output rule is about sanitizing for injection; it explicitly declines to say whether servers should mask responses or where such filtering belongs. The vendor material that does say "mask tool responses" is written for multi-tenant SaaS servers handing another party's PII to a hosted LLM, and two of those sources put the control at a **gateway or control plane** "rather than inside individual servers where coverage will be uneven" | This server is stdio, single-tenant and local, on the caller's own OAuth token; the data subject is usually the caller, and there is no gateway for the control to live in. So the result is not masked. Protecto's caveat is the line the decision rests on: "a 'block all PII' approach can result in useless systems" |
-| The folder on a search hit is worth returning | **Refuted on the guidance's own terms.** It is a raw Drive parent id: no tool here takes a folder, and resolving one to a name needs a Drive call this server deliberately does not make. It was fetched, returned and printed because it was in the response — which is exactly the "return the entire upstream payload" habit the same sources name | `parents` is out of both Drive field masks, out of the wire type, and out of every rendering. Minimization applied where it is cheap and costs nothing, rather than masking applied where it would cost an answer |
-| The risk is that the model sees the data | **Refuted by where the leak actually was.** The model seeing a spreadsheet's owner is not a disclosure — the caller can see it in Drive. The path that publishes is a *transcript or a diagnostic pasted into an issue*, which is why all three fixes landed there: the debug log, `doctor`/`status`, and the live driver's transcript | The issue form now says to describe a tool result rather than paste it, and says which three artifacts are safe and why. `docs/security.md` carries the same split |
-
-| A transcript is safe to paste because every line goes through the redactor | **Refuted structurally, though not yet in fact**: nothing made it true. The live driver happened to print only through one helper, and the spike probes did not — their first two runs were redacted by hand with `sed` afterwards, and one of them carried the scratch spreadsheet id inside a `values.update` response | `scripts/gates transcript` reads the syntax tree of both drivers and fails on a `fmt.Print*` outside the redacting helper. It found the spikes on its first run. The table test's load-bearing case is a print inside an ordinary step function — what somebody adds while debugging and leaves behind, invisible in review because it looks like the ones that are allowed |
-
-| A promise scoped to logs is a promise about the product | **Refuted twice on the same evening, here and in a sibling, and it is the sharper form of the `doctor` finding.** `docs/security.md` guarantees that titles, ranges and cell values never reach a *log*, and a test holds it. `doctor` is a different surface, and the issue form points people at it: given `-spreadsheet` it printed `'<sheet title>'!A1`, and a tab called "Q3 pipeline — <customer>" names a customer. The log guarantee was narrowly true and entirely beside the point | `doctor` reports a count and a fixed string; the read's result is discarded rather than sanitized, because a sheet title has no shape a redactor can catch and removing the value path leaves nothing for a later edit to reintroduce. The lesson generalizes past this fix: a guarantee has a surface, and naming the surface is part of making the guarantee |
-
-**A second live-driver reading, 2026-09-06, after the coverage gate was
-built.** The first reading found what the driver printed. This one found
-what it never called.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| The live driver covers every tool and every op (§13, since the first draft) | **Refuted by counting**: it exercised **14 of 28** tool options. Every tool was called, which is what made the claim look true — `search_spreadsheets` was driven on `name` and none of its other five criteria, and `read_range` on six of twelve options. This is the failure §13 itself describes, where a sibling's guarantee had quietly stopped covering eight newer tools | `scripts/gates live-cover` compares the options the driver's steps send against the schema the binary publishes, and fails on a gap. Static, because CI has no credentials and the point is to fail when somebody adds an option, not when somebody next runs the driver. 26 of 28 now, with the two exceptions carrying reasons |
-| A step reporting "I could not determine this" is the honest outcome when the world will not settle | **Refined, and the refinement matters**: it is honest only when the check itself is sound. The content-search step asked for `Quorbin-01` and reported "cannot tell indexing lag from a broken search" for two runs. It was neither: Drive tokenizes, so a hyphenated compound can never match, and the step was asserting an end state the world does not permit. Undetermined looked like patience | The step polls, and when it fails it runs the same query without expecting the new file: matching something else means the query works and the index is behind, matching nothing anywhere means the query is suspect. It now says which it saw. An undetermined step is also counted separately from a failure — reporting it as a pass hides a broken search, reporting it as a failure makes the driver red for something the server did not do |
-| Drive's `fullText contains` searches a spreadsheet's contents | **Confirmed, with a limit worth knowing**: `Plimth`, a column heading in a cell and in no title, matched six spreadsheets, so cell values are indexed. But `Quorbin-01` matched none while `Quorbin` matched six — Drive tokenizes, and a hyphenated compound is not a term. Multi-word phrases are fine: `Umberly merged` matched. Content indexing also lags well behind the title index: a title was findable on the first attempt, the contents not within thirty seconds | `search_spreadsheets`' description says the parameter reaches cell values, tokenizes, and lags, and points at `find_in_spreadsheet` for a spreadsheet already in hand. A model that searched for a product code with a hyphen would otherwise conclude the spreadsheet does not exist |
-| Both search limits biting is an edge case | **Refuted by a step that failed for the right reason**: a fresh sheet is allocated 1000 by 26, so a `max_matches` test on any live sheet has the *cell* budget bite first, and the server correctly reported that. The step had to raise `max_cells` past the allocated grid to test the limit it names | Recorded because the step looked correct and tested the wrong thing. The server's behavior was right throughout; the check was the defect, which is the pattern a sibling hit the same evening when a checker's pass condition was one field of the thing it was checking |
-
-**The configuration surface, run live 2026-09-06 — the part the tool
-coverage gate cannot see.** `live-cover` compares the driver against the
-*tool* schema; profiles, read-only scopes and `logout` are cmd-level and
-had never touched the network at all.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| Profiles keep separate tokens, so signing out of one leaves the others alone (§10, as written) | **Refuted, live and destructively.** A second profile was logged in with read-only scopes, used, and logged out; the *default* profile's token stopped working at the same moment. Google revokes the **grant**, and both profiles shared one OAuth client and one account. `logout` reported "Signed out of profile \"readonly\"" while having signed the account out of everything | §10 corrected: separate storage, one grant. `logout` now says revocation is account-wide for that client, names the profiles it will take with it, and repeats it afterwards. `logout -local` deletes this profile's copy without revoking, which is what somebody with a work and a personal profile actually wants. `userconfig.SharingClient` finds them by comparing the stored client-secret path, with a test |
-| Read-only mode is exercised by registering fewer tools | **Refuted for this phase**: every phase-0 tool is a read, so `tools/list` is identical in both modes and the registration half is untestable here. The half that *is* testable is the scope half, and it needed a second login | A profile logged in with `spreadsheets.readonly` plus `drive.readonly` served all four tools against a real spreadsheet: card, an addressed grid with `show=both` and merges, a search across sheets, and a Drive search. So the narrower scopes are sufficient for everything phase 0 offers, which is the claim §10 makes and could not previously support |
-| A live run's cleanup is a detail | **Refined**: `logout` was the only destructive command available to test, and testing it cost the working login. That is worth doing once and worth knowing before doing it — the recovery is a browser round trip, and on a machine without an interactive browser it would not be a recovery at all | Recorded so the next person testing `logout` does it on a profile they can afford to lose *and* expects to re-authorize every other profile afterwards |
-
-| A static check of the driver's coverage is enough | **Refined, and the gap shown rather than argued**: reading the source counts a step that exists, not one that runs. Removing the single `d.run(d.searchSteps()...)` line left the static gate reporting 26 of 28 and passing, while four options were no longer being sent by anything | The driver records what it actually put on the wire and checks it against the tool list the server publishes, at the end of every run. The static half stays, because it is the one that runs in CI: it fails when an option is added, which is weeks before anybody next has credentials in their hand. One exemption list in `internal/livecover` feeds both, so they cannot drift apart |
-
-| A live driver's own setup does not need the resilience it is testing | **Refuted by an aborted run**: creating the scratch spreadsheet got a transient `503 UNAVAILABLE` and the run ended before its first step. The driver's setup uses a raw client on purpose — the server's retry loop is what is under test, not the driver's plumbing — but that left the whole run hostage to a transport hiccup on a project that demonstrably produces them (the same `503` appeared in a spike E probe of a *definite* 404) | The setup calls retry on 429 and 5xx, four attempts with a widening wait, and say when they did — a run that needed three attempts must not read like one that needed none. The steps themselves are untouched: what they measure is the server's behavior, and retrying *that* would be measuring the retry |
-
-| An allowlist of functions permitted to print is the same rule as "everything printed is redacted" | **Refuted, in this repository's own gate, and the argument came from a sibling that hit the shape one level down.** Three functions were allowed to print and only one of them redacted: `sec` wrote the section header directly, which was safe because the titles are literals. That is the wrong kind of safe — the list had quietly become "functions allowed to reach the terminal", so a later `sec(someSheetTitle)` would have been blessed by name and printed raw | `sec` goes through `line`, so exactly one function prints and the allowlist is two entries, the second being a build-tag stub with nothing to redact. The sibling's version of this was an allowlist of safe *expressions*, which they deleted for the same reason after it grew to fifteen entries — two of which read a value off an API response that happens to be harmless today. A list that blesses a name once stops asking about the value |
-
-**Spikes A, B and F, run live 2026-09-06 at the start of phase 1.** Each
-answers a question §15 says the reference does not, and each decides code
-written immediately after it. The probe is `scripts/spikes`, and the
-scratch spreadsheet it reads is one it created and filled itself.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| **Spike A.** `USER_ENTERED` rewrites the *value*, and a coercion report that names the value has said everything | **Refined, and the refinement is half the report**: it rewrites the number format too. `$100.15` stores the number `100.15` **and** a `CURRENCY` format, so the cell still displays `$100.15`; `2026-09-05` stores `46270` with a `DATE(yyyy-mm-dd)` format and displays unchanged; `1-2` stores `46024` with `DATE(m-d)`. A diff over stored values alone reports "your text became a number" for all three and cannot say that two of them look identical on screen while the third now reads as a date | The coercion diff compares the value **and** says when Sheets attached a format, so `$100.15 → 100.15 (currency)` reads as what happened rather than as data loss. The recorded table is the fake's replay table: the fake never parses input, it looks the answer up |
-| **Spike A, the rest of the matrix** | **Confirmed as designed**: `007` → `7`, `TRUE` → boolean, `=1+2` → a formula whose effective value is `3`, `'0123` → the string `0123` with the apostrophe consumed. `RAW` stores every one of them as the literal string, apostrophe included | `input: typed \| literal` is worth the parameter: the two differ on every input tested, and for a product code or a leading-zero identifier `literal` is the only correct answer. Neither is defaulted silently over the other (§17.3) |
-| A cell's character limit is a phase-2 question (§15.G) | **Answered early and for free**: a 60 004-character string is refused with `400 INVALID_ARGUMENT`, "Your input contains more than the maximum of 50000 characters in a single cell", under both input options | The limit is checked before the request is built, so a caller is told which cell is too long rather than having a whole batch refused. §15.G keeps the other half — column ZZZ and the 10-million-cell ceiling |
-| **Spike A, the shape half.** `range` and `values` must agree, and a caller has to spell the rectangle out | **Refined by probe**: a single anchor cell is enough — `A1` with a three-by-two array wrote `A1:B3` — and an *unbounded* range works the same way, `A:A` with two rows writing `A1:A2`. A range **larger** than the array writes only the array's rectangle and leaves the rest alone, confirming "values with no data are skipped" from the other direction. A range **smaller** than the array is a `400`, and Google's own message for it names a row number: "Requested writing within range [...], but tried writing to row [3]" | `range` names where the write starts and how far it may reach; `values` decides the rectangle. Too small is refused here, before the request, with the array's shape and the range's — the API's message says neither. The result names the region covered and says when the named range was larger, since the tail is still whatever it was |
-| A ragged `values` array is a caller's business | **Refuted by what it does**: rows of length 3, 1 and 3 were accepted, and the short row left the two cells beyond it holding their previous values — "skipped", per row, not per request. A caller who believed they had replaced a rectangle would have replaced most of one | `write_values` refuses a ragged array with the two row lengths, and says the fix: pad with empty strings to clear those cells, or write a narrower range to leave them alone. Neither is guessable from a result, which is why it is not guessed on the caller's behalf. It also keeps the guard's target a rectangle, so what is checked and what is written are the same cells |
-| **Spike B.** `values.append` finds the data on the sheet and writes after it | **Refuted, in the direction that matters**: it finds the contiguous block the **given range** falls in and writes after *that*. On a sheet holding rows 1-3, a gap, and rows 6-7, an append at `A1` reported `tableRange` `A1:B3` and landed in rows 4-5 — between the two blocks. An append at `A6` reported `A6:B7` and landed in 8-9 | `append_rows` reports `tableRange` and the range Google chose, always, because the caller cannot predict either. The description says the range picks the table rather than the destination |
-| A whole-sheet append and an append at `A1` are the same call | **Refuted**: with no range, `tableRange` came back as `A6:B7` — the **last** block, not the first — and the rows landed at 8-9, where the same sheet given `A1` put them at 4-5. Two calls a model would read as synonyms write six rows apart | The range is required rather than defaulted, and named in the result. A default here would be a coin flip whose outcome is invisible until somebody reads the sheet |
-| `INSERT_ROWS` and `OVERWRITE` differ only in tidiness | **Refuted, and both need saying**: `INSERT_ROWS` inserted two rows at 4-5 and pushed the second block from 6-7 down to 8-9, so every address below the insert point moved. `OVERWRITE` consumed the two empty gap rows and left the second block where it was | `INSERT_ROWS` stays the default — it destroys nothing — and the result says the rows below moved, because a checkpoint or an address the caller is holding is now wrong. `OVERWRITE` runs the write guard over the rows it would land on, which is the one case where an append can destroy data |
-| **Spike F.** Drive's `files.get` `version` is a cheaper spreadsheet-wide staleness check than re-reading the range | **Rejected**: `version` did not move after a value change, after re-writing the same value, or after a structural `batchUpdate` — three edits, fourteen seconds of polling each, still `"3"`. `modifiedTime` was read in the same poll and did not move either | Checkpoints stay as designed (§4.7): a hash over the values, re-read at write time. A field that reports "unchanged" during exactly the window a checkpoint exists to cover would be worse than the re-read it replaces, not cheaper. §17a's staleness entry is closed |
-| Drive's lag is a search problem | **Widened by the same run**: `modifiedTime` had not moved fourteen seconds after an edit, which is the field `search_spreadsheets` sorts and filters on. Phase 0 found the *content* index lagging; this is the metadata | `search_spreadsheets`' `modified_after` description says the timestamp is Drive's and lags an edit, so a spreadsheet changed moments ago is not found by it. The same fact, met at a second surface |
-
-**Phase 1's live runs, 2026-09-06.** Five of them, and the count is the
-finding: every run was green or nearly so, and every transcript held
-something the count did not. Four of the six rows below are defects the
-gates could not have caught, because the fake agreed with the code.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| A request that creates a sheet may reuse the type a response returns | **Refuted twice in one run.** `SheetProperties` carries `sheetId`, the zero value serializes as `"sheetId": 0`, and Google reads that as a request for id 0 — the id the first sheet always has. `manage_sheet add` came back "Sheet with id 0 already exists", and `create_spreadsheet` came back with one sheet where two were asked for | `NewSheetProperties`, `NewSheet` and `NewSpreadsheet` have no id field at all, so the mistake is not available. The same shape as `Index` becoming a pointer earlier the same day, and for the same reason: a zero that means something is not a zero value |
-| **Spike H.** `spreadsheets.create`'s `sheets` are added beside the one Google always makes | **Refuted**: a create naming two sheets came back with exactly those two, at indices 0 and 1, and no third. With no list, Google makes one and names it in the account's language — observed in the same transcript, which creates its scratch spreadsheet that way | `create_spreadsheet`'s description says giving `sheets` replaces the default rather than adding to it, and that seed values go to the first sheet. A description promising a tab that is not there would send a model looking for it |
-| `updateSheetProperties`' `index` is where the sheet ends up | **Refuted by a step written to fail if it was a no-op.** A sheet at index 0 asked for index 3 in a four-sheet spreadsheet landed at 2: the API removes the sheet and then inserts it, reading the index against the order *before* the move. It is the convention `moveDimension` documents for rows and columns, undocumented here | `plan.ReorderSheet` takes the sheet's current index and converts, so the caller's `index` means where it ends up. The fake reads the index the same way Google does, or the unit tests would have agreed with the bug. Found only because the previous version of the step moved a sheet to where it already was and passed |
-| A cell holding a formula has `Kind == formula` | **Refuted, and it was a hole in the guard rather than in a count.** A formula that evaluated to an error is `KindError`: `userEnteredValue.formulaValue` is set and `effectiveValue.errorValue` overwrites the kind. So `=IMPORTRANGE(...)` showing `#REF!` was treated as an ordinary value, and `overwrite` alone would have replaced it — losing exactly what `overwrite_formulas` exists to protect | `grid.Cell.HasFormula()` tests the formula, not the kind, and the guard and the counts both use it. Found by reading a delete's count: a sheet this run had filled with formulas reported "0 formula(s)", which was the visible end of an invisible defect |
-| A step that passes has tested something | **Refuted three times in one transcript.** `clear_values` reported "0 non-empty cells" three times over a rectangle that had been emptied by an earlier step; `delete_sheet` counted zero on a sheet duplicated before anything was written to it; the reorder step moved a sheet to where it already was. All three passed, and none exercised the thing it named | Each now writes what it will then count, and asserts the number. The count is the whole substance of a clear's or a deletion's result, so a count that is always zero is a check that is always true — the same failure as phase 0's undetermined search step, one level down |
-| A coercion report that names the values has said enough | **Refuted by reading one**: `B2  "12" -> "12"` is a line that reports a change and shows none. What changed was the kind — the caller sent text and Google stored a number — and that is the change a product code cares about most | Both kinds are named and only text is quoted: `B2  text "12" -> number 12`. The date keeps its pair, `text "2026-09-05" -> number 46270, displayed "2026-09-05"`, which is what stops a serial reading as data loss |
-| A link is a link | **Refined**: Google's `spreadsheetUrl` carries `?ouid=`, the signed-in account's obfuscated id, in every card. The driver's redactor had been quietly catching it since phase 0, so it never reached a transcript, and it was still in every tool result | `spreadsheetUrl` is out of the field mask and the link is built from the id. It opens the same spreadsheet and identifies nobody, which is §9's "do not fetch what nothing needs" applied to a field that arrived free |
-
-**What phase 1's review passes found, 2026-09-06.** `/simplify` and
-`/code-review high` ran over the whole phase after the live driver was
-green. Between them they found four defects the driver had not, and two
-of those turned on API behavior the code had assumed rather than
-checked — which is spike I, run to settle them.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| **Spike I.** `values.update` destroys the note and the validation rule on the cells it writes | **Refuted**: both survive. A cell carrying a note, written over, came back with the note and the rule intact — the same guarantee `values.clear` documents, which the fake already modeled for clears and not for writes. So every write result said "The write removed notes on A1", which was false, and a cell holding *only* a note counted as occupied and refused a write for a loss that never happened | `Cell.Empty()` is about the value alone. `Report.Loses()` became `Keeps()`, and a surviving validation rule is reported as surviving — it still applies to the value that just replaced the old one, which is worth knowing and is the opposite of what the result used to say |
-| **Spike I, the second half.** `moveDimension`'s `destinationIndex` says where the band ends up | **Refuted**: rows 1-2 of four, sent with `destinationIndex: 3`, came back starting at row 2. The API removes the band and then inserts it, reading the index against the order *before* the move — the same convention a sheet's index follows, found the same way two hours earlier | `plan.MoveDimension` converts, so `to` means the row the band starts at afterwards. A driver step marks the rows before moving them and reads the destination back: the version before it moved rows that earlier inserts had left empty, so it landed anywhere and looked right |
-| `dry_run` is available whenever a write is | **Refuted by reading the code path**: the guard ran first, so a write the guard refused could not be previewed — and the refusal's own last sentence is "dry_run shows what would change without sending anything". A caller following that advice got the identical refusal. Every test and every live step passed `dry_run` together with the acknowledgments, so the path had never run | The preview comes before the refusal and lists what would stop the write. A dry run sends nothing, so there is nothing to guard, and the one call that exists to explain a refusal must not be the one call the refusal blocks |
-| A checkpoint is a checkpoint | **Refuted**: a read hashes what it renders, and `formatted: true` renders `£1,234.50` where the cell stores `1234.5`. A write reads raw and hashes raw, so a checkpoint from a formatted read could never match — every date or currency in the range made `expect_checkpoint` report a conflict that had not happened. The live driver reads unformatted, so no transcript would ever have shown it | `Cell.Raw` carries the unformatted value whatever `Display` holds, and the checkpoint hashes that. A checkpoint is over what the cells store, not over what they show |
-| An action can be gated inside a tool | **Refuted in the schema this repository publishes.** `edit_dimensions delete` was hidden by leaving it out of the description, while `confirm`'s description still said "required by delete" and `action` carried no enum for anything to be absent from. The tool was registered as a plain write, so it advertised `destructiveHint: false` while offering an irreversible action, and got no `requiresUserInteraction` mark | `delete_dimensions` is its own tool with `Kind: Destructive`, and inherits the registration gate, the annotation and the mark from the one place that decides them. §8's rule was already the right one — "Kind is an enum over which world a tool touches" — and a tool whose destructiveness depends on an argument is the matrix that rule exists to prevent |
-| A guard that reads part of a range guards the range | **Refuted**: `clear_values` bounded its read by the cell budget and then sent the clear for the whole range, so a protected block in the part it never read was not named, and the count it reported was a floor it did not say was one | A clear larger than one read is refused with the size, the way an oversized write is. The alternative — clearing only what was read — would answer a different question from the one asked |
-
-**An audit of the gates themselves, 2026-09-06.** Prompted by a sibling
-server hitting two release failures no rehearsal could catch, and by the
-question it raised here: what else does `make check` claim that it does
-not do. Four answers, none of them found by running anything.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| `make check` is what CI runs, as its first line says | **Refuted three times over.** The Makefile ran `go vet -tags=live` and CI did not, so nothing in CI compiled the live driver or the spikes — `go list ./scripts/livesheet` returns one stub file. CI scanned for secrets with gitleaks and the Makefile had no such target. And `go mod tidy` was in neither, running only inside a release, in the one form that writes | `gates parity` compares the Makefile's `check:` line against `ci.yml` and fails when either side has something the other lacks, with the gate list read from the dispatcher so a new gate is covered from its first commit. It found itself missing from both lists on its first run. §17a's earlier note that this claim had already been broken once, by tool versions, is the third time it has needed fixing — hence a gate rather than a fourth correction |
-| A build tag hides code from the compiler, not from CI | **Refuted**: the two things that validate the write path against a real account, the live driver and the spikes, were compiled by nothing CI ran. The breakage would surface at the phase-closing step, which is the worst moment and the one where a maintainer has least appetite for a compile error | `go vet -tags=live ./...` runs in CI, and the parity gate holds it there |
-| The coverage floor covers what ships | **Refuted**: `-coverpkg=./internal/...`, and the gate derived its package list the same way, so `cmd/` was outside the profile entirely. 571 lines of `login`, `logout`, `status` and `doctor` had no tests, and nothing could report that they had none — the gate's own comment promises a package is under the floor from its first commit, and that promise only ever covered one of the two trees that ship | Both trees are listed, `cmd/` carries a floor of its own at 40% against 48% reached, and the gate has a test asserting a package from each tree is under a floor. The lower number is a floor rather than an exemption: what remains uncovered opens a browser, holds a token or serves stdio |
-| A secret scanner is worth having before it has ever fired | **Confirmed the hard way**: the first local `make secrets` run failed on a test fixture written twenty minutes earlier — a realistic-shaped OAuth client id, put in a test whose whole point is that such ids get masked. The repository already had one blessed fixture allowed by value in `.gitleaks.toml`, and the fix was to use it rather than to add a second exception | The test uses the canonical fixture. Worth recording because the finding was in new code, in a test about redaction, written by someone who had just read the rule — which is the argument for the scanner rather than against the author |
-
-**Phase 2's conventions, 2026-09-06.** Every row here was decided from
-the discovery document or from the code path, and **none of it has been
-run against a real account** — this machine has no credentials, and §16
-says which two commands close that. The last row is the one that most
-wants a live answer, and the driver is written to give it.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| A cell format can be written as a struct, with the mask beside it | **Refuted by the API's own rule.** A field named in an `updateSheetProperties` or `repeatCell` mask and absent from the body is set back to its default — which is how bold is turned off and a background cleared. A struct carrying `bold: false` says nothing about whether the caller asked for it, and a mask written by hand beside it is a second place to be wrong | `plan.Patch` is built by setters, each of which records its own mask entry. The caller's three-way choice (on, off, leave alone) lives in the tool's input as a `*bool`, and "leave alone" is expressed by never calling the setter, so the field cannot reach the mask |
-| A number format can be given as a pattern and its type inferred | **Rejected.** The API's `NumberFormat` needs a type as well as a pattern, and a pattern alone would have to be classified — `yyyy` is a date and `#,##0` is a number. A wrong guess formats somebody's column as the wrong kind of thing and looks like it worked | `number_format` names the type and optionally the pattern after a colon: `currency`, `date:yyyy-mm-dd`. A bare pattern is refused with the list of types |
-| A merge is a formatting operation | **Refuted.** Sheets keeps the top-left value of every merged block and discards the rest, and nothing in the response says so. Which cell survives depends on the merge type: by rows it is the leftmost of each row, by columns the top of each column | `plan.CheckMerge` names the cells that would go and the merge is refused without `overwrite`. It is the one op in `format_cells` that loses data the way a value write does, and the reason that tool reads its target at all |
-| Every formatting call should read its target first | **Rejected as written.** Three ops can destroy something — a merge, `clear_format`, a note that replaces one — and the rest cannot. Reading for all of them would double the cost of "make this bold", which is the commonest formatting call there is | The protections and merges come from the card, which the range resolution has already fetched; the cells are read only when one of the three is asked for. An ordinary formatting call costs one request, and a test asserts the count rather than the intention |
-| Clearing a format takes the cell's formatting | **Refined**: it takes what the cell was *given*, not what applies to it. A cell showing only the sheet's defaults has nothing to lose, and a guard built on `effectiveFormat` would fire on every range in every spreadsheet — which is a guard nobody reads | The read asks for both formats. `userEnteredFormat` decides the blocks `read_formatting` reports and what a clear would remove; `effectiveFormat` is what a caller sees. `grid.Cell` carries the pair for the same reason |
-| An attached object is named by an id | **Rejected.** A protected range, a banding and a table all have ids, and a caller would have to fetch one before deleting anything. A1 is this server's contract everywhere else (§17.1) | `manage_range` names an existing object by the range it covers, matched exactly; a range matching several is `[ambiguous]` with the list rather than a guess. The exception is a conditional format rule, which the API identifies by position — so those take an `index`, and `read_formatting` reports it beside each rule |
-| A protected range refuses every write into it | **Refined**: it must not refuse the request that lifts it. The destination check runs for every kind `manage_range` handles except `protected_range` itself | Anything else is a trap rather than a guard, and a spreadsheet with a protection nobody can remove through this server |
-| `includeGridData: false` is enough to keep a `spreadsheets.get` off the grid | **Refuted, and it was a live bug in this phase's own code.** The parameter is documented as ignored when a field mask is set, so a mask naming `data(...)` is a grid read whatever the option says. `manage_range`'s rule count was reading conditional format rules with the formatting mask and no range, which is the entered and effective format of every cell of every sheet — the whole-spreadsheet read §4.6 forbids, walking straight past the guard in `GetSpreadsheet`, which can only see the option. The fake hid it: it returns grid data only when the option is set, so no test could tell the two apart | A second guard in `GetSpreadsheet`, on the mask rather than the option: a mask containing `data(` with no range is refused before anything is sent. `gapi.RuleFields` names the rules and the sheet ids and nothing else. Found by a review pass reading the reference, not by anything running |
-| `sortRange`'s `dimensionIndex` is an offset into the sorted range | **Refuted, live.** It is the sheet's own column. `B31:C34` was seeded with B counting up and C counting down, and sorted by column C ascending; the read-back afterwards is B = 3, 3, 2, 1, which is C in order. A reading relative to the range would have sorted by B and left the rows where they were. This row was a belief with a test waiting for it until 2026-09-06, and is written down that way because it was the plan's own claim that the reference did not settle | `plan.ParseSort` converts a column letter to the sheet's zero-based index, and the service refuses a key outside the range with the column named |
-
-**Spike G, run live 2026-09-06 (`go run -tags=live ./scripts/spikes
--only G`).** The platform's own edges, and what this server says before
-reaching them. The first run of this probe answered none of these
-properly and looked as though it had, which is the argument for reading a
-transcript rather than counting it: it printed the length of a JSON body
-as though it were the length of a cell, and it asked for one column past
-ZZZ on a 1 000-row sheet, where 18.3 million cells trips a different
-ceiling first. Both are fixed and both are why the rows below say what
-they say.
-
-| Question | What the API did | Effect |
-|---|---|---|
-| Where exactly is the 50 000-character cell limit? | **Inclusive.** 50 000 characters is accepted and reads back as 50 000 characters stored; 50 001 is `400 INVALID_ARGUMENT`, "Your input contains more than the maximum of 50000 characters in a single cell" | `plan.MaxCellChars` is 50 000 and the check is `>`, so exactly 50 000 goes through. Confirmed rather than assumed, and the round trip is read rather than inferred from a successful write |
-| What does a column past ZZZ do? | **Two different things, and the difference matters.** `AAAA1` is `400 Unable to parse range` — four letters is not a column at all. `ZZZ1` on a 26-column sheet is `400 Range (…!ZZZ1) exceeds grid limits. Max rows: 1000, max columns: 26`: a real column name, past the end of *that sheet* | `a1.ParseColumn` refuses more than three letters, which is the first case, and the service refuses past the sheet's extent with the sheet's own size, which is the second. Neither refusal needs a round trip |
-| Is the 10-million-cell ceiling per sheet or per spreadsheet? | **Per spreadsheet**, in Google's own word: "This action would increase the number of cells in the **workbook** above the limit of 10000000 cells." Both 10 000 001 × 1 and 1 000 000 × 100 are refused | `manage_sheet resize` checks the row and column ceilings and forwards Google's message for the cell one, which is the only check that would need summing every sheet. Recorded rather than built: the message names the limit and the action, which is enough to act on |
-| Is the column ceiling separate from the cell ceiling? | **Yes, and it is a sheet limit.** On a one-row sheet, 18 278 columns is accepted and 18 279 is "This action would increase the number of columns in **the sheet** above the limit of 18278 columns" | `a1.MaxColumns` is 18 278, exactly. The first run of this probe could not see it: at 1 000 rows the cell ceiling answers first, and the transcript showed the cell-limit message where a column-limit one was expected |
-
-**Spike J, run live 2026-09-06.** Not from the plan. The live driver
-watched a conditional format rule vanish somewhere between adding a table
-over its range and deleting that table, and a driver can only see that
-something is gone by the end. Counted after every step:
-
-| Question | What the API did | Effect |
-|---|---|---|
-| Does a table take the conditional format rules over its range? | **The delete does; the add does not.** One rule on the sheet, `addTable` over the same range → still one, `deleteTable` → none. Nothing in either reply mentions a rule | `manage_range table delete` reads the rules over the range first and refuses without `overwrite`, naming each one. It is the only act in that tool that destroys anything, and it is invisible in the response — which is the definition of what this server's guard is for. Undocumented anywhere read for this project |
-
-**Spike K, run live 2026-09-06 (`go run -tags=live ./scripts/spikes
--only K`).** Whether developer metadata is the durable anchor §6.4 is
-built on. Eleven questions, each answered by mutating the sheet and then
-reading the location back out of `developerMetadata.search` rather than
-out of this code's idea of where it put it. The first run answered four
-of them against rows the anchor had already left — a hardcoded row 2 in a
-probe whose whole subject is that the row moves — so those steps now ask
-where the anchor is at the moment they run.
-
-| Question | What the API did | Effect |
-|---|---|---|
-| Does a row anchor survive the rows around it changing? | **Yes, through all four.** Anchored on row 3, then: insert 2 above → row 5; delete 1 above → row 4; `moveDimension` the row itself → row 2; `sortRange` over the block → row 4. Every time, the row it landed on still held the values it was created against | §6.4's premise holds, and this is the only anchor in the API that does. It is what `read_range` and the write tools can accept in place of an A1 row |
-| Does a sort move the anchor with the values or leave it on the row number? | **With the values.** The sort put the anchored row's contents on row 4 and the anchor moved from row 2 to row 4 with them. `sortRange` moves rows wholesale, metadata included, rather than rewriting cells in place | `transform_range sort` does not disturb an anchor, so nothing has to be re-anchored after one. The distinction is the reason the probe prints the row's values beside the location: a location alone cannot tell the two behaviors apart |
-| Does a values write over the anchored row disturb it? | **No.** The row was rewritten and the anchor stayed on it | An anchor names a row, not the data on it. So it survives the sheet being reorganized and it does *not* notice its contents being replaced — which is what the tool description has to say, because the two are easy to hear as one promise |
-| Is a metadata key unique? | **No.** Two entries were created under one key and both came back from a search of it | Uniqueness is this server's to enforce: an anchor name that matches two rows is `[ambiguous]` with both listed, the same refusal `manage_range` gives. Google will not do it |
-| What does a search match? | **Key alone works, and so does `locationType: ROW` alone** — neither needs a location. A sheet lookup with `INTERSECTING_LOCATION` returned every row anchor on that sheet plus the sheet's own; with `EXACT_LOCATION`, only the sheet's own. A lookup at the anchored row returned it under either strategy; at an empty row, nothing | One request lists every anchor on a sheet, which is what a `list` action returns. Exact is what a lookup by name resolves through, so a row anchor is never confused with the sheet's |
-| Can a spreadsheet-level lookup be intersecting? | **No**: `400 DeveloperMetadataLookup.spreadsheet is true, but locationMatchingStrategy was specified as INTERSECTING` | Refused here before it is sent. A spreadsheet *location* reaches nothing but itself |
-| Is there a one-request way to list everything, whatever it is attached to? | **Yes, and it is the empty lookup.** A filter carrying `developerMetadataLookup: {}` returned all four entries — two rows, a sheet and the spreadsheet. `locationType: SPREADSHEET` alone also works, which the reference's own wording had left doubtful, since it forbids that type under an intersecting strategy and calls intersecting the default. Several filters in one request come back deduplicated: four filters, four distinct ids, none repeated | `list` is one request against one empty lookup, which keeps §4.5 — one tool call, one API request — on a listing that would otherwise cost a request per sheet. The three shapes were probed together because the reference settles none of them and the cheapest one is not the one its prose suggests |
-| Does `PROJECT` visibility work without a service account? | **Yes**, created and read back through an ordinary per-user OAuth client | Recorded, and **not** used. `DOCUMENT` is what this server writes: `PROJECT` scopes an anchor to the OAuth client that made it, so a user who re-installs under a client id of their own — which is how this server is distributed — would find every anchor they had made gone, with nothing to say why |
-| What locations are refused, and in what words? | Two rows at once: `DimensionRange must represent a single row or column`. Unbounded: `DimensionRange must specify both a startIndex and an endIndex` | Both refused before sending, quoting the rule. A caller who asks to anchor a rectangle is told what an anchor can attach to rather than forwarded a message about a type they never named |
-| Does `spreadsheets.get` carry anchors, or does every read cost a search? | **Both, split by location.** Sheet-level and spreadsheet-level metadata come back with an ordinary card mask. Row and column anchors appear only under `includeGridData` as `sheets.data.rowMetadata.developerMetadata`, so they arrive only for a range already being read | The card carries sheet-level anchors for free. A lookup by name is a `developerMetadata.search`, which is one request and does not need the grid — §17a.15's shape, decided the other way here because the alternative is a grid read of a range nobody asked for |
-| What happens to an anchor when its row is deleted? | **It goes with the row, and nothing in the reply mentions it.** Two anchors under one key, one row deleted: the reply is an ordinary success and the search afterwards returns one | `delete_dimensions` reads the anchors over its range first and names them, and refuses without `overwrite`. Exactly spike J's shape — a delete that silently takes something the response never mentions — and the second one this project has found |
-
-**Not observed, and recorded rather than assumed.** Reading developer
-metadata needs a write-capable scope: `developerMetadata.get` and
-`.search` list `spreadsheets`, `drive` and `drive.file`, and not
-`spreadsheets.readonly`. Whether a card read under read-only scopes still
-carries the sheet-level metadata is unanswered, for the same reason three
-of spike E's error shapes are: this machine's token is not a read-only
-one. `GSHEETS_READ_ONLY=true` therefore does not register the anchor
-tool at all, which is true whichever way that question resolves.
-
-**The keyring, 2026-09-06: this repository's own test suite was deleting
-the developer's credentials.** Five apparent disappearances in one
-session, and the cause was `go test ./...`.
-
-`cmd`'s `isolate` helper redirected the two stores an environment
-variable can redirect — `GSHEETS_CONFIG_DIR` for the token file and
-`GSHEETS_REFRESH_TOKEN` for the override — and its comment named the
-token file as "the other thing that could escape the sandbox". The OS
-keyring is the third and no variable redirects it: it is addressed by
-service name and profile, and the tests took both from the defaults. So
-`TestLogoutWithNothingStored` called
-`OSKeyring().Delete("google-sheets-mcp", "default")` and removed the real
-refresh token, on every `make check`, for a whole session.
-
-**The diagnosis before this one was wrong, and it is left here rather
-than deleted.** It concluded the token was never deleted at all — from a
-`secret-tool` search that found the item, 50 lookups that all succeeded,
-and one recovery without a login. Every one of those observations was
-real. The reasoning was not: the item was found between a login and the
-next test run, and the "recovery" was the same. A single sample either
-side of an event is not a measurement of the event, and the conclusion
-"it never disappears" was drawn from never having watched the moment it
-did. What settled it was a decoy secret stored under the real key, a full
-test run, and looking again — and then the same with the isolation
-removed, watching it go.
-
-| What | Verdict | Effect |
-|---|---|---|
-| Was the token being deleted? | **Yes, by this repository.** A decoy stored under `google-sheets-mcp/default` survives a full suite with the fix and is gone after one test without it | `isolate` sets `GSHEETS_PROFILE` to a name derived from the test, so the keyring key a test can reach is one no person owns. It is set for every test rather than for the one that reaches the keyring today |
-| Why did nothing catch it? | **Nothing had run the check.** The escape route the helper's comment names is the file; the keyring is the store its author did not have a variable for, and no test asserted the profile a test runs under | `TestIsolateKeepsTestsOutOfTheRealKeyring` asserts it, and the cost of it being wrong is paid by whoever runs the tests rather than by CI, where there is no keyring to damage |
-| Was `ErrKeyringSilent` wasted? | **No, and it is kept.** A locked collection does read as an absence through `go-keyring`, and "run login" is the wrong advice for it. It was written for the wrong reason and is right for its own | Kept, with its reasoning corrected: it is for a keyring that will not answer, which is a real state, and not for the disappearances that prompted it |
-
-**The agent evals, first run 2026-09-06 (`make evals`).** Sixteen tasks,
-one failure, seven carrying a half nothing could check, $1.89. Both
-findings were in the harness rather than in the server, which is what a
-first eval run is mostly for.
-
-| What the transcript showed | What it was | Effect |
-|---|---|---|
-| "append without disturbing what is below" passed on two reads and no write at all | **A check the fixture satisfied by itself.** It asked whether "Threnody" was anywhere on the sheet, and `Threnody` is one of the ten words the fixture seeds its rows from — so `Threnody-03` had been there since setup. The task verified nothing and reported a pass | The marker is a word the vocabulary does not contain, and the check reads *below* the seeded block: "add a row to the bottom" is the task, and a write that replaced row 2 would satisfy "is it on the sheet" while doing the opposite. The `sheetContains` helper is deleted rather than fixed — the shape is the problem, not the word |
-| "sort by a column" failed with `10930 comes after 100` | **The scorer read past the data into another task's work.** 10930 is the column total that "total a column" wrote to B22 seven tasks earlier; the scorer read B2:B100 and found it below the sorted block. The model had sorted exactly what it was asked to | Scoring reads stop at the seeded block. The tasks share one spreadsheet and run in order, so any fixed range past the data is a range some earlier task may have written to |
-| The fixed append task then failed too, on two reads and no write | **The prompt was unanswerable.** It asked for "the name and the value" against a table with four columns, three of them numeric, and the model stopped and asked which one 42 belonged in — correctly. A task a careful reader cannot answer measures how willing a model is to guess, and this server's whole argument is that it should not be | Every column the new row touches is named. It also took a second harness change to see: a failing task now prints what the model *said*, because the calls say what it did and only its answer says why — two reads and no write is a cautious model, a model that could not find the tool, or a model answering in prose, and those are three different findings |
-
-The A/B is recorded as unverified and worth one line anyway: the
-addressed-grid arm found the row and wrote to it in three calls; the
-bare-rows arm made two calls and wrote nothing. That is one run of two
-arms and settles nothing, but the direction is the one §4.9 assumes, and
-the harness said so rather than counting an abandoned arm as cheaper.
-
-**The live driver on phase 3's surface, run 2026-09-06 (`make live`).**
-169 steps, none failed, one undetermined (Drive's content index again).
-Nothing failed and reading it still found two defects, which is the
-argument for reading in its purest form so far — the count was perfect.
-
-| What the transcript showed | What it was | Effect |
-|---|---|---|
-| `read_range` with an anchor nobody had set: "…and any A1 **band** works here instead" | **A wrong instruction**, and one no test could see. A review pass had deduplicated the range path and the band path onto one lookup, and the merged refusal kept the band's noun — so a caller of `read_range` was told to pass a thing `read_range` does not accept. The unit test asserted the message contained "A1", which both wordings do | The lookup takes the noun from its caller, and the two tests now assert the word each path must use *and* that neither carries the other's |
-| A delete refusing with `the anchor(s) "third row"` and then succeeding with `the anchor(s) third row` | **The same act described two ways, a moment apart.** The clause was added to the refusal and the sentence to the result, each quoting differently — §17a.9's exact failure, reintroduced by fixing one half of a pair | One `render.AnchorNames`, used by both. The refusal also stopped reading "…with them, and takes the anchor(s) X with them", which is what a clause written for one sentence and pasted into another sounds like |
-
-Everything else in the run held: the anchor followed ten inserted rows to
-row 13, a sort to row 14 with its values, a move to row 12 keeping the
-note that a field mask could have blanked, and the delete took it and
-said so. The band path resolved an anchor and refused the wrong axis.
-
-**The live driver, run 2026-09-06 (`make live`).** Five steps failed on
-the first run of phase 2's surface, and the split is worth recording:
-three were the server, two were the driver's own expectations left behind
-by a review pass.
-
-| What failed | What it turned out to be | Effect |
-|---|---|---|
-| A merge that had been acknowledged | **The server's.** Sheets answers "You can't merge frozen and non-frozen columns", and the work sheet had frozen its first row and column several steps earlier. The refusal says the rule and not where the edge is | `format_cells` refuses a merge spanning a frozen edge before sending, naming the count, the column the freeze ends at, and `manage_sheet freeze` as the way to undo it. The counts are on the card the call has already read, so it costs nothing |
-| A named range called "Livesheet band" | **The server's.** `400 The name given to this range is invalid` — which names neither the rule nor the character that broke it, and the fault was a space | `plan.CheckNamedRange` refuses before sending and says the rule. A name that is also a cell address is refused separately, with an alternative, because "Q1" is a good word for a quarter and a good cell reference and cannot be both |
-| A conditional rule that could not be deleted | **The server's, found through spike J**: a `deleteTable` earlier in the run had taken it. See above |
-| Removing a note | **The driver's.** The step expected removal to go through unguarded, which was true when it was written and stopped being true when a review pass decided that removing a note takes the same unseen thing replacing one does | The step now expects the refusal and then passes `overwrite`. Worth recording as a driver failure rather than a server one: the expectation was the stale half |
-| Deleting a named range that was never created | **A cascade** of the second row, and the only one of the five that told us nothing new |
-
-**Spikes L, M, N and P, run live 2026-09-07.** Four of these rows refute
-something §7.6 or §8 assumed. Two of them are silent destroys, which
-made five this project had found on an API whose reference mentions
-none of them.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| `updateChartSpec` updates the fields it is given, like every other update request in the union | **Refuted**: the request carries no field mask and the API refuses a partial spec outright — `400 One of basicChart, pieChart, bubbleChart, candelstickChart, histogramChart, or orgChart must be set on chartSpec`. The chart was unchanged afterwards, so the refusal is clean rather than half-applied | `manage_chart update` reads the existing spec, edits it and sends it back whole. A tool that took a title and sent a title would fail every call, which is the good case; one that filled in a default chart kind would silently rebuild somebody's chart as a column chart |
-| A chart notices when the data under it is deleted | **Refuted, and this is the third silent destroy**: deleting the charted column left the chart alive with one domain and **zero series**, the reply was `{}`, and the card still reports a chart. Nothing anywhere says the chart no longer draws anything | `delete_dimensions` counts the charts whose sources intersect the band and names them before the confirm gate, the way it already names anchors. Sheets has no undo, and a chart that has quietly stopped charting is worse than one that is gone |
-| An invalid chart spec is refused with a message a caller can act on | **Refuted for the commonest mistake**: a `basicChart` with neither domains nor series returns **HTTP 500, "Internal error encountered"**. A 500 is classed retryable by §6.5, so the honest behavior of a client that trusts the status is to send it again and get another 500 | `manage_chart` validates domain-and-series before it builds the request. This is the first case in the project where the API's own error class is wrong for the request that caused it, and the mapping is not what needs changing — the request is |
-| `deleteEmbeddedObject` reports what it removed | **Refuted**: the reply is `{}` for a chart and for a slicer alike. Deleting the same id twice is a clean `400 No embedded object with id: …`, which is the only feedback there is | The result is composed from the card read before the delete, not from the reply. The second delete's message is good enough to pass through as `[not_found]` |
-| A chart on its own sheet is a sheet like any other | **Refined**: `addChart` with `newSheet: true` makes a sheet of `sheetType: OBJECT` titled `Chart1`, **with no `gridProperties` at all**. Deleting that sheet takes the chart with it | Anything reading `gridProperties` off a card must tolerate its absence, which is a hole that predates phase 4: a spreadsheet with a chart sheet made in the Sheets interface reaches every tool this server already ships |
-| A pivot table is written and deleted like the other structures | **Refuted**: there is no pivot request in the union. It is a `pivotTable` field on one `CellData`, written through `updateCells` at the anchor, and deleted by an `updateCells` naming that field with no pivot in the cell — which takes the whole output with it. The write's reply is `{}` | `manage_pivot_table` compiles to `updateCells`, and its result is read back rather than reported from the request |
-| A pivot's output is data, so a read sees it and the guard counts it | **Confirmed, and half of it matters**: the output cells carry an `effectiveValue` and **no `userEnteredValue`**, so the server's own grid mask sees ten non-empty cells over a four-group pivot and the guard refuses a write over them. It cannot say what they are: `GridFields` asks for no `pivotTable` field | The guard already fails closed here, which is the important half. `read_range` and the guard's refusal both gain the pivot's anchor, so "10 non-empty cells" becomes "the output of a pivot table anchored at E1" |
-| Writing into a pivot's output is refused, or destroys it | **Refuted both ways, and the truth is better**: `values.update` over one output cell returns 200 and collapses the whole pivot to `#REF!` at the anchor — "Array result was not expanded because it would overwrite data in F3" — and clearing that one cell brings the entire output back. The damage is total and completely reversible | The refusal says the pivot will stop drawing until the cell is cleared, which is true, rather than that the pivot will be destroyed, which is not. An `updateCells` over the **anchor** is a different act: it replaces the pivot outright and silently, and is the fourth silent destroy |
-| The API validates a pivot table it is given | **Refuted where it matters most**: a `sourceColumnOffset` of 9 against a three-column source is accepted with a 200. A missing `summarizeFunction`, a missing `sortOrder` and a missing source are each a clean 400 | `manage_pivot_table` checks every offset against the source's width before sending. An out-of-range offset is the one mistake a caller makes by counting from one |
-| An update's new source is checked the way an add's is (2026-10-09) | **Refuted in our own code**: only the columns an update was given were resolved against the new source. A group, value or filter it kept carried its old offset, and the row above says Google takes one past the edge with a 200 | An update with a new source refuses a kept offset past the new source's edge and names it in the old source's letters. A unit test per kind of kept column, and a live step that sends no write |
-| A kept offset means the same column in the new source (2026-10-09) | **Refuted by the discovery document's own definition**: `sourceColumnOffset` is "the column offset of the source range that this grouping is based on", where with a source of `C10:E15` "the offset `1` would refer to column `D`". A new source that starts one column along moves every kept offset one column along, onto other data, and nothing in the reply says so | An update whose new source starts in another column, or on another sheet, is refused while it keeps a column, naming what each would read instead. Passing the groups, values and filters again resolves them against the new source. Unit tests, and a live step that sends no write |
-| A pivot may be anchored anywhere the caller likes | **Refuted**: anchored inside its own source it is accepted with a 200 and evaluates to `Circular dependency detected`. The API does not refuse it and the reply says nothing | Refused before the request is built, by the same rectangle arithmetic the guard already does |
-| A pivot follows its source the way an anchor follows its row | **Refined**: deleting four of five source rows left the pivot alive, its source range shrunk with the delete, and its output reduced to a header and `Grand Total`. Silent, like the chart | `delete_dimensions` names intersecting pivots beside the charts and the anchors |
-| The scopes in §17.6 are enough for everything in §8 | **Refuted by the one tool that was never probed**: `addDataSource` under `spreadsheets` + `drive.readonly` returns `403 The request scopes are not sufficient for performing this operation. Please include bigquery.readonly scope`, and the reference says refreshing a BigQuery source needs it too. `refreshDataSource` and `cancelDataSourceRefresh` returned 200 here only because there was nothing to refresh, which proves nothing about a real source | §17.6 is reopened and amended: `bigquery.readonly` is requested, behind `GSHEETS_ENABLE_DATA_SOURCES`, so a user who will never own a BigQuery project is not asked to consent to one. See §17.6a |
-| The card cannot report data sources without the BigQuery scope | **Refuted**: `fields=dataSources` is accepted under the existing two scopes and returns `{}` on a spreadsheet that has none. The mask costs nothing | `get_spreadsheet` can say that a spreadsheet is connected to a data source whatever the scopes, which is the half of the feature every caller wants and none of the cost |
-| §17a.7's blocker stands: a `batchUpdate` reply cannot be masked, so it carries the `spreadsheetUrl` the card drops | **Refuted**: the standard `fields` parameter applies to `updatedSpreadsheet` like any other reply. Under `updatedSpreadsheet(<CardFields>)` the URL is absent and the reply is a card. The unmasked reply does carry it, so the concern was real and is now removable | §17a.7 closed: the structural writes fold their card re-read into the write |
-| §17a.15's rules cannot ride on the card | **Refuted**: `sheets.conditionalFormats` is accepted, and a sub-mask of `(ranges)` alone gives the count for 294 bytes against the 651 a whole rule costs | §17a.15 closed: the card carries the ranges, and a rule update is two requests instead of three |
-| A tool that reaches a second world needs one gate, so one Kind covers it | **Refuted by the phase's own cleanup pass**: `manage_data_source` carried a `delete` that removes a whole sheet, under `Kind: Connected`, whose annotations say `destructiveHint: false` and whose gate reads only the data-sources setting. With `GSHEETS_ENABLE_DESTRUCTIVE=false` — the documented-safe configuration — the delete was still reachable, and a client trusting annotations to auto-approve would not have asked | Split into `delete_data_source`, `Kind: Destructive`, exactly as `edit_dimensions`' delete became `delete_dimensions` (§17a.10). The two gates are about different things — one is a scope, the other is what cannot be undone — and a tool needing both is two tools |
-| Deleting a data source needs the BigQuery scope, like adding and refreshing one | **Refuted by spike N's own transcript, read again a day later**: `deleteDataSource` came back `400 … The data source ID doesn't exist`, not the `403 … Please include bigquery.readonly scope` that `addDataSource` gave in the same run. The evidence was in the phase's first transcript and its consequence was only seen when the delete needed a home | `delete_data_source` asks for no third scope, so it reaches a data source somebody else connected — which is the case a Sheets server is most likely to meet |
-| §17a.20's `rowMetadata` is not reachable through a grid read | **Refuted, after the spike's own mask was refused for being unbalanced by one parenthesis**: `data(…,rowMetadata(developerMetadata))` is accepted and returns one object per row of the *window* — four objects for a four-row read, one carrying the anchor, for 713 bytes | §17a.20 closed with its cost stated: it saves a request and pays about 180 bytes per row of the band. Right for the bands anybody deletes by hand, wrong for a ten-thousand-row band, so the fold happens under a row count and the search stays for the rest |
-
-
-**§17a.27's fix, run live three times on 2026-09-08** (211 steps, 0
-failed, 1 undetermined — Drive's content index again). The second run
-followed the cleanup pass and the third the review pass; every step came
-out the same, and the transcripts differ only in ids and a page token.
-Four rows: what the refusal now says, the two halves of the sentence it
-makes, and what the review pass found underneath it.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| A pivot's output can only be described as non-empty cells | **Refuted, and it costs a read**: the anchor is found by a second `spreadsheets.get` under `PivotFields` over the rows and columns up to the write, and its extent by the read `list` already uses. Live, a write at I3 came back `I3 is inside the output of the pivot table anchored at H1, which covers H1:I6 as it stands` | The look is paid only where the guard already refuses *and* something in the way carries an `effectiveValue` with no `userEnteredValue`. A write onto typed cells in the same run still read `A3 is not empty` and cost no extra call |
-| The refusal's claim about `#REF!` is spike M's and has never been read back through the tools | **Confirmed end to end**: the acknowledged write at I3 returned 200, the whole pivot collapsed to `#REF!` at H1 with the output gone, and `clear_values` on that one cell brought all of it back — the same rectangle and the same checkpoint, `ck_61abfe11ad3e`, before and after | The refusal names the collapse and the recovery, so a caller who passes `overwrite` knows both what happens and how to undo it. The driver keeps the sentence true: four steps write, read, clear and read again |
-| A pivot's measured extent is close enough to its bounding box | **Confirmed as the thing that had to be measured**: the same run watched `H1:I6` become `H1:J7` and then `H1:T8` across two updates, with the source untouched. A refusal quoting a rectangle from the request would have been wrong twice in three calls | The extent is read back on every refusal that names a pivot, never derived. The unit tests hold the other end: a write beside the output is refused without a pivot in the sentence |
-| Stopping at the first empty row and column measures one pivot | **Refuted, and it was wrong in `list` since phase 4**: two pivots side by side have no empty column between them, so the left one grows over the right one. Reproduced against the fake — anchors at F1 and H1 reported `F1:I7` and `H1:I7`, and a write at H3 was then refused with a promise to break the table at F1, which it would not have touched | The rectangle is pulled back off any other anchor inside it, on the axis where that anchor sits. Found by the review pass on the refusal rather than by the run: a listing that overstates a footprint is misleading, and a refusal that does it is wrong out loud |
-
-**Spike Q, run live 2026-09-09**, to close §17a.31. Three rows, and the
-last is the sixth silent destroy this project has found — the first in a
-tool that was already shipped.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| A merge over a pivot table destroys cells, the way a merge over anything else does | **Refuted: Sheets refuses it outright.** `400 Invalid requests[0].mergeCells: You can't merge cells that are part of a pivot table`, over the output as surely as over the anchor, with the pivot untouched afterwards. So `format_cells` was refusing first with "merging would keep the top-left value and discard F3, which is not empty" — a loss that cannot happen — and offering `overwrite` to get past itself, which reached Google's 400 instead | The merge is refused before the request with the API's own reason, and nothing acknowledges it: an argument claiming otherwise would be a lie in the schema. The fake refuses it too, in Google's words, so no test can pass on a merge the API would reject |
-| A merge is refused only over the cells a pivot actually draws | **Refuted: Google goes by the footprint.** A merge over `F13:G13` — two cells blank in the response and blank on the sheet, inside a pivot grouped across as well as down — is refused with the same 400. The guard sees an ordinary pair of blank cells and cannot tell; knowing would mean measuring every pivot on the sheet before every merge | The cheap check answers where it can and names the table; Google's 400 is translated where it cannot, so no merge pays a read it did not need and no caller reads Google's wording. Found by a review pass asking what the guard's gate could miss, and probed rather than argued |
-| A clear removes the non-empty cells it counts | **Refuted for anything computed**: `values.clear` over a cell a pivot draws returns 200 with `clearedRange` naming it, and the cell is unchanged. Nobody typed it, so there was nothing to clear | `clear_values` counts what somebody entered, and says separately how many cells show a value nobody typed and will survive. The count used to name a loss that does not happen |
-| `values.clear` over a pivot's anchor clears a cell | **Refuted, and this is the sixth silent destroy**: it returns 200, `clearedRange` names that one cell, and the pivot's definition and every cell of its output are gone — eleven cells for a reply that mentions one. `values.clear` is not the documented way to delete a pivot table, which is an `updateCells` naming the field, and nothing in the reply says it did | The confirm gate names the anchor and says the whole table and everything it draws goes with it, none of which is in the count. A caller who read "removes 1 cell" and confirmed had agreed to something else |
-
-**Read 2026-09-09 from Google's published references**, after `status`
-reported a profile holding a working token as having no account. Tier 1
-for what the references say and tier 3 for the conclusion drawn from
-them: both rows are pinned by tests that fail against the previous code,
-which is the evidence rule 12 asks for where a live probe cannot
-separate the two paths — an absent field and a field never written look
-identical on disk.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| `tokeninfo` carries the account address | **Absent under this server's scopes.** Google's OAuth2 reference says of `email` and `verified_email` both: "Present only if the email scope is present in the request". §17.6 asks for neither `openid` nor `userinfo.email`, so `auth.Inspect` returns an empty address on every login this server can perform — there is no configuration under which it returns one | `login` assigned it over the address `recordAccount` had just fetched from Drive, so the profile recorded no account at all: `status` printed `(none)` while `doctor` resolved the address from the same Drive call. The assignment is gone, and the block it lived in is now a seam a test can reach |
-| Drive's `about.get` always carries an address | **Refuted by the reference.** `User.emailAddress` "may not be present in certain contexts if the user has not made their email address visible to the requester", and `Service.Account` passes that through as `""` with a nil error | An absent address no longer erases a recorded one. The two states print differently now: `(none)` is not signed in, `(not recorded)` is signed in with nothing to show |
-| The bundle manifest's format version is current, and its `$schema` pins what it validates against | **Both refuted, 2026-09-17, against the published schemas.** Fetched: `mcpb-manifest-v0.2`, `v0.3` and `v0.4` are served and `v0.5` is not, so this manifest sat one version behind while every check on it passed — the checks hold the document against ITSELF, and 0.2 beside a 0.2 schema is self-consistent. Diffing 0.3 against 0.4 settled which way to go: the only difference is a `uv` value added to the `server.type` enum, and this bundle's type is `binary`, so 0.4 is not adopted. And `$schema` named `main` — the path pins the FORMAT, the ref pins the BYTES, so an amendment upstream silently changes what the document conforms to; the copy at tag `v2.1.2` is byte-identical to `main` today, which is the point rather than the counter-argument | **A floor under `manifest_version`, and an allow-list over the whole `$schema` URL** — upstream's path at a full release tag or a commit SHA. Refusing branch NAMES was the first attempt and it passes a partial tag like `v2.1`, which upstream re-points as it releases |
-
-**Asking the person, 2026-09-30.** The conventions of the question
-3.0.0 to 3.1.2 put to the person. Tier 1
-where the MCP Go SDK v1.8.0's source was read here; tier 2 where the
-verdict comes from a sibling server's evidence log. **Superseded by
-"Per-call approval, 2026-10-23" below:** the server asks nobody from
-4.0.0. The rows stand as the record of why the question was built, and
-the 503 row still holds.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| The Go SDK asks the same way on every protocol | **Refuted, tier 1**: `mcp/server.go` L1614-1627 refuses a server-initiated `elicitation/create` from 2026-07-28, and L440-446 skips structured output when a handler returns `InputRequests` | One handler returns the question; before 2026-07-28 the SDK asks inside the call |
-| A form elicitation must ask for at least one field | **Refuted, tier 1**: `validateElicitSchema`, `mcp/client.go` L923-950, accepts an object with no properties; tier 2 for the specification and a person's check in Claude Code | The form has no fields and the accept is the answer |
-| A client that declares elicitation has a person to answer it | **Refuted, tier 2**: `claude -p` declares it and answers `cancel`; Codex under approval policy `never` with full access accepts a fieldless form | A refusal never says the person declined, and an unattended client cannot make these writes |
-| A client draws a question as plain text | **Refuted, tier 2**: VS Code builds the message as a `MarkdownString` | Spreadsheet text stands in a code span, and the server's own lines hold no Markdown |
-| A 503 proves an unrepeatable write never began, so it may be retried | **Refuted, tier 1**: Google's `google/rpc/code.proto` says of `UNAVAILABLE` that it is "not always safe to retry non-idempotent operations". Checked 2026-10-01 | An append, `batchUpdate`, `create` or `copyTo` retries only on 429. Any 5xx is `[ambiguous_outcome]`, and the class wins over the wrapped 429 |
-| A destructive tool should carry both `requiresUserInteraction` and the server's own question | **Refuted, tier 2**, 2026-10-09, after the owner was asked twice for one delete in another server built the same way. No source recommends two hard gates for one call: the spec puts confirmation on the client, GitHub's `delete_repository` and Supabase confirm with `destructiveHint` plus a form elicitation and set no mark, and Claude Code's documentation scopes the mark to "tools whose permission prompt is itself the point" | The mark is sent per client, present only when the request declares no form elicitation, on the destructive tools, which always ask. A typed confirmation, which would stop Codex accepting an empty form unseen, was offered and not chosen. A Claude Code `Elicitation` hook that accepts now confirms these deletes by itself, `claude -p` included, where the mark used to refuse the call before it reached the server |
-| golangci-lint v2.13.2 lints this module on Go 1.27.2 | **Refuted, tier 1**, 2026-10-09: Go 1.27.2 writes export data version 5 (`internal/pkgbits/version.go`, go.dev/issue/81188). v2.13.2 is built on `golang.org/x/tools` v0.49.0, which reads up to version 4, so the typecheck fails. v2.14.0, a final release of 2026-09-24, is built on x/tools v0.50.0, which reads version 5 | Go 1.27.2, and golangci-lint v2.14.0 in the Makefile and CI |
-| A package's coverage reads the same on Go 1.27.1 and 1.27.2 | **Refuted, tier 1**, 2026-10-09: 1.27.1's `cmd/cover` gave each piece of a block that a comment splits the statement count of the whole block, and 1.27.2 counts each piece's own (`mergeRangesWithinStatements`). The same tests read lower: the fake from 82.4% to 79.9%, and `cmd/` from 56.9% to 53.1% | No floor moved. A test of `format_cells` `unmerge`, which no test ran against the fake, puts the fake at 80.3% |
-| The schema diff holds every output field (53026dc, "schema-diff fails on a lost output field") | **Refuted in review, tier 1**, 2026-10-09: it compared each tool's top-level output properties with the last tag's, so dropping `threads[].cell` from `read_cell_comments` passed, and a retyped field passed at any depth | The diff walks every input and output field, `properties` and `items` alike, with its type, against a committed baseline of the newest release's surface, as a sibling server's gate does. The dump carries no `$ref`, `anyOf` or `oneOf` for the walk to miss; a boolean `items: true` reads as any type, as `{}` does |
-| A type change breaks a caller whichever way it goes | **Refuted, tier 1**, 2026-10-09, against JSON Schema 2020-12. Validation §6.1.1: with a list of types, "an instance validates successfully if its type matches any of the types indicated by the strings in the array", and `integer` "matches any number with a zero fractional part". §6.1.2: an instance passes `enum` "if its value is equal to one of the elements". Core §4.3.2: `true` passes "as if the empty schema {}", and `false` always fails | Types are compared one way: an input may take more and an output may return fewer, so `"boolean"` to `["null","boolean"]` passes an input and fails an output. The diff also fails an output field no longer required, and an input that no longer takes a value it listed, in a list's elements too. An output that may carry a value it did not list, and an input newly limited to a list, are named without failing. The current dump has no `enum` and no list of types; the checks hold the first one |
-
-**Spike R, run live 2026-10-09**, before the comment tools were built.
-`scripts/spikes/comments.go` against a scratch spreadsheet; the one
-assignee was the signed-in account. Tier 1.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| A read can name comments in its field mask | **Refuted without the comments view**: `400 Field mask may not contain comment-specific fields if comments are not requested`, with no `commentsViewMode` or with `OMITTED`. `INCLUDED` and, for the owner, `DEFAULT_FOR_CURRENT_ACCESS` work, nested masks included | `CommentFields` travels with `GetOptions.Comments`, and the client refuses the mask without it |
-| A thread says which cell it is on | **Partly**: it names an `anchorId`, and the sheet's `commentAnchors` map that to a one-cell range, which follows inserted rows | `threadRecords` joins the two and reports the cell as it is now; Google's order of threads is not positional, so they are sorted |
-| A thread goes with its row | **Refuted**: deleting the row collapses the anchor to an empty range, start equal to end, and the thread stays open | `cell_deleted`; a ranged read leaves such a thread out and says so. Google leaves zero indices out of its JSON, so a missing end reads as zero |
-| Resolving is idempotent | **Refuted**: resolving a resolved thread returns 200 and adds another `RESOLVE` post | resolve and reopen read the status first and send nothing when it is already there |
-| Google checks an assignee's address | **Refuted**: `nobody@example.invalid` was accepted with 200. Reassigning in a reply is a 400 on a thread whose first post has no assignee | `checkAssignee` refuses what is not one plain address, the description says a typo assigns the thread to nobody, and a reassignment on an unassigned thread is refused before it is sent |
-| A failed comment write is a 200 that only `commentUpdateState` admits | **Not seen**: a bad comment or post id was 404, a cell off the grid, an unknown sheet or empty text 400 with a clear message, and a batch holding one bad comment edit failed whole. Every success said `ALL_SAVED` | `ALL_FAILED_UNKNOWN_REASON` is still `[unavailable]` rather than a success |
-| A second delete answers 404 | **Confirmed**, for a thread and for a reply, the same 404 as an id that never existed; a deleted thread or reply is gone from the read | `delete_cell_comment` reports it gone, which is what was asked for. The read before the delete is where a repeat finds it missing, so nothing is sent or asked. An id the spreadsheet never had reads the same, and is reported gone too rather than `[not_found]`: nothing can tell the two apart, so the summary says it may be either. Google's own 404, when another delete races this one, is reported the same way |
-| Drive's comment API sees these threads | **Confirmed**: the same ids, Drive's `anchor` is the Sheets `anchorId`, and Drive shows no cell | Only this server can say where a thread is |
-
-Read from the discovery document (revision 20261005) and not probed,
-since the spike ran as one account: only a post's author may edit or
-delete it, and Google does not delete a reply that resolved, reopened or
-assigned the thread. The tools refuse those first, before anyone is
-asked. The same document says a post's text is handled as the Sheets
-editor handles it, "notifications" included, and the editor notifies an
-address a comment names; `manage_cell_comment` reports such addresses as
-ones Google may notify.
-
-Not probed: an account that may view but not comment (taken to be a
-403), the comments view under `spreadsheets.readonly`, comments on merged
-or hidden cells, whether a named address is notified, and what deleting
-a sheet does to its threads. The 2048-unit limit was probed on
-2026-10-31 (spike V, below).
-
-**The comment tools' first live run, 2026-10-09.** The driver failed
-widely, and not at the comments: every read of cells was refused.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| The in-memory fake checks a field mask | **Refuted**: it read none. Writing the cell fields once for `GridFields` and `ReadFields`, earlier on this branch, left both masks one closing parenthesis over, and Google answered every read with a bare `400 Request contains an invalid argument.` while every unit test passed | The fake refuses an unbalanced mask as Google does, which fails a hundred tests on the old masks, and `TestFieldMasksAreBalanced` names the mask |
-| A thread's first post has an id of its own | **Refuted**: the head post's `postId` is the thread's `commentId` | Nothing relies on them differing; the first post is found by its position |
-| A post's `updateTime` moves only when its text is edited | **Refuted**: a reply that reassigned the thread moved the first post's `updateTime` | The field is `updated`, not `edited`, and the text says "updated" |
-
-The third run, after these fixes and a driver step that had carried an
-empty `post_id`, passed all 246 steps, and its transcript was read: an
-edit by `post_id` changed the reply and left the first comment, a
-thread whose row was deleted kept its posts and its assignee, and a
-deleted thread's replies went with it.
-
-**The filter rows of the API record, 2026-10-09**, read against the
-Sheets API's filters guide.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| Creating a filter view changes what everybody sees on opening the file (`addFilterView` in `testdata/api-coverage.tsv`) | **Refuted**: "A FilterView is a named filter that you can turn off and on whenever you like." What everybody sees is the basic filter, "the default filter that's applied whenever anyone views the spreadsheet" | The two reasons were swapped. `addFilterView`'s now says a view changes nobody else's view, and `setBasicFilter`'s that a basic filter changes everybody's. Both stay written off |
-
-**Color scales on `manage_range`, 2026-10-09**, read against the Sheets
-discovery document (revision 20261005) and the conditional formatting
-guide and samples, then put to Google by spike S on 2026-10-09. The
-verdicts quote what came back.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| A color scale's point carries its color in `color`, as the samples page writes it | **Refined**: `InterpolationPoint.color` is deprecated, "Use color_style", and `colorStyle` "takes precedence" where both are set. Spike S Q1: a scale sent with `colorStyle` alone reads back with both, `color` filled in from it | A point is sent with `colorStyle` alone and read from either, `colorStyle` first. A unit test reads each |
-| Google refuses a malformed color scale | **Verified, spike S Q3**: a number or percentile point with no value is `400 Invalid requests[0].addConditionalFormatRule: InterpolationPoint.value is required.` A scale with no maxpoint, and a point with no type, are both `400 ...: No interpolationPointType specified.` A rule with a `booleanRule` too is `400 Invalid value at 'requests[0].add_conditional_format_rule.rule' (oneof), oneof field 'rule' is already set. Cannot set 'gradientRule'`. A value on a min point is a 200, and reads back gone | `manage_range` refuses each before the request, and a value on min or max as well, since Google would drop it. The fake refuses each in Google's words and drops a min or max point's value. A rule of neither kind is still the fake's own refusal |
-| Any point type may be a midpoint | **Verified, spike S Q2**: number 3, percent 50, percentile 50, min and max are each taken as a midpoint, and read back as sent; min and max with no value | The parser takes min and max in the middle, so a scale read back from a sheet can be sent again. min is never last, nor max first, which nothing asked Google |
-| A percent or percentile value lies between 0 and 100 | **Refuted, spike S Q5**: percent 150, percentile 150 and percentile -10 are each a 200, and read back as written. The discovery document states no bound; it defines `PERCENT` as `NUMBER` at `=(MAX(FLATTEN(range)) * (value / 100)) + (MIN(FLATTEN(range)) * (1 - (value / 100)))` and `PERCENTILE` as `NUMBER` at `=PERCENTILE(FLATTEN(range), value / 100)` | `manage_range` sends the value as written and checks no range. The value may be a formula, which no parser here could bound |
-| A number value means the same in every locale | **Refuted, spike S Q4**: under `de_DE`, a number point of `1.5` is `400 Invalid requests[0].addConditionalFormatRule: Invalid InterpolationPoint.value: 1.5`, and `1,5` is a 200, stored as written. Which value `1,5` colors from no reply says | The value is sent as written, never rewritten, and the `gradient` description says a number is written the way the spreadsheet's locale writes it. The fake refuses a decimal point under `de_DE`, the one comma locale asked. The live driver expects the refusal of `1.5`, then writes `1,5`, and a person reads the colors. On the live run of 2026-10-09 evening, Google refused `1.5` and took `1,5`; the colors are still to be read |
-
-**Typed table columns on `manage_range`, 2026-10-09**, read against the
-Sheets discovery document (revision 20261005), the tables guide and the
-Sheets help on tables, then put to Google by spike T on 2026-10-09,
-three times, and by its Q12 and Q13 each alone after. The verdicts quote
-what came back. §15 says which answers are
-still owed.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| A table column's index is the sheet's column index | **Refuted**: `columnIndex` is "relative to its position in the table and is not necessarily the same as the column index in the sheet" | `column_types` resolves a letter or a header against the table's range and sends the offset from its first column. A unit test over a table starting at B |
-| A dropdown column needs a `ONE_OF_LIST` rule, and no other type takes one | **Verified, spike T Q2**: a dropdown with no rule is `400 Invalid requests[0].addTable: Condition must be set for dropdown column type.`, and a `ONE_OF_LIST` rule on a `DOUBLE` column is `400 Invalid requests[0].addTable: Cannot set condition for non-dropdown column type.` | A dropdown always carries its list. The fake refuses both in Google's words. A rule that is not a list it refuses in its own, since nothing asked Google |
-| A sparse `columnProperties` is taken on add | **Verified, at a cost, spike T Q1**: `CURRENCY` on column 1 and `DROPDOWN` on column 3 of four, sent with no names, is a 200. Google named the two typed columns "Column 1" and "Column 2", counting the typed entries sent with no name, and wrote those names into their header cells, so "Amount" and "Status" were gone. The live run's add of three typed columns, number, date and dropdown, was taken by spike T's second run (Q11), and by `manage_range` on the live run of 2026-10-09 evening, each column named, in a spreadsheet of its own | An add sends each typed column with its header's text as its name (§7.5). The fake gives a typed entry with no name "Column N" and writes it into the header cell |
-| A table add Google has taken once is taken again | **Refuted, cause unknown, spike T Q11, second run**: on a new sheet of the spike's spreadsheet, the live run's add, number on B, date on C and a dropdown on D with no names, was a 200, and so were currency, number, date and text alone. Every add after those was `500 INTERNAL: Internal error encountered.` and made no table: percent, time, date-time, boolean and dropdown alone, all ten again with names, and the live run's add on a new sheet frozen as the driver's was. The spreadsheet held seven tables by then. The live run's add was a 500 after one table, added and deleted. Whether a count of tables, the time between adds or something else draws it is not known. The third run did the same: on a new sheet, the live run's add and currency, number, date and text alone were taken, and every add after those five was a 500, the spreadsheet holding eight tables by then. Q12, right after, met `429 RESOURCE_EXHAUSTED` on "Write requests per minute per user" on its first add, and a plain add a few seconds later was taken, which tells neither a count nor timing | On a 500, or a reply that never came, `manage_range` reads the card and says whether a table of the name and range sent is there: added, or nothing added (§7.5). The live driver's typed-column steps make a spreadsheet of their own, and on the live run of 2026-10-09 evening their add was taken there. Q12, the next row, ran alone to tell a count from timing |
-| A spreadsheet takes any number of table adds with column types | **Refuted, spike T Q12, run alone 2026-10-09**: in a fresh spreadsheet with one sheet, the live run's add, number on B, date on C and a dropdown on D, each named, was taken four times, three seconds apart, each on a block of its own. The fifth was `500 INTERNAL: Internal error encountered.` and made no table. With the first table deleted, the fifth was a 500 again, at once and a minute later. A plain add with no column types was then taken. What Google counts is not known. It is not tables there now, since a delete did not help. Nor is it typed adds in the spreadsheet alone: in Q11's, a typed add on one sheet and five on another were taken before the 500s began (third run, two on the first sheet). The live run's add of the afternoon was a 500 after a single table | When an add with column types meets a 500 and a read finds nothing added, `manage_range` says Google has refused such adds after about four in a spreadsheet, that deleting a table or waiting did not let another in, and that an add without `column_types` was still taken. Whether its columns can be typed after that is not known, and the result says so. Any other add that a read finds did not land is said to be safe to repeat. The fake has no such limit |
-| An update with `fields=columnProperties` replaces the whole array | **Verified, spike T Q3b, second run**: column 1 sent alone, named as read and typed `DATE`, over a table whose column 1 was `CURRENCY` and column 3 a dropdown of x, y and z, was a 200. Four entries read back: column 1 `DATE`, and the other three named by their headers with no type, the dropdown's list gone. Every update before it sent every column and read back four entries, not eight, so the list is not appended to either, whatever field_mask.proto says of a repeated field | The update reads the columns fresh and sends every one back. The fake replaces the whole list: a column left out keeps its header's text as its name and loses its type and list. A unit test holds the fake to Q3b, and the update's round trip test fails against it if the update sends fewer columns |
-| A column name sent, or left out, leaves the header cell alone | **Refuted, spike T Q1, Q3, Q4, Q5**: a name sent is written into its header cell; column 0 sent as "SPIKE-RENAMED" and A1 read "SPIKE-RENAMED" after. An update entry with no name is refused, `400 Invalid requests[0].updateTable: Table header row cell must have a value.`, for one column (Q3) and for every column (Q5). On add, a typed entry with no name has "Column N" written over its header (Q1) | An update sends every column's name as the same fresh read gave it, which Q6 shows is taken and leaves the header as it was. An add sends names too. The live run of 2026-10-09 evening read the header row unchanged after a typed add and after an update. The fake refuses an update entry with no name in Google's words, and writes a name sent into its header cell |
-| A name sent as read rewrites a header cell, if at all, with what it already shows | **Refuted for rich text, answered for a formula, spike T Q7, both runs**: `values.update` wrote a formula into B1, the header of a typed column, and answered 200. Google had already replaced it with "Column 2", B's place in the table, before any update, and the column took that name, in both runs. A table's header does not keep a formula written into it. C1 held "Flag" with its first two letters bold, read back as two `textFormatRuns`, the second with an empty format. An update sending every name as read, "Flag" included, left C1 holding "Flag" with no runs: the bold was gone. A format set on a whole header cell stays: A1, bold, italic and centered as a whole cell, read back the same after the update (third run). A number header was not asked | `write_values` refuses a formula into a table's header row (§7.3), as the live run of 2026-10-09 evening confirmed, and an add over one is refused (Q10, below), so no header written through the API holds one; the update's refusal over a formula header stays for one made some other way. An update is refused while any header cell holds rich text, and an add while the header of a column it types does; the header read asks for `textFormatRuns`, and a run counts only where it carries a format. The fake replaces a formula written into a header with "Column" and the column's place, and drops a header's runs when a name is written into it. It keeps the whole-cell format, as Google did. No refusal is needed for one |
-| A table may be added over a formula in its header row | **Refuted, spike T Q10**: F1 held a formula showing "Item", and G1 the text "Cost". An add over F1:G3 typing G alone, named "Cost", was `400 Invalid requests[0].addTable: Formulas are not supported in a table header row.`, and F1 kept its formula. The column with the formula was not typed | `manage_range` reads the header row before every table add, typed or not, and refuses a formula in any of its cells with Google's reason, naming the cells; a dry run says so too. The fake refuses in Google's words. The live driver writes a formula heading and expects the refusal, which the live run of 2026-10-09 evening got |
-| Google returns an entry for every column of a table | **Verified, spike T Q1**: after an add that sent two of four columns, four entries read back, each column left out named by its header cell, with no type. The first entry has no `columnIndex`, being 0 | The update's entry for a column the read left out stays, though it is not expected. The fake reads back an entry for every column |
-| An entry with a name and no type is taken | **Verified, spike T Q8**: column 0 sent as "Item" with no type, the rest as read, is a 200, and the header is unchanged | The update sends one only for a column a read gave no entry |
-| A name sent as read leaves a smart chip in a header cell | **Refuted, spike T Q9**: a person chip written into D1 renamed its column to the chip's text. An update sending every name as read then left D1 holding that text, with no `chipRuns`: the chip was erased | An update is refused while any header cell holds a chip, and an add while the header of a column it types does |
-| A type changes how a column is shown, not what its cells hold | **Refuted, spike T Q1 and Q5, both runs**: after the add typed column B `CURRENCY`, B2 kept its value, 1.5, and its number format `0.000`, set before, read back as `CURRENCY`. After the add typed column D a dropdown, D2 read back with no `dataValidation`: the per-cell list of x, y and z set before was gone. An update typing column C `BOOLEAN`, names sent, turned C2:C4, which held "maybe", nothing and the text "TRUE" written raw, into FALSE, FALSE and FALSE | A boolean column is refused over anything but a TRUE or FALSE value, text reading TRUE included, and the refusal says what Google does; the live run of 2026-10-09 evening got it over a column of words. The fake turns text and empty cells under a boolean typing into FALSE. A dropdown typing is refused while a cell under its header has a rule of its own, naming the cells, and the fake drops such a rule. D2 carried no rule after the add, the table's list included, so a column already a dropdown is not refused over it. The live driver sets a list on two cells and expects the refusal |
-| An update typing a column dropdown drops its cells' own rules, as an add does | **Verified, spike T Q13, run alone 2026-10-09**: B2:B3, inside a plain table over A1:B4, held lists of Open and Done of their own. An update typing B `DROPDOWN` with a list of its own, every column named as read, was a 200, and B2:B3 read back with no `dataValidation`. Whether an update sending a dropdown column back unchanged drops a list a cell in it was given since cannot arise: Google refuses such a list (next row) | `manage_range` refuses the update as it refuses the add, for the columns it types; a column sent back unchanged is not read. The fake drops the rules under every dropdown entry an update sends |
-| A data validation rule may be set on a cell in a typed column | **Refuted for a dropdown column, spike T Q13**: a list of x and y on B4, inside the dropdown column, was `400 Invalid requests[0].setDataValidation: This operation is not allowed on cells in typed columns.`, and B4 read back with no rule. An update sending every column back as read left it with none. A column of another type, a range only half in the column, a header cell and a rule's removal were not asked | `manage_range` `data_validation` `add` and `update` are refused over the cells under a dropdown column's header, a dry run included, naming them and quoting Google, from the tables on the card (§7.5). A range half in the column is refused over the half in it, as Google's message suggests. The rest go to Google as sent. The fake refuses a rule over a dropdown column's cells in Google's words, a range reaching them included. Owed: spike T Q13b asks a rule's removal there, a rule over A3:B3 half in the column, and a rule on a column typed text. The live driver asks for the refusal on its typed table |
-| A TRUE or FALSE value is kept under a boolean typing | **Verified, spike T Q5b, third run**: J2:J4 held the values TRUE, FALSE and TRUE, read back as `boolValue`, not text. An update typing J `BOOLEAN`, both columns named, left them TRUE, FALSE and TRUE. An add over L1:M4 typing M `BOOLEAN`, named "Done", turned M2:M4, which held TRUE, "maybe" and nothing, into TRUE, FALSE and FALSE: an add does to a word and an empty cell what an update does | `manage_range` lets a TRUE or FALSE value through and refuses text, on add and on update, so the refusal over text is right and a true or false value needs none. The fake keeps a TRUE or FALSE value, and turns text and empty cells into FALSE, on add and on update |
-| A chip column read back is taken back unchanged | **Unverified, not asked**: the chip types are in the enum, and nothing says whether a request may carry one. Spike T made no chip column, so the array Q6 sent back carried none | `manage_range` never sets a chip type, and an update sends a chip column back as it read |
-
-**Pivot grouping rules, filters and calculated values on
-`manage_pivot_table`, 2026-10-09**, read against the Sheets discovery
-document (revision 20261005) and the pivot table reference page, then
-put to Google by spike U on 2026-10-09. The verdicts quote what came
-back. A per-user write quota cut off two of U9's questions with a 429,
-and they are still owed.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| A pivot value may carry a column and a formula | **Refuted by the reference, and by Google, spike U1**: `PivotValue` has "Union field `value` ... Exactly one value must be set", of `sourceColumnOffset`, `formula` and `dataSourceColumnReference`. Sent both: `400 Invalid value at 'requests[0].update_cells.rows[0].values[0].pivot_table.values[0]' (oneof), oneof field 'value' is already set. Cannot set 'sourceColumnOffset'` | `sourceColumnOffset` is a pointer, so a calculated value is sent without it and a column's offset of 0 is still sent. The fake refuses both in Google's words, naming the field the request carries second, and neither in its own |
-| A formula value takes any summary | **Refuted by the reference, and by Google, spike U1**: "If formula is set, the only supported values are SUM and CUSTOM. If sourceColumnOffset is set, then `CUSTOM` is not supported". A formula averaged: `400 Invalid requests[0].updateCells: Invalid summarizeFunction: AVERAGE. Only "CUSTOM" or "SUM" are valid if PivotValue.calculatedField is set.` `CUSTOM` on a column: `400 Invalid requests[0].updateCells: "CUSTOM" may not be used in PivotValue.summarizeFunction unless PivotValue.calculatedField is set.` A formula with no name, summed, is a 200, drawn under an empty heading | A calculated value is `CUSTOM` unless it ends in `sum`; another summary word, and `custom` on a column, are refused before the request, and so is a calculated value with no name, which would head its column with nothing. The fake refuses both in Google's words and draws an empty heading |
-| Two groups may carry a rule on one column | **Not enforced, spike U2**: the reference says "Only one PivotGroup with a group rule may be added for each column in the source data, though on any given column you may add both a PivotGroup that has a rule and a PivotGroup that does not". Google took two rules on one column with a 200, and a plain group beside a rule too. What it draws for two is not documented | Still refused before the request, kept groups and a grouping made by hand included, and the refusal says the reference forbids it and Google does not. The fake takes it, as Google did |
-| A histogram takes any interval and bounds | **Verified, spike U3**: an interval of 0 is `400 Invalid requests[0].updateCells: Histogram group rules require a positive value for interval.`, and start 70 with end 20 is `400 Invalid requests[0].updateCells: Start must be less than end.` A start of 0 is kept: the definition reads back `"histogramRule": {"interval": 10, "start": 0}` | `manage_pivot_table` refuses an interval of 0 or less and a start at or past the end, and sends a start of 0. The fake refuses both in Google's words |
-| A date or histogram rule draws the labels the reference shows | **Refined, spike U4**: `YEAR_MONTH` drew "2026-Jan", "2026-Feb" and "2026-Apr" under the heading "Day - Year-Month". Every 20 from 25 to 70 drew "< 25", "25 - 44", "45 - 64" and "65 - 70", with a value of 70, the end itself, in the last bucket, under "Grouped Age". Every 10 with no bounds drew "20 - 29" up to "70 - 79", counted from zero. The live run drew "60 - 70" for every 10 from 20 to 70 | Nothing here depends on a label. The fake draws Google's bucket labels, the end in the last bucket, and a value past the end as "> end", which nothing has drawn. It heads a group with the column's heading, where Google writes "Grouped Age"; nothing reads that. The live driver checks "2026-Jan", "20 - 29" and "60 - 70" |
-| A filter by condition alone shows what meets it | **Verified as the reference reads, spike U5**: a condition alone with `visibleByDefault` false showed nothing, only "Grand Total"; with it true it showed every value meeting it, East 100, North 300 and West 280 | A condition alone is sent with `visibleByDefault` true; a list, alone or with a condition, without it. The fake reads the reference literally |
-| A pivot filter takes every condition | **Refuted, spike U6**: `ONE_OF_LIST`, which the discovery document marks "Supported by data validation" alone, is `400 Invalid requests[0].updateCells: ConditionType 'ONE_OF_LIST' is not supported in filters.` | `filters` takes only the conditions the discovery document marks for filters, and refuses the eight it names that are data validation's alone: `text_is_email`, `text_is_url`, `date_on_or_before`, `date_on_or_after`, `date_between`, `date_is_valid`, `one_of_list` and `boolean`. The fake refuses each in Google's words, which only `ONE_OF_LIST` has been seen to get |
-| A pivot's filters are in `filterSpecs` | **Verified, spike U7**: `criteria` is "deprecated in favor of filter_specs"; "Both criteria and filter_specs are populated in responses. If both fields are specified in an update request, this field takes precedence". `filterSpecs` sent alone read back with `criteria` too, `criteria` alone with `filterSpecs` too, and a pivot sent with neither over one that had both read back with no filter | `filters` and `clear_filters` write `filterSpecs` and take `criteria` out. The clear needs both gone, since `criteria` left behind would bring the filters back; `filters` would not, and sends no stale `criteria` beside new `filterSpecs`. `list` reads `filterSpecs`, and `criteria` only where a pivot has none. The fake stores both, as a response carries them |
-| A date filter's relative date goes back as one | **Verified, spike U8**: `DATE_BEFORE` `TOMORROW` and `DATE_AFTER` `PAST_YEAR` are each a 200, read back as `relativeDate` in both filter forms, and the first kept all six rows | `list` writes one as its word lower-cased, such as `date_before tomorrow`, and `filters` reads the six words back as `relativeDate` on `date_before` and `date_after`. The fake does not evaluate a date filter |
-| An update that leaves the groups out keeps a grouping made by hand | **Verified, spike U9, two answers owed**: "Coast", East and West, drew Coast 450 and North 300, and the same rule sent back with Cost summed drew Coast 290 and North 100. A group named by a number is `400 Invalid requests[0].updateCells: Found a manual group name of type number. Manual group names must be strings.` An item in two groups, and two groups of one name, hit `429` and are unanswered | The update sends the rule back as it read. The fake refuses a group named by a number in Google's words, and an item in two groups or a name twice in its own, which spike U still asks |
-| A calculated value names its columns by heading | **Verified, spike U1**: `PivotFilterCriteria.condition` says "The source data of the pivot table can be referenced by column header name", and `PivotValue.formula` only that it "must start with an `=` character". `=Revenue-Cost` summed drew East 70, North 200 and West 90, which is each region's revenue less its cost | The formula is sent as written, and Google resolves its names. The fake evaluates headings, quoted where they hold a space, arithmetic and five functions, and refuses the rest by name. The live driver checks the SUM formula's total and prints the CUSTOM one |
-
-**Per-call approval, 2026-10-23.** §9a's conventions, from the family's
-standard as decided on 2026-10-22 and re-checked on 2026-10-23 against
-the 110 most-used MCP servers, every quote re-read at its source there.
-Tier 3 unless a row says otherwise: inherited from that standard and not
-re-checked here.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| A server should put a write it cannot undo to the person itself, through MCP form elicitation | **Refuted for this server, tier 3.** The MCP specification puts consent to each tool call on the host, and its elicitation page sets no consent rule: a client gathers the answer "from the user or other sources". 83 of the 91 servers with risky writes among the 110 never ask; the 8 that do pick their own scope, from one tool (github/github-mcp-server's `delete_repository`) to about 145 commands (microsoft/mcp). Claude Code's `Elicitation` hook answers with no dialog, Codex under full access accepts a form with no fields (openai/codex PR #17164), and the VS Code extension does not draw one. No client's allow and ask rules match an elicitation | The question is gone (§9a); a removed `GSHEETS_REQUIRE_PROMPT` set on refuses to start |
-| VS Code prompts by `destructiveHint` | **Refuted, tier 3.** VS Code prompts on every tool without `readOnlyHint` and ignores `destructiveHint`; Codex prompts by `destructiveHint`, and claude.ai and ChatGPT document that it decides theirs | `readOnlyHint` only on the six reads; `destructiveHint` on the five deletes and the six ordinary writes that can take away what they land on (§9a.5) *(Superseded 2026-10-31: every write but the three that only add, last table.)* |
-| A risky value of an argument is covered by the client's prompt for its tool | **Refuted, tier 3.** claude.ai, Codex, VS Code and Copilot remember "always allow" per tool, never per argument value, and Claude Code matches an MCP argument only in a command-line deny rule | `connect_data_source` split from `manage_data_source`; `refresh` needs `id`; `append_rows` `insert: overwrite` removed; `allow_external_formulas` became `GSHEETS_ALLOW_EXTERNAL_FORMULAS` (§9a.8) |
-| Every Destructive tool should carry `requiresUserInteraction` for a client that cannot ask | **Refined, tier 3.** Claude Code documents the mark for "tools whose permission prompt is itself the point", prompts for it on every call with no "don't ask again", and refuses the call where nothing can be drawn. On a delete made many times in a row it is a prompt per call, the failure the question had | The mark on `delete_data_source` alone (§9a.6) |
-| `deleteDataSource` takes the source and its sheet, and nothing else | **Refined, tier 3**: the survey for this port read Google's description of `DeleteDataSourceRequest` as also deleting the source's sheet and unlinking every data source object built on it: tables, pivot tables, formulas and charts. The discovery snapshot here records field names only. **Read again 2026-10-23** in revision 20260610 of the discovery document, the newest copy on hand offline: "Deletes a data source. The request also deletes the associated data source sheet, and unlinks all associated data source objects." `DataSourceObjectReference` names those objects: a chart, a formula's cell, a pivot table's anchor, a table's anchor and the `DATA_SOURCE` sheet. The unlinking has not been probed, since the driver cannot connect a source | `delete_data_source` carries the mark: other objects depend on what it removes |
-| An append that writes over the rows after a block can be guarded | **Refuted, tier 1** by this server's own finding (§7.3): `values.append` picks its destination during the call, so no read before it sees the rows `OVERWRITE` replaces, and no checkpoint can witness them | `insert: overwrite` removed; `write_values` writes over known addresses |
-| An `overwrite` flag is enough to say the person chose to replace what is there | **Refuted, by this server's own guard**: a flag set after a refusal covers whatever the cells hold when the write lands, a collaborator's later edit included, and a model can resend it on its own | `overwrite` needs `expect_checkpoint`, which the refusal and a dry run give; the instructions say `overwrite` carries a decision the person made, not a way past a refusal (§7.3) |
-| A `find_replace` cannot create a formula that reaches outside the spreadsheet | **Unverified, not probed**: the external-formula check ran only over values a write sends, and a replacement's text was never checked, inside formulas or out. **Refuted by the review of the port, 2026-10-23**: checking the replacement text alone missed a rewrite that completes a name from a formula already there | A replacement naming such a function is refused unless the operator's setting allows it, whatever it searches, and a rewrite inside formulas is run first over each formula read and refused where one would reach outside (§7.3) |
-| Connected Sheets results are seen only by those with BigQuery access | **Unverified, waiting on a live probe** | `connect_data_source` documents only that the query's results go into a sheet of the spreadsheet (§9a) |
-| A comment's assignee, or an address its text names, is notified or given access only if the spreadsheet is shared with them | **Unverified, waiting on a live probe** | `manage_cell_comment` reaches any address meanwhile, recorded as a deviation (§17b) |
-
-**The bundle's shape, 2026-10-24.** The family's §10b, checked
-2026-10-23 against anthropics/mcpb v2.1.2 and `70fe3b34` and Claude
-Desktop's documentation. Tier 1 for the specification and the reference
-host's code; Claude Desktop itself was not probed.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| A bundle install has a second approval behind the server, as Claude Code's ask rules are | **Refuted (the docs and the reference host; no page names desktop extensions).** anthropics/mcpb v2.1.2 declares `tools` for display, and its `src/` reads it only in `init`; its `src/shared/config.ts` passes a boolean to `env` as "true" or "false". claude.com/docs/connectors/getting-started: "Select Allow once to continue, or Always allow to skip the prompt for that tool from now on". claude.com/docs/connectors/building/review-criteria: readOnlyHint and destructiveHint "determine auto-permissions in Claude" | Every switch the bundle asks for defaults to the server's own default, off, and `gates mcpb` refuses one that does not, compared as JSON. The bundle declares no `tools` list (§12) |
-| A bundle's optional setting the person leaves blank reaches the server empty | **Refuted (the reference host).** anthropics/mcpb v2.1.2 `src/shared/config.ts` builds its variables from the defaults and the person's values, and leaves a variable it does not have as written, so an optional key with no default reaches `env` as the text `${user_config.x}`. The 4.0.0 bundle asked only for the client file, which is required, so it was not affected | Every optional key has a default, and `gates mcpb` refuses one without. The environment the defaults give the server must configure it as no environment does, which `TestVarsDescribeWhatBuildDoes` holds for each setting's default and for `""`. A variable of spaces alone is unset too, since a field cleared to a space would otherwise reach the server as one, which `TestASettingOfSpacesIsUnset` holds for every variable the server reads |
-| Any `command` the specification shows runs from the bundle | **Refined (the specification and the reference host; Claude Desktop not probed).** anthropics/mcpb v2.1.2 MANIFEST.md shows a binary's command once as `server/my-server` and never says what it is resolved against, and says `${__dirname}` "is replaced with the absolute path to the extension's directory"; its `src/shared/config.ts` substitutes the variables in `command` and resolves no path | `gates mcpb` requires every command to start with `${__dirname}/` and to name a staged program, as the committed manifest's do, and refuses a relative or absolute one. 4.1.0's gate stripped a leading `/` and passed `/server/x`. A probe of Claude Desktop's working directory would settle the relative form |
-| A platform override's `env` and `args` are merged into `mcp_config`'s | **Refuted (the reference host; Claude Desktop not probed).** anthropics/mcpb v2.1.2 `src/shared/config.ts`: `result.args = platformConfig.args \|\| result.args` and `result.env = platformConfig.env \|\| result.env`, and the `${user_config.x}` substitution covers the whole configuration, `args` included | An override's `env` or `args`, an empty one included, replaces the base's, so the settings would not reach that platform, and an argument such as `-enable-destructive=true` would reach the server past every check on `env`. `gates mcpb` refuses any `env` or `args` on an override and an argument in `mcp_config.args`, and keeps the base's `"args": []`, refusing it missing or null |
-| `privacy_policies` is optional for a bundle | **Refuted (the specification).** anthropics/mcpb `MANIFEST.md`: "Required when the extension connects to external services (first- or third-party) that process user data"; added in manifest_version 0.2, and enforced by neither the schema nor `mcpb validate` | The manifest names https://policies.google.com/privacy, which answered 200 on 2026-10-24, and `gates mcpb` refuses an empty list |
-
-**Hints, limits and times, 2026-10-31.** The family's sweep of that
-day. Tier 1 where a row says verified here.
-
-| Convention | Verdict | Effect |
-|---|---|---|
-| `destructiveHint: false` fits a write that changes what is there but cannot take away data, such as a rename or a refresh | **Refuted, tier 1.** The MCP schema (2025-11-25), `ToolAnnotations`: "If false, the tool performs only additive updates", and the default is true. A rename, a move, a reassigned comment and a refreshed data source all change what is there | Every write says true but `create_spreadsheet`, `append_rows` and `connect_data_source`. `manage_sheet`, `edit_dimensions`, `manage_anchor`, `manage_data_source` and `manage_cell_comment` flip, and stay out from behind the destructive flag. `Def.Destroys` became `Def.Adds`: a write says true unless marked as only adding, the schema's own default, so a new write errs toward a prompt. `TestTheHintsAreExact` names the three that say false. `connect_data_source` says false though it starts a billed query: the hint is about what a call changes, and the cost is gated by `GSHEETS_ENABLE_DATA_SOURCES` and said by `openWorldHint` |
-| A cell's 50 000 limit counts bytes | **Refuted, verified here (spike V, 2026-10-31).** Under `RAW` and `USER_ENTERED` alike, 50 000 é, 100 000 bytes, and 25 000 emoji are taken whole; 50 001 é and 25 001 emoji are refused, "Your input contains more than the maximum of 50000 characters in a single cell". Google counts UTF-16 units | The guard counts UTF-16 units, and only for a string longer than the limit in bytes, since units are never more than bytes |
-| A comment's 2048 limit is in UTF-8 code units, as Google's message says | **Confirmed, verified here (spike V, 2026-10-31).** On an empty cell 2048 x, 1024 é and 512 emoji are taken, and one more of each refused, "content must not exceed 2048 UTF-8 code units". On a cell holding a 100 000-byte value every comment at the limit failed, "An error occurred while saving comments"; not followed further | No change: `maxCommentBytes` already counts bytes. The comment tools' list of what was not probed no longer names it |
-| An anchor's 100-character name counts characters | The limit is this server's, not Google's, and the refusal said characters while counting bytes | It counts characters, so a name of 100 é is taken |
-| Google writes a time it does not have as the Unix epoch | **Tier 2.** Seen live from Google Chat's API on 2026-10-31: a read of a space answered `1970-01-01T00:00:00Z` for a time it lacked. Not seen from Sheets or Drive; nothing in a spreadsheet dates from 1970, so reading the epoch as no time loses nothing | `knownTime` in `internal/service` reads it as no time, at the three places a Google time is shown: a card's modified time, a search hit's, and a comment post's |
-| A scope must be on the consent screen to be granted | **Refined, tier 1.** Google's configure-oauth-consent guide (updated 2026-09-03): "you only need to list scopes for apps used by people outside your Google Workspace organization", and for internal apps "scopes aren't listed on the consent screen". Confirmed live the same day on an Internal app, whose token held scopes its Data Access page does not list | The README, the setup guide, the runbook and `login`'s and `doctor`'s warnings ask for the scope list on External apps only, and name a box left unticked at login as the other cause of a missing scope |
-| A commit footer's token is matched exactly, so `SCHEMA-CHANGE:` must be written in capitals | **Refuted, tier 1.** Conventional Commits 1.0.0, read 2026-11-01: item 15, "The units of information that make up Conventional Commits MUST NOT be treated as case-sensitive by implementors, with the exception of BREAKING CHANGE which MUST be uppercase"; item 16, "BREAKING-CHANGE MUST be synonymous with BREAKING CHANGE" | `schema-ack` reads `SCHEMA-CHANGE:` in any case, so `Schema-Change:` acknowledges what it names. `BREAKING CHANGE:` and `BREAKING-CHANGE:` count only in capitals |
-| A commit footer's value is one line, and a paragraph holding a line that is not `Token: value` is not a footer block | **Refuted, tier 1.** Conventional Commits 1.0.0, read 2026-11-02: item 8, "Each footer MUST consist of a word token, followed by either a `:<space>` or `<space>#` separator"; item 10, "A footer's value MAY contain spaces and newlines, and parsing MUST terminate when the next valid footer token/separator pair is observed" | `schema-ack` reads a footer paragraph as one whose first line starts a footer, with either separator. Inside it, a line that starts a footer ends the value before it, and any other line continues that value, so a wrapped value counts, and a `Closes #12` footer beside it does not drop it. A `Token #value` footer counts toward the block but acknowledges nothing: item 12 writes `BREAKING CHANGE` with a colon and a space. A wrapped line that itself reads `word: ` starts a new footer, as item 10 says |
+The model chooses the calls, and a cell somebody else wrote can persuade
+it. A server the model can reconfigure has no operator: every setting in
+it would be one persuasive cell away from on.
+
+`TestNoToolCanWriteTheServersSettings` walks every package
+`internal/server` reaches, tests aside. It fails if one imports the
+profile, the credentials, the sign-in, `os`, `os/exec` or `syscall`, and
+it asserts a floor on how many packages it read, so a walk that found
+nothing does not pass.
+
+Rejected: a tool or an argument that changes a setting for the session,
+such as allowing external formulas on one call (D-28).
+Cost: turning on a tool or a formula means restarting the server with
+another setting, which a person does and a model cannot.
+
+### D-41 A gated delete takes its target in A1, and names it
+
+A client's approval prompt shows the call's arguments, so a gated
+delete's arguments say what goes, in terms a person can check.
+
+`delete_dimensions` takes its band in A1. An `anchor:` band, which
+resolves only when the call runs, is refused `[invalid]`, naming the
+band it stands for. `clear_values` always takes its range in A1. An
+omitted range, which would mean the whole sheet, and an `anchor:` are
+refused, each naming the range it stands for. A whole sheet named in A1
+is still a clear.
+
+`delete_data_source` takes `sheet`, the title of the sheet the source
+made, beside its `id`. A data source id means nothing to a person, and
+the tab is what goes. The title is compared with the card, read again
+past the cache before a mismatch is refused `[conflict]`. A dry run
+without the title names the sheet. A call without an `id`, or with one
+the spreadsheet does not have, lists each source and its sheet, since
+with only the destructive switch on, no other tool lists their ids.
+
+Rejected: an omitted range standing for the whole sheet; an `anchor:`
+that resolves when the call runs.
+Cost: `delete_data_source` without its sheet's title, or with one the
+card disagrees with, is refused, so a caller reads the card first.
+
+### D-42 A delete counts and names what it takes, including what Google removes silently
+
+A delete counts what it takes and names what goes with it before it asks
+for `confirm`, on the refusal, the dry run and the result alike.
+Google's replies say nothing about most of this, so the server has to
+say it beforehand.
+
+`delete_sheet` counts the non-empty cells, formulas and charts, and
+names the anchors on the sheet. `delete_dimensions` counts the cells and
+formulas on the band. It names the anchors on the band, which
+`deleteDimension` removes without a word, and the charts whose series
+read it: a chart survives the delete, keeps its place and its title, and
+draws nothing
+([DeleteDimensionRequest](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#DeleteDimensionRequest)).
+
+`clear_values` counts what it can remove rather than what is there. A
+clear over a pivot table's output does nothing, while one over its
+anchor takes the whole table, so an anchor in the range is named. A
+clear larger than one read is refused with its size, since a guard that
+read part of a range does not guard the rest. `delete_data_source` names
+the sheet it takes.
+
+Rejected: a clear sent for a range larger than its one read.
+Cost: naming a band's anchors costs a developer metadata search on every
+band delete. `delete_dimensions` does not name the pivot tables whose
+source a band cuts, though their output can fall to a header and a grand
+total (#63).
+### D-43 Connected Sheets is opt-in: one setting registers its tools and asks for `bigquery.readonly`
+
+Connected Sheets needs `bigquery.readonly`: `addDataSource` is refused
+under `spreadsheets` and `drive.readonly`, with Google naming that
+scope, and refreshing a real BigQuery source needs it too
+([AddDataSourceRequest](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#AddDataSourceRequest)).
+
+`GSHEETS_ENABLE_DATA_SOURCES` turns it on. It registers
+`connect_data_source` and `manage_data_source`, and adds
+`bigquery.readonly` to what `login` asks for. Off, which is the default,
+the login screen asks for nothing about BigQuery.
+
+Most people using a Sheets server do not use BigQuery, and asking them
+to grant access to it for a tool that needs a billing-attached Cloud
+project is a cost. The setting makes that cost theirs to choose.
+`doctor` says which scopes the token carries.
+
+Listing data sources needs no extra scope, so `get_spreadsheet` reports
+a connected source in every configuration. `delete_data_source` is
+Destructive rather than Connected, since the delete is reachable under
+the default scopes wherever a source exists.
+
+Rejected: no Connected Sheets, which was weighed and overruled;
+`bigquery.readonly` at every login.
+Cost: turning it on means signing in again, and a BigQuery source needs
+a Cloud project with billing. Whether a collaborator without BigQuery
+access sees the results is not known, so the description says only that
+they go into a sheet (#65).
+### D-44 Every error is a tool result, `[class] message`, from a closed vocabulary that says what to do
+
+Every failure a caller sees is a tool result, not a protocol error, in
+the form `[class] message`. The model sees a tool result and can act on
+it. The message says what to do next.
+
+The vocabulary is closed and declared once, in `service.Classes`, with a
+comment on each class saying what it asks of the caller. A class exists
+only where it asks for something the others do not.
+
+`ambiguous` says a reference matched several things and the caller must
+choose. `ambiguous_outcome` says a write may have landed and the caller
+must go and look. `blocked` is this server refusing what the API would
+allow, and `forbidden` is the account lacking access. A quota refusal
+says it is quota, since one server reported a quota error as something
+the person had to fix
+([#75](https://github.com/xing5/mcp-google-sheets/issues/75)).
+
+`make classes` reads the declared classes and every class the code
+emits, and fails on one emitted and not declared, on one declared and
+never emitted, and on a scan that read too little to mean anything.
+
+Rejected: a smaller vocabulary of six classes, which collapses
+`ambiguous` and `ambiguous_outcome` into `invalid`.
+Cost: the SDK's own schema validation answers outside the vocabulary, so
+an argument with a wrong name or type is refused in the SDK's words
+(#79).
+### D-45 Repeatability follows the HTTP method
+
+Whether a request may be sent twice follows from its HTTP method. A GET
+or a PUT may be repeated, and `values.update` is a PUT. A POST may not:
+`values.append` would insert the rows twice, and `batchUpdate` would
+make a second sheet. So a repeatable request retries a transient failure
+with backoff, honoring `Retry-After`, and a POST retries only on 429, a
+refusal to begin.
+
+Any 5xx, 503 and 500 included, or a cut connection, on a write that is
+not repeatable is `[ambiguous_outcome]`. It says to read the spreadsheet
+before repeating the write. Google's `code.proto` says of `UNAVAILABLE`
+that it is "not always safe to retry non-idempotent operations"
+([code.proto](https://github.com/googleapis/googleapis/blob/master/google/rpc/code.proto)).
+A write canceled while a retry waits, after a first attempt was sent,
+is ambiguous too.
+
+Three POSTs only read: `spreadsheets.getByDataFilter`,
+`values.batchGetByDataFilter` and `developerMetadata.search`. A
+`readOnly` flag marks them, and a test over the syntax tree of
+`internal/gapi` allows the flag on those methods by name. A POST added
+without thought counts as a write and fails closed.
+
+Rejected: retrying a write the API calls idempotent; a method-name
+pattern for the reading POSTs; retrying a write that is not repeatable
+after a 503.
+Cost: a write that may have landed is `[ambiguous_outcome]`, and the
+caller reads before repeating it. A write canceled while its request is
+in flight comes back `[unavailable]` instead (#84).
+### D-46 Requests are paced at the documented per-user quota, one in flight
+
+Requests are paced at the quota Google documents: 60 read requests and
+60 write requests a minute per user, refilled every minute
+([limits](https://developers.google.com/workspace/sheets/api/limits)).
+`internal/gapi` holds a read limiter and a write limiter at one request
+a second each, with a small burst, and lets one request be in flight at
+a time. A limiter is taken inside the retry loop, once per attempt.
+
+One request at a time is also Google's own advice for avoiding 503s on a
+spreadsheet
+([troubleshoot](https://developers.google.com/workspace/sheets/api/troubleshoot-api-errors)).
+A 429 costs a retry and a wait for the minute to refill, so pacing below
+the quota is faster than meeting it head on.
+
+Raising the limiters would not raise the quota. Google counts a request
+per user however fast it arrives, and a faster client would spend its
+minute sooner and then wait.
+
+Rejected: limits guessed rather than read from Google's page; limits
+raised past the quota, which would not raise it.
+Cost: a request takes about a second with one in flight, so a turn of
+several calls takes seconds. No test pins the rates or the one request
+in flight; review does.
+
+### D-47 Every request runs under a deadline, the token refresh included
+
+Every request runs under a deadline. A read attempt gets
+`GSHEETS_HTTP_TIMEOUT`, and a write gets `GSHEETS_WRITE_TIMEOUT`, whose
+default matches the 180 seconds Sheets lets a request run before it
+answers with a timeout
+([limits](https://developers.google.com/workspace/sheets/api/limits)).
+`login` gives up waiting for the browser after a bound.
+
+The token refresh is the request that is easy to leave unbounded. An
+oauth2 refresh runs on the HTTP client found in its context, and with
+none there it runs on `http.DefaultClient`, which has no timeout. So the
+token source and the login code exchange each carry a bounded client of
+their own, and a test hangs a listener to prove it.
+
+The reason is that a stalled request hangs the call, and the client
+shows the person nothing. With one request in flight (D-46), it also
+holds up every call behind it.
+
+Rejected: the client's `Timeout` alone, since an oauth2 refresh
+otherwise runs on `http.DefaultClient`.
+Cost: a write may run as long as Sheets allows, and a stuck write holds
+the one request in flight for that long.
+
+### D-48 Spreadsheet metadata is cached briefly and never trusted for correctness
+
+The spreadsheet card is reused by id for `service.CacheWindow`, and the
+sheet title to id map with it. A write through this server drops the
+entry.
+
+Every tool call that names a sheet reads the card first, so a turn that
+calls `get_spreadsheet` and then two `read_range`s pays for the card
+once instead of three times. With one request in flight (D-46), each
+saved call is about a second. The gap between two tool calls is model
+latency, not machine latency, so a window of a few seconds never fires.
+The window is long enough to span a turn, and not much more.
+
+A structural write through this server drops the cached card, so a
+rename through this server is visible at once. A values write does not:
+after `append_rows` adds rows, a read can resolve its window against the
+row count from before the append until the window ends. A sheet renamed
+by someone else inside the window fails the next call loudly rather than
+reading the wrong rectangle. `delete_data_source` reads the card again
+before it refuses a source or a sheet it does not find (D-41).
+
+Rejected: a five-second window, which never spans a turn.
+Cost: a sheet renamed by someone else inside the window fails the next
+call that names it, and a read after `append_rows` can miss the appended
+rows, until the window ends (#85).
+### D-49 Scopes are `spreadsheets` plus `drive.readonly`, or their read-only pair
+
+The server asks for `spreadsheets` and `drive.readonly`. Read-only mode
+asks for `spreadsheets.readonly` and `drive.readonly` (D-50).
+`drive.readonly` covers the Drive calls the server makes: `files.list`,
+`files.get` and `about.get`.
+
+`drive.file` reaches only the files the app created or the person opened
+through the Google Picker
+([scopes](https://developers.google.com/workspace/sheets/api/scopes)). A
+stdio server cannot show a Picker, so a search under `drive.file` would
+find almost nothing. Full `drive` would let the server manage files,
+which it does not do (D-02). A scope asked for and not used is access
+the person granted for nothing.
+
+A missing scope is `[forbidden]`, naming the scope and saying to run
+`login` again.
+
+Rejected: `drive.file`, which reaches only files the app made or the
+Picker showed; full `drive`; `openid` and `userinfo.email` to record an
+address (D-54).
+Cost: trashing a file needs a Drive write scope, so the live driver
+leaves its scratch spreadsheets for a person to trash (D-11).
+
+### D-50 Read-only mode asks for read-only scopes and registers only the reads
+
+`GSHEETS_READ_ONLY=true` registers only the reads and asks for
+`spreadsheets.readonly` and `drive.readonly` at `login`.
+
+Read-only mode is a restriction Google enforces, not a label. Under a
+read-only scope, only `spreadsheets.get`, `values.get` and
+`values.batchGet` work. `getByDataFilter`, `values.batchGetByDataFilter`
+and both developer metadata reads need a write-capable scope, as each
+method's scopes in the discovery document say
+([discovery](https://sheets.googleapis.com/$discovery/rest?version=v4)).
+So A1 is the only addressing there is in read-only mode. No read may
+depend on a data filter or developer metadata, and anchors are a label a
+read can use but never needs (D-19).
+
+A server that only hid its writes would still hold a token that can
+write. With the read-only pair, Google refuses the write too.
+
+Rejected: read-only as a scope swap alone, without changing what is
+registered.
+Cost: data filters and anchors are unavailable, so A1 is the only
+addressing. Switching modes means signing in again.
+
+### D-51 Sign-in is Google's desktop flow: a loopback redirect on 127.0.0.1, a random port and PKCE
+
+`google-sheets-mcp login` reads a Desktop app client JSON, opens
+Google's consent page in a browser, and listens on a random port on
+`127.0.0.1`. It checks `state`, and exchanges the code with PKCE. This
+is Google's documented flow for installed applications
+([native app](https://developers.google.com/identity/protocols/oauth2/native-app)),
+and the loopback redirect RFC 8252 describes.
+
+A desktop client keeps everything on the person's machine: the client
+file, the redirect and the token. Nothing has to be hosted to receive
+the code. PKCE means another local process that catches the code cannot
+exchange it. A random port leaves nothing listening at a known address.
+A mismatched `state` is refused, and a denial on the consent page is
+reported as one.
+
+Rejected: a Web application client, which needs a redirect somebody
+hosts.
+Cost: `login` needs a browser on the machine, or a port forwarded over
+SSH from one.
+
+### D-52 The refresh token lives in the keyring, or an owner-only file warned about on every use, and the environment overrides both
+
+The refresh token is found in this order: `GSHEETS_REFRESH_TOKEN` in the
+environment, for CI and automation; the OS keyring, keyed by the
+profile; then a file readable only by its owner, under the profile's
+directory. The file is written only when the keyring was unavailable at
+`login`, and every use warns about it.
+
+A refresh token opens every spreadsheet the account can open, so it
+belongs in the place the operating system keeps secrets. A broken
+keyring, such as a machine with no secret service, falls through to the
+file so a headless machine still works. Its error is reported when
+nothing else is found, so a silent keyring is not mistaken for a missing
+login.
+
+The tests redirect the keyring as well as the config directory and the
+environment, so `go test` never reads or deletes the real token.
+
+Rejected: a token file as the default store, which leaves the credential
+in plain text on every machine.
+Cost: a token file is a credential in a file. `logout` leaves the
+environment override alone, since it did not put it there.
+
+### D-53 Profiles separate storage, not grants, and `logout` names the profiles it takes
+
+`GSHEETS_PROFILE` keeps a separate client path, token and account under
+`GSHEETS_CONFIG_DIR`. A profile is separate storage, not a separate
+grant.
+
+Google revokes the grant, not one copy of the token. Two profiles that
+sign the same account in through the same OAuth client share that grant,
+so `logout` under one signs out the other at the same moment. So
+`logout` says that revocation covers every profile sharing the client,
+and names those profiles before and after it revokes. `logout -local`
+deletes this profile's stored copy without revoking anything.
+
+The reason is that a logout which reports one profile while signing out
+several misleads the person about what still works.
+
+Rejected: profiles as separate grants.
+Cost: `logout` revokes every profile sharing the OAuth client and
+account, and `logout -local` keeps the others signed in.
+
+### D-54 The account address comes from Drive's `about.get`, stored whole and printed masked
+
+The profile records the signed-in account's address, read from Drive's
+`about.get`, which `drive.readonly` already allows
+([about.get](https://developers.google.com/workspace/drive/api/reference/rest/v3/about/get)).
+It is stored whole and printed masked by `status` and `doctor` (D-08).
+
+`tokeninfo` returns an address only for a token carrying an email scope,
+and this server asks for none. Adding a scope to record a string would
+widen the grant for a label.
+
+Drive's `User.emailAddress` "may not be present in certain contexts if
+the user has not made their email address visible to the requester"
+([User](https://developers.google.com/workspace/drive/api/reference/rest/v3/User)).
+So an absent address never erases a recorded one. `status` prints
+`not configured` when nobody is signed in and `(not recorded)` when
+somebody is but Drive gave no address.
+
+Rejected: `tokeninfo`, which carries no address under these scopes; a
+third scope to record a string.
+Cost: an account that hides its address shows as `(not recorded)`.
+
+### D-55 The server starts and serves without credentials, answering `[auth]` per call
+
+The server starts and serves without a usable refresh token. It warms
+the token off the startup path, and on a failure it logs and keeps
+serving. Every tool then answers `[auth]`, naming `login`.
+
+A server that exits at start shows the person "failed to connect" in the
+client, and the model never learns why. A server that answers `[auth]`
+tells both of them what to do. `--dump-schemas` works without
+credentials too, so the schema gates run in CI where there are none.
+
+The smoke gate drives the shipped binary with no credentials and checks
+that a call answers `[auth]`. `doctor` checks the credentials, the token
+exchange, the granted scopes and both APIs, for the person setting up.
+
+Rejected: exiting, which shows the person "failed to connect" and the
+model nothing.
+Cost: a server with no credentials registers every tool, so a client
+lists tools that each answer `[auth]` until `login` runs.
+
+### D-56 Configuration is `GSHEETS_*` with a bound flag each, read through one registry and validated once
+
+Every setting is a `GSHEETS_*` variable with a flag bound to the same
+name. Every MCP client passes a stdio server a command, arguments and an
+environment, and the environment is the one place they all have. A flag
+given explicitly overrides the environment, and the environment
+overrides the default.
+
+Every reader goes through `config.Lookup`, which drops the spaces around
+a value, so a form field cleared to a space means the default.
+`config.Vars` is the registry of every variable the server reads, the
+removed one included. Validation runs once at start, so a bad
+configuration fails before the server announces itself. A removed
+setting still turned on is refused rather than ignored. A test scans the
+code and refuses a variable's name typed whole, and a server variable
+read through `os.Getenv` or `os.LookupEnv`.
+
+The staleness gate holds [configuration.md](configuration.md) to the
+registry, and the `mcpb` gate derives the bundle's settings from it
+(D-72).
+
+Rejected: a server variable read with `os.Getenv`, or a name typed
+whole.
+Cost: a path that truly begins or ends with a space is not supported.
+
+### D-57 The released tool surface is a contract
+
+A released tool, resource template, input field or output field keeps
+working until a major version.
+
+`scripts/gates schema-diff` dumps the binary's schemas and compares them
+with `testdata/schema-baseline.json`, the surface of the CHANGELOG's
+newest release, at every depth: `threads[].cell` as much as `threads`. A
+break is a tool, resource or field removed; an input that takes fewer
+types or values; an output that may return a type it did not, or be
+missing where it was required; or an input newly required. Types are
+compared one way, as JSON Schema 2020-12 reads them. A break fails
+unless the module path's major version is above the baseline's.
+`schema-baseline` records the surface in a release's commit,
+`schema-ack` needs a commit footer naming each changed item, and
+`release-tag` holds a tag's major version to the module's.
+
+One invalid schema is not one broken tool: a client validating it
+rejects the whole request, and every tool in the session goes with it
+([#138](https://github.com/freema/mcp-gsheets/issues/138)).
+
+Rejected: top-level output fields compared with the last tag, which
+passed a lost nested field; schemas trusted to be well formed.
+Cost: a break ships only with a major version bump and a module path to
+match, in `go.mod` and every import.
+
+### D-58 Resources carry the card and a sheet's used range, never a listing
+
+`gsheets://{spreadsheet}` is the card, and
+`gsheets://{spreadsheet}/{sheet}` is that sheet's used range as CSV
+under one character budget. There is no static list and no subscription.
+
+A static list of spreadsheets would be a Drive listing, which is a Drive
+server's (D-02). A subscription needs a feed of changes, and the API has
+none (D-78). A resource carries what a tool already reads, for a client
+that attaches content rather than calling a tool.
+
+The used range rather than the sheet: a sheet has the grid it was given
+whatever is on it, and a resource of empty cells is commas that describe
+nothing. A read cut short by the budget says so in a second content
+block rather than inside the CSV, since CSV has no comment syntax and a
+note there parses as a row of data. A sheet title is percent-encoded in
+the URI, since a title can hold a slash, a question mark or a hash.
+
+Rejected: a static list, which is a Drive listing; subscriptions, which
+the API cannot feed; a truncation note inside the CSV; reusing `Read`,
+which renders a grid nobody asked for.
+Cost: a resource builds a grid the size of its window rather than its
+data, and a change to the fetch window has two places to land (#77).
+### D-59 Tests run against an in-memory Sheets that replays what Google was seen to do
+
+The unit suite runs against `internal/gapi/sheetstest`, an in-memory
+Sheets with Drive's endpoints, behind `httptest`. It models sheets with
+formulas and error values, merges, protected ranges, validation and
+notes, and the `batchUpdate` union. It models append's table detection,
+a write that skips rather than clears, and ragged responses. It injects
+failures such as a 429, a 5xx, a cut connection and a timeout. A batch
+applies nothing when one request in it fails, as Google's does.
+
+The fake does not invent Google's parser. What `USER_ENTERED` makes of
+an input is recorded from a live probe and replayed, and input nobody
+recorded is a fake error, never a guess. A fake built from the
+documentation inherits the documentation's errors, and a suite run
+against it agrees with every one of them.
+
+A small table lives in one place. An error type's display text lives in
+`internal/gsheets` beside the type, so the fake and the code cannot
+render one error two ways.
+
+Rejected: a fake that simulates `USER_ENTERED` from the documentation; a
+table copied between the fake and the code.
+Cost: the fake ignores what a field mask asks for, so a mask that drops
+a needed field passes the suite (#80). Its table delete keeps the
+conditional format rules Google drops (#83).
+### D-60 Behavior the reference does not pin down is probed live before code depends on it
+
+The discovery document and Google's guides are the first source. Where
+they are silent or vague, a probe asks a real account before code
+depends on the answer. The probes are in `scripts/spikes`, each named
+for its question, such as "what values.update makes of its input" or
+"whether developer metadata is a durable anchor".
+
+The answer lives in the comment at the line that depends on it, with the
+reference link, where the reference is wrong or silent, and the probe or
+live step that checks it.
+
+The reason is that a reasonable reading of the reference has been wrong
+here more than once. Deleting a row takes the anchors on it with nothing
+in the reply. Sheets refuses a merge over a pivot table's output. A
+typed boolean column turns a word into FALSE. A fake written from the
+reference would agree with each wrong reading (D-59).
+
+A probe runs at the start of the work it decides. One whose subject does
+not exist yet gets skipped and then forgotten.
+
+Rejected: a reference page's prose as evidence for a behavior code
+depends on.
+Cost: a probe needs a real account and a person to read what it printed,
+and it runs before the work it decides, not after.
+
+### D-61 Green gates are not done: the live driver covers every tool option, and a person reads its transcript
+
+Every fake in the unit suite is written from what we believe Google
+does, and only a live run tests the belief. `make live` drives the built
+binary against a real account through every tool and every option, in
+spreadsheets it made (D-11). How to run one is in
+[CONTRIBUTING.md](../CONTRIBUTING.md#the-live-run).
+
+Every step carries `expect_error` and a `why`. An expected refusal
+proves as much as a success, and a success where a refusal was expected
+is a failure. A result that states something about the spreadsheet is
+read back and compared. Anything eventually consistent, such as Drive's
+index, is polled, and the run says which answer it saw.
+
+Coverage is checked twice. `scripts/gates live-cover` reads the driver's
+source in CI and fails on an option no step sends. The driver records
+what it put on the wire and checks it against the tool list the server
+publishes, since a step can exist in the source and never run. Both read
+the exemption list in `internal/livecover`, and each exemption needs a
+real reason.
+
+A person then reads the transcript. A driver that checks only that calls
+succeeded reports success while results are wrong.
+
+Rejected: a driver that checks calls succeeded rather than told the
+truth; a static coverage check alone.
+Cost: a run needs a real account, leaves its spreadsheets behind and is
+read line by line. Some behaviors no run reaches, such as the data
+source tools without a BigQuery project (#68).
+### D-62 Evals score the end state and the trace, through this server's tools alone
+
+`make evals` gives a model tasks with only this server's tools. Some ask
+it to find a spreadsheet by name, total a column, append without
+disturbing what is below, or fix a formula. Some need a refusal: a write
+over a formula, or an external formula nobody asked for. Others use a
+sheet name that is not English, the tail of a long sheet, or a number
+written into a pivot table's output. The harness seeds every spreadsheet
+it scores (D-11).
+
+Each task is scored twice. The end state is read back through the
+server. The trace is checked for invented ranges, guessed sheet names
+and acknowledgments passed when nobody asked. A model that guessed a
+range and was lucky completes the task, and only the trace shows it.
+
+Every task answers what it checks when the world says no. Where an end
+state cannot exist, the task scores the trace and prints which half went
+unchecked. A prompt holding an unsubstituted placeholder is refused, and
+a unit test walks every task's prompt, since a harness that sends a
+literal placeholder can pass a task for the wrong reason.
+
+Rejected: scoring the end state alone.
+Cost: a run costs money, and its results come from the one client the
+harness drives.
+
+### D-63 A closed session ends the process cleanly
+
+When the client closes stdin, the server exits with status 0.
+
+The go-sdk reports a closed session as a JSON-RPC error with code
+-32004, with the EOF only in its message text
+([conn.go](https://github.com/modelcontextprotocol/go-sdk/blob/v1.8.0/internal/jsonrpc2/conn.go)).
+So `errors.Is(err, io.EOF)` does not match it. A server that relies on
+that match exits non-zero on an ordinary disconnect, and the host logs a
+crash. The server matches the code through `jsonrpc.Error`.
+
+The smoke gate catches a regression. It runs the binary twice. One run
+holds stdin open, reads the replies, and checks that stdout carried only
+frames. The other closes stdin at once and checks only the exit code.
+The go-sdk drops a reply in flight when stdin reaches EOF, so one run
+cannot do both.
+
+Rejected: `errors.Is(err, io.EOF)`.
+Cost: the smoke test is two runs of the binary, since one run cannot
+read the replies and catch the exit. No run kills the server during
+initialization (#76).
+### D-64 Coverage is floored per package over `internal/` and `cmd/`, from a derived list
+
+`make cover` holds every package to a coverage floor. The package list
+is derived from `go list` over both `internal/` and `cmd/`, and an
+exemption is named with its reason.
+
+A hand-written list stops covering a package the day somebody adds one,
+and nothing reports it. A list derived from the tree covers a package
+from its first commit. Measuring `internal/` alone would leave `login`,
+`logout`, `status` and `doctor` outside the profile, with nothing to
+report that they had no tests. `TestBothTreesAreUnderAFloor` asserts
+that a package from each tree is under a floor.
+
+`cmd/` has a lower floor of its own. What remains uncovered there opens
+a browser, holds a token or serves stdio, and the live driver and the
+smoke gate cover those against the real thing. The lower number is a
+floor rather than an exemption, so coverage there can only rise.
+
+Rejected: a hand-written package list.
+Cost: `cmd/` sits under a lower floor of its own until login and serve
+can be driven in-process.
+
+### D-65 A rule is a test, its list derived from the code, and its checker asserts a floor on what it read
+
+A rule adopted here is a test or a gate. The list it checks is derived
+from the code rather than typed out. The checker asserts a floor on how
+much it read.
+
+A rule written only in a document stops being true and nobody notices. A
+pin that is a range is that failure. So is a security page promising
+logs carry nothing while the code logs part of an id, or an error
+vocabulary documented as closed while the code emits classes it never
+names. Not one is caught by reading, and each is caught by a check that
+can fail.
+
+The floor is for the case reading cannot tell apart. A guard that has
+caught nothing is working. A guard that looked at nothing reports the
+same and is not. So `make classes` (D-44), the coverage floor (D-64),
+the leak scan (D-09), `TestNoToolCanWriteTheServersSettings` (D-40) and
+`live-cover` (D-61) each fail when they read too little.
+
+Rejected: a rule kept only in a document.
+Cost: each rule costs a test and a floor to maintain, and a rule nobody
+can phrase as a check stays with review.
+
+### D-66 Everything the repository runs on itself is Go
+
+Everything the repository runs on itself is Go: the gates, the live
+driver, the probes, the evals and the bundle packer, all under
+`scripts/`.
+
+A contributor needs one toolchain. The code that holds the gates shut is
+built, vetted, linted and tested like the rest, so a gate's own bug
+fails a test rather than a release.
+
+The Claude Desktop bundle is packed here, by `scripts/gates mcpb-pack`,
+with Go's own `archive/zip` rather than the official Node CLI. An
+interpreter that `make check` needs is a prerequisite nobody declared,
+and the CLI's schema validation is not the check worth having (D-71).
+
+Rejected: the official Node CLI to pack the bundle.
+Cost: checks another ecosystem ships ready-made, such as validating a
+bundle manifest, are written and kept current here in Go.
+
+### D-67 `make check` and CI run the same set
+
+`make check` and CI run the same checks. `scripts/gates parity` compares
+the Makefile's `check` target with `.github/workflows/ci.yml` and fails
+when either has a check the other lacks. The gate list is read from the
+`scripts/gates` dispatcher, so a gate is covered from its first commit.
+A gate that runs elsewhere on purpose, such as at release time or only
+on a pull request, is listed with the reason.
+
+A contributor runs `make check` believing it is what CI runs. If the two
+differ, a change that passes at home fails CI, or worse, a check CI
+skips passes nowhere. A comment in the Makefile saying they match is not
+a check.
+
+The two are the Makefile's `check` target and CI's job list, and no doc
+repeats either.
+
+Rejected: a Makefile comment claiming the two match.
+Cost: a check goes into both, or is listed in `scripts/gates/parity.go`
+with the reason it runs elsewhere.
+
+### D-68 CI runs every gate on Linux, macOS and Windows under a pinned bash
+
+Every workflow sets `shell: bash` in its workflow-level `defaults`, and
+every gate runs on Linux, macOS and Windows.
+
+The runner hands every `run` block to a shell, and on Windows the
+default is PowerShell, which reads `-coverprofile=cov.out` as a file
+named `cov` and lets the suite carry on. A job-level default fixes the
+jobs that exist and leaves the next one bare. An explicit `bash` also
+runs with `-eo pipefail`, so a failing command in a pipe fails the step
+([workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell)).
+`scripts/gates pins` requires the workflow-level default in every file.
+
+No gate is conditioned on `runner.os`. A platform in the matrix that no
+gate reads is a platform nobody tests, while the matrix says it is
+tested. `cancel-in-progress` spares `main`, so a merged commit keeps a
+whole run. `.gitattributes` pins LF line endings, so goldens compare
+byte for byte.
+
+Rejected: a gate conditioned on `runner.os`; a job-level shell default.
+Cost: every gate runs on three platforms for every push, and a gate that
+leans on a Unix tool has to work on Windows too.
+
+### D-69 Every action is pinned by commit SHA and every tool by exact version
+
+Every action is pinned to a full commit SHA, with its version in a
+trailing comment. A tag can be moved or deleted by whoever gains access
+to the action's repository, and GitHub's own reference says to "pin
+references to actions to a commit SHA"
+([secure use](https://docs.github.com/en/actions/reference/security/secure-use)).
+
+Every tool an action installs is pinned beside it by exact version,
+`cosign-release`, `syft-version` and the GoReleaser version among them,
+with a comment saying which half of the pin is load-bearing. The tools
+the Makefile runs go through `go run <module>@<version>`. Never a `~>`
+range: `goreleaser-action`'s own default is `~> v2`, and narrowing it to
+`~> v2.18.0` is still a range, so the tool that decides what the
+artifacts are would float. Every workflow starts at
+`permissions: contents: read` and raises it per job, and checkouts set
+`persist-credentials: false`.
+
+`scripts/gates pins` asserts all of it, because a comment cannot hold a
+version shut.
+
+Rejected: a `~>` range, which floats across a release line.
+Cost: every bump changes a SHA and its version together. A deployer's
+policy requiring SHAs is stronger, and the gate stays because the
+repository cannot assume one.
+
+### D-70 A release is built from a tag, reproducible, signed and attested
+
+A release is built by GoReleaser from a `v*` tag, for Linux, macOS and
+Windows on amd64 and arm64. `checksums.txt` is signed keyless through
+Sigstore, every archive gets an SBOM, and the build gets a provenance
+attestation. `-trimpath` and `mod_timestamp` make a rebuilt tag byte for
+byte the same. A release is never a draft. The steps are in
+[release.md](release.md).
+
+The reason is that a binary holding someone's Google token should be
+checkable: its source tag, its hash and who built it. Reproducible
+builds let anyone check the first two, and the signature and the
+attestation the rest.
+
+The Claude Desktop bundle is named in `checksum.extra_files` and
+`release.extra_files`. A file a hook drops into `dist/` is not one of
+GoReleaser's own artifacts, so without that it would ship outside
+`checksums.txt`, and the signature is over that file. `release-tag`
+holds the tag's major version to the module path's, `release-notes`
+takes the release note from the CHANGELOG (D-74), and `registry-publish`
+prints the MCP registry entry from the published checksums. `go install`
+is the other path, with the version read from the build info.
+
+Rejected: a bundle outside `checksums.txt`, which ships unsigned.
+Cost: tags are pushed one at a time, since GitHub creates no event for
+tags when more than three are pushed at once.
+
+### D-71 The bundle manifest is held to the staged tree and a pinned schema
+
+`scripts/gates mcpb` holds `packaging/mcpb/manifest.json` to the tree
+the packer stages rather than to a schema alone. Every command and the
+entry point name a program the packer stages, never `LICENSE` or
+`README.md`. Every command starts with `${__dirname}/`. The entry point
+is the file the default command runs. Every claimed platform runs the
+file staged for it, and every `${user_config.x}` a value spends is
+declared.
+
+A manifest naming a binary nobody staged is well formed by any schema,
+and makes a bundle that installs and then does nothing. Holding it to
+the staged tree catches that.
+
+The gate, the packer and the registry entry read the manifest through
+one function, which refuses a key repeated in one object, or two keys
+equal but for case. Go's decoder merges those, while the validator and
+the host keep each. The committed manifest carries `0.0.0-dev`, and the
+real version goes in through a JSON decode and encode. `$schema` is
+pinned at a release tag and agrees with `manifest_version`, which has a
+floor. The vendored schema is held to its recorded digest. A failed pack
+leaves nothing under the release's name.
+
+Rejected: the packer's schema validation alone; `$schema` at a branch or
+a partial tag; a version substituted over text.
+Cost: the manifest's rules are this repository's own code, kept current
+by hand when the bundle format changes.
+
+### D-72 The bundle asks for the settings a person sets elsewhere, each defaulting as the server does
+
+The bundle asks for what a person sets in another client's
+configuration: the OAuth client file, the profile, read-only mode, the
+destructive switch, Connected Sheets and external formulas. Each key is
+its variable's name without `GSHEETS_`, lowercased. The keys come from
+`config.Vars` (D-56), and every variable left out, such as the log level
+or the budgets, carries its reason in the `mcpb` gate.
+
+Every setting reaches the server through `mcp_config.env`. `args` is
+empty, and a platform override carries no `env` or `args`: an override's
+replaces the base's, so the settings would not reach that platform
+([config.ts](https://github.com/anthropics/mcpb/blob/v2.1.2/src/shared/config.ts)).
+Each switch defaults to the server's own default, off, and the profile
+and client file to `""`, which the server reads as unset. An optional
+key with no default would reach the server as the literal
+`${user_config.x}`.
+
+Claude Desktop lets a person set a tool to always allow, so a switch
+left off is the guard a bundle install keeps.
+
+Rejected: a `tools` list, which is display only and wrong for most
+installs, since settings change what registers; settings in `args` or an
+override's `env`; an optional key with no default.
+Cost: nothing holds the fields' sentences about read-only mode to what
+the server registers (#82).
+### D-73 `main` is released code, and work reaches it through a pull request the maintainer merges
+
+`main` is released code. Nothing is pushed to it directly, release
+commits included. Work goes on a short topic branch, and the maintainer
+pushes it, opens the pull request and merges it once CI is green on
+every platform.
+
+The reason is that every commit on `main` has passed every gate on
+Linux, macOS and Windows, so a release can be cut from any of them. A
+direct push skips the one run that checks all three. The release steps
+in [release.md](release.md) go through a pull request too, so a release
+commit is checked like any other.
+
+A contributor's change follows the same path. `CONTRIBUTING.md` says how
+to open one, and what `make check` must say first.
+
+Rejected: pushing to `main`, release commits included.
+Cost: every change, a one-line fix or a release commit alike, waits for
+a pull request and a green run on every platform.
+
+### D-74 The CHANGELOG section is the release note
+
+`CHANGELOG.md` follows Keep a Changelog. The release workflow takes the
+version's section verbatim as the release note, through
+`scripts/gates release-notes`, which takes only its own version's
+section and refuses an empty one.
+
+One text serves the person reading the release page and the person
+reading the repository, and it is written while the change is fresh. A
+note written at release time drifts from the log, and one generated from
+commit subjects is written for contributors rather than for the people
+who install the server.
+
+The staleness gate asks for an entry under `[Unreleased]` whenever Go
+code changed. `CONTRIBUTING.md` holds the rules for an entry, which are
+not optional since the section ships verbatim.
+
+Rejected: a changelog generated from commit subjects; release notes
+written by hand at release time.
+Cost: the staleness gate asks for an entry whenever Go changed, a change
+no user sees included.
+
+### D-75 Own wire types over raw REST, and no generated client
+
+`internal/gsheets` holds hand-written wire types for the fields this
+server reads and sends, and `internal/plan` builds the request union
+members as typed values. `google.golang.org/api` is not a dependency.
+
+The generated client brings gRPC, OpenTelemetry and the cloud auth stack
+into a binary that needs JSON over HTTP. A struct field here means some
+code reads it, so a field nobody needs is not fetched, decoded or held.
+Requests are typed, so a misspelled field is a compile error rather than
+a request Google rejects.
+
+depguard refuses the import. Its rule carries its own message, so a
+settings block that fails to load shows up as depguard's default
+message. `scripts/gates api-fields` holds the wire types to the fields
+Google publishes, with a verdict for each one left out (D-76).
+
+Rejected: `google.golang.org/api`, which brings gRPC, OpenTelemetry and
+the cloud auth stack; requests as free-form maps.
+Cost: the structs cover only the fields read, written by hand, and a
+field Google adds is absent until somebody adds it here.
+
+### D-76 Every published method, union request and field has a written verdict
+
+`testdata/api-surface.json` is what Google publishes, written by
+`scripts/gates api-diff` from the discovery documents. Nobody edits it.
+`testdata/api-coverage.tsv` holds one verdict per published method and
+per `batchUpdate` request kind, written by hand.
+
+`scripts/gates api-coverage` runs offline in `make check` and holds the
+two files and the code to each other. A published item with no verdict
+fails. A verdict for something Google does not publish fails. A request
+some builder constructs while the record calls it out fails, and so does
+a `used` verdict no code backs. `scripts/gates api-fields` does the same
+for fields, through `testdata/api-fields.tsv`.
+
+So a capability Google adds stops the build, rather than leaving a
+paragraph to go stale. Each verdict says why. A saved filter view
+changes how the spreadsheet looks to everyone who opens it. A second way
+to do something already offered is worse than the first. A spreadsheet's
+locale is not the model's to change (D-79).
+
+Rejected: a paragraph listing what is out.
+Cost: `api-diff` needs the network, so it runs by hand, and the snapshot
+is as current as its last run.
+
+### D-77 The server confirms a write by asking the person through elicitation
+
+The server could confirm writes itself. Before each delete, and before a
+data source is connected or refreshed, it would put a question to the
+person through MCP form elicitation and write only on an accept. It is
+declined.
+
+The specification puts consent to each tool call on the host, and lets a
+server ask through elicitation without making the answer consent: a
+client gathers it "from the user or other sources"
+([elicitation](https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation)).
+Most widely used servers confirm nothing themselves. Clients answered
+such a question with nobody there, did not draw it, or left it hanging,
+and no client's allow and ask rules match it. A question on every call
+is answered without reading. A control that holds on some clients and
+not others is not a control (D-37).
+
+Rejected: confirming writes through elicitation; a setting that refuses
+the asking writes on a client that cannot ask.
+Cost: a client running with nobody watching makes every registered
+write, so `GSHEETS_ENABLE_DESTRUCTIVE` and `GSHEETS_ENABLE_DATA_SOURCES`
+stay off for one. A configuration that still turns on the removed
+`GSHEETS_REQUIRE_PROMPT` is refused at start.
+
+### D-78 Changes arrive by a watch or push channel
+
+The server could tell the model when a spreadsheet changes, through a
+Drive watch channel or a subscription to a resource.
+
+It is declined. A push channel delivers its notifications to a public
+HTTPS endpoint
+([push notifications](https://developers.google.com/workspace/drive/api/guides/push)),
+and a stdio server on a person's machine has none. There is nothing to
+poll instead, since the Sheets API has no feed of changes. So a read is
+the way to see the spreadsheet as it stands, and a checkpoint is the way
+to notice a change before a write (D-26). The resources offer no
+subscriptions for the same reason (D-58).
+
+Rejected: a push channel, which needs a public HTTPS endpoint; polling,
+since the API has no changes feed.
+Cost: a change somebody else makes is seen only on the next read, and a
+write learns of it through its checkpoint.
+
+### D-79 A tool changes the spreadsheet's title, locale or recalculation setting
+
+`updateSpreadsheetProperties` renames a spreadsheet and changes its
+locale and its recalculation setting
+([UpdateSpreadsheetPropertiesRequest](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#UpdateSpreadsheetPropertiesRequest)).
+A tool could send it. None does.
+
+It is declined. Renaming a file is Drive's (D-02). The locale decides
+how every number in the spreadsheet is parsed and displayed, so changing
+it under somebody rewrites what the whole file means, and no result
+could summarize that. The recalculation setting decides when every
+volatile formula runs, for everyone who opens the file.
+
+`create_spreadsheet` takes `locale` and `time_zone`, when nothing yet
+depends on them. The card reports the locale, the time zone and the
+recalculation setting, so a caller can read what applies.
+
+Rejected: renaming is Drive's, and a locale change rewrites what every
+number means with no result to summarize it.
+Cost: a person changes a spreadsheet's title, locale or recalculation
+setting in Sheets itself, and `testdata/api-coverage.tsv` records the
+verdict.
+
+Next ID: D-80

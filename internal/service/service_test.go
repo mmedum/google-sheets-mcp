@@ -46,7 +46,7 @@ func standard(t *testing.T) (*sheetstest.Server, *service.Service) {
 func TestClassesAreClosedAndDistinct(t *testing.T) {
 	cs := service.Classes()
 	if len(cs) != 12 {
-		t.Errorf("the vocabulary has %d classes; §6.5 fixes it at 12", len(cs))
+		t.Errorf("the vocabulary has %d classes, want 12", len(cs))
 	}
 	seen := map[string]bool{}
 	for _, c := range cs {

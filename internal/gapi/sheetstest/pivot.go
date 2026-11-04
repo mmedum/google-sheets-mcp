@@ -102,24 +102,24 @@ func applyCells(d *Doc, req *gsheets.UpdateCellsRequest) (*gsheets.Reply, bool, 
 // validatePivot makes the refusals the live API makes, and none of the
 // ones it does not.
 //
-// The order matters and was measured: a group with no sortOrder is
-// refused before a value with no summarizeFunction, which is how the
-// first run of spike M got the same message for two different questions.
+// The order matters: a group with no sortOrder is refused before a value
+// with no summarizeFunction, so a pivot missing both gets the sortOrder
+// message.
 // An offset past the source's width is *not* refused — the API takes it
 // with a 200 — and neither is it refused here, because that acceptance
 // is the whole reason manage_pivot_table checks it first.
 //
-// The refusals after those three are the reference's rules. Spike U
-// put most of them to Google on 2026-10-09, and they are in Google's
-// words: a value with both an offset and a formula, which the request's
-// parser refuses before anything else; a formula summarized by anything
-// but SUM or CUSTOM; CUSTOM on a column; a histogram's interval and its
-// bounds; a grouping by hand named by a number; and a filter condition
-// only data validation takes. A value with neither, a formula without =,
-// and an item in two groups or two groups of one name are in this
-// fake's own words: nothing asked Google, or a 429 cut the answer off.
-// Two groups with a rule on one column are taken, as Google took them,
-// though the reference allows one (§18).
+// The refusals after those three are the reference's rules. The live
+// step "what Google makes of a pivot definition" puts most of them to
+// Google, and they are in Google's words: a value with both an offset
+// and a formula, which the request's parser refuses before anything
+// else; a formula summarized by anything but SUM or CUSTOM; CUSTOM on a
+// column; a histogram's interval and its bounds; a grouping by hand
+// named by a number; and a filter condition only data validation takes.
+// A value with neither, a formula without =, and an item in two groups
+// or two groups of one name are in this fake's own words: Google's
+// answer to them is not known. Two groups with a rule on one column are
+// taken, as Google takes them, though the reference allows one.
 func validatePivot(raw json.RawMessage) (*gsheets.PivotTable, error) {
 	var pivot gsheets.PivotTable
 	if err := json.Unmarshal(raw, &pivot); err != nil {
@@ -396,7 +396,7 @@ func computePivot(d *Doc, pivot *gsheets.PivotTable) ([][]any, error) {
 		case name != "":
 		case v.Formula != "":
 			// Google draws a calculated value with no name under an empty
-			// heading (spike U1).
+			// heading.
 		default:
 			name = summaryLabel(v.SummarizeFunction) + " of " + headingAt(headings, *v.SourceColumnOffset)
 		}
@@ -522,13 +522,16 @@ func bucketOf(source *Sheet, row, col int, rule *gsheets.PivotGroupRule) (string
 	return "", 0, false
 }
 
-// histogramBucket labels a value's bucket as Google drew it in spike U,
-// 2026-10-09: every 20 from 25 to 70 drew "< 25", "25 - 44", "45 - 64"
-// and "65 - 70", the last holding 70, the end itself; every 10 with no
-// start drew "20 - 29" and so on, counted from zero. A value past the
-// end is "> end", which nothing has drawn. The last number of a bucket
-// is one under the next one's first only for a whole interval, which is
-// all the spike sent.
+// histogramBucket labels a value's bucket as Google draws it, which the
+// reference does not show: every 20 from 25 to 70 draws "< 25", "25 -
+// 44", "45 - 64" and "65 - 70", the last holding 70, the end itself;
+// every 10 with no start draws "20 - 29" and so on, counted from zero. A
+// value past the end is "> end", which nothing has drawn. The last
+// number of a bucket is one under the next one's first only for a whole
+// interval, which is all that was asked. Checked by the live steps "what
+// Google makes of a pivot definition", "the age buckets" and "the rows
+// over 60, North back in".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/pivot-tables#HistogramRule
 func histogramBucket(h *gsheets.HistogramRule, n float64) (string, float64) {
 	num := func(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
 	switch {

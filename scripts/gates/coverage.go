@@ -24,15 +24,13 @@ var exemptFromFloor = map[string]string{}
 // cmdFloor is the floor for the command package, which is lower than the
 // one internal/ meets and is a floor rather than an exemption.
 //
-// cmd/ was outside the profile entirely until phase 1's audit: nothing
-// measured it, so nothing could notice it had no tests at all — 571
-// lines of login, logout, status and doctor. Most of what is left
-// uncovered opens a browser, holds a token or serves stdio, and the live
-// driver and the smoke gate cover those against the real thing. The
-// number is a little under what the tests reach today, so it ratchets
-// rather than describing an ambition. The gap is for the matrix: which
-// branch `tokenStore` and `logout` take depends on whether a keyring is
-// available, and that differs on macOS and Windows.
+// Unmeasured, cmd/ could have no tests at all and nothing would notice.
+// Most of what is left uncovered opens a browser, holds a token or
+// serves stdio, and the live driver and the smoke gate cover those
+// against the real thing. The number sits a little under what the tests
+// reach, so it ratchets rather than describing an ambition. The gap is
+// for the matrix: which branch `tokenStore` and `logout` take depends on
+// whether a keyring is available, and that differs on macOS and Windows.
 const cmdFloor = 40.0
 
 // coverageFloor enforces statement coverage per package.
@@ -102,11 +100,10 @@ type statements struct {
 // percent is the coverage of one package: the blocks whose file sits in
 // that directory, and not the ones in a package under it.
 //
-// A prefix match is what this used to do, and it meant a package was
-// scored on its subpackages as well. It held for two phases because the
-// only subpackage was small and well covered; the moment sheetstest grew
-// it dragged gapi under a floor gapi was meeting on its own, and the
-// number the gate printed for gapi was a number for neither package.
+// Not a prefix match: that scores a package on its subpackages as well,
+// so a growing sheetstest drags gapi under a floor gapi meets on its
+// own, and the number printed for gapi is a number for neither
+// package.
 func (s statements) percent(pkg string) float64 {
 	var total, cov int
 	for block, n := range s.total {

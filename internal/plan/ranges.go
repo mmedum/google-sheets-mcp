@@ -23,9 +23,10 @@ var namedRangePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // CheckNamedRange refuses a name Google will refuse, and says why.
 //
-// Verified live: a name with a space comes back as "The name given to
-// this range is invalid", which names neither the rule nor the character
-// that broke it. A caller who wrote "Livesheet band" has to guess.
+// Google answers a name with a space with "The name given to this range
+// is invalid", which names neither the rule nor the character that broke
+// it. A caller who wrote "Livesheet band" has to guess.
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#AddNamedRangeRequest
 //
 // The A1 case is the one worth spelling out separately: "Q1" is a
 // perfectly good word for a quarter and a perfectly good cell reference,
@@ -72,9 +73,9 @@ func NamedRangeDelete(id string) *gsheets.Request {
 // ProtectedAdd protects a rectangle.
 //
 // No editors: with none named the protection is the owner's alone, which
-// is the API's default and the strongest form. Naming them is §17a's,
-// along with the question of how a live driver would exercise an
-// argument that takes an email address. warningOnly is the weak form —
+// is the API's default and the strongest form. Naming them is not
+// offered: the argument takes email addresses, and the live driver has
+// none it may send. warningOnly is the weak form —
 // it warns in the interface and refuses nothing over the API, and the
 // guard treats it as such.
 func ProtectedAdd(sheetID int, rect a1.Rect, description string, warningOnly bool) *gsheets.Request {
@@ -129,8 +130,8 @@ func TableAdd(name string, sheetID int, rect a1.Rect, columns []*gsheets.TableCo
 // columns.
 //
 // columns is the whole array. The mask names columnProperties, a list,
-// which may be replaced whole (§18), and then a column left out of it
-// would lose its type and its dropdown.
+// which Google replaces whole, so a column left out of it would lose its
+// type and its dropdown.
 //
 // Moving a table through the same request was written and never
 // reachable: manage_range names a table by the range it covers, so a
@@ -170,6 +171,10 @@ var columnTypeAPI = map[string]string{"number": gsheets.ColumnDouble}
 
 // chipTypes are the smart chip column types. A read shows them; nothing
 // here writes one, so each is refused by name rather than as unknown.
+// An update sends a chip column back as it read, and whether Google
+// takes it back unchanged is not known: the reference does not say, and
+// no run has made a chip column.
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/sheets#TableColumnProperties
 var chipTypes = []string{"files_chip", "people_chip", "finance_chip", "place_chip", "ratings_chip"}
 
 // ColumnTypeName is a column type in the spelling ParseColumnType takes,
@@ -199,7 +204,12 @@ var columnEntry = regexp.MustCompile(`(?i)^(.+?)\s+(` +
 //
 // A dropdown's options are separated by commas, so an option with a
 // comma in it cannot be written here; data_validation with one_of_list
-// takes each option as its own value.
+// takes each option as its own value. A dropdown always carries its
+// list, since Google refuses one without, "Condition must be set for
+// dropdown column type", and refuses a list on any other type. Checked
+// by the live steps "what Google makes of typed table columns" and "a
+// table typing three of its four columns, by heading and by letter".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/sheets#TableColumnProperties
 func ParseColumnType(text string) (ColumnSpec, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -266,11 +276,11 @@ func TableDelete(id string) *gsheets.Request {
 
 // BandingAdd colors alternate rows of a rectangle.
 //
-// Rows, because that is what manage_range offers; §17a carries the
-// column form, which wants an argument on a tool that already takes
-// twenty-one. BandingUpdate does take the axis, because a column banding
-// made elsewhere can be recolored here and writing rowProperties onto
-// one leaves it carrying both sets, which the API rejects.
+// Rows, because that is what manage_range offers; the column form would
+// want one more argument on a tool that already takes many. BandingUpdate
+// does take the axis, because a column banding made elsewhere can be
+// recolored here and writing rowProperties onto one leaves it carrying
+// both sets, which the API rejects.
 func BandingAdd(sheetID int, rect a1.Rect, props *gsheets.BandingProperties) *gsheets.Request {
 	return &gsheets.Request{AddBanding: &gsheets.AddBandingRequest{
 		BandedRange: &gsheets.BandedRange{Range: rect.GridRange(sheetID), RowProperties: props},
@@ -364,11 +374,16 @@ var pointTypes = map[string]string{
 //
 // min and max take no value: they are the range's own lowest and
 // highest. number, percent and percentile need one, which is kept as
-// written, since the API takes it as text, it may be a formula, and a
-// number is read in the spreadsheet's locale: under de_DE, 1.5 is
-// refused and 1,5 taken (spike S, §18). Google takes min and max as a
+// written: the API takes it as text, it may be a formula, a percent or
+// percentile past 0-100 is taken, and a number is read in the
+// spreadsheet's locale, so under de_DE 1.5 is refused and 1,5 taken. The
+// reference states no bound and no locale. Google takes min and max as a
 // midpoint too, so a scale read back from a sheet can be sent again; min
-// cannot be the last point, nor max the first.
+// cannot be the last point, nor max the first, which is this server's
+// own rule. Checked by the live steps "what Google makes of a color
+// scale", "a number point written with a decimal point, under de_DE, is
+// refused" and "a color scale with a percentile midpoint".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/sheets#InterpolationPoint
 func ParseGradient(points []string) (*gsheets.GradientRule, error) {
 	if len(points) < 2 || len(points) > 3 {
 		return nil, fmt.Errorf("gradient takes two or three points, lowest first, such as "+
@@ -400,6 +415,12 @@ func ParseGradient(points []string) (*gsheets.GradientRule, error) {
 // parsePoint reads one "<type> [value] #hex". The value is everything
 // between the first word and the last, so a formula with spaces in it
 // survives.
+//
+// Google refuses a number, percent or percentile point with no value,
+// "InterpolationPoint.value is required", and takes a value on min or
+// max and drops it, so this refuses both. Checked by the live step "what
+// Google makes of a color scale".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/sheets#InterpolationPoint
 func parsePoint(text string) (*gsheets.InterpolationPoint, error) {
 	text = strings.TrimSpace(text)
 	first := strings.IndexFunc(text, unicode.IsSpace)

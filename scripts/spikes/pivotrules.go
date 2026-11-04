@@ -10,10 +10,10 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
 )
 
-// spikeU asks Google what manage_pivot_table refuses before sending, or
-// writes on a belief: grouping rules, filters and calculated values.
-// The live driver cannot see these, because the tool refuses most of
-// them first. §18 records each belief this settles.
+// askPivotDefinition asks Google what manage_pivot_table refuses before
+// sending, or writes on a belief: grouping rules, filters and calculated
+// values. The live driver cannot see these, because the tool refuses
+// most of them first.
 //
 // U1. Is a value with both sourceColumnOffset and formula refused, and
 // with what words? A formula summarized by AVERAGE? CUSTOM on a column?
@@ -37,8 +37,7 @@ import (
 // other values, as an update that leaves the groups out sends it? Are an
 // item in two groups, two groups of one name, and a group named by a
 // number refused, as the fake refuses them?
-func spikeU(ctx context.Context) {
-	sec("Spike U: pivot grouping rules, filters and calculated values")
+func askPivotDefinition(ctx context.Context) {
 	const sheet = "SpikePivotRules"
 	sheetID, err := addSheet(ctx, sheet)
 	if err != nil {

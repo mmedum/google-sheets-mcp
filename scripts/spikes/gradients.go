@@ -11,7 +11,7 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 )
 
-// spikeS answers what the reference leaves open about a color scale, a
+// askColorScales answers what the reference leaves open about a color scale, a
 // conditional format rule with a gradientRule.
 //
 // The discovery document gives the shape — a minpoint, an optional
@@ -22,7 +22,7 @@ import (
 // Q1. What a scale sent with colorStyle alone reads back as: colorStyle,
 // the deprecated color, or both.
 // Q2. Which midpoint types are taken. The Sheets interface offers number,
-// percent and percentile; manage_range sends no min or max there.
+// percent and percentile; manage_range sends min and max there too.
 // Q3. What the fake refuses: a number point with no value, a scale with
 // no maxpoint, a point with no type, and a rule carrying both kinds. And
 // whether a value on min is kept, since the reference calls it unused.
@@ -32,8 +32,7 @@ import (
 // Q5. A percent or percentile value outside 0 to 100. The reference
 // states no bound and manage_range refuses none; is one refused, and
 // what reads back.
-func spikeS(ctx context.Context) {
-	sec("Spike S: color scales, and what Google refuses in one")
+func askColorScales(ctx context.Context) {
 	const sheet = "SpikeScales"
 	sheetID, err := addSheet(ctx, sheet)
 	if err != nil {
@@ -146,9 +145,8 @@ func spikeS(ctx context.Context) {
 			firstScale(ctx, sheetID, "minpoint")
 		}
 	}
-	line("    no reply says how de_DE read a value it took. The run of 2026-10-09 refused 1.5 and took")
-	line("    1,5. Open %q: column B has the scale from 1,5 over 1 to 5; if its color first changes", sheet)
-	line("    between 1 and 2, de_DE read it as one and a half.")
+	line("    no reply says how de_DE read a value it took. Open %q: column B has the scale from", sheet)
+	line("    1,5 over 1 to 5; if its color first changes between 1 and 2, de_DE read it as one and a half.")
 	if locale != "" {
 		status, body = setLocale(ctx, locale)
 		line("    %-48s -> HTTP %d  %s", "set the locale back", status, first120(body))

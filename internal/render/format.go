@@ -274,11 +274,9 @@ type Applied struct {
 
 // Ops is what a formatting, range or transform write did.
 //
-// Parts, not prose. The service used to hand this finished sentences —
-// "%d occurrence(s) replaced in %d cell(s)…" and four hand-written notes
-// about addresses moving — which is the same mistake §17a.9 records for
-// the structural tools, in a tool written after they were fixed. The
-// templates are below, where the goldens can reach them.
+// Parts, not prose. A sentence finished in the service, such as a count
+// of replacements or a note about addresses moving, is phrasing no golden
+// covers, so the templates are below, where the goldens can reach them.
 type Ops struct {
 	Range   string
 	Applied []Applied

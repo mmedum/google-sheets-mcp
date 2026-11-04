@@ -225,10 +225,11 @@ func TestTheRealRecordIsRead(t *testing.T) {
 			requests++
 		}
 	}
-	// §16 counts the union at 69. A snapshot that lost most of them
-	// would pass every check above by judging what little was left.
+	// A snapshot that lost most of the union would pass every check
+	// above by judging what little was left.
 	if requests < 60 {
-		t.Errorf("the snapshot has %d Sheets request kind(s); the union had 69 when §16 was written", requests)
+		t.Errorf("the snapshot has %d Sheets request kind(s), under the floor of 60, so it has lost most "+
+			"of the batchUpdate union", requests)
 	}
 	if len(rows) < 80 {
 		t.Errorf("the record judges %d item(s), which is fewer than this server has ever called", len(rows))

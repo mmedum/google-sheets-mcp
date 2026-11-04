@@ -69,7 +69,7 @@ type TransformRequest struct {
 
 	// Overwrite and OverwriteFormulas open the guard over the cells the
 	// action reads first, and either needs ExpectCheckpoint, the witness
-	// of those cells (§4.7).
+	// of those cells.
 	Overwrite         bool
 	OverwriteFormulas bool
 	ExpectCheckpoint  string
@@ -105,9 +105,8 @@ type transform struct {
 	destination a1.Rect
 	destSheet   *gsheets.SheetProperties
 	// shifted says rows moved, and emptied names the range a cut left
-	// blank. Parts rather than sentences: the words are render's, which
-	// is what §17a.9 settled for the structural tools and what this tool
-	// undid by writing them here.
+	// blank. Parts rather than sentences: the words are render's, as they
+	// are for the structural tools.
 	shifted bool
 	emptied string
 	// delimiter is what a split was parsed to, for the guard that reads
@@ -503,7 +502,7 @@ func (s *Service) transformGuard(ctx context.Context, req TransformRequest, ref 
 	case TransformFindReplace:
 		// Whatever the replacement lands in, a formula that reaches
 		// outside the spreadsheet is the operator's to allow, as it is
-		// for every other write (§7.3).
+		// for every other write.
 		plan.CheckReplacement(&report, req.Replace)
 		if !req.InFormulas {
 			return report, nil, nil
@@ -568,8 +567,8 @@ func (s *Service) splitGuard(ctx context.Context, ref Reference, props *gsheets.
 	}
 	// The source is read only when the delimiter is known, because that
 	// is the only branch that looks at it. With Google detecting the
-	// delimiter — which is the default, and so the likeliest call — this
-	// used to fetch up to fifty thousand cells and discard them.
+	// delimiter, which is the default and so the likeliest call, reading
+	// it would fetch up to fifty thousand cells and discard them.
 	width := splitWindow
 	if delimiter.Sep != "" {
 		if err := readable(rect, "the column is read first to see how far the split would reach"); err != nil {

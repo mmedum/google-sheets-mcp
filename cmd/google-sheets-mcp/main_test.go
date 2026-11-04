@@ -44,7 +44,7 @@ func isolate(t *testing.T) string {
 	t.Setenv("GSHEETS_CONFIG_DIR", dir)
 	// The token file is the other thing that could escape the sandbox.
 	t.Setenv("GSHEETS_REFRESH_TOKEN", "")
-	// And the OS keyring is the third, which this used to miss.
+	// And the OS keyring is the third.
 	//
 	// A config directory and an environment variable are the two stores
 	// an env var can redirect. The keyring is not one of them: it is
@@ -381,9 +381,9 @@ func TestDoctorPrintsBeforeItFails(t *testing.T) {
 
 // The address comes from the Drive call and tokeninfo must not touch it.
 // tokeninfo carries an address only for a token with an email scope,
-// which §17.6 does not ask for, so what it carries is nothing — and
-// assigning that cleared the address on every login. `status` then
-// reported a profile holding a working token as having no account,
+// which this server does not ask for, so what it carries is nothing, and
+// assigning that would clear the address on every login. `status` would
+// then report a profile holding a working token as having no account,
 // which is the one thing that output exists to answer.
 func TestGrantedScopesDoNotClearTheRecordedAccount(t *testing.T) {
 	uc := userconfig.Config{AccountEmail: "someone@example.test"}
@@ -458,10 +458,10 @@ func TestStatusSeparatesNoAccountFromNoLogin(t *testing.T) {
 	}
 }
 
-// TestHelpIsAnAnswerNotAnError: asking for help succeeded in the three
-// sibling servers and failed here — the flag package answered it, so the
-// usage went to stderr and the process exited 1. That breaks
-// `google-sheets-mcp --help | less` and any script that reads the code.
+// TestHelpIsAnAnswerNotAnError: asking for help is a successful request.
+// Left to the flag package, the usage goes to stderr and the process
+// exits 1, which breaks `google-sheets-mcp --help | less` and any script
+// that reads the code.
 func TestHelpIsAnAnswerNotAnError(t *testing.T) {
 	for _, arg := range []string{"--help", "-h", "help"} {
 		var stdout, stderr bytes.Buffer

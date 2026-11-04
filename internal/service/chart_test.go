@@ -48,8 +48,9 @@ func TestChartAdd(t *testing.T) {
 
 // TestChartAddRefusesWhatGoogleAnswersWith500 is the reason manage_chart
 // validates a spec at all. Live, a basicChart with neither domains nor
-// series comes back HTTP 500 "Internal error encountered", and §6.5
-// classes a 500 as retryable — so the only defense is never sending it.
+// series comes back HTTP 500 "Internal error encountered", which no
+// error class describes truthfully, so the only defense is never
+// sending it.
 func TestChartAddRefusesWhatGoogleAnswersWith500(t *testing.T) {
 	srv, svc := standard(t)
 	_, err := svc.ManageChart(context.Background(), service.ChartRequest{
@@ -347,8 +348,8 @@ func TestChartListEmpty(t *testing.T) {
 	}
 }
 
-// TestChartLosesItsSeriesToAColumnDelete is the finding the whole phase
-// turns on: deleting a charted column leaves the chart in place with
+// TestChartLosesItsSeriesToAColumnDelete holds the silent loss the chart
+// guard exists for: deleting a charted column leaves the chart in place with
 // nothing to draw, and the API says nothing at all.
 func TestChartLosesItsSeriesToAColumnDelete(t *testing.T) {
 	_, svc := destructive(t)
@@ -506,11 +507,11 @@ func TestSlicerRefusals(t *testing.T) {
 	}
 }
 
-// TestARefusalCountsTheSeriesItWouldTake is the live run's finding. A
-// two-series chart under a one-column delete loses one series and keeps
-// the other, and the first version of this refusal told the caller the
-// chart would be left with nothing to draw. A refusal that overstates is
-// one somebody learns to skip.
+// TestARefusalCountsTheSeriesItWouldTake holds the refusal to the
+// series a delete takes. A two-series chart under a one-column delete
+// loses one series and keeps the other, so the refusal must not say the
+// chart is left with nothing to draw. A refusal that overstates is one
+// somebody learns to skip.
 func TestARefusalCountsTheSeriesItWouldTake(t *testing.T) {
 	_, svc := destructive(t)
 	if _, err := svc.ManageChart(context.Background(), service.ChartRequest{
@@ -576,11 +577,10 @@ func TestStackedIsRefusedOnAChartTypeThatCannotStack(t *testing.T) {
 	}
 }
 
-// TestAPieChartCanBeUpdated is finding 5 of the phase's review pass. A
-// pie is one of the two kinds this server builds, and the update path
-// refused every pie with "this server can retitle, move and delete but
-// not rebuild" — a sentence that was true for a treemap and false for
-// the chart the tool had just made.
+// TestAPieChartCanBeUpdated holds the update path to every kind this
+// server builds. A pie is one of them, so refusing it with "this server
+// can retitle, move and delete but not rebuild", true for a treemap,
+// would be false for the chart the tool had just made.
 func TestAPieChartCanBeUpdated(t *testing.T) {
 	_, svc := standard(t)
 	added, err := svc.ManageChart(context.Background(), service.ChartRequest{

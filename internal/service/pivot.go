@@ -85,12 +85,16 @@ func (r PivotResult) Render() string { return r.Summary }
 //
 // A pivot table is the odd structure in this API: no request of its own,
 // no id, and an output whose size is computed rather than stated. Three
-// things follow, and all three are spike M's.
+// things follow, and the API's validation does not cover them. Checked
+// by the live step "what a read sees where a pivot table sits".
 //
 // Columns are named in A1 and converted here, because the API groups by
 // an offset into the source and accepts an offset past its end with a
 // 200 — so a caller counting from one would get a pivot that means
-// nothing and no error at all.
+// nothing and no error at all. A missing summarizeFunction, sortOrder or
+// source is a clean 400. Checked by the live step "a column outside the
+// source is refused here".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/pivot-tables#PivotTable
 //
 // An anchor inside the source is refused here, because the API takes it
 // and evaluates to a circular reference.
@@ -153,7 +157,9 @@ func (s *Service) writePivot(ctx context.Context, ref Reference, req PivotReques
 	// The refusal the API does not make. Anchored inside its own source
 	// a pivot is accepted with a 200 and evaluates to "Circular
 	// dependency detected", which is a broken spreadsheet reported as a
-	// success.
+	// success. Checked by the live steps "an anchor inside the source is
+	// refused here" and "what a read sees where a pivot table sits".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/pivot-tables#PivotTable
 	if source.Props.SheetID == props.SheetID && source.Rect.Contains(anchor) {
 		return nil, Errorf("invalid",
 			"the anchor %s is inside the source %s, which makes the pivot read its own output. "+
@@ -281,9 +287,9 @@ func (s *Service) listPivots(ctx context.Context, ref Reference, req PivotReques
 // There is no pivot index in this API, so a listing is a grid read, and
 // the only thing that keeps it cheap is asking for one field.
 //
-// Two requests whatever it finds. The extents used to be measured one
-// pivot at a time, so a sheet with ten pivot tables turned one listing
-// into eleven round trips; one read of the window measures all of them.
+// Two requests whatever it finds. Measured one pivot at a time, a sheet
+// with ten pivot tables would turn one listing into eleven round trips;
+// one read of the window measures all of them.
 func (s *Service) pivotsIn(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
 	window a1.Rect) ([]PivotRecord, error) {
 
@@ -365,10 +371,10 @@ func sourceLetter(source a1.Rect, offset int) string {
 // none — an update or a delete aimed at an empty cell is a mistake worth
 // naming rather than a write that quietly does nothing.
 //
-// One request. It used to ask pivotsIn whether a pivot was there, which
-// measured that pivot's whole output to build a record nothing read, and
-// then re-read the same cell to get the definition: three round trips to
-// answer one question, on an API that allows sixty a minute.
+// One request. Asking pivotsIn would measure the pivot's whole output to
+// build a record nothing reads, and then re-read the same cell for the
+// definition: three round trips to answer one question, on an API that
+// allows sixty a minute.
 //
 // It returns the definition twice: raw, for an update to edit and send
 // back whole, and typed, for what reads it.
@@ -475,15 +481,19 @@ func extentName(rect a1.Rect) string {
 // Read rather than derived. The size is computed from the data, so a
 // group added inside the source makes it taller with nothing in any
 // request saying so, and a rectangle taken from the arguments would be
-// wrong the moment somebody edits a row.
+// wrong the moment somebody edits a row. Two updates with the source
+// untouched take one pivot from H1:I6 to H1:J7 to H1:T8. Checked by the
+// live steps "list what is anchored where" and "group across as well as
+// down".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/pivot-tables#PivotTable
 //
 // Each stops at its first empty row and first empty column, which is the
-// difference between measuring a pivot and measuring the sheet. The
-// first version took the furthest computed cell anywhere below and right
-// of the anchor: a second pivot table, an ARRAYFORMULA's spill or an
-// imported range all joined the rectangle, and the result handed that
-// back as "a write into it stops the pivot drawing" — steering a caller
-// away from cells that were never the pivot's.
+// difference between measuring a pivot and measuring the sheet. Taking
+// the furthest computed cell anywhere below and right of the anchor
+// would join a second pivot table, an ARRAYFORMULA's spill or an
+// imported range to the rectangle, and the result would hand that back
+// as "a write into it stops the pivot drawing", steering a caller away
+// from cells that were never the pivot's.
 //
 // A row rather than a cell, because a pivot grouped by columns leaves
 // its own top-left cell empty: live, an H1 pivot with a column grouping
@@ -733,13 +743,17 @@ func keptOffsets(sending *gsheets.PivotTable, req PivotRequest) map[string][]int
 // checkKept refuses a new source that changes what a column the update
 // keeps reads, and names each one.
 //
-// A group, value or filter is an offset from the source's first column.
-// One the update was not given reads whatever sits at the same position
-// in the new source. So a new source that starts at the same column of
-// the same sheet keeps every meaning, and only its width can lose one:
-// past the right edge it reads nothing, and Google accepts that with a
-// 200 (spike M). A new source that starts anywhere else moves every kept
-// column, silently, onto other data.
+// A group, value or filter is an offset from the source's first column:
+// the discovery document's sourceColumnOffset is "the column offset of
+// the source range", and with a source of C10:E15 "the offset 1 would
+// refer to column D". One the update was not given reads whatever sits
+// at the same position in the new source. So a new source that starts at
+// the same column of the same sheet keeps every meaning, and only its
+// width can lose one: past the right edge it reads nothing, and Google
+// accepts that with a 200. A new source that starts anywhere else moves
+// every kept column, silently, onto other data. Checked by the live step
+// "a new source that starts one column along is refused here".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/pivot-tables#PivotGroup
 func (s *Service) checkKept(ctx context.Context, ref Reference, sending *gsheets.PivotTable, req PivotRequest,
 	old *gsheets.GridRange, source SheetRef) error {
 
@@ -1029,7 +1043,7 @@ func headingIndex(texts []string) map[string]int {
 //
 // The refusal is this server's alone: an offset past the source's width
 // is accepted by the API with a 200, and produces a pivot that reads
-// nothing (spike M).
+// nothing.
 func pivotOffset(name string, source a1.Rect, headers map[string]int, arg string) (int, error) {
 	return headedColumn(name, source, headers, columnPlace{
 		arg: arg, what: "the source", outside: ", so it is not a column this pivot table can read",
@@ -1129,13 +1143,16 @@ func pivotValue(entry string, source a1.Rect, headers map[string]int) (*gsheets.
 
 // filterPivot applies filters and clear_filters.
 //
-// Both remove criteria, the deprecated form a response carries beside
-// filterSpecs. Spike U7: Google writes either form when sent the other,
-// and a pivot sent with neither has no filter. So a clear removes both:
-// criteria left in place would put the cleared filters back. filters
-// would not need to, since filterSpecs take precedence where both are
-// sent, but sending a stale criteria beside new filterSpecs would be
-// sending two answers to one question.
+// Both remove criteria, which the reference calls "deprecated in favor
+// of filter_specs" and which a response carries beside filterSpecs.
+// Google writes either form when sent the other, and a pivot sent with
+// neither has no filter. So a clear removes both: criteria left in place
+// would put the cleared filters back. filters would not need to, since
+// filterSpecs take precedence where both are sent, but sending a stale
+// criteria beside new filterSpecs would be sending two answers to one
+// question. Checked by the live steps "clear the filters", "list shows
+// no filter" and "what Google makes of a pivot definition".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/pivot-tables#PivotTable
 func filterPivot(req PivotRequest, source a1.Rect, headers map[string]int, pivot map[string]any, changed *[]string) error {
 	switch {
 	case req.ClearFilters && len(req.Filters) > 0:
@@ -1164,8 +1181,12 @@ func filterPivot(req PivotRequest, source a1.Rect, headers map[string]int, pivot
 //
 // A filter by condition alone sets visibleByDefault, the one way it
 // shows what meets the condition: with it false, the reference shows
-// only values that are listed as well, and none are. Spike U5 saw both:
-// false showed nothing, true showed every value meeting the condition.
+// only values that are listed as well, and none are. Google does as the
+// reference reads: false shows only Grand Total, true every value
+// meeting the condition. Checked by the live steps "a condition alone",
+// "the rows over 60, North back in" and "what Google makes of a pivot
+// definition".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/pivot-tables#PivotFilterCriteria
 func pivotFilters(entries []string, source a1.Rect, headers map[string]int) ([]*gsheets.PivotFilterSpec, error) {
 	byOffset := map[int]*gsheets.PivotFilterCriteria{}
 	named := map[int]string{}
@@ -1206,10 +1227,13 @@ func pivotFilters(entries []string, source a1.Rect, headers map[string]int) ([]*
 // oneRulePerColumn refuses two groups with a rule on one source column;
 // a plain group beside a rule is fine. The reference allows one rule per
 // column: "Only one PivotGroup with a group rule may be added for each
-// column in the source data". Google took two in spike U2, so the
-// refusal is this server's, and keeps a pivot inside what is documented.
-// It reads the pivot as it will be sent, so a rule the update keeps
-// counts too, a rule made by hand included.
+// column in the source data". Google takes two with a 200, and what it
+// draws for them is not documented, so the refusal is this server's and
+// keeps a pivot inside what is documented. It reads the pivot as it will
+// be sent, so a rule the update keeps counts too, a rule made by hand
+// included. Checked by the live steps "a second rule on one column is
+// refused here" and "what Google makes of a pivot definition".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/pivot-tables#PivotGroup
 func oneRulePerColumn(sending *gsheets.PivotTable, source a1.Rect) error {
 	ruled := map[int]bool{}
 	for _, g := range append(append([]*gsheets.PivotGroup{}, sending.Rows...), sending.Columns...) {
@@ -1257,8 +1281,11 @@ func pivotRows(found []PivotRecord) []render.PivotRow {
 // ordinary computed values, and the definition sits on the anchor
 // alone, up and to the left of what the guard read. So naming one means
 // a second read, and this pays for it only where the write is already
-// being refused — once per refusal rather than once per write, which is
-// the shape §17a.27 settled on.
+// being refused, over a cell nobody typed: once per refusal rather than
+// once per write. Checked by the live steps "a write into the output is
+// refused, and the refusal names the pivot" and "a write onto typed
+// cells is refused without naming a pivot".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/cells#CellData
 //
 // It answers with what it found and never with an error. The write is
 // refused either way, so a look that fails costs a sentence and nothing

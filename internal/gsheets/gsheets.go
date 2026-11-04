@@ -41,8 +41,7 @@ type Spreadsheet struct {
 	// DataSources are the Connected Sheets sources. The card asks for
 	// them whatever the configuration: the field mask is accepted under
 	// the ordinary scopes and returns nothing where there are none, so
-	// reporting that a spreadsheet has one costs no scope and no consent
-	// (§17.6a).
+	// reporting that a spreadsheet has one costs no scope and no consent.
 	DataSources []*DataSource `json:"dataSources,omitempty"`
 	// Comments are the cell comment threads. Google returns them only
 	// when the read asks for them with a comments view mode.
@@ -80,10 +79,15 @@ type Sheet struct {
 // express "leave it where Google would put it" is how a sheet lands in
 // the wrong place with nobody having asked for it.
 type SheetProperties struct {
-	SheetID        int             `json:"sheetId"`
-	Title          string          `json:"title,omitempty"`
-	Index          *int            `json:"index,omitempty"`
-	SheetType      string          `json:"sheetType,omitempty"`
+	SheetID   int    `json:"sheetId"`
+	Title     string `json:"title,omitempty"`
+	Index     *int   `json:"index,omitempty"`
+	SheetType string `json:"sheetType,omitempty"`
+	// GridProperties is nil on an OBJECT sheet, such as a chart on a
+	// sheet of its own, as the reference says, so every reader of it
+	// tolerates nil. Checked by the live steps "a chart on a sheet of its
+	// own" and "the card survives a sheet with no grid".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/sheets#SheetProperties
 	GridProperties *GridProperties `json:"gridProperties,omitempty"`
 	Hidden         bool            `json:"hidden,omitempty"`
 	RightToLeft    bool            `json:"rightToLeft,omitempty"`
@@ -180,10 +184,10 @@ type ErrorValue struct {
 // Display is what Sheets shows for an error type.
 //
 // It lives beside the type rather than in whichever package needed it
-// first, because two copies of this table diverge: the fake and the
-// renderer had different fallbacks, so an error type outside the list
-// rendered one way in a formatted read and another way in a raw one,
-// and the tests agreed with both answers.
+// first, because two copies of this table diverge: with different
+// fallbacks in the fake and the renderer, an error type outside the list
+// renders one way in a formatted read and another way in a raw one, and
+// the tests agree with both answers.
 func (e *ErrorValue) Display() string {
 	switch e.Type {
 	case "REF":
@@ -275,7 +279,11 @@ type FilterView struct {
 	Range        *GridRange `json:"range,omitempty"`
 }
 
-// Table is a native Sheets table.
+// Table is a native Sheets table, addressed through batchUpdate and its
+// A1 range: values.get answers a table reference, bare or as
+// Table[Column], with "Unable to parse range". Checked by the live steps
+// "what values.get makes of a range" and "a table over the band".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/sheets#Table
 type Table struct {
 	TableID          string         `json:"tableId,omitempty"`
 	Name             string         `json:"name,omitempty"`
@@ -285,11 +293,13 @@ type Table struct {
 
 // TableColumn is one column of a table.
 //
-// ColumnIndex counts from the table's first column, not the sheet's.
-// ColumnName is the header text. An add sends none, and an update sends
-// an entry for every column, each named as it read or by its header
-// cell, since whether a name left out clears the header is unverified
-// (§18). DataValidationRule is set on a dropdown column only.
+// ColumnIndex counts from the table's first column, not the sheet's, as
+// the reference says. ColumnName is the header text, and Google writes a
+// name sent into its header cell. So an add names each typed column by
+// its header's text, and an update sends an entry for every column, each
+// named as it read, since Google refuses an update entry with no name.
+// DataValidationRule is set on a dropdown column only.
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/sheets#TableColumnProperties
 type TableColumn struct {
 	ColumnIndex        int                            `json:"columnIndex,omitempty"`
 	ColumnName         string                         `json:"columnName,omitempty"`
@@ -375,7 +385,7 @@ type BatchGetValuesResponse struct {
 //
 // UpdatedData is present only when the request asked for the values
 // back, which every write here does: it is the half the coercion report
-// is built from (§4.4).
+// is built from.
 type UpdateValuesResponse struct {
 	SpreadsheetID  string      `json:"spreadsheetId,omitempty"`
 	UpdatedRange   string      `json:"updatedRange,omitempty"`
@@ -411,12 +421,14 @@ type ClearValuesResponse struct {
 // nothing will be applied" — and that a batch counts once against quota.
 // So ops compile into one of these rather than into several calls.
 //
-// `includeSpreadsheetInResponse` is deliberately absent. It would bring
-// the state after the write back in the same response and save the card
-// re-read that follows every structural change here, and the fields to
-// use it are not written until something uses them: this package's rule
-// is that a field appearing in it means some code reads it. §17a carries
-// the entry, including the live probe it needs first.
+// `includeSpreadsheetInResponse` is deliberately absent: the structural
+// writes re-read the card after the write instead. The standard `fields`
+// parameter masks the updatedSpreadsheet it brings back, so under the
+// card's mask the reply would be a card without the spreadsheetUrl, but
+// nothing reads one, and a field appears in this package only where
+// some code reads it. Checked by the live step "the reads a wider field
+// mask can fold in".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/batchUpdate
 type BatchUpdateSpreadsheetRequest struct {
 	Requests []*Request `json:"requests,omitempty"`
 }
@@ -432,8 +444,8 @@ type BatchUpdateSpreadsheetResponse struct {
 }
 
 // Request is one member of the batchUpdate union. It holds the members
-// this server sends, not the whole union: each phase added its own
-// rather than the union arriving as free-form maps.
+// this server sends, not the whole union, each one typed rather than a
+// free-form map.
 //
 // Exactly one field is set. Nothing here accepts a raw map: a typed
 // builder is what stops a request being sent that no code has read.
@@ -450,7 +462,7 @@ type Request struct {
 	AddDimensionGroup         *DimensionGroupRequest            `json:"addDimensionGroup,omitempty"`
 	DeleteDimensionGroup      *DimensionGroupRequest            `json:"deleteDimensionGroup,omitempty"`
 
-	// Phase 2: formatting, the objects attached to a range, and the
+	// Formatting, the objects attached to a range, and the
 	// transforms that move data without the caller naming its address.
 	RepeatCell                  *RepeatCellRequest                  `json:"repeatCell,omitempty"`
 	UpdateBorders               *UpdateBordersRequest               `json:"updateBorders,omitempty"`
@@ -482,12 +494,12 @@ type Request struct {
 	CopyPaste                   *CopyPasteRequest                   `json:"copyPaste,omitempty"`
 	CutPaste                    *CutPasteRequest                    `json:"cutPaste,omitempty"`
 
-	// Phase 3: developer metadata, the durable anchors of §6.4.
+	// Developer metadata, the durable anchors.
 	CreateDeveloperMetadata *CreateDeveloperMetadataRequest `json:"createDeveloperMetadata,omitempty"`
 	UpdateDeveloperMetadata *UpdateDeveloperMetadataRequest `json:"updateDeveloperMetadata,omitempty"`
 	DeleteDeveloperMetadata *DeleteDeveloperMetadataRequest `json:"deleteDeveloperMetadata,omitempty"`
 
-	// Phase 4: charts, slicers and pivot tables. A pivot table has no
+	// Charts, slicers and pivot tables. A pivot table has no
 	// request of its own — it is a field of a cell, so it goes through
 	// updateCells like any other cell write.
 	AddChart                     *AddChartRequest                     `json:"addChart,omitempty"`
@@ -498,13 +510,13 @@ type Request struct {
 	UpdateEmbeddedObjectPosition *UpdateEmbeddedObjectPositionRequest `json:"updateEmbeddedObjectPosition,omitempty"`
 	UpdateCells                  *UpdateCellsRequest                  `json:"updateCells,omitempty"`
 
-	// Connected Sheets, behind GSHEETS_ENABLE_DATA_SOURCES (§17.6a).
+	// Connected Sheets, behind GSHEETS_ENABLE_DATA_SOURCES.
 	AddDataSource           *AddDataSourceRequest           `json:"addDataSource,omitempty"`
 	RefreshDataSource       *RefreshDataSourceRequest       `json:"refreshDataSource,omitempty"`
 	CancelDataSourceRefresh *CancelDataSourceRefreshRequest `json:"cancelDataSourceRefresh,omitempty"`
 	DeleteDataSource        *DeleteDataSourceRequest        `json:"deleteDataSource,omitempty"`
 
-	// Cell comments (spike R).
+	// Cell comments.
 	InsertComment      *InsertCommentRequest      `json:"insertComment,omitempty"`
 	AddCommentReply    *AddCommentReplyRequest    `json:"addCommentReply,omitempty"`
 	UpdateCommentPost  *UpdateCommentPostRequest  `json:"updateCommentPost,omitempty"`
@@ -547,9 +559,11 @@ type Reply struct {
 // It has no sheetId, and that absence is the type's whole reason for
 // being: SheetProperties carries one, the zero value serializes as
 // `"sheetId": 0`, and Google reads that as a request for id 0 — which
-// the first sheet always has. Live, an addSheet built from
-// SheetProperties came back as "Sheet with id 0 already exists", and a
-// create came back with the requested sheet and nothing else.
+// the first sheet always has. An addSheet built from SheetProperties is
+// answered "Sheet with id 0 already exists", and a create returns the
+// requested sheet and nothing else. Checked by the live steps "add a
+// sheet to work in" and "a new spreadsheet, seeded".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#AddSheetRequest
 //
 // A field that cannot be set wrongly beats a rule about not setting it.
 type NewSheetProperties struct {

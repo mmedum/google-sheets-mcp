@@ -13,15 +13,10 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/livecover"
 )
 
-// §13 says the live driver covers every tool and every op. That is a
-// guarantee stated over a surface, and a guarantee stated over a surface
-// decays every time the surface grows — in a sibling repository the
-// equivalent promise had quietly stopped covering eight newer tools,
-// including the only ones that took an email address.
-//
-// So it is checked rather than asserted, and against the schema the
-// binary actually publishes rather than a list anybody maintains. When
-// it first ran, the driver was exercising 14 of 28 tool options.
+// The live driver covers every tool and every option (D-61). A guarantee
+// stated over a surface decays every time the surface grows, so it is
+// checked rather than asserted, and against the schema the binary
+// publishes rather than a list anybody maintains.
 //
 // It is a static check because CI has no credentials: the point is to
 // fail at the moment somebody adds an option and forgets the driver, not
@@ -67,55 +62,63 @@ func liveCoverGate(bin string) error {
 // driverCalls reads which tools the driver calls and which arguments it
 // sets, from the syntax tree rather than from a list.
 func driverCalls(dir string) (map[string]map[string]bool, int, error) {
-	out := map[string]map[string]bool{}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, 0, err
 	}
+	fset := token.NewFileSet()
+	var files []*ast.File
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
 			continue
 		}
-		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, 0)
 		if err != nil {
 			return nil, 0, err
 		}
-		ast.Inspect(file, func(n ast.Node) bool {
+		files = append(files, file)
+	}
+	out := map[string]map[string]bool{}
+	for _, entry := range stepLiterals(files, "step") {
+		if lit, ok := entry.(*ast.CompositeLit); ok {
+			record(out, lit)
+		}
+	}
+	return out, len(out), nil
+}
+
+// stepLiterals is every entry of typ the files build: each literal of the
+// type, and each element of a []typ literal. An element has its type
+// elided, which is how nearly every step is written, and reading only
+// the typed spelling found one step out of nineteen. An element may also
+// be a call that returns one; one written with its type is a literal of
+// its own.
+func stepLiterals(files []*ast.File, typ string) []ast.Expr {
+	var out []ast.Expr
+	for _, f := range files {
+		ast.Inspect(f, func(n ast.Node) bool {
 			lit, ok := n.(*ast.CompositeLit)
-			if !ok {
-				return true
-			}
-			// Two spellings. A step built on its own carries its type;
-			// the ones inside a []step slice have it elided, which is
-			// how nearly every step here is written — and reading only
-			// the first spelling found one step out of nineteen.
-			if isSliceOf(lit.Type, "step") {
+			switch {
+			case !ok:
+			case docsIsIdent(lit.Type, typ):
+				out = append(out, lit)
+			case isSliceOf(lit.Type, typ):
 				for _, elt := range lit.Elts {
-					if inner, ok := elt.(*ast.CompositeLit); ok && inner.Type == nil {
-						record(out, inner)
+					if inner, ok := elt.(*ast.CompositeLit); !ok || inner.Type == nil {
+						out = append(out, elt)
 					}
 				}
-				return true
 			}
-			if id, ok := lit.Type.(*ast.Ident); !ok || id.Name != "step" {
-				return true
-			}
-			record(out, lit)
 			return true
 		})
 	}
-	return out, len(out), nil
+	return out
 }
 
 // isSliceOf reports whether e is []name.
 func isSliceOf(e ast.Expr, name string) bool {
 	arr, ok := e.(*ast.ArrayType)
-	if !ok || arr.Len != nil {
-		return false
-	}
-	id, ok := arr.Elt.(*ast.Ident)
-	return ok && id.Name == name
+	return ok && arr.Len == nil && docsIsIdent(arr.Elt, name)
 }
 
 // record pulls the tool and its argument keys out of one step literal.

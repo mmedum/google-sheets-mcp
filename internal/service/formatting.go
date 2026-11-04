@@ -354,10 +354,9 @@ func (s *Service) formatGuard(ctx context.Context, ref Reference, props *gsheets
 	// column's notes went through with no read, no blocker and nothing
 	// in the result saying what went.
 	// What the ops themselves say they take away, rather than a second
-	// reading of the request. The list used to be re-derived here, and
-	// a missing entry in it is exactly how clear_note shipped
-	// unguarded — the compiler knew, and the guard was asking the
-	// request again.
+	// reading of the request. A list re-derived here could miss an
+	// entry, and the op it missed would go unguarded while the compiler
+	// knew what it took.
 	if !compiled.destroys() {
 		return plan.CheckDestination(g), nil
 	}
@@ -393,10 +392,10 @@ func (s *Service) formatGuard(ctx context.Context, ref Reference, props *gsheets
 // formatPlan is what one format_cells call compiles to: the requests,
 // the words for them, and what each op takes away.
 //
-// The last part is the point. The guard used to read the request a
-// second time to decide whether to read the cells, which made its
-// coverage a list kept by hand beside the compiler — and a missing entry
-// in that list is not a compile error, it is an unguarded write.
+// The last part is the point. A guard that read the request a second
+// time to decide whether to read the cells would make its coverage a
+// list kept by hand beside the compiler, and a missing entry in that
+// list is not a compile error, it is an unguarded write.
 type formatPlan struct {
 	ops     []*gsheets.Request
 	applied []render.Applied
@@ -433,9 +432,9 @@ func formatOps(req FormatRequest, sheetID int, rect a1.Rect) (formatPlan, error)
 	if req.Merge != "" && req.Unmerge {
 		return formatPlan{}, Errorf("invalid", "merge and unmerge ask for opposite things; send one of them")
 	}
-	// The same shape, and it used to be silent: clear_note won and the
+	// The same shape. Taking both would let clear_note win while the
 	// guard checked the note that was never going to be written, so a
-	// call could be refused for a replacement it would not have made.
+	// call could be refused for a replacement it would not make.
 	if req.Note != "" && req.ClearNote {
 		return formatPlan{}, Errorf("invalid", "note and clear_note ask for opposite things; send one of them")
 	}
@@ -591,11 +590,13 @@ func appliedLines(applied []render.Applied) []string {
 
 // frozenBoundary refuses a merge that spans the edge of a frozen band.
 //
-// Verified live: Sheets answers "You can't merge frozen and non-frozen
-// columns", which says the rule and not where the edge is — and a caller
-// who froze the first column two calls ago is not thinking about it. The
-// counts are on the card this call already read, so saying it here costs
-// nothing.
+// Sheets answers "You can't merge frozen and non-frozen columns", which
+// says the rule and not where the edge is — and a caller who froze the
+// first column two calls ago is not thinking about it. The counts are on
+// the card this call already read, so saying it here costs nothing.
+// Checked by the live step "a merge spanning the frozen edge is refused
+// before it is sent".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#MergeCellsRequest
 //
 // Merging entirely inside the frozen band, or entirely outside it, is
 // fine; only crossing is refused.
@@ -637,13 +638,15 @@ const pivotMergeRefusal = "part of a pivot table"
 // mergedIntoPivot turns that 400 into this server's own sentence.
 //
 // The backstop to pivotBoundary, and it exists because Google goes by
-// the pivot's *footprint* rather than by its cells. Verified live: a
-// merge over F13:G13, two cells that are blank in the response and
-// blank on the sheet, is refused because the rectangle they sit in
-// belongs to a pivot table (spike Q). The guard cannot see that — a
+// the pivot's *footprint* rather than by its cells: a merge over two
+// cells that are blank in the response and blank on the sheet is
+// refused because the rectangle they sit in belongs to a pivot table.
+// The reference says nothing of it. Checked by the live step "what a
+// merge and a clear do to a pivot table". The guard cannot see that — a
 // blank cell inside a footprint looks like any other blank cell — and
-// finding out would mean measuring every pivot on the sheet before
-// every merge, which is the cost §17a.27 refused for a message.
+// finding out would mean measuring every pivot on the sheet before every
+// merge, a read on every merge to improve a message.
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#MergeCellsRequest
 //
 // So the cheap check answers first where it can, naming the table and
 // what it covers, and this catches the rest. A caller never sees
@@ -662,12 +665,16 @@ func mergedIntoPivot(err error) error {
 //
 // Sheets refuses it itself: `400 Invalid requests[0].mergeCells: You
 // can't merge cells that are part of a pivot table`, over the output as
-// surely as over the anchor, with the pivot untouched (spike Q). So
-// nothing is being prevented here — what is being fixed is the sentence.
-// The guard used to answer first with "merging would keep the top-left
-// value and discard F3, which is not empty", which describes a loss that
-// cannot happen, and offered `overwrite` to get past itself; a caller
-// who passed it reached Google's 400 instead.
+// surely as over the anchor, with the pivot untouched. The reference
+// says nothing of it. Checked by the live steps "a merge over the output
+// is refused, with the reason Sheets gives" and "what a merge and a
+// clear do to a pivot table".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#MergeCellsRequest
+//
+// So nothing is being prevented here; what is being fixed is the
+// sentence. Without this the guard answers first that the merge would
+// discard a non-empty cell, a loss that cannot happen, and offers
+// `overwrite` to get past itself, which reaches Google's 400.
 //
 // Nothing acknowledges this one. The API will not do it whatever the
 // caller says, so an argument that claimed otherwise would be a lie in

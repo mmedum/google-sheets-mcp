@@ -4,8 +4,8 @@
 // scores what it did.
 //
 // The live driver proves the tools work. This proves they can be used —
-// which is a different claim, and the one that fails quietly. §13: what
-// no driver catches is a result that is internally consistent and wrong,
+// which is a different claim, and the one that fails quietly. What no
+// driver catches is a result that is internally consistent and wrong,
 // and the way to catch it is to give the work to something that does not
 // know how the server is built and watch which way it goes.
 //
@@ -17,7 +17,7 @@
 // pass by outcome and a failure by every rule this server is built on.
 //
 // The spreadsheet is created and filled here, so nothing a transcript
-// carries is anybody's data (§9.1).
+// carries is anybody's data.
 package main
 
 import (
@@ -40,7 +40,7 @@ import (
 // scratchTitle is the prefix every spreadsheet this makes carries, so
 // the manual cleanup is one Drive search. Same reason as the live
 // driver's: this server asks for drive.readonly on purpose, and trashing
-// needs a write-capable Drive scope (§17a.1).
+// needs a write-capable Drive scope.
 const scratchTitle = "evals scratch"
 
 // toolPrefix is how the CLI names this server's tools in a trace.
@@ -68,11 +68,7 @@ func run(ctx context.Context, bin, model, only string, budget float64, keep bool
 	// fixture whose fields are filled with placeholders of this
 	// harness's own. A table with an unsubstituted {name} in it would
 	// otherwise cost a scratch spreadsheet that drive.readonly cannot
-	// trash, ten minutes, and — in the sibling run this rule comes from
-	// — nothing at all, because it passed.
-	//
-	// The comment said this before the code did: the check ran after
-	// build. Found by a review pass reading the two against each other.
+	// trash and ten minutes, and could still pass.
 	if err := CheckPrompts(Tasks(checkFixture)); err != nil {
 		return err
 	}
@@ -342,7 +338,7 @@ func writeMCPConfig(bin string) (string, error) {
 			"args":    []string{"serve"},
 			// Destructive tools stay off. An eval that could delete a
 			// sheet would be scoring the model's restraint rather than
-			// the server's, and §10 makes that a deployment choice.
+			// the server's, and turning them on is the operator's choice.
 			"env": map[string]string{config.EnvPrefix + "LOG_LEVEL": "error"},
 		},
 	}}

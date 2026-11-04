@@ -26,8 +26,8 @@ func TestDimensionRangesAreZeroBasedAndHalfOpen(t *testing.T) {
 }
 
 // The API removes the band and then inserts it, reading the index
-// against the sheet before the move. Verified live: rows 1-2 of four
-// sent with destinationIndex 3 came back starting at row 2. So a band
+// against the sheet before the move: rows 1-2 of four sent with
+// destinationIndex 3 land starting at row 2. So a band
 // moving down has to be given room for itself, and one moving up does
 // not.
 func TestMoveDestinationMeansWhereItEndsUp(t *testing.T) {
@@ -217,7 +217,7 @@ func TestParseBandChecksTheTwoAgainstEachOther(t *testing.T) {
 }
 
 // A band carries what it parsed and nothing about how it reads: the
-// words are render.Band's, and its own test covers them (§17a.9).
+// words are render.Band's, and its own test covers them.
 func TestBandReadsBackTheWayItWasGiven(t *testing.T) {
 	rows, _ := plan.ParseBand("rows", "2:5")
 	if !rows.Rows() || rows.First != 2 || rows.Last != 5 {

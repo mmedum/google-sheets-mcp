@@ -8,8 +8,8 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
 )
 
-// The end-to-end numbers §11 states targets for, measured through the
-// fake rather than against Google.
+// The end-to-end numbers this server holds itself to, measured through
+// the fake rather than against Google.
 //
 // What that leaves out is the network, which dominates everything here
 // by two orders of magnitude: a request against the real API is roughly
@@ -33,7 +33,7 @@ func benchService(b *testing.B, rows, cols int) (*service.Service, string) {
 }
 
 // BenchmarkRead is the whole read path: resolve, fetch, build the grid,
-// render it addressed. §11's target is a 5 000-cell read rendered under
+// render it addressed. The target is a 5 000-cell read rendered under
 // 20 ms.
 func BenchmarkRead(b *testing.B) {
 	svc, id := benchService(b, 1000, 10)

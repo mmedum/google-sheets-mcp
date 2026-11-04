@@ -18,18 +18,15 @@ import (
 
 // classGate holds the error vocabulary closed, from both sides.
 //
-// This is built in phase 0 rather than left as a later cleanup because
-// it costs an afternoon and it is the difference between a vocabulary
-// and a habit. In a sibling repository the equivalent check found four
-// classes that appeared in no document at all, and the list had been
-// living in comments in two packages where nothing could disagree with
-// it.
+// It is the difference between a vocabulary and a habit: a list kept in
+// comments, where nothing can disagree with it, gathers classes that
+// appear in no document at all.
 //
 // Both directions matter. A class emitted and not declared is a word the
 // model has to learn from a message; a class declared and never emitted
 // is documentation of something that does not happen.
 // plannedClasses are declared in the vocabulary and not emitted yet,
-// each with the phase that will emit it.
+// each with what will emit it.
 //
 // The vocabulary is written down whole because a model should not learn
 // a class twice, so a class can be declared before the code that emits
@@ -37,11 +34,10 @@ import (
 // can see; without the list the gate would either pass on a vocabulary
 // nothing holds, or fail on a plan that is going as intended.
 //
-// Empty since phase 1: `blocked`, `conflict` and `unsupported` were the
-// three, and the write guard, the checkpoint and the gated dimension
-// action emit them. The map stays because the next phase that declares
-// ahead of itself needs it, and because the gate reads it from both
-// sides — a class listed here and emitted anyway is also a failure.
+// It is empty: every declared class is emitted. The map stays because a
+// class declared ahead of its code needs it, and because the gate reads
+// it from both sides — a class listed here and emitted anyway is also a
+// failure.
 var plannedClasses = map[string]string{}
 
 func classGate() error {

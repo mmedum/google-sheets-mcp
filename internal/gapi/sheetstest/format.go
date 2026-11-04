@@ -271,11 +271,10 @@ func mergeCells(d *Doc, req *gsheets.MergeCellsRequest) error {
 }
 
 // refusePivotMerge is the API refusing a merge that touches a pivot
-// table, in the API's own words (spike Q).
+// table, in the API's own words.
 //
 // Here because a fake that accepts what Google refuses lets a guard's
-// test pass on a request the guard exists to stop — the shape three
-// findings in this project have taken (§17a.29). The output counts as
+// test pass on a request the guard exists to stop. The output counts as
 // much as the anchor: live, a merge wholly inside the computed cells got
 // the same 400.
 func refusePivotMerge(sh *Sheet, rect a1.Rect) error {
@@ -343,7 +342,7 @@ func unmergeCells(d *Doc, req *gsheets.UnmergeCellsRequest) error {
 // setValidation puts a rule on every cell of a rectangle, or clears it.
 //
 // A rule on a cell under a dropdown column's header is refused in
-// Google's words (spike T Q13, 2026-10-09). A rule reaching such a cell
+// Google's words. A rule reaching such a cell
 // from a wider range is believed refused the same way. A column of
 // another type, a header cell and a rule's removal are let through:
 // nothing has asked.
@@ -448,8 +447,9 @@ func addProtected(d *Doc, req *gsheets.AddProtectedRangeRequest) (*gsheets.Reply
 	}
 	copied := *p
 	copied.ProtectedRangeID = nextProtectedID(d)
-	// The owner is always an editor, which is why a protected-range 403
-	// cannot be observed with one account (§15.E).
+	// The owner is always an editor, so a protected range refusing a
+	// write cannot be observed with one account, and its error is not
+	// known.
 	copied.RequestingUserCanEdit = true
 	sh.Protected = append(sh.Protected, &copied)
 	return &gsheets.Reply{AddProtectedRange: &gsheets.AddProtectedRangeReply{ProtectedRange: &copied}}, true, nil
@@ -527,8 +527,8 @@ func addTable(d *Doc, req *gsheets.AddTableRequest) (*gsheets.Reply, bool, error
 	if err := checkColumns("addTable", t.ColumnProperties, rect.Cols()); err != nil {
 		return nil, true, err
 	}
-	// Spike T Q10, 2026-10-09: a formula in a header cell of a column the
-	// add did not type was refused in these words, and kept.
+	// Google refuses an add over a formula in a header cell, of a typed
+	// column or not, in these words, and keeps the formula.
 	for col := rect.FirstCol; col <= rect.LastCol; col++ {
 		if c := sh.At(rect.FirstRow, col); c != nil && c.UserEnteredValue != nil && c.UserEnteredValue.FormulaValue != nil {
 			//nolint:staticcheck // Google's own wording, kept verbatim
@@ -541,13 +541,12 @@ func addTable(d *Doc, req *gsheets.AddTableRequest) (*gsheets.Reply, bool, error
 	for _, c := range t.ColumnProperties {
 		sent[c.ColumnIndex] = c
 	}
-	// Spike T Q1, 2026-10-09: an add typing columns 1 and 3 of four, with
-	// no names, read back an entry for every column. The two left out
-	// were named by their header cells. The two typed ones were named
-	// "Column 1" and "Column 2", counted along the typed columns sent
-	// with no name, and Google wrote those names into the header cells
-	// over "Amount" and "Status". A name sent is written into its header
-	// cell, as an update writes one (Q4).
+	// An add reads back an entry for every column, and a column left out
+	// is named by its header cell. A typed column sent with no name is
+	// named "Column 1", "Column 2" and so on, counted along the typed
+	// columns sent with no name, and Google writes that name into its
+	// header cell over what was there. A name sent is written into its
+	// header cell, as an update writes one.
 	copied.ColumnProperties = nil
 	unnamed := 0
 	for i := range rect.Cols() {
@@ -578,10 +577,8 @@ func addTable(d *Doc, req *gsheets.AddTableRequest) (*gsheets.Reply, bool, error
 // header: a data validation rule of a cell's own is gone, and the
 // table's list is not put on the cell either.
 //
-// Spike T Q1, 2026-10-09: an add typing column D a dropdown over D2:D4,
-// which had a list of their own, read D2 back with no dataValidation. Q13:
-// an update typing B a dropdown over B2:B3, which had lists of their own,
-// read both back with none.
+// An add or an update typing a column dropdown over cells with lists of
+// their own reads those cells back with no dataValidation.
 func dropdowns(sh *Sheet, rect a1.Rect, columns []*gsheets.TableColumn) {
 	for _, c := range columns {
 		if c.ColumnType != gsheets.ColumnDropdown {
@@ -599,11 +596,10 @@ func dropdowns(sh *Sheet, rect a1.Rect, columns []*gsheets.TableColumn) {
 // header: text and empty cells become FALSE, and a TRUE or FALSE value
 // stays.
 //
-// Spike T Q5, 2026-10-09: an update typing a column BOOLEAN turned
-// "maybe", the text "TRUE" and an empty cell into FALSE. Q5b: an update
-// kept TRUE, FALSE and TRUE values, and an add kept TRUE and turned
-// "maybe" and an empty cell into FALSE. What it does to a number or a
-// formula is not known, so those are left as they are.
+// An add or an update typing a column BOOLEAN turns "maybe", the text
+// "TRUE" and an empty cell into FALSE, and keeps a TRUE or FALSE value.
+// What it does to a number or a formula is not known, so those are left
+// as they are.
 func checkboxes(sh *Sheet, rect a1.Rect, columns []*gsheets.TableColumn) {
 	for _, c := range columns {
 		if c.ColumnType != gsheets.ColumnBoolean {
@@ -625,9 +621,8 @@ func checkboxes(sh *Sheet, rect a1.Rect, columns []*gsheets.TableColumn) {
 
 // writeHeader writes a column's name into its header cell as plain
 // text, which is what Google does with a name it is sent: the text
-// stays, and a smart chip and rich text's runs go (spike T Q4, Q7 and
-// Q9). The cell's whole-cell format stays (Q7, third run). Its note is
-// believed to stay; nothing has asked.
+// stays, and a smart chip and rich text's runs go. The cell's whole-cell
+// format stays. Its note is believed to stay; nothing has asked.
 func writeHeader(sh *Sheet, row, col int, name string) {
 	cell := sh.At(row, col)
 	if cell == nil {
@@ -643,10 +638,10 @@ func writeHeader(sh *Sheet, row, col int, name string) {
 // header cell: the column takes the cell's text as its name, and a
 // formula is replaced by a name of Google's own.
 //
-// Spike T, 2026-10-09: a formula written into B1 of a table over A1:D4
-// was answered 200 and read back as "Column 2", B's place in the table,
-// and the column took that name (Q7); a person chip written into D1
-// named its column after the chip's text (Q9).
+// A formula written into B1 of a table over A1:D4 is answered 200 and
+// reads back as "Column 2", B's place in the table, and the column takes
+// that name; a person chip written into D1 names its column after the
+// chip's text.
 func headerWritten(sh *Sheet, written a1.Rect) {
 	for _, t := range sh.Tables {
 		rect := clamp(sh, a1.FromGridRange(t.Range))
@@ -694,11 +689,11 @@ var columnTypes = map[string]bool{
 // checkColumns makes the refusals a table's columns meet. op is the
 // request's name, which Google's messages carry.
 //
-// Spike T Q2, 2026-10-09: a dropdown with no rule and a rule on a
-// number column are refused in the words below. An entry with a name
-// and no type is taken (Q8). A rule that is not a list, a column index
-// past the table's width and one given twice are refused in wording of
-// this fake's own: nothing has asked Google.
+// Google refuses a dropdown with no rule and a rule on a number column
+// in the words below, and takes an entry with a name and no type. A rule
+// that is not a list, a column index past the table's width and one
+// given twice are refused in wording of this fake's own: nothing has
+// asked Google.
 func checkColumns(op string, columns []*gsheets.TableColumn, width int) error {
 	seen := map[int]bool{}
 	for _, c := range columns {
@@ -766,12 +761,11 @@ func updateTable(d *Doc, req *gsheets.UpdateTableRequest) error {
 // replaced, and a column the request leaves out loses its type and its
 // dropdown's list, and keeps its header's text as its name.
 //
-// Spike T, 2026-10-09: an entry with no name is refused, in the words
-// below (Q3, Q5), and a name sent is written into its header cell (Q4).
-// Q3b sent column 1 alone, named and typed DATE, over a table whose
-// column 1 was CURRENCY and column 3 a dropdown with its list; four
-// entries read back, the three left out named by their headers with no
-// type, and the dropdown's list gone.
+// Google refuses an entry with no name in the words below, and writes a
+// name sent into its header cell. Column 1 sent alone, named and typed
+// DATE, over a table whose column 1 is CURRENCY and column 3 a dropdown
+// with its list, reads back four entries: the three left out named by
+// their headers with no type, and the dropdown's list gone.
 func replaceColumns(sh *Sheet, table *gsheets.Table, columns []*gsheets.TableColumn) ([]*gsheets.TableColumn, error) {
 	rect := clamp(sh, a1.FromGridRange(table.Range))
 	if err := checkColumns("updateTable", columns, rect.Cols()); err != nil {
@@ -870,16 +864,16 @@ func deleteBanding(d *Doc, id int) error {
 	return errors.New("No banded range with id: " + strconv.Itoa(id))
 }
 
-// checkRule makes the refusals spike S saw Google make of a color scale,
-// in Google's words. op is the request's name, which they carry.
+// checkRule makes the refusals Google makes of a color scale, in
+// Google's words. op is the request's name, which they carry.
 //
-// Spike S, 2026-10-09: a number, percent or percentile point with no
-// value is refused (Q3), and so are a scale with no maxpoint and a point
-// with no type, both as a point with no type. A rule with both kinds is
-// refused by the request's parser. Under de_DE, a number written with a
-// decimal point is refused and one with a decimal comma taken (Q4). A
-// rule of neither kind, an unknown type, and the other comma locales
-// are refused or not in wording of this fake's own: nothing asked Google.
+// A number, percent or percentile point with no value is refused, and so
+// are a scale with no maxpoint and a point with no type, both as a point
+// with no type. A rule with both kinds is refused by the request's
+// parser. Under de_DE, a number written with a decimal point is refused
+// and one with a decimal comma taken. A rule of neither kind, an unknown
+// type, and the other comma locales are refused or not in wording of
+// this fake's own: nothing asked Google.
 func checkRule(op, locale string, rule *gsheets.ConditionalFormatRule) error {
 	invalid := func(why string) error { return errors.New("Invalid requests[0]." + op + ": " + why) }
 	switch {
@@ -919,12 +913,12 @@ var snakeOps = map[string]string{
 	"updateConditionalFormatRule": "update_conditional_format_rule",
 }
 
-// commaLocales write a decimal with a comma. Only de_DE was asked
-// (spike S Q4); the others are not modeled.
+// commaLocales write a decimal with a comma. Only de_DE was asked; the
+// others are not modeled.
 var commaLocales = map[string]bool{"de_DE": true}
 
 // stored is a rule as Google keeps it: a min or max point loses the
-// value it was sent with, which the reference calls unused (spike S Q3).
+// value it was sent with, which the reference calls unused.
 func stored(rule *gsheets.ConditionalFormatRule) *gsheets.ConditionalFormatRule {
 	if rule.GradientRule == nil {
 		return rule

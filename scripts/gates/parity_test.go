@@ -79,12 +79,11 @@ func TestParityPassesOnThisRepository(t *testing.T) {
 
 // Commenting a step out is not the same as running it.
 //
-// The gate matches by substring, so before this it found "gates
+// The gate matches by substring, so without this it finds "gates
 // staleness" inside "# - run: go run ./scripts/gates staleness" and
-// called the gate present. That makes the cheapest way to unblock a red
+// calls the gate present. That makes the cheapest way to unblock a red
 // build — typing one "#" — also the way to disable the check that would
-// have noticed. Reported by a sibling repository on 2026-09-06 and
-// confirmed here rather than assumed.
+// notice.
 func TestParitySeesThroughACommentedOutStep(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

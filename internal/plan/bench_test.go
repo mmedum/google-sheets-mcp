@@ -12,8 +12,8 @@ import (
 )
 
 // The guard reads every cell of the target before a write, so its cost
-// is on the path of every write and grows with the rectangle. §11 has no
-// number for it because none was measured; these are the numbers.
+// is on the path of every write and grows with the rectangle. No target
+// is set for it; these are the numbers.
 //
 // The shape that matters is the one where the guard has most to say: a
 // rectangle full of formulas, where every cell lands in two of the

@@ -15,6 +15,7 @@
 //	go run ./scripts/gates pins
 //	go run ./scripts/gates smoke ./google-sheets-mcp
 //	go run ./scripts/gates staleness ./google-sheets-mcp
+//	go run ./scripts/gates docs
 //	go run ./scripts/gates schema-diff ./google-sheets-mcp
 //	go run ./scripts/gates schema-baseline ./google-sheets-mcp
 //	go run ./scripts/gates schema-ack origin/main HEAD
@@ -36,7 +37,7 @@ import (
 func main() {
 	if len(os.Args) < 2 {
 		fail("usage: gates coverage PROFILE MIN | classes | leaks [history] | transcript | " +
-			"live-cover BIN | pins | smoke BIN | staleness BIN | schema-diff BIN | schema-baseline BIN | schema-ack BASE HEAD | mcpb | " +
+			"live-cover BIN | pins | smoke BIN | staleness BIN | docs | schema-diff BIN | schema-baseline BIN | schema-ack BASE HEAD | mcpb | " +
 			"mcpb-pack VERSION [DIST] | api-coverage | api-fields | api-diff | schema-refetch | parity | " +
 			"release-notes VERSION [CHANGELOG] | release-tag TAG | precommit")
 	}
@@ -75,6 +76,8 @@ func main() {
 		check(smoke(binArg()), "stdio smoke")
 	case "staleness":
 		check(staleness(binArg()), "staleness")
+	case "docs":
+		check(docsGate(os.Stdout), "docs")
 	case "schema-diff", "schema-baseline", "schema-ack":
 		// One clause for the three, because this switch is at the
 		// cyclomatic limit.

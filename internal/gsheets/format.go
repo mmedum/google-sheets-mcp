@@ -1,7 +1,8 @@
 package gsheets
 
 // The formatting half of the wire types: what a cell looks like, what is
-// attached to a range, and the batchUpdate members phase 2 sends.
+// attached to a range, and the batchUpdate members that format and
+// transform.
 //
 // Same rule as the rest of this package. A field here means some code
 // reads or writes it, so a struct is never a transcription of the
@@ -119,8 +120,11 @@ const (
 // value it sits at.
 //
 // Color is deprecated in favor of ColorStyle, which wins where both are
-// set. This server sends ColorStyle alone and reads either, since a rule
-// written by an older client may carry only Color.
+// set, though the samples page still writes Color. This server sends
+// ColorStyle alone, which reads back with both, and reads either, since
+// a rule written by an older client may carry only Color. Checked by the
+// live step "what Google makes of a color scale".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/sheets#InterpolationPoint
 //
 // Value is text, and may be a formula. The API ignores it for MIN and
 // MAX.

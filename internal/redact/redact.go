@@ -1,11 +1,10 @@
 // Package redact masks the few things this server prints to a person
 // that must not survive being pasted somewhere else.
 //
-// The logging rule (§9) is about what the server writes while it runs,
-// and a test holds it. This is the other half: `status` and `doctor`
-// print for a human, the issue form asks for their output, and both were
-// printing an OAuth client id and an account address — two entries on
-// §9.1's never-list — until a live run showed it.
+// The logging rule is about what the server writes while it runs, and a
+// test holds it. This is the other half: `status` and `doctor` print for
+// a human, the issue form asks for their output, and neither an OAuth
+// client id nor an account address may reach what gets pasted.
 //
 // The client id arrives by an unlucky route: the Cloud console names the
 // file it gives you after the client id, so printing the *path* to the
@@ -103,10 +102,9 @@ var projectNumber = regexp.MustCompile(`(project_number:|projects/|project=)[0-9
 // This is for text assembled by somebody else — an API response, an
 // error, a rendered result — where the values are not known in advance
 // and so cannot be registered for substitution. A live driver's
-// transcript is the case it exists for: §9.1 says that transcript is
-// safe to paste into a commit message, and it was not, because the
-// driver only masked the ids it had created itself. The owner's address
-// and the folder id came from Drive and went straight through.
+// transcript is the case it exists for: it is meant to be safe to paste
+// into a commit message, and masking only the ids the driver created
+// itself lets an owner's address or a folder id from Drive through.
 func Line(s string) string {
 	s = address.ReplaceAllStringFunc(s, Email)
 	s = ClientID(s)

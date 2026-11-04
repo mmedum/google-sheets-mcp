@@ -10,8 +10,7 @@
 // While serving, stdout carries JSON-RPC frames and nothing else. A
 // subcommand is not serving, so the answer a person asked for goes to
 // stdout — help, status, doctor — and errors and progress go to stderr,
-// which is what makes `status | less` and `--help | grep` work and what
-// the three sibling servers already did.
+// which is what makes `status | less` and `--help | grep` work.
 package main
 
 import (
@@ -69,12 +68,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 	spreadsheet := fs.String("spreadsheet", "", "a spreadsheet id, URL or title for doctor to read one cell of")
 	statusJSON := fs.Bool("json", false, "with status: print the same state as one JSON object")
 	// Asking for help is a successful request, so it is answered on
-	// stdout and exits 0, the way the three sibling servers do it. It is
-	// a declared flag rather than a scan of argv: a scan matched a flag's
-	// VALUE too, so `--secret help` printed the usage, and it could not
-	// know the spellings the flag package accepts anyway — `-help` and
-	// `--h` would have reached fs.Parse and been answered on stderr, so
-	// one question had two answers on two streams.
+	// stdout and exits 0. It is a declared flag rather than a scan of
+	// argv: a scan matches a flag's VALUE too, so `--secret help` would
+	// print the usage, and it cannot know the spellings the flag package
+	// accepts — `-help` and `--h` would reach fs.Parse and be answered
+	// on stderr, one question with two answers on two streams.
 	help := fs.Bool("help", false, "print this help and exit")
 	fs.BoolVar(help, "h", false, "print this help and exit")
 	yes := fs.Bool("yes", false, "do not ask for confirmation (logout)")
@@ -197,15 +195,14 @@ func (l *lazyTokenSource) Token() (*oauth2.Token, error) {
 	return l.inner.Token()
 }
 
-// recordAccount fills in the address the profile carries.
+// recordAccount fills in the address the profile carries, so `status`
+// can say which account a profile is signed in as.
 //
-// Every sibling server records one and this did not, which is the
-// difference a `status` output shows and nobody can act on. It is not
-// from the token: `tokeninfo` returns an address only when the token
-// carries an email scope, and this server asks for neither `openid` nor
-// `userinfo.email` (§17.6) — one of the siblings does, and adding a
-// third scope to record a string would be the wrong way to match a
-// convention. It comes from the Drive call this server already makes.
+// It is not from the token: `tokeninfo` returns an address only when the
+// token carries an email scope, and this server asks for neither
+// `openid` nor `userinfo.email`. A third scope to record a string would
+// widen the grant for nothing. It comes from Drive's about.get, under
+// the Drive scope this server already holds.
 //
 // Best effort. The token is saved by the time this runs, so a failure
 // here costs a field in a config file and never a login.
@@ -222,8 +219,10 @@ func recordAccount(ctx context.Context, cfg config.Config, out io.Writer, uc *us
 }
 
 // setAccount keeps what is already recorded rather than replacing it
-// with nothing. Drive omits emailAddress when the account has not made
-// it visible to the requester, and that arrives as "" with a nil error.
+// with nothing. Drive's User.emailAddress "may not be present in certain
+// contexts if the user has not made their email address visible to the
+// requester", and that arrives as "" with a nil error.
+// https://developers.google.com/workspace/drive/api/reference/rest/v3/User
 func setAccount(uc *userconfig.Config, addr string) {
 	if addr == "" {
 		return
@@ -234,12 +233,12 @@ func setAccount(uc *userconfig.Config, addr string) {
 // applyGrantedScopes records what Google granted rather than what was
 // asked for, and names the asked-for scopes it withheld.
 //
-// The account address is deliberately not taken from tokeninfo, which
-// returns one only for a token carrying an email scope — §17.6 asks for
-// neither `openid` nor `userinfo.email`, so what it returns is nothing.
-// Assigning it here wrote "" over the address recordAccount had just
-// fetched, and `status` then reported a working profile as having no
-// account at all.
+// The account address is deliberately not taken from tokeninfo. Its
+// `email` is "Present only if the email scope is present in the
+// request", and this server asks for neither `openid` nor
+// `userinfo.email`, so what it returns is nothing. Assigning it here
+// would write "" over the address recordAccount has just fetched.
+// https://www.googleapis.com/discovery/v1/apis/oauth2/v2/rest
 func applyGrantedScopes(uc *userconfig.Config, info *auth.TokenInfo, wanted []string, out io.Writer) {
 	uc.Scopes = info.Scopes
 	missing := auth.MissingScopes(info.Scopes, wanted)
@@ -314,7 +313,9 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, stderr io.W
 // connection as JSON-RPC -32004 with the EOF only as message text, so an
 // unmatched error makes the process exit non-zero on a normal
 // disconnect, which every host logs as a crash. The code is matched, not
-// the text.
+// the text: go-sdk v1.8.0 defines -32004 as ErrServerClosing and -32003
+// as ErrClientClosing, and exports jsonrpc.Error as the wire error.
+// https://github.com/modelcontextprotocol/go-sdk/blob/v1.8.0/internal/jsonrpc2/wire.go
 func cleanDisconnect(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
 		return true
@@ -385,11 +386,13 @@ func login(ctx context.Context, cfg config.Config, secretFlag string, out io.Wri
 //
 // Revocation is not per profile, and this is the one place that matters.
 // Google revokes the *grant*, so a token revoked under one profile signs
-// the account out of every profile sharing that OAuth client — measured
-// live, where signing out of a scratch profile silently signed out the
-// default one too. Profiles keep separate storage, not separate grants,
-// and saying "signed out of profile X" while that happened would be a
-// lie the person only discovers on their next call.
+// the account out of every profile sharing that OAuth client. Google's
+// revocation reference speaks only of a token and its refresh token; the
+// grant-wide effect is seen by hand, and no live step runs logout.
+// Profiles keep separate storage, not separate grants, and saying
+// "signed out of profile X" while that happens would be a lie the person
+// only discovers on their next call.
+// https://developers.google.com/identity/protocols/oauth2/native-app#tokenrevoke
 func logout(ctx context.Context, cfg config.Config, yes, localOnly bool, out io.Writer) error {
 	store, err := tokenStore(cfg, config.NewLogger(cfg, out))
 	if err != nil {
@@ -471,7 +474,9 @@ var errSkipped = errors.New("skipped")
 // what is missing rather than reporting a failure. Most first-run
 // reports are an API that was never enabled or a scope that was never
 // granted: an External app's consent screen without it, or a box left
-// unticked at login.
+// unticked at login. Only an External app lists scopes on its consent
+// screen: for an Internal one Google says "scopes aren't listed".
+// https://developers.google.com/workspace/guides/configure-oauth-consent
 func doctor(ctx context.Context, cfg config.Config, spreadsheet string, out io.Writer) error {
 	_, _ = fmt.Fprintf(out, "%s\nprofile: %s\n\n", version.Info(), cfg.Profile)
 	fail := 0

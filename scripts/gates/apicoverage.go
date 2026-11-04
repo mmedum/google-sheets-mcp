@@ -13,13 +13,12 @@ import (
 	"strings"
 )
 
-// The API coverage record, and the gate that holds it.
+// The API coverage record, and the gate that holds it (D-76).
 //
-// §16 asks that every member of the Sheets `batchUpdate` union is either
-// used or written down as deliberately out. Phase 4 answered that in
-// prose, which is the shape §17a.26 already warns about: a claim a gate
-// does not hold is a claim that goes stale the first time somebody adds
-// a builder. This holds it.
+// Every published method and every member of the Sheets `batchUpdate`
+// union is either used or written down as deliberately out. A claim no
+// gate holds goes stale the first time somebody adds a builder, so this
+// gate holds it.
 //
 // Two files, split by which of them a person writes:
 //
@@ -40,26 +39,25 @@ import (
 // that is only checkable.
 //
 // One row may stand for a whole API's remainder, and only one way: a
-// `*` name with the verdict `out`. Drive publishes sixty-four methods
-// and this server calls three, and its position on the other sixty-one
-// is categorical rather than per-method — file management belongs to a
-// server built on the Drive API (§1, §17.6). Sixty-one copies of that
-// sentence would be a record nobody reads. A wildcard may never say
-// `used`: claiming a whole API is called is a claim no code backs, and
-// the gate still fails if the client calls something the wildcard
-// covers. The count it absorbs is printed, so a surface that grows
-// behind it is visible rather than silent.
+// `*` name with the verdict `out`. Drive publishes dozens of methods and
+// this server calls a few, and its position on the rest is categorical
+// rather than per-method: file management belongs to a server built on
+// the Drive API, and this one holds only `drive.readonly`. A copy of
+// that sentence per method would be a record nobody reads. A wildcard
+// may never say `used`: claiming a whole API is called is a claim no
+// code backs, and the gate still fails if the client calls something the
+// wildcard covers. The count it absorbs is printed, so a surface that
+// grows behind it is visible rather than silent.
 //
-// Sheets has no wildcard, and that is where §16's requirement lives:
-// every method and every one of the sixty-nine request kinds is judged
-// by name.
+// Sheets has no wildcard: every Sheets method and every request kind is
+// judged by name.
 //
 // **A row is a request kind or a method, and the record says which.**
-// That distinction is the whole shape of this API: Sheets publishes
-// thirteen methods this server could call and sixty-nine request kinds
-// inside one of them, and the union is where Google adds capability. A
-// record keyed only on methods would call this server complete while
-// missing every chart, filter and pivot request in the API.
+// That distinction is the whole shape of this API: Sheets publishes a
+// handful of methods and dozens of request kinds inside one of them, and
+// the union is where Google adds capability. A record keyed only on
+// methods would call this server complete while missing every chart,
+// filter and pivot request in the API.
 const (
 	apiSurfacePath  = "testdata/api-surface.json"
 	apiCoveragePath = "testdata/api-coverage.tsv"

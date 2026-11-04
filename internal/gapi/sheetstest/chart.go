@@ -11,24 +11,25 @@ import (
 
 // The fake's charts and slicers.
 //
-// Each refusal here is one the live API makes, recorded by spike L, and
-// the fake is deliberately no more forgiving than the thing it stands in
-// for: a chart with no chart kind, a position that says nothing and a
-// move with no field mask are all refused, because a server that only
-// works against this fake is a server that has been tested against a
-// kinder API than the one it will meet.
+// Each refusal here is one the live API makes, as the live step "what a
+// chart survives" records it, and the fake is deliberately no more
+// forgiving than the thing it stands in for: a chart with no chart kind,
+// a position that says nothing and a move with no field mask are all
+// refused, because a server that only works against this fake is a
+// server that has been tested against a kinder API than the one it will
+// meet.
 //
 // One of them is not a refusal at all, and it is the reason this file
 // reaches into the dimension code: deleting a charted column leaves the
-// chart alive with its series gone and says nothing. That is what the
-// live run found, so it is what the fake does.
+// chart alive with its series gone and says nothing. That is what
+// Google does, so it is what the fake does.
 
 // errChartInternal is Google's own answer to a basicChart with neither
 // domains nor series: HTTP 500, "Internal error encountered". It is
-// reproduced because §6.5 classes a 500 as retryable, so a client that
-// trusts the status retries it forever — and the only defense is the
-// server refusing to send the request, which a test can only prove
-// against a fake that answers the way the API does.
+// reproduced because a 500 on a batchUpdate leaves nobody able to say
+// whether the chart was made, and the only defense is the server
+// refusing to send the request, which a test can only prove against a
+// fake that answers the way the API does.
 var errChartInternal = &statusError{status: 500, code: "INTERNAL", message: "Internal error encountered."}
 
 // statusError lets the fake answer with a status other than 400.
@@ -40,7 +41,7 @@ type statusError struct {
 
 func (e *statusError) Error() string { return e.message }
 
-// applyChart is the fake's half of the phase 4 union.
+// applyChart is the fake's half of the chart and slicer requests.
 func applyChart(d *Doc, req *gsheets.Request) (*gsheets.Reply, bool, error) {
 	switch {
 	case req.AddChart != nil:
@@ -318,7 +319,7 @@ func nextTitle(d *Doc, prefix string) string {
 // dropChartedColumns is the silent half, and the reason this file is not
 // only about charts. Deleting a column that a chart's series reads
 // leaves the chart in place with that series gone, and the API's reply
-// says nothing at all (spike L).
+// says nothing at all.
 func dropChartedColumns(d *Doc, sheetID int, rect a1.Rect, rows bool) {
 	for _, sh := range d.Sheets {
 		for _, c := range sh.Charts {
