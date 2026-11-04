@@ -23,7 +23,7 @@ prerelease and skips the registry, whose entries cannot be withdrawn.
 - Rehearse the build into `dist/`, publishing nothing:
 
   ```bash
-  go run github.com/goreleaser/goreleaser/v2@v2.18.1 release --snapshot --clean --skip=sign,publish
+  go run github.com/goreleaser/goreleaser/v2@v2.18.1 release --snapshot --clean --skip=sign,sbom,publish
   ```
 
   The version must agree in the bundle's and the archives' filenames,

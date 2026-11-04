@@ -5,6 +5,8 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [4.2.1] - 2026-11-04
+
 ### Changed
 
 - `--dump-schemas` carries the server's instructions, and lists fixed resources and prompts once the server has any.
@@ -1434,7 +1436,9 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v4.1.1...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v4.2.1...HEAD
+[4.2.1]: https://github.com/mmedum/google-sheets-mcp/compare/v4.2.0...v4.2.1
+[4.2.0]: https://github.com/mmedum/google-sheets-mcp/compare/v4.1.1...v4.2.0
 [4.1.1]: https://github.com/mmedum/google-sheets-mcp/compare/v4.1.0...v4.1.1
 [4.1.0]: https://github.com/mmedum/google-sheets-mcp/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v3.1.2...v4.0.0
