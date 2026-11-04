@@ -28,7 +28,7 @@ func TestRulesCatchPlantedIdentifiers(t *testing.T) {
 		{"example.com", "a@example.com", false},
 		{"google account id", "sub 109876543210987654321 signed in", true}, // leakcheck:allow
 		// Twenty digits with no letter: a rule wanting a capital and a
-		// digit misses this, and a sibling shipped exactly that hole.
+		// digit misses this.
 		{"drive permission id", "permission 09876543210987654321 granted", true},                              // leakcheck:allow
 		{"oauth client id", "123456789012-abcdefghijklmnopqrstuvwxyz012345.apps.googleusercontent.com", true}, // leakcheck:allow gitleaks:allow
 		{"api host on its own", "https://sheets.googleapis.com/v4/spreadsheets", false},
@@ -50,6 +50,17 @@ func TestRulesCatchPlantedIdentifiers(t *testing.T) {
 		// id inside a string literal.
 		{"importrange formula", `=IMPORTRANGE("1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms","A1:B2")`, true}, // leakcheck:allow
 		{"a sheet id is not in scope", "sheetId 1837 and tableId 42", false},
+		// A heading's anchor is lowercase words after a short number, right
+		// after "#" or a decision's "d-". An id in the same shape mixes
+		// cases, or sits elsewhere.
+		{"a decision's anchor", "see docs/architecture.md#d-01-retries-back-off", false},
+		{"a numbered heading's anchor", "see docs/gcp-setup.md#1-create-a-project", false},
+		{"a client id without its suffix", "client 123456789012-abcdefghijklmnopqrstuvwxyz012345 in a log", true}, // leakcheck:allow
+		{"a client id without its suffix after #", "#123456789012-abcdefghijklmnopqrstuvwxyz012345", true},        // leakcheck:allow
+		{"a uuid", "run 10293847-ab12-4c3d-9e8f-0a1b2c3d4e5f", true},                                              // leakcheck:allow
+		{"a slug-shaped name in prose", "the 1-create-a-project-in-the-console step", true},                       // leakcheck:allow
+		{"a mixed-case id after d-", "d-1-BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms", true},                     // leakcheck:allow
+		{"a mixed-case id after #", "docs/gcp-setup.md#1-BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms", true},      // leakcheck:allow
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := findLeaks(tc.text)
@@ -131,13 +142,10 @@ func TestBinaryDetection(t *testing.T) {
 
 // TestATrackedBinaryIsAFinding runs the branch rather than the helper.
 //
-// isBinary has been tested since phase 0 and the branch that uses it
-// never was, so what the scan does with a committed binary was a
-// question only the source could answer — and three people read that
-// source today and got it wrong, including one who had just described it
-// to somebody else. A check nobody has run is worse than a gap nobody
-// has explained: an unexplained gap invites doubt, and a name invites
-// agreement.
+// A test of isBinary alone leaves what the scan does with a committed
+// binary to a reading of the source, which is easy to get wrong. A check
+// nobody has run is worse than a gap nobody has explained: an
+// unexplained gap invites doubt, and a name invites agreement.
 //
 // A NUL byte in the first few kilobytes is the whole rule, which is what
 // git itself uses, so this needs no real executable. That is the part
@@ -183,10 +191,8 @@ func TestSafeDomain(t *testing.T) {
 // The scan reads the working tree, not just the index.
 //
 // A tracked-only scan is blind to exactly the files that most need
-// scanning: a phase's new ones, which nobody has looked at before. This
-// repository ran `make check` green a dozen times over 167 files while
-// 28 of phase 3's own were untracked, and the first `git add -A` found a
-// spreadsheet id in a test written that afternoon.
+// scanning: a change's new ones, which nobody has looked at before, and
+// which `git add -A` sweeps in unread.
 //
 // Driven against a throwaway repository rather than this one, so it can
 // watch both halves fail without anything reaching the real tree.

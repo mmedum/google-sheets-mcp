@@ -20,13 +20,11 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 )
 
-// The standard says: break the manifest all six ways and watch each be
-// refused before you believe the check. A check nobody has watched fail
-// is a check nobody knows the shape of — doing this in a sibling
-// repository found a packer that verified the entry point and the Linux
-// files and never the win32 override's command, so a typo in the .exe
-// path would have packed cleanly, installed cleanly, and been caught by
-// nothing.
+// Break the manifest every way it breaks and watch each be refused
+// before believing the check. A check nobody has watched fail is a check
+// nobody knows the shape of: a packer can verify the entry point and the
+// Linux files and never the win32 override's command, so a typo in the
+// .exe path packs cleanly, installs cleanly, and is caught by nothing.
 //
 // Each case below breaks exactly one thing in a manifest that is
 // otherwise correct, and asserts the sentence that names it.
@@ -209,7 +207,7 @@ func TestTheSixWaysAManifestBreaks(t *testing.T) {
 		},
 		{
 			// The specification shows this form once and never says what
-			// it is resolved against (§18).
+			// it is resolved against.
 			name: "a relative command",
 			edit: func(d map[string]any) {
 				dig(d, "server", "mcp_config")["command"] = "server/google-sheets-mcp-darwin"
@@ -530,7 +528,7 @@ func TestTheBundleSettingsRefuseEachBreak(t *testing.T) {
 }
 
 // What the bundle says it is, broken once each: the server's own name, a
-// binary, the family's floor, a privacy policy, and exactly the
+// binary, the Claude Desktop floor, a privacy policy, and exactly the
 // platforms the packer stages an entry point for.
 func TestTheIdentityRefusesEachBreak(t *testing.T) {
 	const entryPoints = "; the packer stages entry points for [darwin linux win32]"
@@ -544,7 +542,7 @@ func TestTheIdentityRefusesEachBreak(t *testing.T) {
 		{"a node server", func(d map[string]any) { dig(d, "server")["type"] = "node" },
 			`server.type is "node"; the bundle carries a binary`},
 		{"no Claude Desktop floor", func(d map[string]any) { delete(dig(d, "compatibility"), "claude_desktop") },
-			`compatibility.claude_desktop is ""; the family's bundles claim ">=0.10.0"`},
+			`compatibility.claude_desktop is "", want ">=0.10.0"`},
 		{"another floor", func(d map[string]any) { dig(d, "compatibility")["claude_desktop"] = ">=0.9.0" },
 			`compatibility.claude_desktop is ">=0.9.0"`},
 		{"no Linux", func(d map[string]any) { dig(d, "compatibility")["platforms"] = []any{"darwin", "win32"} },
@@ -1133,7 +1131,7 @@ func TestBundleLayoutAndModes(t *testing.T) {
 		}
 		mode, ok := want[f.Name]
 		if !ok {
-			t.Errorf("the bundle carries %s, which is not the family's layout", f.Name)
+			t.Errorf("the bundle carries %s, which is not in its layout", f.Name)
 			continue
 		}
 		if got := f.Mode().Perm(); got != mode {
@@ -1141,7 +1139,7 @@ func TestBundleLayoutAndModes(t *testing.T) {
 		}
 	}
 	if len(names) != len(want) {
-		t.Errorf("the bundle carries %v; want the %d files of the family's layout", names, len(want))
+		t.Errorf("the bundle carries %v; want the %d files of its layout", names, len(want))
 	}
 
 	// The version reaches the manifest inside the bundle, through a
@@ -1285,8 +1283,8 @@ func TestAFailedWriteLeavesNoBundle(t *testing.T) {
 }
 
 // The packer refuses what the gate refuses, in the gate's words,
-// because both start from committedManifest: a check the gate alone
-// used to run stops the pack, and so does a file beside the manifest.
+// because both start from committedManifest: every check the gate runs
+// stops the pack, and so does a file beside the manifest.
 func TestPackRunsEveryCheckTheGateRuns(t *testing.T) {
 	root := copiedRoot(t)
 	t.Chdir(root)

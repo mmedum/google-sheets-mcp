@@ -116,7 +116,7 @@ func TestReadCommentsKeepsToItsScope(t *testing.T) {
 	}
 }
 
-// Google's order is not positional (spike R); a thread added later on an
+// Google's order is not positional; a thread added later on an
 // earlier cell is listed first.
 func TestReadCommentsListsByPosition(t *testing.T) {
 	_, svc := standard(t)
@@ -135,7 +135,7 @@ func TestReadCommentsListsByPosition(t *testing.T) {
 }
 
 // An anchor follows its cell; when the cell's row goes, the thread stays
-// and has no cell, and a ranged read says it left it out (spike R).
+// and has no cell, and a ranged read says it left it out.
 func TestACommentFollowsItsCellAndOutlivesItsRow(t *testing.T) {
 	srv, svc := standard(t)
 	ctx := context.Background()
@@ -289,7 +289,7 @@ func TestManageCommentRefusesBeforeSending(t *testing.T) {
 }
 
 // Resolving posts once; a second resolve sends nothing, where Google
-// would post another (spike R).
+// would post another.
 func TestResolveSendsOnlyWhenTheThreadIsOpen(t *testing.T) {
 	srv, svc := standard(t)
 	res, err := manage(svc, service.ManageCommentRequest{Action: "resolve", CommentID: sheetstest.FixtureCommentID})
@@ -496,7 +496,7 @@ func TestDeleteCommentRefusesTheFirstPostByID(t *testing.T) {
 }
 
 // A delete Google answers with 404 found it gone, which is what was
-// asked for (spike R).
+// asked for.
 func TestADeleteFoundGoneIsDone(t *testing.T) {
 	srv, svc := destructive(t)
 	srv.FailOnce("spreadsheets.batchUpdate", sheetstest.Failure{Status: http.StatusNotFound})
@@ -509,8 +509,8 @@ func TestADeleteFoundGoneIsDone(t *testing.T) {
 	}
 }
 
-// A repeat delete finds nothing to delete, which is what it asked for
-// (spike R): it is reported gone, and nothing is sent or asked. Google
+// A repeat delete finds nothing to delete, which is what it asked for:
+// it is reported gone, and nothing is sent or asked. Google
 // answers a repeat and an id it never had with the same 404, and a read
 // shows neither, so the summary says it may be either.
 func TestARepeatDeleteIsReportedGone(t *testing.T) {

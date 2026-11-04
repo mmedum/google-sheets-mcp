@@ -90,9 +90,8 @@ func TestReadOnlyFlagOnlyOnTheThreeReadingPOSTs(t *testing.T) {
 		})
 	}
 
-	// Zero findings and zero inputs must not look the same. Phase 0 has
-	// no reading POST yet, so the count that matters is how many
-	// requests were read at all.
+	// Zero findings and zero inputs must not look the same, so the count
+	// that matters is how many requests were read at all.
 	if literals < 4 {
 		t.Fatalf("found %d request literals; the check is not reading the package", literals)
 	}

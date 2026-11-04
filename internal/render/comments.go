@@ -314,7 +314,7 @@ func CommentDeleted(c Comment, postID string, gone bool) string {
 
 // CommentNotThere reports a delete of a thread or a reply the read
 // before it did not find. Google answers a repeat delete and an id it
-// never had alike (spike R), so this says both.
+// never had alike, so this says both.
 func CommentNotThere(commentID, postID string) string {
 	if postID != "" {
 		return fmt.Sprintf("Thread %s has no reply %s now, so nothing was sent: it is already gone, or it was never "+

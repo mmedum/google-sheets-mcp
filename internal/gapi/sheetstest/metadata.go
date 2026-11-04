@@ -11,10 +11,10 @@ import (
 
 // Developer metadata in the fake.
 //
-// The behavior here is spike K's transcript rather than a reading of
-// the reference, for the reason §13 gives about the coercion table: a
-// fake built from the documentation inherits the documentation's
-// errors. What the live run established, and what this reproduces:
+// The behavior here is what Google does, as the live step "whether
+// developer metadata is a durable anchor" records it, rather than a
+// reading of the reference: a fake built from the documentation inherits
+// the documentation's errors. What this reproduces:
 //
 //   - A row anchor follows its row through an insert above, a delete
 //     above, a move, and a sort of the values under it.
@@ -292,8 +292,8 @@ func nextMetadataID(d *Doc) int {
 // drops the ones whose row or column went with it.
 //
 // n is positive for an insert and negative for a delete. The drop is the
-// half worth having: spike K watched an anchor disappear with its row
-// and the reply say nothing at all.
+// half worth having: an anchor goes with its row, and the reply says
+// nothing at all.
 func shiftMetadata(d *Doc, sheetID int, dim string, start, n int) {
 	var kept []*gsheets.DeveloperMetadata
 	for _, md := range d.Metadata {
@@ -324,9 +324,8 @@ func shiftMetadata(d *Doc, sheetID int, dim string, start, n int) {
 // its row did not — which is precisely the bug the anchors exist to
 // avoid, reproduced in the thing meant to catch it.
 //
-// destinationIndex is read against the sheet *before* the move, which is
-// spike I's finding for moveDimension and holds for whatever rides on
-// it.
+// destinationIndex is read against the sheet *before* the move, as
+// moveDimension reads it, and that holds for whatever rides on it.
 func moveMapping(start, end, destination int) func(int) int {
 	n := end - start
 	return func(at int) int {

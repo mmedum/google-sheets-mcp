@@ -647,7 +647,7 @@ func TestAutoFillStopsAtTheEndOfTheSheet(t *testing.T) {
 }
 
 // A paste lands on cells the caller never named, so it is the other
-// place a write can arrive in a pivot table's output (§17a.27).
+// place a write can arrive in a pivot table's output.
 func TestCopyPasteIntoPivotOutputNamesThePivot(t *testing.T) {
 	srv := sheetstest.Standard(t)
 	svc := newService(t, srv)

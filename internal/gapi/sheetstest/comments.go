@@ -8,9 +8,10 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 )
 
-// The fake's cell comments, written from spike R: what each request
-// answers, live, when the thread, the post or the place is wrong, and
-// where an anchor goes when its row moves or is deleted.
+// The fake's cell comments, written from what Google answers when the
+// thread, the post or the place is wrong, and where an anchor goes when
+// its row moves or is deleted, as the live step "how cell comments read
+// back and fail" records it.
 
 // AddComment puts a thread on a zero-based cell of sh, as a fixture.
 // mine says whether the signed-in account wrote it, which decides what
@@ -178,7 +179,7 @@ func addCommentReply(d *Doc, req *gsheets.AddCommentReplyRequest) (*gsheets.Repl
 	p.AssigneeEmail = in.AssigneeEmail
 	switch action {
 	case gsheets.CommentResolve:
-		// A second resolve is accepted and posted again (spike R).
+		// A second resolve is accepted and posted again.
 		p.CommentAction = action
 		t.Status = gsheets.CommentResolved
 	case gsheets.CommentReopen:
@@ -247,7 +248,7 @@ func deleteCommentReply(d *Doc, req *gsheets.DeleteCommentReplyRequest) error {
 	case p.AssigneeEmail != "":
 		return badRequest("The reply post contains an assignee.")
 	}
-	// A deleted reply leaves the Sheets read entirely (spike R).
+	// A deleted reply leaves the Sheets read entirely.
 	t.Replies = slices.Delete(t.Replies, i, i+1)
 	return nil
 }
@@ -266,7 +267,7 @@ func findPost(t *gsheets.CommentThread, id string) *gsheets.Post {
 
 // shiftCommentAnchors follows an insert (n > 0) or a delete (n < 0) of a
 // band on one axis. An anchor inside a deleted band collapses to an
-// empty range at the band's start and its thread stays (spike R).
+// empty range at the band's start and its thread stays.
 func shiftCommentAnchors(sh *Sheet, dim string, start, n int) {
 	for _, a := range sh.CommentAnchors {
 		lo, hi := axisOf(a.Range, dim)
@@ -317,7 +318,7 @@ func cloneThread(t *gsheets.CommentThread) *gsheets.CommentThread {
 }
 
 // wireAnchors is a sheet's anchors as Google sends them: a zero index is
-// left out of the JSON, so it arrives missing rather than zero (spike R).
+// left out of the JSON, so it arrives missing rather than zero.
 func wireAnchors(in []*gsheets.CommentAnchor) []*gsheets.CommentAnchor {
 	out := cloneAnchors(in)
 	for _, a := range out {

@@ -155,7 +155,7 @@ func TestFieldMasksAreBalanced(t *testing.T) {
 }
 
 // Comments come only with the comments view, and the view goes with the
-// mask that names them: without it Google refuses the mask (spike R).
+// mask that names them: without it Google refuses the mask.
 func TestGetSpreadsheetAsksForTheCommentsView(t *testing.T) {
 	var got url.Values
 	c, _ := testClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -326,9 +326,9 @@ func TestThrottling403BacksOff(t *testing.T) {
 	}
 }
 
-// TestRepeatabilityComesFromTheMethod is the rule §11 turns on. It is
-// asserted over the request type rather than over the call sites,
-// because a call added later has to inherit it.
+// TestRepeatabilityComesFromTheMethod holds that repeatability follows
+// the HTTP method. It is asserted over the request type rather than over
+// the call sites, because a call added later has to inherit it.
 func TestRepeatabilityComesFromTheMethod(t *testing.T) {
 	for _, tc := range []struct {
 		r          request

@@ -48,7 +48,10 @@ func CheckAnchorName(name string) error {
 // The API refuses anything else, in these words: two rows at once is
 // "DimensionRange must represent a single row or column", and an
 // unbounded range is "DimensionRange must specify both a startIndex and
-// an endIndex" (spike K). Nothing here can build either.
+// an endIndex". Nothing here can build either. Checked by the live steps
+// "whether developer metadata is a durable anchor" and "a rectangle
+// cannot be anchored".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.developerMetadata
 func AnchorRow(sheetID, row int) *gsheets.DeveloperMetadataLocation {
 	return &gsheets.DeveloperMetadataLocation{
 		DimensionRange: dimensionRange(sheetID, gsheets.DimensionRows, row, row),
@@ -83,9 +86,8 @@ func AnchorAdd(name, value string, at *gsheets.DeveloperMetadataLocation) *gshee
 // AnchorDelete removes the entry with this id.
 //
 // By id, never by key. The request takes a filter and deletes everything
-// it matches, and a key is not unique — two entries can share one, which
-// spike K confirmed by making two. A delete by key would take both and
-// report it afterwards.
+// it matches, and a key is not unique: two entries can share one. A
+// delete by key would take both and report it afterwards.
 func AnchorDelete(id int) *gsheets.Request {
 	return &gsheets.Request{DeleteDeveloperMetadata: &gsheets.DeleteDeveloperMetadataRequest{
 		DataFilter: &gsheets.DataFilter{
@@ -127,7 +129,10 @@ func ByName(name string) []*gsheets.DataFilter {
 
 // OnSheet lists everything anchored anywhere on one sheet: the rows, the
 // columns, and the sheet itself. One request, because an intersecting
-// sheet lookup reaches the rows and columns inside it (spike K).
+// sheet lookup reaches the rows and columns inside it, where an exact one
+// returns only the sheet's own entry. Checked by the live step "whether
+// developer metadata is a durable anchor".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/DataFilter#DeveloperMetadataLookup
 func OnSheet(sheetID int) []*gsheets.DataFilter {
 	return []*gsheets.DataFilter{{
 		DeveloperMetadataLookup: &gsheets.DeveloperMetadataLookup{
@@ -140,12 +145,15 @@ func OnSheet(sheetID int) []*gsheets.DataFilter {
 // Everything lists every anchor in the spreadsheet, whatever it is
 // attached to, in one request.
 //
-// An empty lookup, which the reference does not describe and spike K
-// established: it matched all four entries across all four location
-// types. The alternative shapes cost more — a filter per location type,
-// or a request per sheet — and the sheet-by-sheet one would break §4.5
-// on any spreadsheet with more than one sheet. The empty lookup is not a
-// missing filter here; it is the filter.
+// An empty lookup, which the reference does not describe: it matches
+// every entry across all four location types. The alternative shapes
+// cost more — a filter per location type, or a request per sheet — and
+// the sheet-by-sheet one would make a listing more than one request on
+// any spreadsheet with more than one sheet (D-32). The empty lookup is
+// not a missing filter here; it is the filter. Checked by the live steps
+// "whether developer metadata is a durable anchor" and "list every
+// anchor, whatever it is attached to".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/DataFilter#DeveloperMetadataLookup
 func Everything() []*gsheets.DataFilter {
 	return []*gsheets.DataFilter{{DeveloperMetadataLookup: &gsheets.DeveloperMetadataLookup{}}}
 }

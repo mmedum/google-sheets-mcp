@@ -7,13 +7,12 @@ import (
 	"fmt"
 )
 
-// abTest measures what §4.9 currently only argues.
+// abTest measures whether the addressed grid saves tool calls.
 //
-// §4.9 says every read shows addresses, so a model can write back to
-// what it just read without counting rows. That is reasoning, not
-// measurement: the number behind the original rule was measured on
-// *prose* reads in a sibling project on one version of one client, and a
-// grid is a different claim from a paragraph.
+// Every read shows addresses, so a model can write back to what it just
+// read without counting rows. That is reasoning, not measurement: the
+// number behind the rule was measured on *prose* reads, on one version
+// of one client, and a grid is a different claim from a paragraph.
 //
 // So the same task is run twice, over the same spreadsheet, differing
 // only in what the read hands back. Both arms end in a write that names
@@ -21,16 +20,16 @@ import (
 // that is pleasant to look at and produces a write to the wrong row has
 // answered the wrong question.
 //
-// What this is not: a modified server. The plan describes toggling the
-// rendering inside the structured half, which would mean a build flag
-// existing only for this. `format=json` gives the same thing through the
-// tool surface — rows and no addresses in the text half — and costs
-// nothing to keep. It is a weaker instrument than the plan's and it is
-// the one that does not put test-only machinery in the server; where it
-// differs is recorded rather than smoothed over.
+// What this is not: a modified server. Toggling the rendering inside the
+// structured half would need a build flag that exists only for this.
+// `format=json` gives the same thing through the tool surface — rows and
+// no addresses in the text half — and costs nothing to keep. It is a
+// weaker instrument than a toggle and it is the one that does not put
+// test-only machinery in the server; where it differs is recorded rather
+// than smoothed over.
 func abTest(ctx context.Context, cfg, model string, budget float64, f Fixture) Result {
 	sec("A/B: does the addressed grid save tool calls?")
-	line("why: §4.9 is reasoning rather than measurement, and this is the measurement")
+	line("why: that addresses save calls is reasoning rather than measurement, and this is the measurement")
 
 	ask := func(how string) *Run {
 		return drive(ctx, Task{

@@ -14,26 +14,25 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
 )
 
-// spikeM answers §15.M: what a pivot table is on the wire, and what
+// askPivotOnTheWire asks what a pivot table is on the wire, and what
 // this server's own read sees where one sits.
 //
-// A pivot table is the odd one in phase 4. It is not a batchUpdate
-// request at all: it is a field of CellData, written through updateCells
-// at one anchor cell, and its output "is computed dynamically based on
-// its data" — so its footprint is not stated anywhere in the request
-// that made it. Three consequences decide manage_pivot_table and none
-// of them is in the reference.
+// A pivot table is the odd one among a sheet's objects. It is not a
+// batchUpdate request at all: it is a field of CellData, written through
+// updateCells at one anchor cell, and its output "is computed
+// dynamically based on its data" — so its footprint is not stated
+// anywhere in the request that made it. Three consequences decide
+// manage_pivot_table and none of them is in the reference.
 //
 // What does the server's own grid mask (gapi.GridFields, which asks for
 // no pivotTable field) see over a pivot's output? If those cells look
-// empty, the write guard lets a write land on top of a pivot table, and
-// hard rule 6 is broken by a tool that has not been written yet. If they
-// look full, a refusal can count them but cannot name what they are.
+// empty, the write guard lets a write land on top of a pivot table and
+// destroy what it cannot see. If they look full, a refusal can count
+// them but cannot name what they are.
 //
 // What does a write into that output do — refuse, or take the pivot with
 // it? And how is a pivot deleted, given there is no deletePivotTable?
-func spikeM(ctx context.Context) {
-	sec("Spike M: pivot tables, and what a read sees where one sits")
+func askPivotOnTheWire(ctx context.Context) {
 	const sheet = "SpikePivots"
 	sheetID, err := addSheet(ctx, sheet)
 	if err != nil {
@@ -91,12 +90,11 @@ func spikeM(ctx context.Context) {
 
 	line("")
 	line("  Q4: does the output move when the source grows?")
-	// Two different questions, and the first run of this spike asked
-	// only the weaker one: it wrote a row *below* A1:C5 and reported
-	// that nothing moved. Of course nothing moved — the source is a
-	// fixed rectangle. The question that decides the tool is what a row
-	// added *inside* the source does, and whether a new group makes the
-	// output taller than the caller's request said anything about.
+	// Two different questions. A row written *below* A1:C5 moves
+	// nothing, since the source is a fixed rectangle. The question that
+	// decides the tool is what a row added *inside* the source does, and
+	// whether a new group makes the output taller than the caller's
+	// request said anything about.
 	if err := put(ctx, q+"!A6:C6", [][]any{{"Quorbin", 200, 1}}); err != nil {
 		line("    could not add a row below the source: %v", err)
 	} else {
@@ -165,11 +163,10 @@ func spikeM(ctx context.Context) {
 
 	line("")
 	line("  Q8: what does an invalid pivot say?")
-	// Every group here carries a sortOrder. The first run of this spike
-	// left it out, and both probes came back "No sort order specified."
-	// — the same message for two different questions, neither of which
-	// was the one being asked. A validation order this server does not
-	// know about answers first.
+	// Every group here carries a sortOrder. Without one, both probes
+	// answer "No sort order specified." — the same message for two
+	// different questions, neither of which is the one being asked. A
+	// validation order this server does not know about answers first.
 	group := map[string]any{"sourceColumnOffset": 0, "sortOrder": "ASCENDING"}
 	status, body = writePivot(ctx, sheetID, 12, 4, map[string]any{
 		"source": source,

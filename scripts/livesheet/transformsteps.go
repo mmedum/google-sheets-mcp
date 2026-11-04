@@ -118,7 +118,7 @@ func (d *driver) transformSteps() []step {
 		},
 		{
 			name:        "acknowledged without the checkpoint of what it reads, it is refused",
-			why:         "an overwrite is held to the cells the guard read, and the refusal hands that checkpoint over (§4.7)",
+			why:         "an overwrite is held to the cells the guard read, and the refusal hands that checkpoint over",
 			tool:        "transform_range",
 			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:F1", "action": "find_replace", "find": "Zzzznomatch", "replace": "x", "in_formulas": true, "overwrite": true, "overwrite_formulas": true},
 			expectError: "invalid",
@@ -303,7 +303,7 @@ func (d *driver) transformSteps() []step {
 		},
 		{
 			name: "and the source really is blank",
-			why:  "all three of a sibling's wrong results were describing the state from before the write",
+			why:  "a result can describe the state from before the write, so the source is read back",
 			tool: "read_range",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "E30:G30", "format": "csv",

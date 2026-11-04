@@ -579,8 +579,8 @@ func TestDeletingAPlainTableIsNotHeldBack(t *testing.T) {
 // TestATableAddGoogleFailedIsSettledByARead is an add answered HTTP 500,
 // which says nothing of whether it ran. A table has a name and a range,
 // so a read afterwards says which: nothing added, or added after all.
-// Spike T Q12 saw Google answer every add with column types after the
-// fourth in a spreadsheet that way, and take an add without them; when
+// Google answers every add with column types after the fourth in a
+// spreadsheet that way, and takes an add without them; when
 // Google answered an add with column types, the refusal says so. Anything
 // else, and a read that fails too, stay [ambiguous_outcome].
 func TestATableAddGoogleFailedIsSettledByARead(t *testing.T) {
@@ -754,7 +754,7 @@ func TestTableColumnsCountFromTheTablesFirstColumn(t *testing.T) {
 	}
 }
 
-// TestATableAddOverAFormulaHeaderIsRefused is spike T Q10: Google refuses
+// TestATableAddOverAFormulaHeaderIsRefused holds that Google refuses
 // a table over a formula in its header row, typed or not, with
 // "Formulas are not supported in a table header row." A plain add is
 // refused here before it is sent, a dry run included, naming every cell.
@@ -780,7 +780,7 @@ func TestATableAddOverAFormulaHeaderIsRefused(t *testing.T) {
 
 // TestTableAddKeepsTheHeaderRow is the header row after a typed add.
 // Google writes "Column 1", "Column 2" into the header cell of a typed
-// column sent with no name (spike T Q1), so the add names each one after
+// column sent with no name, so the add names each one after
 // its header, and the header reads as it did.
 func TestTableAddKeepsTheHeaderRow(t *testing.T) {
 	srv := sheetstest.Standard(t)
@@ -840,7 +840,7 @@ func boldStart() *gsheets.CellData {
 // cell as plain text, which loses the chip or the formatting. A column
 // the add does not type is sent no name, so what is in its header is not
 // held against it. A formula is refused in any column: Google takes no
-// table over one (spike T Q10).
+// table over one.
 func TestTableAddIsRefusedOverAHeaderANameWouldReplace(t *testing.T) {
 	chip := func() *gsheets.CellData {
 		c := sheetstest.Str("Jane Doe")
@@ -917,7 +917,7 @@ func seedTypedTable(srv *sheetstest.Server) {
 }
 
 // TestTableUpdateRetypesOneColumnAndKeepsTheRest is the round trip.
-// Google replaces the whole list (spike T Q3b), and so does the fake, so
+// Google replaces the whole list, and so does the fake, so
 // every column goes back as it was — the dropdown with its list, the
 // chip as a chip — and each with the name it was read with, so no header
 // is left blank. The card after it reads what the fake kept.
@@ -1008,11 +1008,11 @@ func TestTableUpdateRenamesAndRetypesInOneRequest(t *testing.T) {
 }
 
 // TestTableUpdateNamesAColumnTheReadLeftOutByItsHeader is a read with
-// no entry for some columns. Whether Google ever returns such an array
-// is unverified (§18); if it does, the update still sends an entry for
-// every column, each a column the read left out named by its header
-// cell's text from the same read and given no type, so no header can be
-// left blank.
+// no entry for some columns. Google returns an entry for every column,
+// so such an array is not expected; if one comes, the update still sends
+// an entry for every column, each a column the read left out named by
+// its header cell's text from the same read and given no type, so no
+// header can be left blank.
 func TestTableUpdateNamesAColumnTheReadLeftOutByItsHeader(t *testing.T) {
 	srv := sheetstest.Standard(t)
 	seedTypedTable(srv)
@@ -1037,7 +1037,7 @@ func TestTableUpdateNamesAColumnTheReadLeftOutByItsHeader(t *testing.T) {
 // TestTableUpdateIsRefusedOverAFormulaInTheHeader is a header a name
 // sent back would change: written into the cell, the name replaces the
 // formula with the text it shows. Google does not keep a formula written
-// into a table's header (spike T Q7), and takes no table over one (Q10),
+// into a table's header, and takes no table over one,
 // so this is a header made some other way; the fake is seeded with it
 // directly. A rename alone sends no column, so it is not held back.
 func TestTableUpdateIsRefusedOverAFormulaInTheHeader(t *testing.T) {
@@ -1095,7 +1095,7 @@ func TestTableUpdateIsRefusedOverAChipInTheHeader(t *testing.T) {
 	}
 }
 
-// TestTableUpdateIsRefusedOverRichTextInTheHeader is spike T Q7: an
+// TestTableUpdateIsRefusedOverRichTextInTheHeader holds that an
 // update sending "Flag" back as read dropped the runs that made two of
 // its letters bold. Runs whose formats are all empty format nothing, and
 // are not held back.
@@ -1130,8 +1130,8 @@ func TestTableUpdateIsRefusedOverRichTextInTheHeader(t *testing.T) {
 
 // TestABooleanColumnIsRefusedOverOtherValues is a checkbox column over
 // cells that are not TRUE or FALSE values, on add and on update alike.
-// Google turned a word, the text "TRUE" and an empty cell into FALSE
-// (spike T Q5). A number is refused too, since nothing says it is kept.
+// Google turns a word, the text "TRUE" and an empty cell into FALSE.
+// A number is refused too, since nothing says it is kept.
 // A TRUE or FALSE value and an empty cell are not held back.
 func TestABooleanColumnIsRefusedOverOtherValues(t *testing.T) {
 	const refusal = " something other than a TRUE or FALSE value, and Google turns such a cell into FALSE when " +
@@ -1177,7 +1177,7 @@ func TestABooleanColumnIsRefusedOverOtherValues(t *testing.T) {
 	}
 }
 
-// TestADropdownColumnIsRefusedOverCellsWithTheirOwnRule is spike T Q1: an
+// TestADropdownColumnIsRefusedOverCellsWithTheirOwnRule holds that an
 // add typing a column dropdown over cells with a list of their own read
 // them back with no rule. On add and on update, a dry run included, the
 // call is refused before anything is sent, naming the cells. A cell with
@@ -1227,7 +1227,7 @@ func TestADropdownColumnIsRefusedOverCellsWithTheirOwnRule(t *testing.T) {
 	}
 }
 
-// TestARuleOnADropdownColumnsCellsIsRefused is spike T Q13: Google refuses
+// TestARuleOnADropdownColumnsCellsIsRefused holds that Google refuses
 // a data validation rule on a cell under a dropdown column's header. On
 // add and on update, a dry run and a range reaching past the column
 // included, the call is refused before anything is sent, naming the cells

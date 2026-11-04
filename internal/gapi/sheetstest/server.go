@@ -188,7 +188,7 @@ func (s *Server) failure(op string) (Failure, bool) {
 func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	op, handler := s.dispatch(r)
 	// io.ReadAll, not one Read: a single Read is not obliged to return
-	// the whole body, and phase 1's batchUpdate assertions read what is
+	// the whole body, and the batchUpdate assertions read what is
 	// recorded here. A short read there would be a flaky test rather
 	// than a failing one.
 	body := ""
@@ -306,9 +306,9 @@ func (s *Server) spreadsheetsGet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "this fake refuses an unmasked get, as this server refuses to send one")
 		return
 	}
-	// Google answers an unbalanced mask with this and nothing more. The
-	// fake read no mask at all once, and a mask one parenthesis over
-	// passed every unit test and failed every live read.
+	// Google answers an unbalanced mask with this and nothing more. A
+	// fake that reads no mask lets a mask one parenthesis over pass every
+	// unit test and fail every live read.
 	if !balanced(q.Get("fields")) {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "Request contains an invalid argument.")
 		return

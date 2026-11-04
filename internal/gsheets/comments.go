@@ -1,9 +1,10 @@
 package gsheets
 
-// Cell comments, which Sheets published in 2026-09. A thread is tied to a
-// cell through an anchor: the thread names an anchorId, and the sheet
-// lists its anchors with the range each covers now. Spike R is what this
-// file is built from.
+// Cell comments. A thread is tied to a cell through an anchor: the
+// thread names an anchorId, and the sheet lists its anchors with the
+// range each covers now. The shapes here are what Google sends, which
+// the live step "how cell comments read back and fail" checks.
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets#CommentThread
 
 // CommentThread is one comment and its replies.
 type CommentThread struct {
@@ -107,7 +108,10 @@ type AddCommentReplyReply struct {
 }
 
 // CommentUpdateAllFailed is the commentUpdateState of a batch whose
-// comment requests all failed. Spike R never saw it, and every write that
-// succeeded said ALL_SAVED; a 200 carrying it is still not a saved
-// comment.
+// comment requests all failed. The reference does not say when Google
+// sends it, and Google has not been seen to: a bad id answers 404, a bad
+// cell or empty text 400, and every success says ALL_SAVED. A 200
+// carrying it is still not a saved comment. Checked by the live step
+// "how cell comments read back and fail".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/batchUpdate
 const CommentUpdateAllFailed = "ALL_FAILED_UNKNOWN_REASON"

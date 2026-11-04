@@ -20,14 +20,12 @@
 # fails the build until somebody says which heading below it joins.
 #
 # An out row says what is out, which is not the same as what the server
-# cannot do. The first draft of this file got that wrong three times over
-# — it wrote off Connected Sheets, developer metadata and dimension
-# groups as features "no tool reaches", when manage_data_source,
-# manage_anchor and edit_dimensions are built on all three. The check
-# behind those claims was grep for the JSON property name in quotes, and
-# this repo builds requests from typed Go structs, so the name never
-# appears as a literal and the grep could only ever find map-based
-# builders. Read the Go identifier, not the wire name.
+# cannot do: manage_data_source, manage_anchor and edit_dimensions are
+# built on Connected Sheets, developer metadata and dimension groups.
+# Before writing a feature off, read the Go identifier, not the wire
+# name. Requests are built from typed Go structs, so a JSON
+# property name never appears as a literal, and a grep for one finds
+# only map-based builders.
 #
 # api	schema	property	verdict	reason
 #
@@ -253,8 +251,8 @@ sheets	TableColumnProperties	*	alias	TableColumn
 -	NewSlicer	*	local	Slicer without slicerId, for addSlicer
 #
 #
-# Cell comments (spike R). The comment tools model what they show and act
-# on; these say what they leave.
+# Cell comments. The comment tools model what they show and act on;
+# these say what they leave.
 sheets	BatchUpdateSpreadsheetRequest	commentsViewMode	out	applies only with includeSpreadsheetInResponse, which this server never sets; a comment write reports Google's reply instead
 sheets	Spreadsheet	commentsViewMode	out	output only: it repeats the view the read asked for
 sheets	Post	contentHtml	out	the same words as content, as HTML; content is what the tools show and send

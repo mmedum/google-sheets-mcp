@@ -9,16 +9,20 @@ import (
 
 // Change is one cell Google did not store as it was sent.
 //
-// Verified live, `USER_ENTERED` turns `1-2` into a date serial, `007`
-// into 7 and `$100.15` into a number with a currency format. Every one
-// of those is right for a person typing and wrong for a product code, so
-// the caller is told rather than protected: they chose the input option,
-// and the server never substitutes the other one (§17.3).
+// `USER_ENTERED` turns `1-2` into a date serial, `007` into 7 and
+// `$100.15` into 100.15 with a currency format, so the cell still shows
+// $100.15; the reference says only that input is parsed as if typed.
+// Every one of those is right for a person typing and wrong for a
+// product code, so the caller is told rather than protected: they chose
+// the input option, and the server never substitutes the other one.
+// Checked by the live steps "what values.update makes of its input" and
+// "a write into empty cells, with the coercion reported".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/ValueInputOption
 type Change struct {
 	Address string
 	// Row and Col are where the cell sits inside the write's rectangle.
-	// Kept because WithDisplay used to parse Address back into the two
-	// numbers that had just produced it.
+	// Kept so WithDisplay need not parse Address back into the two
+	// numbers that produced it.
 	Row int
 	Col int
 	// Sent is what the caller gave, rendered as text.
@@ -42,7 +46,10 @@ type Change struct {
 //
 // Both sides are compared as (text, kind) pairs, so the string "7" and
 // the number 7 are a change even though they print the same — which is
-// exactly the change a caller writing a product code needs to see.
+// exactly the change a caller writing a product code needs to see. Only
+// a string can change: "Non-string values like booleans or numbers are
+// always handled as RAW".
+// https://developers.google.com/workspace/sheets/api/guides/values
 func Diff(target a1.Rect, sent, stored [][]any) []Change {
 	var out []Change
 	for i, row := range sent {

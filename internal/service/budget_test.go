@@ -65,8 +65,8 @@ func TestZeroBudgetTakesTheConfiguredDefault(t *testing.T) {
 	svc := newService(t, srv)
 
 	// The character budget is raised out of the way, because at the two
-	// defaults it bites a few rows before the cell budget does (§17a) and
-	// this test is about the cell half.
+	// defaults it bites a few rows before the cell budget does, and this
+	// test is about the cell half.
 	res, err := svc.Read(context.Background(), service.ReadRequest{
 		Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A:T",
 		Budget: service.Budget{Chars: config.MaxMaxChars},

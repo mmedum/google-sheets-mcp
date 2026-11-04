@@ -5,235 +5,88 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/google-sheets-mcp/v4.svg)](https://pkg.go.dev/github.com/mmedum/google-sheets-mcp/v4)
 [![License: Apache 2.0](https://img.shields.io/github/license/mmedum/google-sheets-mcp)](./LICENSE)
 
-Google Sheets as MCP tools. Read and write ranges without destroying the formulas underneath.
+Google Sheets as MCP tools. Read and write ranges without destroying the
+formulas underneath. One Go binary over stdio, signed in as you, with
+your own OAuth client and the refresh token in your OS keyring.
 
-A single Go binary that speaks MCP over stdio. It runs as a subprocess of
-your client, on your own machine, against your own Google account. There
-is no server to host, no shared deployment and no service account: you
-create a Google OAuth client, log in once, and the refresh token stays in
-your OS keyring.
+It is for a person with a Google account who wants an assistant to read,
+write and reshape the spreadsheets they can already open, as them. It
+works **inside** a spreadsheet: values, formulas, formatting, sheets,
+charts, pivot tables, Connected Sheets, cell comments and notes.
+Finding, sharing, moving and trashing files, and their revisions, belong
+to a server built on the Drive API.
 
-It works **inside** a spreadsheet. Finding, sharing, moving and trashing
-files, and their revisions, belong to a server built on the Drive API.
-Comments on cells are here, and so are cell **notes**.
+## Goals and non-goals
 
-## Why google-sheets-mcp
+Goals:
 
-A spreadsheet has no undo behind an API call, and the value you can see
-is rarely the whole cell: underneath it there may be a formula, a
-different stored type, or a note. So the writes here are guarded rather
-than trusting. `write_values` reads the target first and refuses to
-overwrite anything non-empty without `overwrite`, or a formula without
-`overwrite_formulas` as well, naming the cells each time, and an
-overwrite carries the checkpoint of what it replaces; every value
-Google's parser changes on the way in is reported back to you.
+- **A write never destroys what it did not see.** The target is read
+  first. Overwriting anything non-empty, a formula above all, is refused
+  until the call says so, naming the cells, and carries the checkpoint
+  of what it replaces.
+- **What Google changes is said.** Every write reports each value Google
+  stored differently from how it was sent, and every delete names what
+  it takes, including what Google removes without saying so.
+- **The model never guesses an address.** Ranges are A1 throughout,
+  sheet titles are read and quoted, and every read is a grid with its
+  column letters and row numbers.
+- **Nothing irreversible or outward-reaching runs unless you turn it
+  on.** Deletes are not registered by default and need `confirm`, and a
+  formula that makes Google fetch a URL needs a setting no argument can
+  lift.
+- **Reads are bounded.** Every read has a budget in cells and characters,
+  resolved before the call, and says where to continue.
+- **Act as you, and log nothing about your spreadsheets.** Every call
+  runs as the signed-in account, and the logs never carry cell values,
+  formulas, titles, ranges or search terms.
 
-It also does the index arithmetic. Ranges are A1 throughout, sheet titles
-are quoted for you — Google names the first sheet in the account's
-language, so it is often not an English word — and the one place A1 turns
-into a `GridRange` is a single package.
+Non-goals:
 
-It works **inside** a spreadsheet. Finding, sharing, moving and trashing
-files, and their revisions, belong to a server built on the Drive API.
-Comments on cells are here, and so are cell **notes**.
+- **Files, folders, sharing and revisions.** Drive is read only to find
+  a spreadsheet by title, show its owner and modified time, and name the
+  signed-in account.
+- **Spreadsheet settings.** No tool changes a spreadsheet's title,
+  locale or recalculation setting.
+- **Changes pushed to it.** The Sheets API has no push channel or change
+  feed.
+- **Apps Script, add-ons or a calculation engine.** Formulas are written
+  and read as text, and Google computes them.
+- **A hosted service.** It speaks stdio only, so Claude on the web and on
+  mobile cannot reach it.
+- **Asking you before a call.** Your client approves each call; the
+  server asks nothing.
 
-Reading, writing, formatting, the objects attached to a range,
-`gsheets://` resources, durable anchors, charts, pivot tables,
-Connected Sheets data sources and cell comments all work.
-The twenty-five tools, their
-arguments and the fields they return are stable: a breaking change needs a
-major version, and a gate compares every commit against the newest release's recorded surface. It has been driven by one MCP
-client, which is what to know before trusting it in a second. The history
-is §16 of [`docs/architecture.md`](docs/architecture.md).
+## What makes this one different
 
-## Install
-
-```bash
-go install github.com/mmedum/google-sheets-mcp/v4/cmd/google-sheets-mcp@latest
-```
-
-Or take an archive from the
-[latest release](https://github.com/mmedum/google-sheets-mcp/releases/latest)
-— Linux, macOS and Windows, on amd64 and arm64 — and verify it before you
-run it:
-
-```bash
-sha256sum -c checksums.txt --ignore-missing
-
-# The checksum file is signed with a keyless Sigstore certificate tied to
-# the release workflow's identity. The bundle carries both.
-cosign verify-blob checksums.txt \
-  --bundle checksums.txt.bundle \
-  --certificate-identity-regexp 'https://github\.com/mmedum/google-sheets-mcp/' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
-
-# And the archive itself carries build provenance.
-gh attestation verify google-sheets-mcp_*.tar.gz --repo mmedum/google-sheets-mcp
-```
-
-Every archive also ships an SBOM, so you can see what is inside a binary
-you did not build. Builds are reproducible: `-trimpath`, and the commit's
-timestamp rather than the build's, so rebuilding a tag gives the same
-bytes.
-
-### Claude Desktop
-
-Every release also carries a `.mcpb` bundle. Open it and Claude Desktop
-installs the server and asks for the settings a client's configuration
-would carry: your OAuth client JSON, the profile, read-only, the
-destructive switch, Connected Sheets and formulas that reach outside —
-no config file to edit. Deleting (`enable_destructive`), Connected
-Sheets (`enable_data_sources`) and formulas that fetch a URL or another
-spreadsheet (`allow_external_formulas`) stay off unless you turn them
-on, and read-only leaves all three with nothing to register or allow.
-This server asks nobody before a call. Claude Desktop approves each
-tool, with Allow once or Always allow, and a tool you always allow then
-runs unasked, so leave a switch off unless you need its tools.
-
-It covers macOS, Windows and Linux on both architectures each: macOS
-through a universal binary, Windows through amd64, and Linux through a
-small launcher that picks the right binary at start, because a bundle
-manifest has no key for the architecture. Its SHA-256 is in the same
-signed `checksums.txt`.
-
-The bundle does **not** log you in. Install the binary as well, run
-`google-sheets-mcp login -secret <your client JSON>` once, and the bundle
-picks up the same credentials. Leave its OAuth client field empty to use
-the client that login recorded; a file you pick there must be that same
-client, since the refresh token belongs to it. Connected Sheets also needs a login that
-asks for its scope, `google-sheets-mcp login -enable-data-sources=true
--secret <your client JSON>`. Claude Code does not install `.mcpb` files,
-so it uses the command below.
-
-## Set up Google
-
-You need your own OAuth client. It takes about fifteen minutes once, and
-[`docs/gcp-setup.md`](docs/gcp-setup.md) walks through it with the
-reasons. In short, and in the order `doctor` checks things in:
-
-1. Create a Google Cloud project.
-2. Enable the **Google Sheets API**, and the **Google Drive API** — the
-   second for `search_spreadsheets`, which is the only Drive call this
-   server makes.
-3. Configure the consent screen: **Internal** for a Workspace account,
-   **External + Testing** for a consumer one — which means re-running
-   `login` weekly, because Google expires a testing app's refresh token.
-4. On an External app, add these two scopes, which are exactly what
-   `login` requests. Google asks for the list only from apps used by
-   people outside your Workspace organization, so an Internal app can
-   skip this step:
-
-   | Scope | What it is for |
-   |---|---|
-   | `https://www.googleapis.com/auth/spreadsheets` | Everything this server does inside a spreadsheet |
-   | `https://www.googleapis.com/auth/drive.readonly` | `search_spreadsheets`, and nothing else |
-
-   And a third, **only** if you want Connected Sheets:
-
-   | Scope | What it is for |
-   |---|---|
-   | `https://www.googleapis.com/auth/bigquery.readonly` | `connect_data_source` and `manage_data_source`, and only with `GSHEETS_ENABLE_DATA_SOURCES=true` |
-
-   `login` asks for it only when that setting is on, so leaving it off
-   means the consent screen is exactly the two scopes above. Google
-   refuses `addDataSource` without it — "Please include bigquery.readonly
-   scope" — so there is no half-working middle state to be surprised by.
-
-   `drive.readonly` rather than `drive` or `drive.file` on purpose: this
-   server finds spreadsheets and never creates, moves or trashes a file,
-   and the narrower scope is what makes that a guarantee rather than a
-   promise. It is also why the live driver cannot clean up after itself.
-
-   With `GSHEETS_READ_ONLY=true`, `login` asks for
-   `https://www.googleapis.com/auth/spreadsheets.readonly` instead of the
-   first, and the write tools are not registered at all.
-5. Create an **OAuth 2.0 Client ID** of type **Desktop app** and download
-   the JSON.
-
-Then log in:
-
-```bash
-google-sheets-mcp login -secret ./client_secret.json
-```
-
-Login prints the authorization URL and then tries to open your browser;
-if it cannot, the URL is already on screen. The callback lands on
-`127.0.0.1` on a random port, with PKCE and state throughout. The refresh
-token goes into your OS keyring; if there is no keyring it goes into a
-`0600` file under your config directory and the command tells you so.
-
-`google-sheets-mcp status` says which account is signed in and where the
-token lives. `google-sheets-mcp logout` revokes the token at Google and
-deletes the local copy. `google-sheets-mcp doctor` checks the
-credentials, the granted scopes and what Google actually answers, and
-names what is missing — it masks the client id and the account, so its
-output is safe to paste into an issue.
-
-`google-sheets-mcp status --json` prints the same state as one JSON
-object on stdout, for a script that needs to know whether this server is
-configured before starting it. `credentials.configured` is the field to
-branch on, `schema_version` changes only when a field is removed or its
-meaning changes, and the account is masked to its domain exactly as the
-text output masks it. A label in the human output is free to be reworded
-in any release; the object is not.
-
-### Logging in over SSH
-
-The callback goes to the *remote* host's loopback address and your
-browser is local, so forward the port. It is chosen at random and printed
-only once login is already waiting, so read it out of the printed URL —
-it appears percent-encoded, as `127.0.0.1%3A<port>` — and in a second
-local terminal:
-
-```bash
-ssh -N -L <port>:127.0.0.1:<port> user@remote-host
-```
-
-Then open the URL locally.
-
-## Connect a client
-
-Claude Code:
-
-```bash
-claude mcp add google-sheets -- google-sheets-mcp
-```
-
-Or, in a client config file:
-
-```json
-{
-  "mcpServers": {
-    "google-sheets": {
-      "command": "google-sheets-mcp"
-    }
-  }
-}
-```
-
-Claude Desktop reads the same shape from its own config file. Use the
-binary's absolute path there if it is not on the app's `PATH`.
-
-Every setting is a `GSHEETS_*` environment variable with a flag of the
-same name, listed in [`docs/configuration.md`](docs/configuration.md).
-The three worth knowing now: `GSHEETS_READ_ONLY=true` requests read-only
-scopes and registers only the read tools,
-`GSHEETS_ENABLE_DESTRUCTIVE=true` registers the five tools that remove
-things, and `GSHEETS_PROFILE` lets one machine hold a work account and a
-personal one.
+- **Guarded writes.** A spreadsheet has no undo behind an API call, and
+  the value you can see is rarely the whole cell: underneath it there
+  may be a formula, a different stored type, or a note. `write_values`
+  reads the target first and refuses to overwrite anything non-empty
+  without `overwrite`, or a formula without `overwrite_formulas` as
+  well.
+- **It does the index arithmetic.** Google names the first sheet in the
+  account's language, so it is often not an English word. Titles are
+  read from the spreadsheet and quoted for you, and the model never sees
+  a `GridRange`.
+- **Coercion is reported.** `input: typed` parses as a person typing, so
+  `007` becomes `7`; every value Google changed comes back named.
+- **A curated surface, gated by registration.** A tool that is switched
+  off is not registered, so it cannot be called at all.
+- **Verifiable releases.** Signed checksums, build provenance, SBOMs and
+  reproducible builds.
 
 ## Tools
 
-Twenty-five tools. Everything but `search_spreadsheets` needs only the
-Sheets scope; in read-only mode the read tools ask for
-`spreadsheets.readonly` instead.
+The Scope column names what each tool needs. A spreadsheet named by its
+title is found through Drive, under `drive.readonly`. In read-only mode,
+`spreadsheets.readonly` takes the place of `spreadsheets`.
 
 | Tool | What it does | Scope |
 |---|---|---|
 | `get_spreadsheet` | The spreadsheet card: title, link, locale, and every sheet's exact title, id, size, frozen rows, hidden state and what it holds, plus named ranges, tables, protected ranges and filter views. No cell data, so it costs the same on a spreadsheet of ten cells and one of ten million. Call it first | `spreadsheets` |
 | `read_range` | An addressed grid of a range: column letters across the top, row numbers down the side. `show=both` prints each formula under the value it produced. Budgeted in cells and characters, with a continuation, and every read returns a checkpoint | `spreadsheets` |
 | `read_formatting` | What a range looks like — number formats, fonts, colors, borders, alignment — per block of identically formatted cells rather than per cell, with the merges, conditional rules, banding, validation and notes that decide how a cell looks without being on the cell | `spreadsheets` |
-| `search_spreadsheets` | Find a spreadsheet by part of its title, by text inside it, by owner or by when it changed. The only Drive call this server makes | `drive.readonly` |
+| `search_spreadsheets` | Find a spreadsheet by part of its title, by text inside it, by owner or by when it changed | `drive.readonly` |
 | `find_in_spreadsheet` | Search one spreadsheet for text or an RE2 pattern and get back A1 addresses, saying whether each match was in a value, in the formula under it, or in a note beside it | `spreadsheets` |
 | `create_spreadsheet` | A new spreadsheet, optionally with extra sheets and seed values. Returns its card, including the id every later call needs | `spreadsheets` |
 | `write_values` | Write a rectangle, refusing first anything the write would destroy that you cannot see, then reporting every value Google stored differently from how it was sent. An overwrite carries the checkpoint of what it replaces | `spreadsheets` |
@@ -256,31 +109,163 @@ Sheets scope; in read-only mode the read tools ask for
 | `delete_cell_comment` | Destructive, off by default: delete a comment thread with its replies, or one reply. Resolving keeps it, and is usually what is wanted | `spreadsheets` |
 | `delete_data_source` | Destructive, off by default: delete a Connected Sheets data source, the sheet Google made for it, and everything on that sheet; Google unlinks what was built on the source. The call names that sheet's title. Needs no BigQuery scope, so it reaches a source somebody else connected | `spreadsheets` |
 
-The five destructive tools are **not registered at all** unless
+The destructive tools are **not registered at all** unless
 `GSHEETS_ENABLE_DESTRUCTIVE=true`, and each still needs `confirm: true`
-on the call.
+on the call. `connect_data_source` and `manage_data_source` are not
+registered unless `GSHEETS_ENABLE_DATA_SOURCES=true`, which is also what
+makes `login` ask for the BigQuery scope. Connected Sheets needs a Cloud
+project with BigQuery and billing before it does anything, so asking
+everyone for that scope would be the wrong default.
 
-`connect_data_source` and `manage_data_source` are not registered either,
-unless `GSHEETS_ENABLE_DATA_SOURCES=true` — and that setting is also what
-makes `login` ask for a third scope. It is off by default because
-Connected Sheets needs a Cloud project with BigQuery enabled and billing
-attached before it does anything, and a spreadsheet server whose consent
-screen asks for BigQuery is asking most people to grant access to a
-product they do not have.
+### Resources
 
-### Approving calls
+For a client that attaches a spreadsheet rather than calling a tool.
+There is no static list, since listing a person's spreadsheets is a
+Drive listing, and no subscriptions, since the Sheets API has no push.
+
+| URI | What it is |
+|---|---|
+| `gsheets://{spreadsheet}` | The card: every sheet with its exact title, id and size, plus named ranges, tables and protected ranges. Reads no cells |
+| `gsheets://{spreadsheet}/{sheet}` | That sheet's **used range** as CSV — the rows and columns holding something, not the sheet's allocated size. The sheet title is percent-encoded |
+
+## Install
+
+```bash
+go install github.com/mmedum/google-sheets-mcp/v4/cmd/google-sheets-mcp@latest
+```
+
+Or take an archive for Linux, macOS or Windows, on amd64 or arm64, from
+the [latest release](https://github.com/mmedum/google-sheets-mcp/releases/latest),
+and [verify it](#verify-a-release) before you run it.
+
+Claude Desktop users can open the `.mcpb` bundle from the same release.
+It installs the server and asks for the settings a client's
+configuration would carry: your OAuth client JSON, the profile,
+read-only, the destructive switch, Connected Sheets and external
+formulas. It covers macOS, Windows and Linux on both architectures.
+
+The bundle does **not** log you in. Install the binary as well and run
+`google-sheets-mcp login` as below; the bundle picks up the same
+credentials. Leave its OAuth client field empty to use the client that
+login recorded; a file you pick there must be that same client, since
+the refresh token belongs to it.
+
+## Sign in
+
+You bring your own OAuth client.
+[`docs/gcp-setup.md`](docs/gcp-setup.md) walks through it with the
+reasons. In short, and in the order `doctor` checks things in:
+
+1. Create a Google Cloud project.
+2. Enable the **Google Sheets API** and the **Google Drive API**.
+3. Configure the consent screen: **Internal** for a Workspace account,
+   **External + Testing** for a consumer one, which means running
+   `login` again weekly, because Google expires a testing app's refresh
+   token.
+4. On an External app, add the scopes `login` requests. Google asks for
+   the list only from apps used by people outside your Workspace
+   organization, so an Internal app can skip this step:
+
+   | Scope | What it is for |
+   |---|---|
+   | `https://www.googleapis.com/auth/spreadsheets` | Everything this server does inside a spreadsheet |
+   | `https://www.googleapis.com/auth/drive.readonly` | Finding spreadsheets, their owner and modified time, and the account's address; never a write |
+
+   With `GSHEETS_ENABLE_DATA_SOURCES=true`, add a third:
+
+   | Scope | What it is for |
+   |---|---|
+   | `https://www.googleapis.com/auth/bigquery.readonly` | `connect_data_source` and `manage_data_source` |
+
+   With `GSHEETS_READ_ONLY=true`, `login` asks for
+   `https://www.googleapis.com/auth/spreadsheets.readonly` in place of
+   the first, and the write tools are not registered at all.
+5. Create an **OAuth 2.0 Client ID** of type **Desktop app** and download
+   the JSON.
+
+Then log in, and check it:
+
+```bash
+google-sheets-mcp login -secret ./client_secret.json
+google-sheets-mcp doctor
+```
+
+`login` prints the authorization URL and tries to open your browser.
+The callback lands on `127.0.0.1` on a random port, with PKCE and
+state. The refresh token goes into your OS keyring; if there is no
+keyring, it goes into a `0600` file under your config directory and the
+command says so. Add `-enable-data-sources=true` to log in for Connected
+Sheets.
+
+`doctor` checks the client JSON, the token, the granted scopes and one
+call to Drive, and names what is missing. `status` says which account
+is signed in and where the token lives. `status --json` prints the same
+as one object for a script, with the account masked to its domain:
+`credentials.configured` is the field to branch on, and
+`schema_version` changes only when a field is removed or changes
+meaning. `logout -yes` revokes the token at Google and deletes the
+local copy.
+
+Over SSH, the callback goes to the remote host's loopback address. Read
+the port from the printed URL, where it appears as `127.0.0.1%3A<port>`,
+forward it from a second local terminal, then open the URL locally:
+
+```bash
+ssh -N -L <port>:127.0.0.1:<port> user@remote-host
+```
+
+## Connect a client
+
+Claude Code:
+
+```bash
+claude mcp add google-sheets -- google-sheets-mcp
+```
+
+Any client that takes a JSON server list:
+
+```json
+{
+  "mcpServers": {
+    "google-sheets": {
+      "command": "google-sheets-mcp"
+    }
+  }
+}
+```
+
+Claude Desktop reads the same shape from its own config file. Use the
+binary's absolute path there if it is not on the app's `PATH`, or open
+the `.mcpb` bundle instead.
+
+## Configuration
+
+Every setting is a `GSHEETS_*` environment variable with a flag of the
+same name. [`docs/configuration.md`](docs/configuration.md) lists them
+all, with profiles for keeping a work and a personal account apart.
+
+## Safety
+
+What registers depends on the settings the server starts with:
+
+| Setting | Registers |
+|---|---|
+| `GSHEETS_READ_ONLY=true` | The read tools only, with read-only scopes |
+| default | The reads and the writes that refuse to destroy what they cannot see |
+| `GSHEETS_ENABLE_DESTRUCTIVE=true` | Adds the deletes, each needing `confirm: true` |
+| `GSHEETS_ENABLE_DATA_SOURCES=true` | Adds the Connected Sheets tools, and the BigQuery scope at login |
+| `GSHEETS_ALLOW_EXTERNAL_FORMULAS=true` | No tool; lets a write create a formula that fetches a URL or pulls in another spreadsheet |
 
 Your MCP client approves each call; the server does not ask you itself.
 claude.ai and Codex prompt for the tools marked destructive, which is
-every write but the three that only add: `create_spreadsheet`,
+every write but those that only add: `create_spreadsheet`,
 `append_rows` and `connect_data_source`. VS Code prompts for every tool
 that writes. In Claude Code, `delete_data_source` asks on every call
 whatever your rules say, since it takes a sheet and unlinks everything
-built on the source, and Sheets cannot undo it. For the rest, list the
-calls you want to approve one by one under `permissions.ask` in your
-settings, with the name you gave the server in place of `google-sheets`.
-For example, the writes that delete, start a billed query, or can email
-someone:
+built on the source. For the rest, list the calls you want to approve
+one by one under `permissions.ask` in your settings, with the name you
+gave the server in place of `google-sheets`. For example, the writes
+that delete, start a billed query, or can email someone:
 
 ```json
 {
@@ -295,56 +280,30 @@ someone:
 }
 ```
 
-If you followed 3.1.0's advice and put the deletes on your allow list,
-move them to `ask`: the server's own question is gone, so an allowed
-delete now runs with nobody asked. A client that runs with nobody
-watching can make every write its settings register, so leave
-`GSHEETS_ENABLE_DESTRUCTIVE` and `GSHEETS_ENABLE_DATA_SOURCES` off for
-one.
+A client that runs with nobody watching can make every write its
+settings register, so leave `GSHEETS_ENABLE_DESTRUCTIVE` and
+`GSHEETS_ENABLE_DATA_SOURCES` off for one.
 
-### Resources
+**A write never destroys what it cannot see.** Overwriting anything
+non-empty needs `overwrite`, and a formula needs `overwrite_formulas` as
+well, because a formula and its result look identical in a read. Each
+refusal names the cells. An overwrite also needs `expect_checkpoint`,
+which the refusal and a dry run give, so a collaborator's edit after
+that read makes the write a `[conflict]` rather than something replaced
+unseen. The guard also covers what Google removes without saying so:
 
-
-Two, for a client that attaches a spreadsheet rather than calling a tool.
-There is no static list — enumerating a person's spreadsheets is a Drive
-listing, which belongs to a server built on the Drive API — and no
-subscriptions, because the Sheets API has no push and no changes feed.
-
-| URI | What it is |
-|---|---|
-| `gsheets://{spreadsheet}` | The card: every sheet with its exact title, id and size, plus named ranges, tables and protected ranges. Reads no cells |
-| `gsheets://{spreadsheet}/{sheet}` | That sheet's **used range** as CSV — the rows and columns holding something, not the sheet's allocated size. The sheet title is percent-encoded |
-
-## Safety
-
-**A write never destroys what it cannot see.** Sheets has no undo through
-the API, so a refusal before the request is built is the only guard there
-is. Overwriting anything non-empty needs `overwrite`; overwriting a
-formula needs `overwrite_formulas` as well, because a formula and its
-result look identical in a read. Each refusal names the cells and the
-argument that would allow it. An overwrite also needs
-`expect_checkpoint`, the checkpoint of the cells it replaces, which the
-refusal and a dry run give: a collaborator's edit after that read makes
-the write a `[conflict]` rather than something replaced unseen.
-
-The same guard covers everything phase 2 added, and each of these was
-found to be a silent loss rather than assumed to be one:
-
-- a **merge** keeps the top-left value of every merged block and discards
-  the rest, with nothing in the response saying so;
+- a **merge** keeps the top-left value of each merged block and
+  discards the rest;
 - **`clear_format`** removes formatting Sheets cannot bring back;
-- a **note** set or cleared replaces something no values read would have
-  shown you;
-- a **paste** or an **auto-fill** lands on cells you did not name, so the
-  landing rectangle is read and guarded like any other target;
+- a **note** set or cleared replaces something no values read shows;
+- a **paste** or an **auto-fill** lands on cells you did not name, so
+  the landing rectangle is read and guarded;
 - a **`text_to_columns`** spills into the columns to its right;
-- a **`find_replace` with `in_formulas`** rewrites what a cell computes
-  rather than what it shows;
+- a **`find_replace` with `in_formulas`** rewrites what a cell computes;
 - **deleting a table** takes every conditional format rule over its
-  range with it — verified against the live API, not read anywhere;
-- and **deleting a row or column** takes any anchor on it, which nothing
-  in Google's reply mentions either. `delete_dimensions` names them
-  before it takes them.
+  range;
+- **deleting a row or column** takes any anchor on it, which
+  `delete_dimensions` names first.
 
 Beyond the guard:
 
@@ -352,129 +311,67 @@ Beyond the guard:
   `IMPORTDATA`, `IMPORTHTML`, `IMPORTFEED`, `IMAGE` and `HYPERLINK` make
   Google fetch a URL, and `IMPORTRANGE` pulls in another spreadsheet.
   Every write refuses them unless the server was started with
-  `GSHEETS_ALLOW_EXTERNAL_FORMULAS=true`; no argument lifts it.
-- **The gated deletes name what they take.** `delete_dimensions` takes
-  the rows or columns, and `clear_values` the range, in A1: not an
-  anchor and never left out, so the call your client shows says what
-  goes.
-
-- **Coercion is reported, never hidden.** `input: typed` parses as a
-  person typing, so `007` becomes `7` and `2026-09-05` becomes a date.
-  Every write reads back what Google stored and names each value it
-  changed — and for a date, what the cell still displays, so a serial
-  number does not read as data loss. `input: literal` stores exactly what
-  you send, and the server never substitutes one for the other.
+  `GSHEETS_ALLOW_EXTERNAL_FORMULAS=true`.
+- **The gated deletes name what they take**, in A1, so the call your
+  client shows says what goes.
 - **`dry_run` on every write.** Sheets has no suggestion mode, so the
-  preview reports what the guard found and what would change, having sent
-  nothing. It is found by reflection rather than declared per tool, so a
-  write that offers the flag cannot fail to honor it.
-- **Read-only mode leaves the write tools unregistered.** A tool that is
-  not registered cannot be called, whatever permission mode the client is
-  in. It is set where you start the server, so it binds the session
-  rather than one call.
-- **Every read shows addresses**, so the model can write back to what it
-  just read without counting. **A1 is the contract**: the model never
-  sees a `GridRange`, and the zero-based half-open arithmetic lives in
-  one package with table tests.
-- **Sheet names are read, never assumed.** Google names the first sheet
-  in the account's language, so `Sheet1` does not exist on a Portuguese
-  account. No tool defaults a sheet and no description offers one as an
-  example; a missing sheet is refused with the titles that do exist.
-- **Reads are budgeted before the call.** The window is resolved against
-  the sheet's real extent and a finite range is sent, so an open-ended
-  `A:Z` never becomes a whole column in memory.
-- **Logs never carry the payload.** They record the method, the tool, the
-  outcome, the duration and a truncated spreadsheet id. Cell values,
-  formulas, titles, ranges and search terms stay out — a search term
-  reaches a log through a request URL, so transport errors are stripped
-  of it — and a test fails the build if any of it appears.
+  preview reports what the guard found and what would change, and sends
+  nothing.
+- **Sheet names are read, never assumed.** `Sheet1` does not exist on a
+  Portuguese account, so no tool defaults a sheet, and a missing one is
+  refused with the titles that do exist.
 
-## How it works
+[`docs/security.md`](docs/security.md) has the threat model.
 
+## Verify a release
+
+Each release signs `checksums.txt` with a keyless Sigstore certificate
+tied to the release workflow, attests every archive and the bundle, and
+ships an SBOM per archive. Builds are reproducible: rebuilding a tag
+gives the same bytes.
+
+```bash
+sha256sum -c checksums.txt --ignore-missing
+cosign verify-blob checksums.txt --bundle checksums.txt.bundle \
+  --certificate-identity "https://github.com/mmedum/google-sheets-mcp/.github/workflows/release.yml@refs/tags/<tag>" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+gh attestation verify <archive> --repo mmedum/google-sheets-mcp
 ```
-MCP client ──stdio──► google-sheets-mcp
-                       ├── tools     one handler per tool; one Kind decides its annotations
-                       ├── service   the rules: resolve, budget, guard, report
-                       ├── plan      typed batchUpdate requests, and the write guards
-                       ├── grid      the server's view of a rectangle, and its checkpoints
-                       ├── render    every word a caller reads
-                       ├── a1        A1 notation ↔ GridRange, the only place that conversion lives
-                       ├── gapi      REST client for Sheets and the one Drive call
-                       └── auth      refresh token → access token
-```
-
 
 ## Getting help
 
-If something does not work, run `google-sheets-mcp doctor`. It checks the
-credentials, the granted scopes and what Google actually answers, and
-names what is missing — most first-run trouble is an API that was never
-enabled or a consent screen without you on it.
-
-If that does not explain it,
-[open an issue](https://github.com/mmedum/google-sheets-mcp/issues).
-Never paste a spreadsheet id or URL, cell contents, a
-`client_secret.json` or a token into one; describe the shape instead.
-Security problems go through [`SECURITY.md`](SECURITY.md), privately.
-
-## Versioning
-
-Tool names and their output fields are stable within a major version. A
-change needing you to act — a new scope, another login, a different
-command in your client config — is marked **Breaking:** in
-[`CHANGELOG.md`](CHANGELOG.md), which is also what the release notes are
-made from.
-
-## Development
-
-```bash
-make build     # the binary
-make test      # race detector, coverage floor
-make check     # everything CI runs
-```
-
-`make check` is the definition of done: formatting, `go vet` including
-the build-tagged code, golangci-lint, race tests with a per-package
-coverage floor, `govulncheck`, a license allow-list, two secret and
-identifier scans, a stdio smoke test, a schema diff against the released
-tool surface, a check that the Claude Desktop bundle's manifest names
-only files that will be packed, a check that the Makefile and CI run the
-same things, and a staleness gate that fails when this README, the docs
-or the changelog drift from the code.
-
-Green gates are not the whole of it. Anything touching the write path or
-an API response shape also gets a run against a real account, and the
-transcript is read rather than counted — `docs/development.md` has the
-commands.
+Run `google-sheets-mcp doctor` first: most first-run trouble is an API
+that was never enabled or a consent screen without you on it.
+[`docs/troubleshooting.md`](docs/troubleshooting.md) covers each
+failure. Then open an issue with `doctor`'s output and the version.
+**Never paste a spreadsheet id or URL, cell contents, a client JSON, a
+token or a tool result**; describe the shape instead.
 
 ## Documentation
 
-- [`docs/architecture.md`](docs/architecture.md) — the request flow, the
-  package layout, the phase plan, the decisions a contributor should not
-  undo, and the evidence log recording what was checked against the API
-  and what the API turned out to do instead.
-- [`docs/configuration.md`](docs/configuration.md) — every setting.
-- [`docs/development.md`](docs/development.md) — building, testing and
-  the runs against a real account.
-- [`docs/security.md`](docs/security.md) — the threat model.
-- [`docs/runbook.md`](docs/runbook.md) — rotating or recovering
-  credentials.
+- [`docs/gcp-setup.md`](docs/gcp-setup.md): the Cloud project, the OAuth
+  client and logging in.
+- [`docs/configuration.md`](docs/configuration.md): every setting,
+  profiles, and where state is stored.
+- [`docs/troubleshooting.md`](docs/troubleshooting.md): symptoms and
+  their fixes, then rotating the token, revoking access and handling a
+  suspected exposure.
+- [`docs/security.md`](docs/security.md): the threat model.
+- [`docs/architecture.md`](docs/architecture.md): how it works, and the
+  design decisions a contributor should not undo.
+- [`docs/release.md`](docs/release.md): how a release is cut and
+  checked.
+- [`CHANGELOG.md`](CHANGELOG.md): what each release changed. The tool
+  names, their arguments and their output fields are the contract, and
+  anything you have to act on is marked **Breaking**.
 
 ## Contributing
 
-Questions and bugs go in
-[issues](https://github.com/mmedum/google-sheets-mcp/issues); pull
-requests are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers the
-branch and review flow, and `make check` is what has to pass.
-
-## Security
-
-[`SECURITY.md`](SECURITY.md) says how to report a vulnerability.
-
-## Code of conduct
-
-[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — Contributor Covenant 3.0.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) covers the gates, the live run and
+the review flow. Security reports go through [`SECURITY.md`](SECURITY.md),
+not an issue. Participation follows the
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ## License
 
-Apache 2.0 — see [`LICENSE`](LICENSE).
+Apache 2.0. See [`LICENSE`](LICENSE).

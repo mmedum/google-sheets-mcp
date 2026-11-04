@@ -74,7 +74,9 @@ func (r ReadResult) Render() string { return r.text }
 // open-ended range whole is the bug this avoids rather than repeats: a
 // shipped server showed 50 rows of an A:Z read and still pulled the
 // whole column into memory, and its maintainer's own note is that the
-// memory was unbounded the entire time.
+// memory was unbounded the entire time. Checked by the live step "an
+// open-ended range is bounded before the call".
+// https://github.com/taylorwilsdon/google_workspace_mcp/pull/986
 func (s *Service) Read(ctx context.Context, req ReadRequest) (*ReadResult, error) {
 	// Before anything is sent. A format nobody supports is a typo, and a
 	// typo should not cost a request against a per-minute quota.
@@ -252,6 +254,12 @@ func (s *Service) locateRect(ctx context.Context, spreadsheet, sheet, rangeA1 st
 		return area{}, err
 	}
 	rows, cols := extent(sh.Props)
+	// A rectangle that misses the sheet is refused rather than clamped.
+	// Google answers one with 400 "exceeds grid limits. Max rows: 1000,
+	// max columns: 26", so this says the sheet's size too, before
+	// sending. Checked by the live step "what values.get makes of a
+	// range".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/get
 	if sh.Rect.FirstRow > rows || sh.Rect.FirstCol > cols {
 		return area{}, Errorf("not_found", "%s is past the end of %q, which has %d rows and %d columns",
 			a1.FormatRect(sh.Rect), sh.Props.Title, rows, cols)

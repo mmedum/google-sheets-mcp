@@ -9,6 +9,12 @@ import (
 )
 
 // CreateInput is what create_spreadsheet takes.
+//
+// A create naming Sheets makes exactly those, with no default beside
+// them; with none, Google makes one, named in the account's language.
+// Checked by the live steps "a new spreadsheet, seeded" and "what
+// spreadsheets.create makes of a sheets list".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/create
 type CreateInput struct {
 	Title    string   `json:"title" jsonschema:"the new spreadsheet's title"`
 	Sheets   []string `json:"sheets,omitempty" jsonschema:"the sheets to create, in order. Giving this replaces the single sheet Google would otherwise make rather than adding to it, so name every sheet you want"`
@@ -37,6 +43,12 @@ type WriteInput struct {
 }
 
 // AppendInput is what append_rows takes.
+//
+// Range is required, because two ranges a model reads as the same are
+// not: the whole sheet appends after the last block and A1 after the
+// first. The reference does not say which block a whole-sheet range
+// finds. Checked by the live step "where an append lands".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/append
 type AppendInput struct {
 	Spreadsheet string  `json:"spreadsheet" jsonschema:"a spreadsheet id, any docs.google.com/spreadsheets URL, or an exact title"`
 	Sheet       string  `json:"sheet,omitempty" jsonschema:"the sheet title exactly as get_spreadsheet reports it, or its numeric sheet id"`
@@ -170,8 +182,8 @@ func registerWrite(s *mcp.Server, d Deps) {
 		Name: "manage_sheet",
 		Description: "Add, rename, duplicate, copy, hide, unhide, reorder, resize, freeze or color a sheet. " +
 			"One request, whichever action. resize changes how many rows and columns the sheet has room for and only " +
-			"grows: shrinking would take whatever is on the rows it removes, and edit_dimensions is where removing " +
-			"lives, because it says what is on them first. freeze pins rows at the top and columns at the left, and " +
+			"grows: shrinking would take whatever is on the rows it removes. delete_dimensions removes rows and " +
+			"columns and says what is on them first; it is registered only when deletes are allowed. freeze pins rows at the top and columns at the left, and " +
 			"zero unfreezes. copy_to copies into another spreadsheet; duplicate copies inside this one. " +
 			"The result lists the sheets afterwards, so the next call can name one exactly.",
 		Kind: IdempotentWrite,

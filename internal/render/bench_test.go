@@ -11,7 +11,7 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
 )
 
-// §11's two rendering targets: a 5 000-cell read rendered well under
+// The two rendering targets: a 5 000-cell read rendered well under
 // 20 ms, and a 10 000-row grid rendered with a flat memory profile.
 //
 // "Flat" is the claim worth measuring rather than asserting. It means
@@ -43,7 +43,7 @@ func gridOf(rows, cols int) *grid.Grid {
 	return grid.Build("Bractal", 0, rect, data, grid.AsRaw)
 }
 
-// BenchmarkGrid is the read that §11 puts a number on: 5 000 cells, the
+// BenchmarkGrid is the read the targets put a number on: 5 000 cells, the
 // default budget, rendered as the addressed grid a model reads.
 func BenchmarkGrid(b *testing.B) {
 	for _, tc := range []struct{ rows, cols int }{{500, 10}, {1000, 10}, {10000, 10}} {

@@ -146,9 +146,8 @@ func (h *harness) headerIsFormatted(f Fixture, sheet string) error {
 
 // columnIsDescending reads the column back and checks the order.
 //
-// Read back, not inferred from the sort's own report of itself: §13's
-// rule from a sibling's driver, where all three wrong results were a
-// result describing the state from before the write.
+// Read back, not inferred from the sort's own report of itself: a result
+// can describe the state from before the write.
 func (h *harness) columnIsDescending(f Fixture, sheet, column string) error {
 	// The seeded block only. Reading to row 100 read past it into what
 	// earlier tasks had written — a column total three tasks back — and
@@ -288,7 +287,7 @@ func (h *harness) pivotAtAnchor(f Fixture, sheet, anchor string) error {
 // oneLine keeps a scorer's message to a single line of somebody's
 // spreadsheet. main.go has a firstLine of its own, behind the live build
 // tag; this file is untagged so the table can be checked without
-// credentials, which is where §13 wants that guard.
+// credentials, where that guard costs nothing.
 func oneLine(s string) string {
 	if i := strings.Index(s, "\n"); i >= 0 {
 		return s[:i]

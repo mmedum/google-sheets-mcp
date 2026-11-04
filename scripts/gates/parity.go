@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -69,7 +68,7 @@ var gateTargets = map[string]string{
 // reason, the same way the coverage exemptions do.
 var precommitOnly = map[string]string{
 	"precommit": "the pre-commit hook's own entry point; it runs the other gates rather than being one",
-	"leaks":     "run by CI and by `make check` under its own target; the history sweep is manual (§17a)",
+	"leaks":     "run by CI and by `make check` under its own target; the history sweep, `make leaks-history`, is run by hand",
 	"mcpb-pack": "runs at release time, as the universal binary's post hook, where the binaries it packs " +
 		"exist; `mcpb` is the half that runs on every commit, against the names it will pack",
 	"api-diff": "reaches Google's discovery documents, and a gate that fails when Google is slow is one " +
@@ -178,12 +177,10 @@ func checkParity(makefile, workflow string) (int, error) {
 	// so nothing can reach the comparison without passing through it.
 	//
 	// This gate matches by substring, and a substring is found inside a
-	// comment as readily as inside a step: "gates staleness" was found
-	// in "# - run: go run ./scripts/gates staleness" and counted as
-	// running. That made the cheapest way to unblock a red build — one
-	// "#" — also the way to switch off the check that would have
-	// noticed. Reported by a sibling repository on 2026-09-06, and
-	// present here when it was looked for.
+	// comment as readily as inside a step: "gates staleness" is found in
+	// "# - run: go run ./scripts/gates staleness". Counting that as
+	// running would make the cheapest way to unblock a red build — one
+	// "#" — also the way to switch off the check that would notice.
 	//
 	// A step disabled by an `if:` that is never true still passes. That
 	// needs a YAML parse, which is not worth a dependency here.
@@ -192,11 +189,9 @@ func checkParity(makefile, workflow string) (int, error) {
 	// something, rather than merely scrubbed of comments.
 	//
 	// This gate matches by substring, and a substring is found anywhere:
-	// "gates staleness" was found inside "# - run: go run ./scripts/gates
-	// staleness" and counted as running, which made the cheapest way to
-	// unblock a red build — one "#" — also the way to switch off the
-	// check that would have noticed. Reported by a sibling repository on
-	// 2026-09-06, and present here when it was looked for.
+	// "gates staleness" is found inside "# - run: go run ./scripts/gates
+	// staleness", and counting that as running would make one "#" the
+	// way to switch off the check that would notice.
 	//
 	// Dropping comments alone fixes that one spelling. Keeping only the
 	// `run:` and `uses:` scalars closes the class: a step's `name:`, a
@@ -292,45 +287,43 @@ func checkTargets(makefile string) (map[string]bool, error) {
 	return out, nil
 }
 
+// gatesMainFile is the dispatcher. The gates commands are the string
+// cases of its switches.
+const gatesMainFile = "scripts/gates/main.go"
+
 // gateSubcommands reads the dispatcher's own case labels, so a gate
 // added there is under this check from its first commit rather than when
 // somebody remembers to list it.
 func gateSubcommands() ([]string, error) {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, filepath.Join("scripts", "gates", "main.go"), nil, 0)
+	file, err := parser.ParseFile(token.NewFileSet(), filepath.FromSlash(gatesMainFile), nil, 0)
 	if err != nil {
 		return nil, err
 	}
+	return gatesCommands(file, true), nil
+}
+
+// gatesCommands is the string cases of the dispatcher's switches, sorted.
+// argsOnly keeps to the one switch over os.Args[1], which is what parity
+// holds to `make check` and CI. Without it, the switches main hands a
+// group of commands to count too, since a doc may name any command.
+func gatesCommands(f *ast.File, argsOnly bool) []string {
 	var out []string
-	ast.Inspect(file, func(n ast.Node) bool {
+	ast.Inspect(f, func(n ast.Node) bool {
 		sw, ok := n.(*ast.SwitchStmt)
-		if !ok || sw.Tag == nil {
-			return true
-		}
-		// The one switch over os.Args[1].
-		if !isArgsIndex(sw.Tag) {
+		if !ok || sw.Tag == nil || argsOnly && !isArgsIndex(sw.Tag) {
 			return true
 		}
 		for _, stmt := range sw.Body.List {
-			clause, ok := stmt.(*ast.CaseClause)
-			if !ok {
-				continue
-			}
-			for _, expr := range clause.List {
-				lit, ok := expr.(*ast.BasicLit)
-				if !ok || lit.Kind != token.STRING {
-					continue
-				}
-				name, err := strconv.Unquote(lit.Value)
-				if err == nil {
+			for _, e := range stmt.(*ast.CaseClause).List {
+				if name := stringLit(e); name != "" {
 					out = append(out, name)
 				}
 			}
 		}
 		return true
 	})
-	sort.Strings(out)
-	return out, nil
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 // isArgsIndex reports whether the expression is os.Args[n], which is

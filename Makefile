@@ -21,9 +21,12 @@ GATES     ?= ./.gates
 # Not whatever is on the PATH. A distribution's golangci-lint built with
 # an older Go refuses this module outright — and says so as "can't load
 # config", which names the wrong thing — and a stale go-licenses fails on
-# the standard library. Both passed for months in CI while `make check`
-# was broken locally, which is the wrong way round: this file's first
-# line promises the two are the same.
+# the standard library. Either breaks `make check` locally while CI
+# passes, and this file's first line promises the two are the same.
+#
+# golangci-lint v2.14.0 is built on golang.org/x/tools v0.50.0, which
+# reads the export data version 5 that Go 1.27.2 and later write; v2.13.2
+# is built on v0.49.0 and fails to typecheck. See go.dev/issue/81188.
 GOLANGCI_LINT ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 GOVULNCHECK   ?= golang.org/x/vuln/cmd/govulncheck@v1.7.0
 GOLICENSES    ?= github.com/google/go-licenses@v1.6.0
@@ -69,7 +72,7 @@ cover: test gates ## Enforce the coverage floor per package
 	@$(GATES) coverage cov.out $(COVER_MIN)
 
 .PHONY: bench
-bench: ## Benchmarks (phase 3 fills these in)
+bench: ## Benchmarks
 	$(GO) test -run XXX -bench . -benchmem ./internal/...
 
 .PHONY: tidy
@@ -163,12 +166,16 @@ smoke: build gates ## Drive the binary over stdio
 staleness: build gates ## The docs must match the code
 	@$(GATES) staleness $(BIN)
 
+.PHONY: docs
+docs: gates ## Every decision, citation, link, path and live step the docs and code name resolves
+	@$(GATES) docs
+
 .PHONY: hooks
 hooks: ## Point git at the repository's own hooks
 	git config core.hooksPath .githooks
 
 .PHONY: live
-live: build ## Drive the built binary against a real account (see docs/development.md)
+live: build ## Drive the built binary against a real account (see CONTRIBUTING.md#the-live-run)
 	$(GO) run -tags=live ./scripts/livesheet -bin $(BIN)
 
 .PHONY: evals
@@ -176,7 +183,7 @@ evals: build ## Drive a model through the tools and score it (needs credentials 
 	$(GO) run -tags=live ./scripts/evals -bin $(BIN)
 
 .PHONY: check
-check: fmt vet tidy lint cover vuln licenses secrets api-coverage api-fields classes leaks transcript live-cover mcpb parity pins schema-diff smoke staleness ## Everything CI runs
+check: fmt vet tidy lint cover vuln licenses secrets api-coverage api-fields classes leaks transcript live-cover mcpb parity pins schema-diff smoke staleness docs ## Everything CI runs
 
 .PHONY: clean
 clean:

@@ -58,9 +58,17 @@ func (r AnchorResult) Render() string { return r.Summary }
 // Anchors answers manage_anchor.
 //
 // An anchor is developer metadata, which is the only thing Google keeps
-// attached to a location while the sheet is edited around it (§6.4). It
-// is a label rather than an address: "invoice totals" survives twenty
-// rows being inserted above it, where row 40 does not.
+// attached to a location while the sheet is edited around it: it "will
+// remain associated at those locations as they move around and the
+// spreadsheet is edited". It is a label rather than an address: "invoice
+// totals" survives twenty rows being inserted above it, where row 40
+// does not. After a sort it lands where its row's values landed.
+//
+// Metadata attaches to the spreadsheet, a sheet or a dimension range,
+// never to an arbitrary rectangle. Checked by the live steps "the anchor
+// still reads the same values", "a rectangle cannot be anchored" and
+// "whether developer metadata is a durable anchor".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.developerMetadata#DeveloperMetadata
 //
 // It is never the only way to reach anything. Every tool that takes an
 // anchor takes A1 as well, and reading anchors needs a write-capable
@@ -109,10 +117,12 @@ func (s *Service) placeAnchor(ctx context.Context, ref Reference, req AnchorRequ
 	if err != nil {
 		return nil, err
 	}
-	// A name is not unique to Google — two entries may share a key, and
-	// spike K made two to be sure — so uniqueness is this server's to
-	// keep. Without it, "read anchor:totals" is a question with two
-	// answers and no way to choose.
+	// A name is not unique to Google: two entries may share a key, and a
+	// search by it returns both. So uniqueness is this server's to keep;
+	// without it, "read anchor:totals" has two answers and no way to
+	// choose. Checked by the live steps "a second anchor cannot take the
+	// same name" and "whether developer metadata is a durable anchor".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.developerMetadata#DeveloperMetadata
 	switch {
 	case action == AnchorAdd && existing != nil:
 		return nil, Errorf("invalid",
@@ -128,7 +138,7 @@ func (s *Service) placeAnchor(ctx context.Context, ref Reference, req AnchorRequ
 	// with no note of its own is the one already there. Reporting the
 	// request's empty note would say a note had gone when it had not,
 	// and reporting a new note that the field mask never wrote would say
-	// one had landed when it had not — hard rule 7 either way.
+	// one had landed when it had not (D-31).
 	note := req.Note
 	if action == AnchorMove && note == "" && existing != nil {
 		note = existing.MetadataValue
@@ -213,17 +223,16 @@ func (s *Service) anchorTarget(ctx context.Context, ref Reference, req AnchorReq
 	switch {
 	case rect.Rows() == 1:
 		// One row wins a tie. A single cell is one row and one column
-		// at once, and "remember this row" is what §6.4 offers; the
+		// at once, and "remember this row" is what an anchor is for; the
 		// result names the row it took, so a caller who meant the
 		// column can see that in the answer rather than later.
 		return plan.AnchorAt{SheetID: props.SheetID, Row: rect.FirstRow, Kind: gsheets.LocationRow}, props, nil
 	case rect.Cols() == 1:
 		return plan.AnchorAt{SheetID: props.SheetID, Col: rect.FirstCol, Kind: gsheets.LocationColumn}, props, nil
 	}
-	// Both spellings, built by a1 rather than spelled here: the column
-	// half used to go through a helper that swallowed a1.ColumnName's
-	// error and substituted "A", in a message whose whole job is to name
-	// the right column.
+	// Both spellings, built by a1 rather than spelled here: a helper that
+	// swallowed a1.ColumnName's error and substituted "A" would misname
+	// the column in a message whose whole job is to name the right one.
 	row := a1.Rect{FirstRow: rect.FirstRow, LastRow: rect.FirstRow}
 	col := a1.Rect{FirstCol: rect.FirstCol, LastCol: rect.FirstCol}
 	return plan.AnchorAt{}, nil, Errorf("invalid",
@@ -234,6 +243,13 @@ func (s *Service) anchorTarget(ctx context.Context, ref Reference, req AnchorReq
 
 // findAnchor resolves a name to at most one entry, refusing a name that
 // matches several.
+//
+// It is a developerMetadata.search: one request, with no grid read.
+// spreadsheets.get returns row and column metadata only under
+// includeGridData, for a range already being read, and the card asks
+// for no metadata. Checked by the live step "whether developer metadata
+// is a durable anchor".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.developerMetadata/search
 func (s *Service) findAnchor(ctx context.Context, id, name string) (*gsheets.DeveloperMetadata, error) {
 	res, err := s.api.SearchDeveloperMetadata(ctx, id, plan.ByName(name))
 	if err != nil {
@@ -303,9 +319,8 @@ func (s *Service) anchorRecord(ctx context.Context, id string, md *gsheets.Devel
 // anchorWhere is a one-line description of an entry, for a refusal.
 //
 // Through the renderer's own phrasing rather than a second cascade
-// beside it: a refusal and a listing that describe the same anchor
-// differently is the shape §17a.9 moved the structural tools' English
-// here to stop.
+// beside it, so a refusal and a listing never describe the same anchor
+// differently.
 func (s *Service) anchorWhere(ctx context.Context, id string, md *gsheets.DeveloperMetadata) string {
 	return anchorView(s.anchorRecord(ctx, id, md)).Where()
 }
@@ -376,8 +391,7 @@ func parseAnchorAction(v string) (string, error) {
 //
 // A prefix on the existing range argument rather than an argument of its
 // own. Every tool that takes a range gets anchors from one change in
-// ResolveRange, and none of them grows a nineteenth argument — §17a.12
-// is already the complaint that transform_range takes twenty-one.
+// ResolveRange, and none of them grows another argument.
 //
 // The string itself lives in a1, because it is range syntax and because
 // the renderer says it to the caller and cannot import this package.
@@ -458,11 +472,18 @@ func (s *Service) anchorsOnSheet(ctx context.Context, id string, sheetID int) ([
 // anchorsOnBand names the anchors a delete would take with the rows or
 // columns it removes.
 //
-// Deleting a row deletes the anchor on it, and nothing in Google's reply
-// mentions it (spike K). That makes it the same class as spike J's
-// `deleteTable`: an act whose cost is invisible in the response, which
-// is the definition of what this server's guard is for. One search, and
-// only on a delete.
+// Deleting a row deletes the anchor on it, and Google's reply is an
+// ordinary success that does not mention it, as a table delete says
+// nothing of the rules it takes. A cost invisible in the response is what
+// this server's guard is for. Checked by the live steps "deleting rows
+// names the anchors it would take", "the anchor is gone with its row"
+// and "whether developer metadata is a durable anchor".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#DeleteDimensionRequest
+//
+// One search, only on a delete, made every time. A grid read's mask
+// could fold the anchors in as data(rowMetadata(developerMetadata)), at
+// about 180 bytes per row of the band, but no delete reads the grid.
+// Checked by the live step "the reads a wider field mask can fold in".
 func (s *Service) anchorsOnBand(ctx context.Context, id string, sheetID int, b plan.Band) ([]string, error) {
 	res, err := s.api.SearchDeveloperMetadata(ctx, id, plan.OnSheet(sheetID))
 	if err != nil {

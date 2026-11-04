@@ -146,12 +146,13 @@ func (r ChartResult) Render() string { return r.Summary }
 
 // ManageChart answers manage_chart.
 //
-// Four of the five actions are shaped by what spike L found rather than
-// by the reference: an update reads the spec and sends it back whole
-// because the API refuses a partial one, a move must name its own field
-// mask, a delete reports from a read taken before it because the reply
-// is empty, and an add validates its own domain and series because the
-// API's answer to a chart with neither is HTTP 500.
+// Four of the five actions are shaped by what Google does rather than
+// by what the reference says: an update reads the spec and sends it back
+// whole because the API refuses a partial one, a move must name its own
+// field mask, a delete reports from a read taken before it because the
+// reply is empty, and an add validates its own domain and series because
+// the API's answer to a chart with neither is HTTP 500. Checked by the
+// live step "what a chart survives".
 func (s *Service) ManageChart(ctx context.Context, req ChartRequest) (*ChartResult, error) {
 	ref, err := s.Resolve(ctx, req.Spreadsheet)
 	if err != nil {
@@ -283,10 +284,14 @@ func (s *Service) addSlicer(ctx context.Context, ref Reference, props *gsheets.S
 // updateChart edits a spec and sends it back whole.
 //
 // Whole, because `updateChartSpec` carries no field mask and refuses a
-// spec naming no chart kind. Editing the JSON that was read, rather than
-// a struct built from it, is what keeps a field this server does not
-// model — an axis title, a series color, a treemap's settings — from
-// disappearing on a call that only meant to change the title.
+// spec naming no chart kind: "400 One of basicChart, pieChart, ... must
+// be set on chartSpec", with the chart left unchanged. Editing the JSON
+// that was read, rather than a struct built from it, is what keeps a
+// field this server does not model — an axis title, a series color, a
+// treemap's settings — from disappearing on a call that only meant to
+// change the title. Checked by the live steps "renaming it keeps the
+// series", "and the listing proves it" and "what a chart survives".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#UpdateChartSpecRequest
 func (s *Service) updateChart(ctx context.Context, ref Reference, req ChartRequest, res *ChartResult) (*ChartResult, error) {
 	if req.ID == 0 {
 		return nil, Errorf("invalid", "update needs id, which manage_chart list reports")
@@ -463,9 +468,15 @@ func (s *Service) moveChart(ctx context.Context, ref Reference, req ChartRequest
 // deleteChart removes a chart or slicer, and says what it was.
 //
 // `deleteEmbeddedObject` replies `{}` for both, so everything the result
-// reports comes from the read taken before the delete. A chart is not a
-// gated destructive tool: its whole definition is readable first, which
-// is the line §17c draws between a label and data.
+// reports comes from the read taken before the delete. A second delete
+// of the same id never reaches Google: the read finds no object with
+// that id and the call is refused not_found. Checked by the live steps
+// "delete the chart on its own sheet", "deleting it again is a clean
+// refusal" and "what a chart survives".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#DeleteEmbeddedObjectRequest
+//
+// A chart is not a gated destructive tool: its whole definition is
+// readable before it goes, so the delete is a plain write.
 func (s *Service) deleteChart(ctx context.Context, ref Reference, req ChartRequest, res *ChartResult) (*ChartResult, error) {
 	if req.ID == 0 {
 		return nil, Errorf("invalid", "delete needs id, which manage_chart list reports")
@@ -493,6 +504,14 @@ func (s *Service) deleteChart(ctx context.Context, ref Reference, req ChartReque
 
 // buildChartSpec turns the tool's arguments into a spec, and refuses the
 // two shapes the API answers badly.
+//
+// A basicChart with neither domains nor series is answered "500 Internal
+// error encountered". A 5xx on a batchUpdate is ambiguous_outcome here,
+// which would tell the caller a chart that was never made may exist, so
+// the spec is checked before it is sent. Checked by the live steps "a
+// chart with neither domain nor series is refused here" and "what a
+// chart survives".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/charts#BasicChartSpec
 func (s *Service) buildChartSpec(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
 	req ChartRequest) (*gsheets.ChartSpec, []string, error) {
 
@@ -1161,7 +1180,7 @@ func chartTypeNames() []string {
 func basicChartTypeNames() []string { return sortedKeys(basicChartTypes) }
 
 // sortedKeys names the members of a table, for a message that lists what
-// a caller may write. Three tables in this phase wanted it.
+// a caller may write, in an order that does not change between calls.
 func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

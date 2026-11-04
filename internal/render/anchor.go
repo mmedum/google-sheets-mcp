@@ -31,11 +31,9 @@ func (a Anchor) Where() string {
 // AnchorNames is how a list of anchors is written, wherever it is
 // written.
 //
-// One function because a live run found the two callers disagreeing: the
-// refusal quoted the names and the result printed them bare, for the
-// same delete, a moment apart. That is the shape §17a.9 moved the
-// structural tools' English into this package to stop, reintroduced by
-// adding the clause to one caller and the sentence to the other.
+// One function, so that the refusal and the result of one delete write
+// the names alike. A refusal quoting them and a result printing them
+// bare would describe the same act two ways, a moment apart.
 func AnchorNames(names []string) string {
 	quoted := make([]string, 0, len(names))
 	for _, n := range names {

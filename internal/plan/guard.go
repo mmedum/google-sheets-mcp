@@ -25,14 +25,16 @@ import (
 
 // MaxCellChars is the longest string one cell holds, in UTF-16 units.
 //
-// Verified live: 60 004 characters is refused with `400
-// INVALID_ARGUMENT`, "Your input contains more than the maximum of 50000
-// characters in a single cell", under both input options. Spike V found
-// the unit, under both options too: 50 000 é and 25 000 emoji are taken,
-// 50 001 é and 25 001 emoji refused, so an emoji counts as two and é as
-// one. Checked here so
+// Google takes 50 000 and refuses 50 001 with `400 INVALID_ARGUMENT`,
+// "Your input contains more than the maximum of 50000 characters in a
+// single cell", under both input options. It counts UTF-16 units: 50 000
+// é and 25 000 emoji are taken, 50 001 é and 25 001 emoji refused. The
+// API reference states neither the limit nor its unit. Checked here so
 // the caller is told which cell is too long, rather than having the
-// whole write refused with a message that names none of them.
+// whole write refused with a message that names none of them. Checked by
+// the live steps "what a write past the size limits answers" and "the
+// unit the text limits count".
+// https://developers.google.com/workspace/sheets/api/limits
 const MaxCellChars = 50000
 
 // tooLongForACell reports whether s is past MaxCellChars. A string's
@@ -57,7 +59,7 @@ func tooLongForACell(s string) bool {
 // Overwrite and OverwriteFormulas are the caller's. AllowExternalFormulas
 // is the operator's, GSHEETS_ALLOW_EXTERNAL_FORMULAS, and no argument
 // sets it: a model persuaded to write such a formula would pass the
-// argument too, so the refusal offers none (§7.3).
+// argument too, so the refusal offers none.
 type Ack struct {
 	Overwrite             bool
 	OverwriteFormulas     bool
@@ -159,7 +161,7 @@ func (c Cells) String() string {
 type Report struct {
 	// Pivots are the cells that anchor a pivot table. A write over one
 	// replaces the pivot outright and takes its whole output, and the
-	// API's reply says nothing (spike M) — so it is worth naming rather
+	// API's reply says nothing — so it is worth naming rather
 	// than counting among the non-empty cells it is also in.
 	//
 	// Only the anchor. A pivot's output cells are ordinary computed
@@ -218,7 +220,7 @@ type Report struct {
 	TooLong Cells
 	// TableHeaders are formulas being written into a table's header row.
 	// Google replaces each with a column name of its own, "Column 2" and
-	// the like, and still reports the write a success (spike T Q7), so
+	// the like, and still reports the write a success, so
 	// the formula is lost with nothing said.
 	TableHeaders Cells
 	// Discarded are cells a merge would throw away. Sheets keeps the
@@ -355,6 +357,15 @@ func (r Report) Blockers(ack Ack) []Blocker {
 	// DrawnBy decides whether to look at all, and a report built by
 	// something that decided differently must still not offer a caller
 	// the flag they already passed.
+	//
+	// values.update over one output cell answers 200 and collapses the
+	// whole pivot to #REF! at its anchor, "Array result was not expanded
+	// because it would overwrite data", and clearing that cell brings it
+	// all back; the reference says neither. Checked by the live steps
+	// "what a read sees where a pivot table sits", "the acknowledged write
+	// collapses the whole pivot, exactly as the refusal said" and
+	// "clearing the cell brings all of it back".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/update
 	for _, p := range r.DrawnBy {
 		if ack.Overwrite {
 			break
@@ -377,6 +388,13 @@ func (r Report) Blockers(ack Ack) []Blocker {
 
 // unallowable are the refusals no acknowledgment opens, which Blockers
 // puts first.
+//
+// A protected range refuses an edit from an account without permission,
+// as the reference says; the owner can always edit, so Google's error
+// for it is not observed. What Google does with a write over part of a
+// merge is not verified either; the refusal says the top-left cell
+// would take it.
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/sheets#ProtectedRange
 func (r Report) unallowable() []Blocker {
 	var out []Blocker
 	for _, p := range r.Protected {
@@ -427,10 +445,13 @@ func (r Report) Keeps() []string {
 // own servers. The reference for IMPORTXML is explicit that its argument
 // is "The URL of the page to examine, including protocol", and ENCODEURL
 // makes putting the sheet's own values in a query string convenient.
+// https://support.google.com/docs/answer/3093342
 //
 // externalRange is IMPORTRANGE, which takes a spreadsheet URL rather
 // than an arbitrary one. It exfiltrates nothing; its risk is the other
 // direction, and it embeds another spreadsheet's id in a string.
+// Checked by the live step "a formula that reaches outside is refused".
+// https://support.google.com/docs/answer/3093340
 var (
 	externalFetch = regexp.MustCompile(`(?i)\b(IMPORTXML|IMPORTDATA|IMPORTHTML|IMPORTFEED|IMAGE|HYPERLINK)\s*\(`)
 	externalRange = regexp.MustCompile(`(?i)\bIMPORTRANGE\s*\(`)
@@ -494,17 +515,14 @@ func Check(g *grid.Grid, values [][]any, formulasEvaluated bool) Report {
 // this account may not edit.
 //
 // Separate from Check because clear_values needs exactly this and none
-// of the rest. It used to call Check and switch the other findings off
-// with acknowledgments it does not offer — which worked, and meant any
-// blocker added later applied to a clear silently.
+// of the rest. Calling Check and switching the other findings off with
+// acknowledgments clear_values does not offer would apply any blocker
+// added later to a clear silently.
 //
-// The partial-merge scan used to be here too, and phase 2 brought that
-// mistake back in a new shape: two of the three callers ran this and
-// then deleted r.Merges, because naming a range or setting a validation
-// rule does not care about a merge. A finding two thirds of the callers
-// throw away is a rule decided after the fact at each call site — so it
-// is CheckPartialMerges now, and the callers that write values into
-// cells ask for it.
+// The partial-merge scan is CheckPartialMerges, not part of this: naming
+// a range or setting a validation rule does not care about a merge, and
+// a finding most callers throw away is a rule decided after the fact at
+// each call site. The callers that write values into cells ask for it.
 func CheckDestination(g *grid.Grid) Report {
 	var r Report
 	for _, p := range g.Protected {
@@ -745,10 +763,13 @@ func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 // CheckTableHeaders records the formulas a write would put in a table's
 // header row, given each table's header row on the sheet.
 //
-// Verified live (spike T Q7): values.update put a formula in a table's
-// header cell, answered 200, and the cell then held "Column 2", which
-// was also the column's new name. Nothing acknowledges this, since no
-// flag keeps the formula there.
+// values.update puts a formula into a table's header cell and answers
+// 200, and the cell then holds "Column" and the column's place in the
+// table, which is also the column's name; the reference does not say so.
+// Nothing acknowledges this, since no flag keeps the formula there.
+// Checked by the live steps "what Google makes of typed table columns"
+// and "a formula into a table's header cell is refused".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/update
 func CheckTableHeaders(r *Report, g *grid.Grid, values [][]any, formulasEvaluated bool, headers []a1.Rect) {
 	if !formulasEvaluated || len(headers) == 0 {
 		return
@@ -790,7 +811,9 @@ func Position(i, j int) string {
 // survives depends on the merge type, so the anchor is worked out here
 // rather than assumed to be the rectangle's corner: merging by rows
 // keeps the leftmost cell of every row, and by columns the top cell of
-// every column.
+// every column. Checked by the live step "a merge that would discard
+// values is refused".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#MergeCellsRequest
 func CheckMerge(r *Report, g *grid.Grid, kind string) {
 	for i, row := range g.Cells {
 		for j, cell := range row {

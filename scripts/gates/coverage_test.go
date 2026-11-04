@@ -27,9 +27,8 @@ func TestFloorPerPackage(t *testing.T) {
 }
 
 // The package list is derived rather than written down, so a package
-// added under either tree is under a floor from its first commit. That
-// is the property that failed for cmd/ until phase 1: nothing listed it,
-// so nothing noticed it had no tests at all.
+// added under either tree is under a floor from its first commit. A
+// package nothing lists is a package nothing notices has no tests.
 func TestBothTreesAreUnderAFloor(t *testing.T) {
 	atRepoRoot(t)
 	module, err := moduleName()
@@ -66,9 +65,9 @@ func TestExemptionsCarryReasons(t *testing.T) {
 	}
 }
 
-// A package's number is its own. It used to include everything under it,
-// which made a well-covered package fail on its subpackage's coverage
-// and printed a percentage that described neither of them.
+// A package's number is its own. Including everything under it makes a
+// well-covered package fail on its subpackage's coverage and prints a
+// percentage that describes neither of them.
 func TestAPackageIsNotScoredOnItsSubpackages(t *testing.T) {
 	s := statements{total: map[string]int{}, hit: map[string]bool{}}
 	// Ten statements in the parent, all covered; ten in the child, none.

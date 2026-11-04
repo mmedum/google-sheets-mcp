@@ -23,9 +23,13 @@ func Sort(sheetID int, rect a1.Rect, specs []*gsheets.SortSpec) *gsheets.Request
 // ParseSort reads "B asc, C desc" into sort specs.
 //
 // The column is absolute — the sheet's own column, not an offset into
-// the range — which is what the API's dimensionIndex means. Writing it
-// as a letter keeps the caller in A1 and keeps the conversion here, the
-// same as everywhere else in this server.
+// the range — which is what the API's dimensionIndex means, though the
+// reference does not say which. Writing it as a letter keeps the caller
+// in A1 and keeps the conversion here, the same as everywhere else in
+// this server. Checked by the live steps "a sort key is the sheet's
+// column, not an offset into the range" and "and the rows came back in
+// the order the sort asked for".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/other#SortSpec
 func ParseSort(s string) ([]*gsheets.SortSpec, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {

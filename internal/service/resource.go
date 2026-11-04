@@ -47,7 +47,7 @@ func (s *Service) SheetCSV(ctx context.Context, spreadsheet, sheet string) (*She
 	ref, props, full := at.ref, at.props, at.rect
 
 	// Bounded before the request, like every other read here: an
-	// open-ended range never becomes an unbounded fetch (§4.6).
+	// open-ended range never becomes an unbounded fetch.
 	window, cellsCut := fit(full, config.MaxMaxCells)
 	got, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{
 		Fields: gapi.GridFields, Ranges: []string{a1.Format(props.Title, window)}, IncludeGridData: true,

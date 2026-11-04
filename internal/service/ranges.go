@@ -95,7 +95,7 @@ func (r RangeResult) Render() string { return r.Summary }
 //
 // Existing objects are named by the range they cover, not by an id. A
 // caller who can say "the protection on B2:B10" has not had to fetch an
-// id first, and A1 is this server's contract everywhere else (§17.1).
+// id first, and A1 is this server's contract everywhere else.
 // Where a range matches more than one, the refusal lists them rather
 // than picking.
 func (s *Service) ManageRange(ctx context.Context, req RangeRequest) (*RangeResult, error) {
@@ -177,11 +177,15 @@ func (s *Service) ManageRange(ctx context.Context, req RangeRequest) (*RangeResu
 // not. Any other request, and a read that fails too, keep the error the
 // send returned.
 //
-// Spike T Q12, 2026-10-09: in a fresh spreadsheet, four adds with column
-// types were taken and the fifth was a 500 that made no table. Deleting a
-// table did not let it in, nor did waiting a minute, and an add with no
-// column types was then taken. What Google counts is not known (§18).
-// [ambiguous_outcome] alone left the caller to read the card and compare.
+// In a fresh spreadsheet, four adds with column types are taken and the
+// fifth is a 500 that makes no table. Deleting a table does not let it
+// in, nor does waiting a minute, and an add with no column types is then
+// taken. What Google counts is not known. Checked by the live steps "how
+// many typed table adds a spreadsheet takes", "what Google makes of
+// typed table columns" and "a spreadsheet of its own for the typed
+// table". [ambiguous_outcome] alone would leave the caller to read the
+// card and compare.
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#AddTableRequest
 func (s *Service) settleTableAdd(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
 	op *gsheets.Request, sendErr error) (string, error) {
 
@@ -222,9 +226,12 @@ func (s *Service) rangeOp(ctx context.Context, req RangeRequest, action string, 
 	card *gsheets.Spreadsheet, props *gsheets.SheetProperties, rect a1.Rect,
 ) (*gsheets.Request, []render.Applied, error) {
 	// Deleting a table takes the conditional format rules over its range
-	// with it. Verified live: one rule before, none after, and nothing
-	// in the reply says so — adding a table leaves them alone, so it is
-	// the delete that takes them.
+	// with it, and nothing in the reply says so; adding a table leaves
+	// them alone. The reference says neither. Checked by the live steps
+	// "deleting the table is refused while a rule is over it", "and the
+	// rule really did go with it" and "what a table does to the rules
+	// over its range".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#DeleteTableRequest
 	if strings.EqualFold(strings.TrimSpace(req.Kind), RangeTable) && action == RangeDelete && !req.Overwrite {
 		rules, err := s.rulesOver(ctx, ref, props.SheetID, rect)
 		if err != nil {
@@ -368,12 +375,15 @@ func validationOp(req RangeRequest, action string, card *gsheets.Spreadsheet, pr
 
 // dropdownColumnRule refuses a data validation rule on the cells under a
 // dropdown column's header. Google refuses one: "This operation is not
-// allowed on cells in typed columns." (spike T Q13). The tables come from
-// the card, so the check costs no request.
+// allowed on cells in typed columns." The tables come from the card, so
+// the check costs no request. Checked by the live steps "a list on the
+// dropdown column's cells is refused" and "what a typed column does to a
+// cell's own rule".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#SetDataValidationRequest
 //
-// Only a dropdown column is refused, the type Q13 asked. A column of
-// another type, a header cell and a rule's removal go to Google as sent;
-// nothing has asked what it does with them.
+// Only a dropdown column is refused, the type the live step asks about.
+// A column of another type, a header cell and a rule's removal go to
+// Google as sent; no live step checks what it does with them.
 func dropdownColumnRule(card *gsheets.Spreadsheet, props *gsheets.SheetProperties, rect a1.Rect) error {
 	for _, t := range sheetOf(card, props.SheetID).Tables {
 		if t == nil || t.Range == nil {
@@ -513,21 +523,25 @@ func (s *Service) typedColumns(ctx context.Context, ref Reference, props *gsheet
 // header: a column named by its heading is known only once that read is
 // back.
 //
-// A boolean column shows checkboxes. Spike T Q5 typed one over "maybe",
-// the text "TRUE" and an empty cell, and all three became FALSE: a word
-// is lost with nothing said, and text that reads TRUE is not a true
-// value. A TRUE or FALSE value was kept, on update and on add (Q5b), and
-// is let through. What it does to a number or a formula is not known, so
-// they are refused too.
+// A boolean column shows checkboxes. Typed over "maybe", the text "TRUE"
+// and an empty cell, all three become FALSE: a word is lost with nothing
+// said, and text that reads TRUE is not a true value. A TRUE or FALSE
+// value is kept, on update and on add, and is let through. What it does
+// to a number or a formula is not known, so they are refused too.
 //
-// A dropdown column brings the table's list. Spike T Q1 typed one over
-// cells with a list of their own, and the cells' own rule was gone after,
-// with nothing said. So a dropdown is refused while a cell under its
-// header has a rule of its own. The table's list is not on its cells (Q1
-// read none there), so retyping a dropdown column is not refused over it.
-// An update drops the rule as the add did (spike T Q13). A dropdown
+// A dropdown column brings the table's list. Typed over cells with a
+// list of their own, the cells' own rule is gone after, with nothing
+// said, on add and on update alike. So a dropdown is refused while a cell
+// under its header has a rule of its own. The table's list is not on its
+// cells, so retyping a dropdown column is not refused over it. A dropdown
 // column's cells cannot gain a rule after it is typed, since Google
-// refuses one there (Q13), so a column sent back unchanged is not read.
+// refuses one there, so a column sent back unchanged is not read.
+//
+// Checked by the live steps "a boolean type over text is refused", "a
+// dropdown typed over cells with a list of their own is refused", "what
+// a number type did to the cells under it", "what Google makes of typed
+// table columns" and "what a typed column does to a cell's own rule".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/sheets#TableColumnProperties
 func (s *Service) checkColumnCells(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
 	table a1.Rect, columns []*gsheets.TableColumn) error {
 
@@ -605,8 +619,11 @@ func columnBody(table a1.Rect, index int) a1.Rect {
 
 // formulaHeader refuses a table add over a formula anywhere in its header
 // row, in a column the add types or not. Google refuses one: "Formulas
-// are not supported in a table header row." (spike T Q10). Refused here,
-// the cells are named and a dry run says so too.
+// are not supported in a table header row." Refused here, the cells are
+// named and a dry run says so too. Checked by the live steps "a table
+// over a formula heading is refused, though the column is not typed" and
+// "what Google makes of typed table columns".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#AddTableRequest
 func formulaHeader(header *grid.Grid, table a1.Rect) error {
 	var formulas plan.Cells
 	for j, cell := range header.Cells[0] {
@@ -658,12 +675,12 @@ func (s *Service) readHeader(ctx context.Context, ref Reference, props *gsheets.
 //
 // The refusal is there because the update sends every column's name
 // (merge says why), and Google writes a name sent into its header cell
-// as plain text (spike T Q4), which erases a chip (Q9) and drops rich
-// text's runs (Q7). A formula is checked too, though no header written
-// through the API holds one: Google replaces one written into a header
-// (Q7), write_values refuses to write one there, and Google takes no
-// table added over one (Q10). A header made some other way might, and the
-// check costs no request: it reads the cells the chip check reads.
+// as plain text, which erases a chip and drops rich text's runs. A
+// formula is checked too, though no header written through the API holds
+// one: Google replaces one written into a header, write_values refuses
+// to write one there, and Google takes no table added over one. A header
+// made some other way might, and the check costs no request: it reads
+// the cells the chip check reads.
 func (s *Service) readTable(ctx context.Context, ref Reference, props *gsheets.SheetProperties, tableID string,
 	rect a1.Rect) (*tableNow, error) {
 
@@ -701,10 +718,14 @@ func (s *Service) readTable(ctx context.Context, ref Reference, props *gsheets.S
 // smart chip or rich text in.
 //
 // A typed column sent with no name has Google write "Column 1", "Column
-// 2" and so on into its header cell, over what was there (spike T Q1).
-// The name sent is the text the cell shows, so the header reads as it
-// did. An empty header cell gets one of Google's names, which takes
-// nothing; the result says so.
+// 2" and so on into its header cell, over what was there, though the
+// add is a 200. The name sent is the text the cell shows, so the header
+// reads as it did. An empty header cell gets one of Google's names,
+// which takes nothing; the result says so. Checked by the live steps "a
+// table typing three of its four columns, by heading and by letter",
+// "the header cells read as written, after the add" and "what Google
+// makes of typed table columns".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#AddTableRequest
 func nameTyped(header *grid.Grid, table a1.Rect, columns []*gsheets.TableColumn) ([]render.Applied, error) {
 	typed := map[int]bool{}
 	for _, c := range columns {
@@ -729,10 +750,13 @@ func nameTyped(header *grid.Grid, table a1.Rect, columns []*gsheets.TableColumn)
 
 // headerLoss refuses a header cell whose content a column name written
 // over it would lose: a formula, a smart chip or rich text. Google writes
-// a name sent into its header cell as plain text (spike T Q4): that
-// erases a person chip (Q9), and drops the runs that made two letters of
-// "Flag" bold, though the name sent was "Flag" (Q7). named says which of
-// the row's cells get a name.
+// a name sent into its header cell as plain text: that erases a person
+// chip, and drops the runs that made two letters of "Flag" bold, though
+// the name sent was "Flag". A format set on the whole cell stays. named
+// says which of the row's cells get a name. Checked by the live steps "a
+// formula into a table's header cell is refused" and "what Google makes
+// of typed table columns".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#UpdateTableRequest
 func headerLoss(header *grid.Grid, table a1.Rect, named func(int) bool, sends string) error {
 	var formulas, chips, rich plan.Cells
 	for j, cell := range header.Cells[0] {
@@ -789,14 +813,19 @@ func headings(header *grid.Grid) map[string]int {
 //
 // The name is the one this read gave the column, or its header cell's
 // text where the read gave none. Google refuses an entry with no name,
-// "Table header row cell must have a value" (spike T Q3), and writes a
-// name sent into the header cell (Q4); a name sent as read leaves the
-// header showing what it did. Google reads back an entry for every
-// column (Q1), so one the read left out is not expected; it is named by
-// its header all the same, with no type. Google replaces the whole list:
-// one column sent alone left the others with no type, and a dropdown
-// with no list (Q3b). So every column goes back. A formula, a chip or
-// rich text would lose what is under its text, so readTable refused one.
+// "Table header row cell must have a value", and writes a name sent into
+// the header cell; a name sent as read leaves the header showing what it
+// did. Google reads back an entry for every column, so one the read left
+// out is not expected; it is named by its header all the same, with no
+// type, which Google takes. Google replaces the whole list, whatever
+// field_mask.proto says of a repeated field: one column sent alone
+// leaves the others with no type, and a dropdown with no list. So every
+// column goes back. A formula, a chip or rich text would lose what is
+// under its text, so readTable refuses one. Checked by the live steps
+// "one column retyped, and the others sent back as they were", "the
+// header cells read as written, after the update" and "what Google
+// makes of typed table columns".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#UpdateTableRequest
 func (t *tableNow) merge(changed []*gsheets.TableColumn) []*gsheets.TableColumn {
 	header := t.header.Cells[0]
 	byIndex := map[int]*gsheets.TableColumn{}
@@ -897,10 +926,10 @@ func (s *Service) ruleOp(ctx context.Context, req RangeRequest, action string, r
 	if err != nil {
 		return nil, nil, err
 	}
-	// One rule, described by the same function read_formatting uses. The
-	// two used to compose the sentence separately, so what manage_range
-	// said it had written and what read_formatting said was there could
-	// drift — and the service half is the one no golden covers.
+	// One rule, described by the same function read_formatting uses.
+	// Composed separately, what manage_range says it wrote and what
+	// read_formatting says is there could drift, and the service half is
+	// the one no golden covers.
 	text := render.RuleText(rule)
 	if action == RangeAdd {
 		return plan.RuleAdd(req.Index, rule),
@@ -1009,19 +1038,21 @@ func (s *Service) rulesOver(ctx context.Context, ref Reference, sheetID int, rec
 
 // ruleCount reads how many conditional format rules a sheet has.
 //
-// From the card, which carries the rules' ranges and is cached. It had a
-// mask of its own before that, for a reason worth keeping written down:
-// FormatFields was used here first and was wrong, because
-// `includeGridData` is ignored when a field mask is set — so a mask
-// naming `data(` fetches cells whether or not the option asks for them,
-// and with no range, every cell of every sheet.
+// From the card, which carries the rules' ranges and is cached, so a
+// rule update is two requests rather than three. The card's mask takes
+// conditionalFormats(ranges), which costs 294 bytes for one rule where
+// the whole rule costs 651. Checked by the live step "the reads a wider
+// field mask can fold in".
+//
+// FormatFields would be wrong here: `includeGridData` is ignored when a
+// field mask is set, so a mask naming `data(` fetches cells whether or
+// not the option asks for them, and with no range, every cell of every
+// sheet.
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/get
 //
 // rulesOver next door still needs RuleFields: it renders each rule, and
 // the card carries only where they reach.
 func (s *Service) ruleCount(ctx context.Context, ref Reference, sheetID int) (int, error) {
-	// §17a.15: a request of its own made a rule update three where two
-	// will do. Measured before the mask was widened — 294 bytes for one
-	// rule's ranges against the 651 a whole rule costs.
 	sp, err := s.card(ctx, ref.ID)
 	if err != nil {
 		return 0, err

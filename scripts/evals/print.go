@@ -18,13 +18,12 @@ import (
 // read. All of it comes from a spreadsheet this harness created and
 // filled, so the values are invented; what is not invented is the
 // spreadsheet id in every argument, the link in every card, and the
-// account address Drive puts on a search result. Those are exactly what
-// §9.1 says must not reach a transcript, and an eval transcript is
-// meant to be read and quoted.
+// account address Drive puts on a search result. Those must never reach
+// a transcript, and an eval transcript is meant to be read and quoted.
 //
 // Registration covers what this harness knows in advance. redactpkg.Line
-// masks what it does not — which is the half a sibling project left out,
-// and found by reading a run rather than by running one.
+// masks what it does not, which is the half a run can leak without any
+// test noticing.
 var (
 	mu           sync.Mutex
 	replacements = map[string]string{}

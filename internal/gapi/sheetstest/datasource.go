@@ -12,8 +12,9 @@ import (
 // One thing it cannot reproduce, and the tests say so rather than
 // pretending otherwise: the live 403 for a missing bigquery.readonly
 // scope. Nothing here knows which scopes a token carries, so what is
-// covered is the shape of each call and what the results say — and the
-// scope refusal is spike N's transcript and §18's row, not a test's.
+// covered is the shape of each call and what the results say. The scope
+// refusal is held by the live step "whether this server can reach a data
+// source", not by a test.
 
 // applySource is the fake's half of the Connected Sheets union.
 func applySource(d *Doc, req *gsheets.Request) (*gsheets.Reply, bool, error) {

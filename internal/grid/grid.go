@@ -64,7 +64,10 @@ type Cell struct {
 	// Computed says nobody typed this: an effective value with no
 	// entered one under it. A pivot table's output is exactly that, and
 	// so is an array formula's spill, so it says the value came from
-	// somewhere else on the sheet and never says from where.
+	// somewhere else on the sheet and never says from where. Checked by
+	// the live steps "what a read sees where a pivot table sits" and "a
+	// write into the output is refused, and the refusal names the pivot".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/cells#CellData
 	//
 	// False unless the read asked for both value fields. Every mask
 	// behind a guarded write does.
@@ -95,22 +98,24 @@ type Cell struct {
 
 // Empty reports whether the cell holds no value.
 //
-// A note or a validation rule does not make it non-empty. That is the
-// opposite of what this said before: the claim was that a write over
-// such a cell loses the note, and a live probe says it does not —
-// values.update keeps the note and the rule, the same way values.clear
-// documents that it does. Refusing a write into a blank cell for a loss
-// that never happens is a guard getting in the way for nothing.
+// A note or a validation rule does not make it non-empty: values.update
+// keeps the note and the rule, the same way values.clear documents that
+// it does, though the update reference does not say so. Refusing a write
+// into a blank cell for a loss that never happens is a guard getting in
+// the way for nothing. Checked by the live step "what values.update
+// keeps and where a move lands".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/update
 func (c Cell) Empty() bool { return c.Kind == KindEmpty }
 
 // HasFormula reports whether a formula is what the cell holds.
 //
-// Kind is not the test. A formula that evaluated to an error is
-// KindError, so a check on the kind misses it — and a write over
+// Kind is not the test. A formula that evaluated to an error carries
+// its formula in userEnteredValue and an errorValue in effectiveValue,
+// so it is KindError, and a check on the kind misses it — a write over
 // `=IMPORTRANGE(...)` showing #REF! would then need only `overwrite`,
-// which is the exact loss `overwrite_formulas` exists to prevent. Found
-// by reading a live transcript where a sheet full of formulas reported
-// none.
+// which is the exact loss `overwrite_formulas` exists to prevent.
+// Checked by the live step "a formula that errored still needs
+// overwrite_formulas".
 func (c Cell) HasFormula() bool { return c.Formula != "" }
 
 // Computed reports whether a cell holds a value nobody typed: an
@@ -179,7 +184,10 @@ const (
 //
 // rect is what the caller asked for and what the result is padded to.
 // The API omits trailing empty rows and trailing empty cells within a
-// row, so a response is routinely smaller than the range it answers.
+// row, and sends an interior gap as an empty cell, so a response is
+// routinely smaller than the range it answers. Checked by the live step
+// "an addressed grid".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/get
 func Build(sheet string, sheetID int, rect a1.Rect, data *gsheets.GridData, formatted Formatted) *Grid {
 	g := &Grid{Sheet: sheet, SheetID: sheetID, Rect: rect}
 	rows, cols := rect.Rows(), rect.Cols()
@@ -362,9 +370,13 @@ func (g *Grid) AnyComputed() bool {
 // refusal and a dry run both report.
 type Counts struct {
 	NonEmpty int
-	// Computed is the cells showing a value nobody typed. Verified live:
-	// clearing one returns 200, names the range and changes nothing,
-	// because what draws it is somewhere else (spike Q).
+	// Computed is the cells showing a value nobody typed. values.clear
+	// over a cell a pivot table draws answers 200, names the range and
+	// changes nothing, because what draws it is somewhere else; the
+	// reference does not say so.
+	// Checked by the live step "what a merge and a clear do to a pivot
+	// table".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/clear
 	//
 	// The count of them rather than of the rest, so a Counts built by
 	// hand rather than by Count is safe: a zero here says "nothing is
@@ -419,7 +431,7 @@ func (g *Grid) Count() Counts {
 // FromValues builds a Grid out of a values response rather than out of
 // cell data.
 //
-// A write asks for its stored values back in the same response (§4.4),
+// A write asks for its stored values back in the same response,
 // rendered as formulas. That is enough to describe the region it
 // produced and to hash a new checkpoint over it, without a second read.
 //

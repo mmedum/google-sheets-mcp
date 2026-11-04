@@ -10,8 +10,7 @@ import (
 //
 // Built and filled by this harness, never a real one: a transcript of an
 // eval run carries prompts, tool arguments and results, so the only way
-// it can be safe to read is for every value in it to be invented here
-// (§9.1).
+// it can be safe to read is for every value in it to be invented here.
 type Fixture struct {
 	ID    string
 	Title string
@@ -125,7 +124,7 @@ func (r *Run) callsTo(tool string) int {
 
 // refused reports whether any call came back with this error class.
 //
-// The class rather than the message: §6.5 makes the vocabulary closed
+// The class rather than the message: the error vocabulary is closed
 // precisely so that something other than a person can tell a refusal to
 // overwrite from a missing spreadsheet.
 func (r *Run) refused(class string) bool {

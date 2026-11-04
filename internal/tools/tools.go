@@ -7,7 +7,7 @@
 // wrong. One Kind per tool decides its annotations, whether read-only
 // mode keeps it, and that its reply is rendered rather than dumped as
 // JSON. The server asks the person nothing: per-call approval is the
-// client's (§9a).
+// client's.
 //
 // Registration gates the tool; the service gates the act. `confirm` and
 // the one gated action live in the service, where the caller can be told
@@ -52,7 +52,7 @@ const (
 	// enum was written to grow an axis for, and it earns one because
 	// nothing else here needs a scope beyond Sheets and Drive: the tool
 	// is registered only with GSHEETS_ENABLE_DATA_SOURCES, which is also
-	// what puts that scope in front of the person at login (§17.6a).
+	// what puts that scope in front of the person at login.
 	//
 	// Its OpenWorldHint is true, and that is the point of the
 	// distinction rather than a detail of it.
@@ -91,10 +91,9 @@ func Register(s *mcp.Server, d Deps) {
 // Def is one tool.
 //
 // Out is constrained to service.Rendered, so a tool whose result has no
-// rendering does not compile. That is the mechanism behind §4.9: every
-// tool returns both halves and the structured half carries the
-// rendering, so no client can be shown the half without the addresses in
-// it.
+// rendering does not compile. That is what holds D-21: every tool
+// returns both halves and the structured half carries the rendering, so
+// no client can be shown the half without the addresses in it.
 type Def[In any, Out service.Rendered] struct {
 	Name        string
 	Description string
@@ -103,17 +102,19 @@ type Def[In any, Out service.Rendered] struct {
 	// a new data source. Only such a write says destructiveHint: false,
 	// which the MCP schema defines as "the tool performs only additive
 	// updates"; every other write says true, the schema's own default,
-	// so a new write that forgets this errs toward a prompt. Codex and
-	// claude.ai decide their prompt by that hint (§9a). The hint is not
-	// the gate: what an ungated write removes is read and named first
-	// (§17c). A read or a Destructive tool may not set it.
+	// so a new write that forgets this errs toward a prompt. A rename, a
+	// move or a refresh changes what is there, so it is not additive.
+	// Codex and claude.ai decide their prompt by that hint. The hint is
+	// not the gate: what an ungated write removes is read and named
+	// first. A read or a Destructive tool may not set it.
+	// https://modelcontextprotocol.io/specification/2025-11-25/schema
 	Adds bool
 	// PromptEveryCall puts Claude Code's requiresUserInteraction mark on
 	// the tool, so Claude Code prompts on every call whatever the
 	// operator's rules say, and refuses the call where nobody can be
 	// asked. It is for the few tools whose prompt is itself the point: a
-	// delete Sheets cannot undo of something other objects depend on
-	// (§9a). Only a Destructive tool may set it.
+	// delete Sheets cannot undo of something other objects depend on.
+	// Only a Destructive tool may set it.
 	PromptEveryCall bool
 	Handle          func(ctx context.Context, in In) (Out, error)
 }
@@ -168,10 +169,9 @@ func add[In any, Out service.Rendered](s *mcp.Server, d Deps, def Def[In, Out]) 
 //
 // It lives beside allowed rather than in the command that dumps the
 // schemas, because it has to name every gate allowed reads and the
-// command has no way to know when a new one appears. The dump set
-// EnableDestructive by hand for three phases; phase 4 added a second
-// gate, and the tool behind it was missing from the schema dump — and
-// therefore from the schema diff — with every test still green.
+// command has no way to know when a new one appears. A gate the dump
+// does not set leaves its tools out of the schema dump, and so out of
+// the schema diff, with every test still green.
 //
 // TestFullSurfaceRegistersEverything holds the claim rather than this
 // comment doing it: it enumerates the gate flags and requires no
@@ -204,7 +204,7 @@ func allowed(k Kind, cfg config.Config) bool {
 // true unless it only adds, as the MCP schema reads false as "the tool
 // performs only additive updates". readOnlyHint is what VS Code prompts
 // by, and destructiveHint is what Codex and claude.ai prompt by, so both
-// are exact (§9a). Connected and Notifying reach outside the
+// are exact (D-38). Connected and Notifying reach outside the
 // spreadsheet, so they say openWorldHint.
 func annotationsFor(k Kind, adds bool) *mcp.ToolAnnotations {
 	if k == Read {

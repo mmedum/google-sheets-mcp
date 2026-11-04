@@ -7,9 +7,17 @@ and this project follows [semantic versioning](https://semver.org).
 
 ### Changed
 
-- For contributors: CI fails a pull request that changes the tool surface, an annotation or a `_meta` mark included, unless a commit footer names each changed item. A break of something a release shipped needs `BREAKING CHANGE:`. Only the names before the first colon followed by white space in a footer's value count, separated by commas. A footer's value may run on over several lines, and a footer beside it, such as `Closes #12`, does not drop it; a `Token #value` footer acknowledges nothing. A refusal prints the footer that fixes it, and a gate that could not run says so.
-- For contributors: the schema diff compares each tool and resource whole, and names the part that changed. Its header counts every break, a removed item included, as breaking, and a tool that breaks also lists every part of it that moved, its schemas included.
-- For contributors: `--dump-schemas` carries the server's instructions, and lists fixed resources and prompts once the server has any.
+- `--dump-schemas` carries the server's instructions, and lists fixed resources and prompts once the server has any.
+- For contributors: a pull request that changes the tool surface needs a commit footer naming each changed item; `CONTRIBUTING.md` gives the syntax.
+- For contributors: the schema diff compares each tool and resource whole, annotations included, so a removed resource fails as a removed tool does.
+- For contributors: `make check` runs a docs gate. Decisions carry IDs in `docs/architecture.md`, and every citation must resolve.
+- For contributors: what was verified about Google lives in the comment at the code that depends on it, naming the live step that checks it.
+- For contributors: `google.golang.org/api` cannot be imported; depguard fails the lint on it.
+- For contributors: the spikes carry names. `-only` takes names, comma-separated, and `-list` prints them.
+
+### Fixed
+
+- `manage_sheet`'s description and its refusal to shrink a sheet name `delete_dimensions`, the tool that removes rows and columns, not `edit_dimensions`.
 
 ## [4.2.0] - 2026-11-01
 

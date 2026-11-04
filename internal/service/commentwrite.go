@@ -131,8 +131,11 @@ func (s *Service) replyComment(ctx context.Context, id string, req ManageComment
 	if err := checkText(req.Text, true); err != nil {
 		return nil, err
 	}
-	// Google refuses to reassign a thread whose first comment has no
-	// assignee (spike R); saying so here names the way that works.
+	// Google answers 400 to a reply reassigning a thread whose first
+	// comment has no assignee; saying so here names the way that works.
+	// Checked by the live step "reassigning a thread nobody was assigned
+	// is refused here".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#AddCommentReplyRequest
 	if req.Assignee != "" && rec.Posts[0].Assignee == "" {
 		return nil, Errorf("invalid", "this thread was never assigned, and Google assigns only from the first comment. "+
 			"Reply without an assignee, or add a new comment with one")
@@ -142,7 +145,10 @@ func (s *Service) replyComment(ctx context.Context, id string, req ManageComment
 }
 
 // setCommentStatus resolves or reopens a thread. A thread already there
-// is left alone: Google would post a second resolve (spike R).
+// is left alone: resolving a resolved thread is a 200 that adds another
+// RESOLVE post. Checked by the live steps "resolving it again sends
+// nothing" and "how cell comments read back and fail".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#AddCommentReplyRequest
 func (s *Service) setCommentStatus(ctx context.Context, id, text string, rec CommentRecord,
 	res *ManageCommentResult) (*ManageCommentResult, error) {
 	if err := checkText(text, false); err != nil {
@@ -284,10 +290,12 @@ func (r DeleteCommentResult) Render() string { return r.Summary }
 // Resolving keeps it, and is usually what is wanted.
 //
 // A thread or a reply the read does not find is reported gone, which is
-// what a repeat delete asked for, and nothing is sent. Google
-// answers a repeat and an id it never had with the same 404, and a read
-// shows neither (spike R), so a mistyped id reads as gone too; the
-// summary says it may be either.
+// what a repeat delete asked for, and nothing is sent. Google answers a
+// repeat and an id it never had with the same 404, and a read shows
+// neither, so a mistyped id reads as gone too; the summary says it may
+// be either. Checked by the live steps "a repeat delete reports it gone"
+// and "how cell comments read back and fail".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#DeleteCommentRequest
 func (s *Service) DeleteComment(ctx context.Context, req DeleteCommentRequest) (*DeleteCommentResult, error) {
 	ref, err := s.Resolve(ctx, req.Spreadsheet)
 	if err != nil {
@@ -303,6 +311,9 @@ func (s *Service) DeleteComment(ctx context.Context, req DeleteCommentRequest) (
 	}
 	res := &DeleteCommentResult{Spreadsheet: ref.ID, CommentID: rec.CommentID, Thread: &rec}
 	target := &rec.Posts[0]
+	// The first post's postId is the thread's commentId, so the first
+	// post is found by its position, never by an id of its own.
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets#CommentThread
 	switch {
 	case postID == rec.Posts[0].PostID:
 		return nil, Errorf("invalid", "%s is the comment that starts the thread; deleting it deletes the thread, so "+
@@ -339,7 +350,7 @@ func (s *Service) DeleteComment(ctx context.Context, req DeleteCommentRequest) (
 			"manage_cell_comment, which keeps it", render.CommentTarget(view, postID))
 	}
 	if _, err := s.commentBatch(ctx, ref.ID, plan.DeleteComment(rec.CommentID, postID)); err != nil {
-		// A repeat finds it gone (spike R): what was asked for is true.
+		// A delete racing another finds it gone: what was asked for is true.
 		var se *Error
 		if !errors.As(err, &se) || se.Class != "not_found" {
 			return nil, err

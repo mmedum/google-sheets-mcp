@@ -21,10 +21,10 @@ import (
 // The driver builds its own scratch spreadsheet, and these are the calls
 // it makes to do it.
 //
-// They are deliberately the driver's own rather than internal/gapi's:
-// the server has no write path in this phase, and giving it one so the
-// driver could set up would be designing the write path in the wrong
-// place. Everything the driver *checks* goes through the server.
+// They are deliberately the driver's own rather than internal/gapi's,
+// so the server's write path is shaped by its tools and never by what
+// the driver needs to set up. Everything the driver *checks* goes
+// through the server.
 type driverAPI struct {
 	http   *http.Client
 	sheets string
@@ -42,11 +42,13 @@ func newDriverAPI(ctx context.Context, ts oauth2.TokenSource) *driverAPI {
 // do sends one setup request, retrying what Google tells us to retry.
 //
 // The driver's own scaffolding is not what is under test, and Google
-// returns transient 503s on this project — a run aborted before its
-// first step because creating the scratch spreadsheet got one. A driver
-// that fails for a reason that says nothing about the server is a driver
-// people stop running. The retry says so out loud, so a run that needed
-// three attempts does not read like one that needed none.
+// answers setup calls, the create of the scratch spreadsheet included,
+// with transient 503s that its troubleshooting page says to retry. A
+// driver that fails for a reason that says nothing about the server is
+// a driver people stop running. The retry says so out loud, so a run
+// that needed three attempts does not read like one that needed none.
+// The steps never retry: what they measure is the server's own retry.
+// https://developers.google.com/workspace/sheets/api/troubleshoot-api-errors
 func (a *driverAPI) do(ctx context.Context, method, rawURL string, body, out any) error {
 	const attempts = 4
 	var err error
@@ -229,10 +231,10 @@ func (a *driverAPI) decorate(ctx context.Context, id string, sheetID int) error 
 
 // trash moves the scratch spreadsheet to the bin.
 //
-// It needs a write-capable Drive scope, and this server asks for
-// drive.readonly on purpose (§17.6), so it will normally fail. That is
-// reported rather than swallowed: the run ends by telling the person
-// which file to remove and why the driver could not.
+// It needs a write-capable Drive scope, and this server asks only for
+// drive.readonly because it never writes to Drive, so it will normally
+// fail. That is reported rather than swallowed: the run ends by telling
+// the person which file to remove and why the driver could not.
 func (a *driverAPI) trash(ctx context.Context, id string) error {
 	u := a.drive + "/files/" + url.PathEscape(id) + "?supportsAllDrives=true"
 	return a.do(ctx, http.MethodPatch, u, map[string]any{"trashed": true}, nil)

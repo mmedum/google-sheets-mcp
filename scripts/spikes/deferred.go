@@ -14,20 +14,16 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
 )
 
-// spikeP answers the three §17a cleanups that were deferred for want of
-// a live probe rather than for want of a decision.
+// askFoldedReads asks which reads a wider field mask can fold into a
+// call this server already makes. Each fold saves a request, and only
+// Google can say whether the mask is accepted and what it adds to a
+// payload: the fake returns whatever a test asks it for.
 //
-// Each of them is a request this server could make more cheaply, and
-// each was left alone under hard rule 12: the fake returns whatever the
-// test asks it for, so no test here can say whether a field mask is
-// accepted or what it adds to a payload. Phase 4 is the phase with a
-// live run, so they are asked here rather than guessed at again.
-//
-// §17a.7 folds a card re-read into the write that invalidated it.
-// §17a.15 folds a conditional-format-rule count into the card.
-// §17a.20 folds an anchor lookup into the grid read beside it.
-func spikeP(ctx context.Context) {
-	sec("Spike P: the three deferred cleanups that wanted a probe")
+// It asks three things. Can a batchUpdate carry the card back, so the
+// write that invalidated it need not re-read it? Can the card carry a
+// count of the conditional format rules? Can a grid read carry the
+// anchors on the rows it reads, so they need no search of their own?
+func askFoldedReads(ctx context.Context) {
 	const sheet = "SpikeDeferred"
 	sheetID, err := addSheet(ctx, sheet)
 	if err != nil {
@@ -46,10 +42,10 @@ func spikeP(ctx context.Context) {
 	}
 
 	line("")
-	line("  §17a.7: can a batchUpdate carry the card back, and can it be masked?")
-	// The blocker written down in §17a.7 is that the returned
-	// spreadsheet arrives unmasked and so carries the spreadsheetUrl the
-	// card's own mask deliberately drops. The discovery document says
+	line("  can a batchUpdate carry the card back, and can it be masked?")
+	// The fold stands or falls on whether the returned spreadsheet
+	// arrives unmasked, and so carries the spreadsheetUrl the card's own
+	// mask deliberately drops. The discovery document says
 	// responseIncludeGridData is "ignored if a field mask was set in the
 	// request", which implies the standard fields parameter applies to
 	// this reply too. Implies is not evidence.
@@ -83,11 +79,10 @@ func spikeP(ctx context.Context) {
 	reportSpreadsheetReply("      masked  ", resp)
 
 	line("")
-	line("  §17a.15: does the card mask take conditionalFormats, and what does it cost?")
-	// A rule update is three requests today because the rules are
-	// counted in a request of their own. If the card can carry them,
-	// it is two — and the cost is paid by every get_spreadsheet, so the
-	// bytes matter as much as the acceptance.
+	line("  does the card mask take conditionalFormats, and what does it cost?")
+	// If the card can carry the rules, a rule update needs no request of
+	// its own to count them — and the cost is paid by every
+	// get_spreadsheet, so the bytes matter as much as the acceptance.
 	status, _ = batchOne(ctx, map[string]any{"addConditionalFormatRule": map[string]any{
 		"index": 0,
 		"rule": map[string]any{
@@ -120,7 +115,7 @@ func spikeP(ctx context.Context) {
 	}
 
 	line("")
-	line("  §17a.20: does a grid read carry the anchors on the rows it reads?")
+	line("  does a grid read carry the anchors on the rows it reads?")
 	// delete_dimensions pays a developerMetadata.search to name the
 	// anchors it would destroy. The rows are already being counted by a
 	// grid read in the same call, and rowMetadata would carry the
@@ -144,10 +139,10 @@ func spikeP(ctx context.Context) {
 	// rowData's closer and before data's: two closers, the new field,
 	// then the two that were removed.
 	//
-	// The first run of this spike got that count wrong by one and the
-	// API answered 400. Printed under a heading asking whether the mask
-	// is supported, a malformed mask reads as "no" — so the mask is
-	// printed, and its parentheses are balanced here before it is sent.
+	// A count wrong by one is a 400, and under a heading asking whether
+	// the mask is supported, a malformed mask reads as "no" — so the mask
+	// is printed, and its parentheses are balanced here before it is
+	// sent.
 	withAnchors := strings.TrimSuffix(gapi.GridFields, "))))") + ")),rowMetadata(developerMetadata)))"
 	line("    the wider mask asked for is %s", withAnchors)
 	if open, closed := strings.Count(withAnchors, "("), strings.Count(withAnchors, ")"); open != closed {
@@ -238,9 +233,9 @@ func ruleNote(body string) string {
 }
 
 // reportRowMetadata says how many row objects came back for a four-row
-// window and how many of them carried anything, which is the cost half
-// of §17a.20: the API emits one object per row whether or not the row
-// has an anchor.
+// window and how many of them carried anything, which is what folding
+// the anchors into a grid read costs: the API emits one object per row
+// whether or not the row has an anchor.
 func reportRowMetadata(body string) {
 	var out struct {
 		Sheets []struct {

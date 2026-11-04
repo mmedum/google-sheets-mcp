@@ -30,6 +30,20 @@ type ReadInput struct {
 }
 
 // SearchInput scopes a Drive search.
+//
+// Drive's fullText, behind Text, reaches cell values and matches whole
+// tokens, as the guide says. It does not say that a hyphenated code is
+// not one token, so Quorbin matches where Quorbin-01 does not, nor that
+// the content index lags the title index by more than thirty seconds.
+// Checked by the live step "the scratch spreadsheet is findable by its
+// contents".
+// https://developers.google.com/workspace/drive/api/guides/ref-search-terms
+//
+// Drive's modifiedTime, behind ModifiedAfter, lags an edit: it had not
+// moved fourteen seconds after one, so a spreadsheet changed moments ago
+// can fail the filter. Checked by the live step "whether Drive's version
+// moves on every edit".
+// https://developers.google.com/workspace/drive/api/reference/rest/v3/files
 type SearchInput struct {
 	Name          string `json:"name,omitempty" jsonschema:"part of the title, matched case-insensitively"`
 	Text          string `json:"text,omitempty" jsonschema:"a word inside the spreadsheet, matched by Drive's full-text index. It reaches cell values, but it tokenizes and lags: a hyphenated compound such as Quorbin-01 does not match while Quorbin does, and a spreadsheet changed moments ago may not be found yet. To search inside a spreadsheet you already have, use find_in_spreadsheet, which reads the cells"`

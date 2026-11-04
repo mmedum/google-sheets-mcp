@@ -163,7 +163,7 @@ func TestDryRunSendsNothing(t *testing.T) {
 	}
 }
 
-// §4.4: every write asks for the stored values back and names each one
+// Every write asks for the stored values back and names each one
 // Google changed. The fake replays the live probe rather than parsing.
 func TestCoercionIsReported(t *testing.T) {
 	_, svc := standard(t)
@@ -571,7 +571,7 @@ func TestDryRunPreviewsAWriteNothingCanAllow(t *testing.T) {
 	}
 }
 
-// TestAFormulaIntoATableHeaderIsRefused is spike T Q7: Google replaces a
+// TestAFormulaIntoATableHeaderIsRefused holds that Google replaces a
 // formula written into a table's header cell with a column name of its
 // own and reports the write a success. Nothing allows it, the dry run
 // says so, and text there, a formula under literal input and a formula

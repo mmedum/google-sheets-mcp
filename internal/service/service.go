@@ -38,13 +38,12 @@ type API interface {
 
 // Classes is the closed vocabulary of error classes this server speaks.
 //
-// Twelve, where the shared standard has six. Each addition earns its
-// place by asking the caller to do something the others do not:
-// `blocked` is the write guard refusing what the API would have allowed;
-// `ambiguous` says a reference matched several things and the caller
-// must choose; `ambiguous_outcome` says a write may or may not have
-// landed and the caller must go and look. Collapsing either of the last
-// two into `invalid` loses the instruction.
+// A class exists only where it asks the caller to do something the
+// others do not: `blocked` is the write guard refusing what the API
+// would have allowed; `ambiguous` says a reference matched several
+// things and the caller must choose; `ambiguous_outcome` says a write
+// may or may not have landed and the caller must go and look. Collapsing
+// either of the last two into `invalid` loses the instruction.
 //
 // A gate holds this list shut from both sides: a class emitted and not
 // declared fails, and so does one declared and never emitted.
@@ -147,9 +146,9 @@ type cacheEntry struct {
 // that names a sheet reads the card first, so a turn that calls
 // get_spreadsheet and then two read_ranges pays for the metadata once
 // instead of three times — and with one request in flight and sixty a
-// minute, each saved call is about a second. At five seconds it never
-// fired: the gap between two tool calls is model latency, not machine
-// latency.
+// minute, each saved call is about a second. A window of a few seconds
+// never fires: the gap between two tool calls is model latency, not
+// machine latency.
 //
 // Nothing depends on it for correctness. The cost of a stale entry is a
 // sheet renamed inside the window, which fails loudly on the next call
@@ -202,10 +201,10 @@ func join(items []string) string { return render.JoinAnd(items) }
 
 // knownTime is a time Google wrote, or "" when it is the Unix epoch,
 // which is how Google writes a time it does not have: Google Chat's API
-// sent 1970-01-01T00:00:00Z for one, live, on 2026-10-31. Nothing in a
-// spreadsheet dates from 1970, so reading the epoch as no time loses
-// nothing. The card, a search hit and a comment post read their times
-// through it.
+// sends 1970-01-01T00:00:00Z for one, though no Sheets read has shown
+// it. Nothing in a spreadsheet dates from 1970, so reading the epoch as
+// no time loses nothing. The card, a search hit and a comment post read
+// their times through it.
 func knownTime(s string) string {
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil && t.Equal(time.Unix(0, 0)) {
 		return ""

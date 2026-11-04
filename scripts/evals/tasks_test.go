@@ -10,14 +10,14 @@ import (
 // test and the run cannot disagree about what a filled fixture is.
 func fixture() Fixture { return checkFixture }
 
-// The guard §13 asks for, in `go test` where it costs nothing rather
-// than in a live run that costs ten minutes and an account.
+// The unsubstituted-placeholder guard, in `go test` where it costs
+// nothing rather than in a live run that costs ten minutes and an
+// account.
 //
-// A sibling project's first full eval run passed two tasks while sending
-// the agent a literal `{folder}`: one found the file by name across the
-// whole account, and one wanted a refusal and got one for the wrong
-// reason. That is the end-state-versus-trace problem happening inside
-// the harness built to catch it.
+// A prompt carrying a literal `{folder}` can still pass: a task finds
+// the file by name across the whole account, or wants a refusal and
+// gets one for the wrong reason. That is the end-state-versus-trace
+// problem happening inside the harness built to catch it.
 func TestEveryPromptIsSubstituted(t *testing.T) {
 	if err := CheckPrompts(Tasks(fixture())); err != nil {
 		t.Fatal(err)

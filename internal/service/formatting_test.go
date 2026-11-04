@@ -285,8 +285,9 @@ func TestReplacingANoteIsRefused(t *testing.T) {
 	if got := srv.Doc(sheetstest.FixtureID).Find(sheetstest.FirstSheet).At(2, 1).Note; got != "" {
 		t.Errorf("the note survived removal: %q", got)
 	}
-	// Asking for both is a caller who meant one of them, and clear_note
-	// used to win in silence while the guard checked the other.
+	// Asking for both is a caller who meant one of them, so it is
+	// refused rather than letting clear_note win while the guard checks
+	// the other.
 	_, err = svc.FormatCells(context.Background(), service.FormatRequest{
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "A3",
 		Note: "Skerry", ClearNote: true,

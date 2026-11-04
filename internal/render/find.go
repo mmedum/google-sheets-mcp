@@ -39,8 +39,9 @@ const (
 // grid long before it is filled — a new one is 1000 by 26 — so a search
 // of a nearly empty spreadsheet reaches the budget while having seen
 // every value in it, and "this did not cover the whole spreadsheet"
-// then sends a model back for a second look that finds nothing. Live
-// run, three populated rows, 4992 cells searched.
+// then sends a model back for a second look that finds nothing. Checked
+// by the live step "a budget that stops the search says so".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/sheets#GridProperties
 func (s StoppedBy) Note(dataEndedEarly bool) string {
 	switch s {
 	case CellBudget:

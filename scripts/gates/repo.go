@@ -15,19 +15,13 @@ const Binary = "google-sheets-mcp"
 
 // defaultBinary is where `make build` and CI put the server.
 //
-// On Windows that is the .exe, and this used to say the opposite. The
-// reasoning was that `go build -o <name>` writes exactly <name> on every
-// platform, which is true — and irrelevant, because Windows cannot
-// execute a file with no extension in PATHEXT. So an extensionless build
-// there produces a binary every gate can stat and none can run, and the
-// first Windows CI run said exactly that: `exec: ".\google-sheets-mcp":
-// executable file not found in %PATH%`.
-//
-// The comment that got it wrong was a reasoned one, which is worse than
-// no comment: it explained the choice convincingly enough that a reader
-// checking this would have stopped. The build produces a .exe on Windows
-// now, and the extensionless name is checked second, for a tree built
-// before this change.
+// On Windows that is the .exe, and the Makefile and CI build one there.
+// `go build -o <name>` writes exactly <name>, and Windows cannot execute
+// a file whose extension is not in PATHEXT, so an extensionless build is
+// a binary every gate can stat and none can run: `exec:
+// ".\google-sheets-mcp": executable file not found in %PATH%`. The
+// extensionless name is checked second, for a tree built without the
+// extension.
 func defaultBinary() string {
 	plain := "." + string(filepath.Separator) + Binary
 	if runtime.GOOS != "windows" {

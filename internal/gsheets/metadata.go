@@ -1,21 +1,25 @@
 package gsheets
 
 // Developer metadata: the only anchor Google keeps attached to a
-// location while the sheet is edited around it (§6.4).
+// location while the sheet is edited around it.
 //
-// Verified live as spike K, and what it verified is narrow: an entry
-// attached to a row follows that row through an insert, a delete, a move
-// and a sort, and dies with the row when the row is deleted. It attaches
-// to a spreadsheet, a sheet, or a single row or column, and never to a
-// rectangle.
+// What holds is narrow: an entry attached to a row follows that row
+// through an insert, a delete, a move and a sort, and dies with the row
+// when the row is deleted. It attaches to a spreadsheet, a sheet, or a
+// single row or column, and never to a rectangle. Checked by the live
+// steps "whether developer metadata is a durable anchor" and "the anchor
+// still reads the same values".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.developerMetadata
 
 // Visibility values. DOCUMENT is what this server writes.
 //
 // PROJECT scopes an entry to the OAuth client that created it, and this
 // server is distributed for people to run under a client id of their
 // own — so a PROJECT anchor would vanish on a re-install with nothing to
-// say why. Both were confirmed to work live; the choice is the
+// say why. Both work under a per-user OAuth client; the choice is the
 // consequence of how this is installed, not of what the API allows.
+// Checked by the live step "whether developer metadata is a durable
+// anchor".
 const (
 	VisibilityDocument = "DOCUMENT"
 	VisibilityProject  = "PROJECT"
@@ -36,7 +40,9 @@ const (
 // on that sheet as well as the sheet's own, which is what makes listing
 // one request. A spreadsheet location with INTERSECTING is refused by
 // the API: "DeveloperMetadataLookup.spreadsheet is true, but
-// locationMatchingStrategy was specified as INTERSECTING".
+// locationMatchingStrategy was specified as INTERSECTING". Checked by the
+// live step "whether developer metadata is a durable anchor".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/DataFilter#DeveloperMetadataLookup
 const (
 	MatchExact        = "EXACT_LOCATION"
 	MatchIntersecting = "INTERSECTING_LOCATION"
@@ -86,7 +92,7 @@ type DataFilter struct {
 }
 
 // SearchDeveloperMetadataRequest is the body of developerMetadata.search
-// — a POST that only reads (§11).
+// — a POST that only reads.
 type SearchDeveloperMetadataRequest struct {
 	DataFilters []*DataFilter `json:"dataFilters,omitempty"`
 }

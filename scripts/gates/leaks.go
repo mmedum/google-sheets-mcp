@@ -18,8 +18,8 @@ import (
 // organization or the account to watch for would itself be the
 // disclosure, and it would be committed here in the clear.
 //
-// What a pattern cannot do is the other half of §9.1, and it is why this
-// gate is not the whole control: a cell value, a sheet title, a named
+// What a pattern cannot do is why this gate is not the whole control
+// over what enters the repository: a cell value, a sheet title, a named
 // range and a note are ordinary words, and no regex separates an
 // invented column heading from somebody's customer list. Those are made
 // structurally impossible instead — fixtures are generated rather than
@@ -33,9 +33,9 @@ var (
 	safeSuffixes = []string{".test", ".invalid", ".localhost", ".example"}
 
 	// The numeric identifiers. A rule that wants a capital and a digit
-	// catches a spreadsheet id and misses both of these, and a sibling
-	// shipped exactly that hole: a Google account id is 21 digits and a
-	// Drive permission id is 20, neither with a letter.
+	// catches a spreadsheet id and misses both of these: a Google
+	// account id is 21 digits and a Drive permission id is 20, neither
+	// with a letter.
 	accountID    = regexp.MustCompile(`\b[0-9]{21}\b`)
 	permissionID = regexp.MustCompile(`\b[0-9]{20}\b`)
 
@@ -50,15 +50,18 @@ var (
 	// A Drive or Sheets resource id, and the URL that carries one.
 	//
 	// A file id starts with 1 and a folder or shared-drive id with 0A,
-	// and only the first shape was here — so a folder id was a finding
-	// the gate could not make. A live run put one in a transcript, which
-	// is one careless paste from a commit message.
+	// and the pattern takes both: a live run can print a folder id into
+	// a transcript, which is one careless paste from a commit message.
 	//
 	// A 40- or 64-character hex string is a commit SHA and is excluded
 	// below rather than by the pattern, since some of them start with a
 	// digit this has to match.
-	resourceID     = regexp.MustCompile(`\b[01][A-Za-z0-9_\-]{17,}\b`)
-	commitSHA      = regexp.MustCompile(`^[0-9a-f]{40}$|^[0-9a-f]{64}$`)
+	resourceID = regexp.MustCompile(`\b[01][A-Za-z0-9_\-]{17,}\b`)
+	commitSHA  = regexp.MustCompile(`^[0-9a-f]{40}$|^[0-9a-f]{64}$`)
+	// A heading's anchor, such as #d-01-retries-back-off or
+	// #1-create-a-project, is lowercase words after a short number. An id
+	// of random base64url bytes mixes cases.
+	headingSlug    = regexp.MustCompile(`^[0-9]{1,3}(-[a-z0-9]+)+$`)
 	spreadsheetURL = regexp.MustCompile(`docs\.google\.com/spreadsheets/d/([A-Za-z0-9_\-]{10,})`)
 
 	// What an invented id looks like: a marker word that a base64url id
@@ -112,33 +115,36 @@ func leakGate(history bool) error {
 // treeFiles is everything this gate reads: the tracked files, and the
 // untracked ones git would let a wildcard add sweep in.
 //
-// The untracked half is the half that matters most, and it was missing.
-// A phase's new files are invisible to a tracked-only scan until they
-// are staged — and a phase's new files are precisely the ones nobody has
-// scanned before. Phase 3 ran `make check` green a dozen times over 167
-// files while 28 of its own were untracked; the first `git add -A` took
-// it to 195 and the gate immediately found a spreadsheet id in a test
-// written that afternoon. The gate was doing what it said. "make check
-// is green" was the claim that was false.
+// The untracked half is the half that matters most. A change's new
+// files are invisible to a tracked-only scan until they are staged, and
+// they are precisely the ones nobody has scanned before, so `make check`
+// can be green over a tree whose newest test holds a spreadsheet id.
 //
-// Ordering is the point, and it is a sibling repository's: refusing a
-// file while it is still untracked fails *before* `git add -A` can sweep
-// it in, where a tracked-only scan catches it one commit too late.
+// Ordering is the point: refusing a file while it is still untracked
+// fails *before* `git add -A` can sweep it in, where a tracked-only scan
+// catches it one commit too late.
+func treeFiles() (files []string, tracked int, err error) {
+	files, untracked, err := lsFiles(".")
+	if err != nil {
+		return nil, 0, err
+	}
+	return append(files, untracked...), len(files), nil
+}
+
+// lsFiles is what git tracks under root, and the untracked files it
+// would commit, slash-separated and relative to root.
 // `--exclude-standard` honors .gitignore, so a build output with a rule
 // of its own is left alone — it cannot be committed either.
-func treeFiles() (files []string, tracked int, err error) {
-	out, err := git("ls-files", "-z")
+func lsFiles(root string) (tracked, untracked []string, err error) {
+	out, err := git("-C", root, "ls-files", "-z")
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
-	files = split0(out)
-	tracked = len(files)
-
-	others, err := git("ls-files", "-z", "--others", "--exclude-standard")
+	others, err := git("-C", root, "ls-files", "-z", "--others", "--exclude-standard")
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
-	return append(files, split0(others)...), tracked, nil
+	return split0(out), split0(others), nil
 }
 
 func split0(out string) []string {
@@ -181,15 +187,14 @@ func scanTree() error {
 			// A committed binary is a finding rather than something to
 			// scan: its symbol table buries the line that matters.
 			findings = append(findings, name+": a binary file is in the tree; scanning one hides the line that "+
-				"matters, and a compiled artifact swept in by a wildcard add is how two sibling repositories put "+
-				"megabytes into a public history")
+				"matters, and a compiled artifact swept in by a wildcard add puts megabytes into a public history")
 			continue
 		}
 		scanned++
 		// The untracked count is reported rather than folded in, so a
 		// run says how much of what it read is code nothing had scanned
-		// before. That number being large is the normal state during a
-		// phase, and it is the number this gate used to be blind to.
+		// before. That number is large while a change is in progress,
+		// and it is the number a tracked-only scan cannot see.
 		if i >= tracked {
 			scannedUntracked++
 		}
@@ -326,9 +331,10 @@ func findLeaks(text string) []string {
 			out = append(out, "a spreadsheet URL: "+abbreviate(m[0]))
 		}
 	}
-	for _, m := range resourceID.FindAllString(text, -1) {
-		if commitSHA.MatchString(m) {
-			continue // identifies a change, not a person
+	for _, loc := range resourceID.FindAllStringIndex(text, -1) {
+		m := text[loc[0]:loc[1]]
+		if commitSHA.MatchString(m) || anchorSlug(text[:loc[0]], m) {
+			continue // identifies a change or a heading, not a person
 		}
 		if !invented(m) && allowedValues[m] == "" {
 			out = append(out, "an id that does not look invented: "+abbreviate(m)+
@@ -336,6 +342,15 @@ func findLeaks(text string) []string {
 		}
 	}
 	return out
+}
+
+// anchorSlug reports whether m is a heading's anchor: a slug right after
+// "#" or a decision's "d-". An OAuth client id without its suffix, or a
+// UUID, is also lowercase words and digits, but never in that place.
+func anchorSlug(before, m string) bool {
+	afterHash := strings.HasSuffix(before, "#")
+	afterD := len(before) >= 2 && strings.EqualFold(before[len(before)-2:], "d-")
+	return (afterHash || afterD) && headingSlug.MatchString(m)
 }
 
 // abbreviate shortens a finding so the output does not reprint it.

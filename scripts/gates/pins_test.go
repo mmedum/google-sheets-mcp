@@ -59,8 +59,8 @@ func TestPinPatterns(t *testing.T) {
 		{"v2.18.0", true},
 		{"2.18.0", true},
 		{"v1.8.0-pre.2", true},
-		// The narrowing a sibling recorded as the fix while still
-		// floating: a `~>` value is a constraint whatever follows it.
+		// A narrowed range still floats: a `~>` value is a constraint
+		// whatever follows it.
 		{"~> v2.18.0", false},
 		{"~> v2", false},
 		{"v2", false},
@@ -93,7 +93,7 @@ func TestUnpinnedTools(t *testing.T) {
 		wantBad bool
 	}{
 		{
-			"cosign with no release input — this failed a sibling's release",
+			"cosign with no release input",
 			"jobs:\n  a:\n    steps:\n      - name: Install cosign\n        uses: sigstore/cosign-installer@" + sha + "\n",
 			true,
 		},

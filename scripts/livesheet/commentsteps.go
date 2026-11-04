@@ -8,9 +8,8 @@ import (
 )
 
 // The cell comment steps, on a sheet of their own, because they insert
-// and delete rows to watch where a thread goes (spike R). The one
-// assignee is the signed-in account, so the only mail this sends goes to
-// its own inbox.
+// and delete rows to watch where a thread goes. The one assignee is the
+// signed-in account, so the only mail this sends goes to its own inbox.
 const commentSheet = "Livesheet comments"
 
 func (d *driver) commentAll() {
@@ -136,7 +135,7 @@ func (d *driver) commentAddSteps() []step {
 		},
 		{
 			name: "an assignee that is not an address is refused here",
-			why:  "spike R: Google accepts any string, so a typo would assign the thread to nobody",
+			why:  "Google accepts any string, so a typo would assign the thread to nobody",
 			tool: "manage_cell_comment",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "action": "add", "sheet": commentSheet, "cell": "B3", "text": "x",
@@ -175,7 +174,7 @@ func (d *driver) commentThreadSteps() []step {
 	return []step{
 		{
 			name: "reassigning a thread nobody was assigned is refused here",
-			why:  "spike R: Google answers it with a 400, and the refusal says what works instead",
+			why:  "Google answers it with a 400, and the refusal says what works instead",
 			tool: "manage_cell_comment",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "action": "reply", "comment_id": d.commentID, "text": "x", "assignee": d.owner,
@@ -228,7 +227,7 @@ func (d *driver) commentThreadSteps() []step {
 		},
 		{
 			name: "resolving it again sends nothing",
-			why:  "spike R: Google posts a second resolve on a resolved thread",
+			why:  "Google posts a second resolve on a resolved thread",
 			tool: "manage_cell_comment",
 			args: map[string]any{"spreadsheet": d.spreadsheet, "action": "resolve", "comment_id": d.commentID},
 			check: func(text string, s map[string]any) error {
@@ -299,7 +298,7 @@ func (d *driver) commentPlaceSteps() []step {
 		},
 		{
 			name: "both threads moved down a row",
-			why:  "spike R: the anchor is what says where a thread is now",
+			why:  "the anchor follows inserted rows, and it is what says where a thread is now",
 			tool: "read_cell_comments",
 			args: map[string]any{"spreadsheet": d.spreadsheet, "sheet": commentSheet},
 			check: func(text string, _ map[string]any) error {
@@ -313,7 +312,7 @@ func (d *driver) commentPlaceSteps() []step {
 		},
 		{
 			name: "delete the row the assigned thread is on",
-			why:  "spike R: the thread outlives its row, which nothing in Google's reply says",
+			why:  "the thread outlives its row, which nothing in Google's reply says",
 			tool: "delete_dimensions",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": commentSheet, "dimension": "rows", "band": "5:5", "confirm": true,
@@ -381,7 +380,7 @@ func (d *driver) commentDeleteSteps() []step {
 		},
 		{
 			name: "a repeat delete reports it gone",
-			why: "Google answers a repeat with 404 (spike R), and the read before the delete no longer has the " +
+			why: "Google answers a repeat with 404, and the read before the delete no longer has the " +
 				"thread, so it is reported gone and nothing is sent",
 			tool: "delete_cell_comment",
 			args: map[string]any{"spreadsheet": d.spreadsheet, "comment_id": d.commentID, "confirm": true},

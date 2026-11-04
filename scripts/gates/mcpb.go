@@ -432,10 +432,13 @@ func manifestProblems(raw []byte, m manifest, files []staged, root string) []str
 // unsubstituted.
 var userConfigRef = regexp.MustCompile(`\$\{user_config\.([A-Za-z0-9_]+)\}`)
 
-// dirnameRef starts every command: ${__dirname} is the one path the
-// specification fixes to the bundle. It shows a relative command once
-// and never says what it is resolved against, and the reference host
-// resolves no path (docs/architecture.md §18).
+// dirnameRef starts every command. ${__dirname} is the one path the mcpb
+// specification fixes to the bundle, "the absolute path to the
+// extension's directory". It shows a relative command once and never
+// says what that is resolved against, and the reference host substitutes
+// the variables in `command` and resolves no path. Claude Desktop is not
+// probed.
+// https://github.com/anthropics/mcpb/blob/v2.1.2/MANIFEST.md
 const dirnameRef = "${__dirname}/"
 
 // validateManifest is the referential checks the manifest alone
@@ -721,10 +724,10 @@ var pinnedSchema = regexp.MustCompile(`/mcpb-manifest-v(\d+\.\d+)\.schema\.json$
 // and captures the ref it is served from.
 //
 // An allow-list over the whole URL rather than a list of refs to refuse,
-// for §9.1's reason one level down: refusing `main`, `master` and `HEAD`
-// passes a branch called anything else, a partial tag like `v2.1` that
-// upstream re-points as it releases, and the right filename served by
-// somebody who is not upstream.
+// because a deny-list misses what nobody thought of: refusing `main`,
+// `master` and `HEAD` passes a branch called anything else, a partial
+// tag like `v2.1` that upstream re-points as it releases, and the right
+// filename served by somebody who is not upstream.
 var upstreamSchema = regexp.MustCompile(
 	`^https://raw\.githubusercontent\.com/anthropics/mcpb/([^/]+)/schemas/mcpb-manifest-v\d+\.\d+\.schema\.json$`)
 
@@ -733,8 +736,8 @@ var upstreamSchema = regexp.MustCompile(
 // number in it.
 var immutableRef = regexp.MustCompile(`^(v[0-9]+\.[0-9]+\.[0-9]+|[0-9a-f]{40})$`)
 
-// claudeDesktopFloor is the Claude Desktop version every bundle in the
-// family claims.
+// claudeDesktopFloor is the oldest Claude Desktop the bundle claims to
+// install in. The manifest is held to it, so the claim changes only here.
 const claudeDesktopFloor = ">=0.10.0"
 
 // minManifestVersion is the format version this repository has checked,
@@ -742,12 +745,12 @@ const claudeDesktopFloor = ">=0.10.0"
 //
 // Every other claim below holds the manifest against ITSELF, and a stale
 // manifest is perfectly self-consistent: 0.2 beside a 0.2 schema passes
-// all of them, which is the shape this check was written to stop
-// spreading. Checked 2026-09-17 against the published schemas: 0.2, 0.3
-// and 0.4 are served and 0.5 is not, and 0.4's only change is a `uv`
-// value in the `server.type` enum, which a `binary` server gains nothing
-// from. Raise this only after checking what a newer format changes AND
-// that a desktop installs a bundle declaring it.
+// all of them. At anthropics/mcpb v2.1.2 the schemas run to 0.4, and
+// 0.4's only change from 0.3 is a `uv` value in the `server.type` enum,
+// which a `binary` server gains nothing from. Raise this only after
+// checking what a newer format changes AND that a desktop installs a
+// bundle declaring it.
+// https://github.com/anthropics/mcpb/tree/v2.1.2/schemas
 const minManifestVersion = "0.3"
 
 // olderThan reports whether a major.minor version is below the floor,
@@ -783,8 +786,8 @@ func majorMinor(v string) (int, int, bool) {
 }
 
 // manifestShapeProblems is the check itself, over the three values it
-// reads. Taking strings rather than a struct so the sibling servers can
-// call it from whatever they decode a manifest into.
+// reads. It takes strings rather than a struct so another server can
+// call it from whatever it decodes a manifest into.
 func manifestShapeProblems(schema, manifestVersion, support string) []string {
 	var problems []string
 
@@ -830,13 +833,14 @@ func manifestShapeProblems(schema, manifestVersion, support string) []string {
 }
 
 // identityProblems holds what the manifest says it is: the server's own
-// name, a binary, the family's Claude Desktop floor, a privacy policy,
+// name, a binary, the Claude Desktop floor, a privacy policy,
 // and exactly the platforms the packer stages an entry point for, so
 // dropping one platform and its override together is refused. The
 // manifest specification requires privacy_policies of a server that
 // connects to a service processing user data, as this one does to
 // Google, and neither the schema nor `mcpb validate` enforces it.
 // validateManifest holds each platform to the file staged for it.
+// https://github.com/anthropics/mcpb/blob/v2.1.2/MANIFEST.md
 func identityProblems(m manifest, files []staged) []string {
 	var problems []string
 	if m.Name != server.Name {
@@ -846,7 +850,7 @@ func identityProblems(m manifest, files []staged) []string {
 		problems = append(problems, fmt.Sprintf("server.type is %q; the bundle carries a binary", m.Server.Type))
 	}
 	if m.Compatibility.ClaudeDesktop != claudeDesktopFloor {
-		problems = append(problems, fmt.Sprintf("compatibility.claude_desktop is %q; the family's bundles claim %q",
+		problems = append(problems, fmt.Sprintf("compatibility.claude_desktop is %q, want %q",
 			m.Compatibility.ClaudeDesktop, claudeDesktopFloor))
 	}
 	var entryPoints []string
@@ -983,8 +987,8 @@ func bundleVarsFrom(vars []config.Var, leftOut map[string]string) (asked []confi
 }
 
 // bundleKey is the user_config key a setting is asked under: its name
-// without the prefix, lowercased, which gives the family's bundles the
-// same keys.
+// without the prefix, lowercased, so every key is derived from the
+// variable it sets rather than chosen.
 func bundleKey(name string) string {
 	return strings.ToLower(strings.TrimPrefix(name, config.EnvPrefix))
 }
@@ -1053,20 +1057,25 @@ var fieldRules = map[string]fieldRule{
 // variable, and nothing else is. A switch is asked as a boolean, so
 // Claude Desktop shows it as one. An optional key has a default,
 // because the reference host passes ${user_config.x} to the server as
-// written when it has none and the person leaves the field blank (§18).
+// written when it has none and the person leaves the field blank.
 // The environment the defaults give the server configures it as no
 // environment does: a bundle install may turn on nothing an
 // unconfigured server leaves off, because in Claude Desktop the only
 // other guard is its approval of each tool, which a person can set to
-// always allow (§18). The sets of switches the server refuses together
+// "Always allow". The sets of switches the server refuses together
 // are the ones bundleRefused declares. mcp_config.args is there and
 // empty, and a platform override carries neither env nor args, an empty
 // one included: the reference host replaces the base's with an
 // override's rather than merging, and an argument such as
 // -enable-destructive=true would configure the server past every check
-// on env (§18). The profile field says what the server accepts, and a
+// on env. The profile field says what the server accepts, and a
 // bundle that stops asking for it is refused, so that check cannot go
 // quiet. leftOut is bundleLeftOut, or a test's.
+//
+// The reference host is anthropics/mcpb v2.1.2's config.ts. Claude
+// Desktop itself is not probed.
+// https://github.com/anthropics/mcpb/blob/v2.1.2/src/shared/config.ts
+// https://claude.com/docs/connectors/getting-started
 func settingProblems(m manifest, leftOut map[string]string) []string {
 	vars := config.Vars()
 	asked, problems := bundleVarsFrom(vars, leftOut)
@@ -1134,8 +1143,12 @@ func settingProblems(m manifest, leftOut map[string]string) []string {
 
 // passByEnvProblems holds that every setting passes by mcp_config.env:
 // mcp_config.args is there and empty, and a platform override carries
-// neither env nor args, an empty one included, since the reference host
-// replaces the base's with an override's rather than merging (§18).
+// neither env nor args, an empty one included. The reference host
+// replaces the base's with an override's rather than merging, as
+// `result.env = platformConfig.env || result.env` and the same for args,
+// and an empty list or object is truthy there. Claude Desktop is not
+// probed.
+// https://github.com/anthropics/mcpb/blob/v2.1.2/src/shared/config.ts
 func passByEnvProblems(m manifest) []string {
 	var problems []string
 	const keepArgs = "keep it as [], since no Claude Desktop launch has shown the key optional"

@@ -16,14 +16,13 @@ import (
 //
 // What is under test is not that the calls succeed. Every one of these
 // checks reads something back — the chart's own listing, the pivot's
-// rectangle — because phase 2, 3 and 4 each found a defect that a green
-// count hid and a transcript showed.
+// rectangle — because a green count can hide a defect that only a
+// transcript shows.
 const chartSheet = "Livesheet charts"
 
 // The runs are split where an id is: a step's arguments are built when
 // the slice is, so the step that learns a chart's id and the step that
-// uses it cannot be in the same slice. Phase 1 shipped a `sheetId: 0` on
-// every create by getting this exact thing wrong one level down.
+// uses it cannot be in the same slice.
 func (d *driver) chartAll() {
 	sec("manage_chart")
 	d.run(d.chartSetupSteps()...)
@@ -104,7 +103,8 @@ func (d *driver) chartAddSteps() []step {
 		},
 		{
 			name: "a chart with neither domain nor series is refused here",
-			why:  "Google answers that shape with HTTP 500, which §6.5 classes retryable; the defense is never sending it",
+			why: "Google answers that shape with HTTP 500, which leaves a caller unsure whether the chart " +
+				"landed; the defense is never sending it",
 			tool: "manage_chart",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "add",
@@ -425,8 +425,8 @@ func (d *driver) pivotSteps() []step {
 		{
 			name: "a write into the output is refused, and the refusal names the pivot",
 			why: "the output carries an effectiveValue and no userEnteredValue, and if the guard could not see " +
-				"that, a write would land on a pivot table and stop it drawing. Naming which pivot is §17a.27: " +
-				"the cells carry no pivotTable field, so this is the second read paying off",
+				"that, a write would land on a pivot table and stop it drawing. Naming which pivot takes a " +
+				"second read, because the output cells carry no pivotTable field",
 			tool: "write_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "I3",
@@ -511,7 +511,7 @@ func (d *driver) pivotSteps() []step {
 		{
 			name: "a new source too narrow for the columns the update keeps is refused here",
 			why: "a kept group or value keeps its offset into the source, and Google accepts one past the new " +
-				"source's edge with a 200 and a pivot that reads nothing there (spike M)",
+				"source's edge with a 200 and a pivot that reads nothing there",
 			tool: "manage_pivot_table",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "update",
@@ -548,9 +548,8 @@ func (d *driver) pivotSteps() []step {
 		},
 		{
 			name: "a merge over the output is refused, with the reason Sheets gives",
-			why: "Sheets refuses a merge over any cell of a pivot table (400, spike Q), so this guard prevents " +
-				"nothing and fixes a sentence: it used to promise a discard that cannot happen and offer " +
-				"overwrite to get past itself",
+			why: "Sheets refuses a merge over any cell of a pivot table with a 400, so the refusal gives " +
+				"that reason rather than a discard that cannot happen, and offers no overwrite to get past it",
 			tool: "format_cells",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "I3:J4", "merge": "all",
@@ -588,7 +587,7 @@ func (d *driver) pivotSteps() []step {
 		{
 			name: "the acknowledged write collapses the whole pivot, exactly as the refusal said",
 			why: "the refusal claims a write here stops the whole pivot drawing and that clearing brings it " +
-				"back. That is spike M's finding and this is the step that keeps the sentence true",
+				"back, and this is the step that keeps the sentence true",
 			tool: "write_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "I3",
@@ -688,7 +687,7 @@ const (
 )
 
 // pivotRuleSteps drive grouping rules, filters and calculated values,
-// and settle what §18 records as unverified about them: the labels a
+// and settle what the reference leaves unsaid about them: the labels a
 // date and a histogram rule draw, that a condition alone shows what
 // meets it once visibleByDefault is set, that a list and a condition on
 // one column must both hold, and that a cleared pivot keeps no filter.
@@ -767,20 +766,19 @@ func (d *driver) pivotRuleSteps() []step {
 			},
 		},
 		output("the month buckets, North left out",
-			"East and West take in 450, Margin 160; spike U saw Google label a month bucket 2026-Jan (§18)",
+			"East and West take in 450, Margin 160; Google labels a month bucket 2026-Jan",
 			"Margin", "Ratio", "450", "160", "2026-Jan", "Grand Total"),
 		listed("list reads the month rule back", "rows", "B by year_month"),
 		listed("list reads the filter back", "filters", "A show East, West"),
 		listed("list reads the calculated values back", "values",
 			"D sum", "=Revenue-Cost sum as Margin", "=SUM(Revenue)/SUM(Cost) as Ratio"),
 		update("group by age, ten years at a time",
-			"a histogram rule; spike U saw Google label a bucket 20 - 29, and the last one up to the end (§18)",
+			"a histogram rule; Google labels a bucket 20 - 29, and the last one up to the end",
 			map[string]any{"group_rows": []any{"Age every 10 from 20 to 70"}}),
 		output("the age buckets", "Google's bucket labels, and the total unchanged",
 			"20 - 29", "50 - 59", "450", "Grand Total"),
 		update("a condition alone",
-			"with visibleByDefault set, a condition shows every value that meets it; spike U saw it show "+
-				"nothing without (§18)",
+			"with visibleByDefault set, a condition shows every value that meets it; without, it shows nothing",
 			map[string]any{"filters": []any{"Revenue number_greater 60"}}),
 		output("the rows over 60, North back in",
 			"100 + 200 + 300 + 80 is 680, and North's 68 lands in the last bucket, which runs to the end",
@@ -791,14 +789,14 @@ func (d *driver) pivotRuleSteps() []step {
 		output("East alone", "100 + 50 + 20 is 170", "170"),
 		listed("list reads both back", "filters", "A show East, West", "A text_contains Ea"),
 		update("a relative date",
-			"a date filter's relative date is sent as relativeDate, which spike U saw a pivot filter take "+
-				"(§18); sent as typed text \"tomorrow\" would match no date",
+			"a date filter's relative date is sent as relativeDate, which a pivot filter takes; sent as "+
+				"typed text \"tomorrow\" would match no date",
 			map[string]any{"filters": []any{"Day date_before tomorrow"}}),
 		output("every row is before tomorrow", "all six rows take in 750", "750"),
 		listed("list reads the relative date back", "filters", "B date_before tomorrow"),
 		{
 			name: "a second rule on one column is refused here",
-			why:  "the reference allows one grouping rule per source column and Google does not enforce it (§18)",
+			why:  "the reference allows one grouping rule per source column and Google does not enforce it",
 			tool: "manage_pivot_table",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "action": "update", "anchor": pivotAnchor,
@@ -818,7 +816,7 @@ func (d *driver) pivotRuleSteps() []step {
 		},
 		{
 			name: "clear the filters",
-			why: "Google writes filterSpecs and the older criteria each from the other (§18), so clear_filters " +
+			why: "Google writes filterSpecs and the older criteria each from the other, so clear_filters " +
 				"removes both, or the criteria a response carries would bring the filters back",
 			tool: "manage_pivot_table",
 			args: map[string]any{
@@ -852,9 +850,8 @@ func (d *driver) pivotRuleSteps() []step {
 	}
 }
 
-// chartLossSteps are last, and they are the phase's finding: deleting a
-// charted column leaves the chart in place with nothing to draw, and the
-// API's reply says nothing at all.
+// chartLossSteps are last: deleting a charted column leaves the chart in
+// place with nothing to draw, and the API's reply says nothing at all.
 func (d *driver) chartLossSteps() []step {
 	return []step{
 		{

@@ -474,12 +474,9 @@ func (d *driver) searchWithIndexingLag() {
 	})
 	// Full text is a second index and a slower one, so it gets the same
 	// polling. The search term is a bare word on purpose: Drive
-	// tokenizes, and the first version of this step asked for
-	// "Quorbin-01" — a term that can never match however long the index
-	// is given. It reported "cannot tell lag from broken" for two runs,
-	// which is the failure mode of an undetermined result: it looked
-	// like patience when it was a step asserting something the world
-	// does not permit.
+	// tokenizes, so a term like "Quorbin-01" can never match however long
+	// the index is given, and a poll for it reads as lag when the step
+	// asserts something the world does not permit.
 	d.poll(step{
 		name: "the scratch spreadsheet is findable by its contents",
 		why:  "text searches Drive's full-text index, which reaches cell values and lags behind the title index",

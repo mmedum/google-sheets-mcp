@@ -29,7 +29,10 @@ import (
 // the process exits non-zero on an ordinary disconnect, which every host
 // logs as a crash. A smoke test that writes, sleeps and then closes
 // never sees it — with nothing in flight the exit really is 0 — so the
-// abrupt close is the whole point of the second run.
+// abrupt close is the whole point of the second run. It cannot also
+// check the replies: at stdin's EOF go-sdk v1.8.0 cancels every request
+// still in flight and refuses every write after, so they are lost.
+// https://github.com/modelcontextprotocol/go-sdk/blob/v1.8.0/internal/jsonrpc2/conn.go
 func smoke(bin string) error {
 	if err := smokeSession(bin); err != nil {
 		return err
@@ -174,8 +177,8 @@ func checkSmokeReplies(seen map[int]smokeFrame) error {
 	}
 	// The resource templates, which no tools/list would show: a client
 	// that attaches a spreadsheet rather than calling a tool sees only
-	// these, and until phase 3 the only thing proving they were
-	// published was an in-memory client in a unit test.
+	// these, and an in-memory client in a unit test does not prove the
+	// binary publishes them.
 	tmpls, ok := seen[4]
 	if !ok || !strings.Contains(string(tmpls.Result), "gsheets://") {
 		return fmt.Errorf("resources/templates/list did not publish the gsheets:// templates: %.200s", tmpls.Result)

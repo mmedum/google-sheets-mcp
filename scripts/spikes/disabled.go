@@ -1,7 +1,7 @@
 //go:build !live
 
-// Command spikes runs the live probes §15 of docs/architecture.md lists,
-// against a scratch spreadsheet it creates and fills itself.
+// Command spikes asks Google, live, the questions its API reference
+// leaves open, against a scratch spreadsheet it creates and fills itself.
 package main
 
 import "fmt"

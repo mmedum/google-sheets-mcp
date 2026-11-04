@@ -1,201 +1,158 @@
-# Security
+# Security model
 
-## What this server talks to
+The threat model and the invariants the code holds.
+[`SECURITY.md`](../SECURITY.md) says how to report a vulnerability.
 
-Only Google, over HTTPS: `sheets.googleapis.com`, `www.googleapis.com`,
-`oauth2.googleapis.com` and `accounts.google.com`. The allowlist is
-checked **with the port** before any credential is attached, so a
-redirect or a misconfigured base URL cannot send an access token
-somewhere else. There is no telemetry and no update check.
+It applies to one binary, running as a subprocess of your MCP client, on
+your machine, with your own OAuth client and your own token, against
+Google's APIs only (D-01, D-05). It has no listener except while `login`
+waits, no telemetry and no update check.
 
-## Scopes
+## Trust boundaries
 
-Full access asks for `.../auth/spreadsheets` and
-`.../auth/drive.readonly`. Read-only mode asks for
-`.../auth/spreadsheets.readonly` and `.../auth/drive.readonly`.
+| Boundary | Crosses | Assumption |
+|---|---|---|
+| MCP client ↔ this server | An OS pipe | Both run as the same OS user, unauthenticated. |
+| This server ↔ Google | TLS | Requests go only to `sheets.googleapis.com`, `www.googleapis.com`, `oauth2.googleapis.com` and `accounts.google.com`, checked with the port before a credential is attached (D-05). |
+| This server ↔ disk | The file system | The config directory: the profile's state and, without a keyring, the token file (D-52). No tool reads or writes a file (D-40). |
+| Browser ↔ the login listener | The loopback interface, on a random port | Alive only while `login` waits. PKCE and `state` are checked on the callback (D-51). |
+| Spreadsheet authors ↔ the model | Every cell, formula, note and comment a tool returns | Written by collaborators, sometimes to steer an assistant (D-23). |
 
-`drive.file` is deliberately not requested: it reaches only files the app
-created or the person picked through the Drive Picker, which a stdio
-server cannot show. Full `drive` is not requested either, because this
-server does not manage files.
+## What is worth stealing
 
-Drive is used for exactly one thing: turning a spreadsheet title into an
-id. A missing scope becomes `[forbidden]` naming the scope and telling
-you to run `login` again.
+- **The refresh token.** `spreadsheets` reads and writes every
+  spreadsheet the account can open, and `drive.readonly` reads every
+  file in its Drive (D-49). It lives in the OS keyring where there is
+  one, and in an owner-only file where there is not (D-52).
+- **Spreadsheet content.** It passes through tool results to your client
+  and nowhere else.
+- **The spreadsheets themselves.** Sheets has no undo through the API,
+  and the API cannot restore version history.
 
-`bigquery.readonly` is requested **only** with
-`GSHEETS_ENABLE_DATA_SOURCES=true`, which is also the setting that
-registers `manage_data_source`. Google refuses `addDataSource` without
-it, so Connected Sheets cannot be reached at all otherwise — and asking
-for it by default would put BigQuery on the consent screen of everyone
-running a spreadsheet server, most of whom have no BigQuery project. A
-login made with the setting off asks for exactly the two scopes above,
-and a test holds that: turning data sources on adds one scope and
-changes nothing else. `doctor` prints the scopes the stored token
-actually carries, which is what answers "I turned it on and it still
-fails" — an existing token does not gain a scope, so that case needs a
-fresh `login`.
+## Adversaries
 
-## Where the token lives
+**A collaborator writing to steer your assistant.** The server cannot
+stop a model being persuaded, so it limits what persuasion reaches. A
+formula that makes Google fetch a URL can carry the spreadsheet's data
+in its query string, so no write creates one unless the operator allows
+it (D-28). Deletes are absent unless enabled (D-35), and nothing the
+model sends widens the server's reach (D-40). A read shows formulas
+rather than resolving them, so an injected one is visible (D-23).
 
-The refresh token goes to the OS keyring — Secret Service on Linux,
-Keychain on macOS, Credential Manager on Windows. If there is no keyring,
-it goes to a `0600` file under the profile directory and the server warns
-about that on **every use**, not once at login. `GSHEETS_REFRESH_TOKEN`
-overrides both, for CI.
+**A malicious MCP client, or a persuaded model driving an honest one.**
+It can call any registered tool under your credentials. A client may
+ignore annotations, so registration is the control. `confirm: true` is
+a witness the model writes, never your approval (D-35, D-37). Past that,
+Google's permissions and the guards below are the bound.
 
-`logout` revokes the token at Google and deletes the local copy. It does
-not touch the environment override: deleting a token this process does
-not own would be a surprise.
+**A co-resident process.** It cannot finish a login without the PKCE
+verifier, and the token file is readable by your account alone.
 
-## What gets logged
+## Invariants the code holds
 
-Logs go to stderr through `slog`. Stdout carries JSON-RPC frames and
-nothing else, held by a smoke test rather than by discipline.
+A test or a gate holds each of these. A way to break one is a
+vulnerability.
 
-A log line carries the method, the tool name, the outcome, the duration
-and a **truncated** spreadsheet id. It carries no cell values, no
-formulas, no sheet or spreadsheet titles, no ranges, no addresses and no
-search terms.
+- **Stdout carries only JSON-RPC.** forbidigo, the smoke test and
+  `TestVersionFlagPrintsToStdoutAndNothingElse` hold it (D-06).
+- **Credentials go only to Google's hosts.** `TestGoogleOnlyAllowlist`
+  and `TestCredentialsGoNowhereElse` hold it (D-05).
+- **Logs never carry the payload**, and a transport error loses its URL.
+  `TestLogsCarryNothingFromTheSpreadsheet` and
+  `TestTransportErrorsCarryNoURL` hold it (D-07).
+- **What is meant to be pasted is masked.** `doctor`, `status` and a
+  debug log mask the account and the client id; a tool result is not
+  masked. `TestAccountIsStoredWholeAndPrintedMasked` holds it (D-08).
+- **A write never destroys what it did not see.** Non-empty cells need
+  `overwrite`, formulas `overwrite_formulas` too, and an overwrite
+  carries the checkpoint of what it replaces.
+  `TestWriteRefusesWhatItWouldDestroy` and
+  `TestOverwriteNeedsTheCheckpointOfWhatItReplaces` hold it (D-24, D-25).
+- **No write creates a formula that reaches outside** unless
+  `GSHEETS_ALLOW_EXTERNAL_FORMULAS` is set, a replacement or a copy
+  included. `TestExternalFormulasAreOffUnlessTheOperatorSaysSo` and
+  `TestAFormulaRewriteCannotReachOutside` hold it (D-28).
+- **The deletes are absent without `GSHEETS_ENABLE_DESTRUCTIVE`, need
+  `confirm`, name what they take, and are tools of their own.**
+  `TestDeleteIsOffUnlessDestructiveIsOn`,
+  `TestDeleteSheetCountsBeforeItAsks` and `TestDeleteIsNotAManageAction`
+  hold it (D-35, D-36, D-42).
+- **No tool widens the server's reach**: its settings, the credentials,
+  the profile, a file or the environment.
+  `TestNoToolCanWriteTheServersSettings` holds it (D-40).
+- **Read-only mode asks for read-only scopes and registers only the
+  reads**, and `bigquery.readonly` is asked for only with
+  `GSHEETS_ENABLE_DATA_SOURCES`. `TestReadOnlyModeKeepsTheReads` and
+  `TestScopesAreOptIn` hold it (D-50, D-43).
+- **A dry run sends nothing.** Each write returns before sending, held
+  by a "sends nothing" test per tool, and
+  `TestDryRunIsFoundByReflectionNotByMemory` holds that every write
+  takes the flag (D-30).
+- **A write that may have landed is never repeated.**
+  `TestUnrepeatableWritesAreNotRepeated` holds it (D-45).
+- **A login checks `state` and uses PKCE.**
+  `TestLoginRefusesAMismatchedState` holds it (D-51).
+- **The token file is owner-only and warns on every use**, and `logout`
+  revokes at Google and never touches the environment's token.
+  `TestKeyringThenFile` and `TestEnvironmentWinsAndIsNotDeletable` hold
+  it (D-52).
+- **The annotations are exact, and the server asks the person
+  nothing.** `TestTheHintsAreExact` and `TestOnlyDeleteDataSourcePrompts`
+  hold it (D-37, D-38, D-39).
+- **Nothing in the repository identifies a real spreadsheet, account or
+  person.** `make leaks` holds it (D-09). Fixtures are generated (D-10),
+  and the live driver reads only what it wrote (D-11).
 
-Two routes make that harder than it sounds, and both are closed
-deliberately:
+## Not a vulnerability
 
-- **A search term travels inside a request URL.** So requests are logged
-  by operation name rather than by URL, and a transport error's own text
-  — which always names the URL it was calling — is dropped and replaced
-  with the kind of failure it was.
-- **This server's own error messages quote the spreadsheet back.** A
-  `[not_found]` that lists the sheet titles which do exist is the right
-  answer to give a model and the wrong thing to write into a log. A tool
-  error is returned, never logged as text; the log line carries whether
-  the call refused, not what it said.
+Do not report these as vulnerabilities. Open an ordinary issue if one
+surprises you.
 
-A test drives every registered tool at debug level against a fixture
-whose every value is a word that exists nowhere else, and fails if any of
-it reaches the log — refusals included, because a refusal is where a
-message is most tempted to quote what it refused. The forbidden list is
-read out of the fixture rather than typed, so a value added to the
-fixture is covered from the moment it is added, and a second test fails
-if a registered tool is not in the table the first one drives.
+- **The client did not prompt.** Annotations and the
+  `requiresUserInteraction` mark are hints. A delete registered while
+  `GSHEETS_ENABLE_DESTRUCTIVE` is off is a vulnerability.
+- **What runs as you can act as you.** Any process running as you can
+  read the token and use it, with or without this server.
+- **The scopes reach every spreadsheet and file the account can.**
+  Google offers nothing narrower that a stdio server can use:
+  `drive.file` reaches only files the app created or the person picked
+  in the Drive Picker.
+- **A tool result is not masked.** It is your data, returned to you.
+- **A formula already in a spreadsheet fetches a URL.** The setting
+  governs what this server writes; Google evaluates what is there.
+- **A model following instructions in content.** That is the client's
+  concern. Content that makes the server itself break an invariant is a
+  vulnerability.
+- **Someone else's code.** A flaw in Google's APIs goes to Google, and
+  one in a dependency to that project. We will help route it.
 
-The truncated id is the one identifier that may appear. It is the
-correlation key an operator needs to trace a retry back to the call that
-caused it, and six characters of a 44-character base64url id cannot be
-looked up or pasted into a URL.
+## Dependency vulnerabilities
 
-This is what makes it safe to ask for a debug log in a bug report.
+`govulncheck` runs in `make check` and in CI on every pull request and
+push to `main`. It fails when this server's code can reach a vulnerable
+symbol.
 
-The same rule applies to `doctor` and `status`, and it has to be stated
-separately, because a guarantee about logs is not a guarantee about the
-product. They mask the account address and the OAuth client id; and no
-check reports a sheet title, a range that carries one, or a cell's
-contents — `doctor -spreadsheet` says how many sheets there are and that
-A1 of the first one could be read, and discards the rest. A title has no
-shape a redactor could match, which is why that path is removed rather
-than filtered.
+A CVE in a dependency is a vulnerability here only when `govulncheck`
+reports it reachable. It is then fixed in a release whose CHANGELOG
+entry names the CVE or GHSA. Otherwise the dependency is updated in the
+normal course, and a report about it is not a vulnerability.
 
-## What a tool result carries
+## What you are responsible for
 
-A tool result is not masked, and that is deliberate. `read_range`
-returns your cells; `search_spreadsheets` returns titles, ids and the
-owner's address. You asked for them, the server holds your own OAuth
-token, and you can see all of it in the Sheets or Drive interface — so
-masking would degrade an answer without removing anybody's access. The
-owner in particular is how an `[ambiguous]` refusal lets you tell two
-spreadsheets of the same name apart.
-
-What the server does instead is **not fetch what nothing needs**. The
-Drive field masks ask for the title, id, MIME type, times, owner and
-link, and no longer for `parents`: a raw folder id is unusable — no tool
-here takes a folder, and turning one into a name needs a Drive call this
-server does not make — so it was an identifier fetched and printed
-because it happened to be in the response. A field mask is where
-minimization is cheap.
-
-The risk that is real is the **paste path**: a result copied into a
-public issue. That is why the issue form says to describe a tool result
-rather than paste it, and why the three artifacts that *are* meant to be
-pasted — a debug log, `doctor` and `status` — are the ones that mask.
-
-## What the server refuses to do
-
-- **Destructive tools are not registered** unless
-  `GSHEETS_ENABLE_DESTRUCTIVE=true`, and each still needs `confirm: true`
-  on the call. Tool annotations are hints the specification says a client
-  may treat as untrusted, and a host in an auto-approve permission mode
-  runs an annotated tool without prompting anybody — so every gate is
-  server-side. Client-side approval is not one of the layers here.
-- **The server asks the person nothing.** Your client approves each
-  call, by its own rules: the README gives Claude Code `permissions.ask`
-  rules for the writes that delete, start a billed query or can email
-  someone. `destructiveHint` is true on every write but the three that only
-  add, and `readOnlyHint` only on the reads, so a client that prompts by
-  either prompts where it should.
-  `delete_data_source` alone carries Claude Code's
-  `requiresUserInteraction` mark: it takes a sheet and unlinks what was
-  built on the source.
-- **The model never widens its own reach.** No tool changes this
-  server's settings, turns on a tool or lifts a refusal; only whoever
-  starts the server does, outside the conversation. A test walks every
-  package the tools reach and holds that none can write the profile,
-  the credentials, a file or the environment.
-- **A write never destroys what it cannot see.** Anything
-  non-empty needs `overwrite`; a formula needs `overwrite_formulas` as
-  well; a protected range or a partially covered merge is refused before
-  the request is built, with the obstacle named in A1. An overwrite
-  carries `expect_checkpoint`, the checkpoint of the cells it replaces,
-  so a change after they were read is a conflict rather than lost. Sheets has no
-  undo and the API cannot restore version history, so this is the only
-  guard there is. A formula that evaluated to an error is still a
-  formula and still needs the second acknowledgment: a live run found
-  the version of this check that tested the cell's *kind*, which
-  `#REF!` overwrites.
-- **A formula that reaches outside the spreadsheet needs saying so.**
-  `IMPORTXML`, `IMPORTDATA`, `IMPORTHTML`, `IMPORTFEED`, `IMAGE` and
-  `HYPERLINK` take an arbitrary URL, which Google fetches from its own
-  servers with whatever the sheet puts in the query string: writing one
-  is an outbound request with the spreadsheet's contents attached, made
-  by a machine the person cannot see. `IMPORTRANGE` is the other
-  direction — it takes a spreadsheet URL and cannot exfiltrate, but it
-  pulls any spreadsheet the signed-in account can read into this one.
-  Every write refuses both, for those two different reasons, unless
-  whoever starts the server sets `GSHEETS_ALLOW_EXTERNAL_FORMULAS=true`.
-  It used to be an argument, which a model persuaded to write one would
-  have passed too. A `find_replace` inside formulas is run over each
-  formula first, since a replacement can complete such a name from a
-  formula already there, and a copy or a fill reads the formulas it
-  would copy. Every formula a write creates is named in the result.
-- **Content is data, never instructions.** A read returns what the cells
-  hold and the server never acts on it. Formulas are shown rather than
-  resolved, so an injected one is visible instead of hidden behind its
-  value.
-
-## What is in this repository
-
-Nothing deployer-specific: no spreadsheet ids or URLs, no account
-addresses, no Cloud project ids, no OAuth client ids or secrets, no cell
-values, formulas, notes, titles or named ranges from a real spreadsheet.
-
-Two gates, because they catch different things. **gitleaks** covers
-credentials, in the pre-commit hook and in CI. **`go run ./scripts/gates
-leaks`** covers identifiers and data, which are not secrets and pass a
-credential scanner untouched — a spreadsheet id in a fixture leaks what
-somebody works on rather than a password. Every rule in it is an
-allow-list: a deny-list naming the domain or the organization to watch
-for would itself be the disclosure.
-
-What a pattern cannot do is the other half. A cell value, a sheet title,
-a named range and a note are ordinary words, and no regex separates an
-invented column heading from somebody's customer list. So those are made
-structurally impossible instead: **fixtures are generated, never
-recorded** — there is no path by which a real value reaches `testdata/` —
-and **the live driver reads only a spreadsheet it created and filled
-itself**, so a transcript carries nobody's data.
-
-## Reporting a vulnerability
-
-Open a [private security
-advisory](https://github.com/mmedum/google-sheets-mcp/security/advisories/new)
-rather than an issue. Please do not include anything from a real
-spreadsheet.
+- **Your own OAuth client.** Nothing is shipped in the binary, so
+  revoking yours affects no one else.
+  [`troubleshooting.md`](troubleshooting.md#tasks) says how to rotate
+  the token, revoke access and handle a suspected exposure.
+- **The switches you turn on.** `GSHEETS_ENABLE_DESTRUCTIVE` registers
+  tools that cannot be undone, `GSHEETS_ENABLE_DATA_SOURCES` starts
+  queries billed to a Cloud project, and
+  `GSHEETS_ALLOW_EXTERNAL_FORMULAS` lets a write make Google fetch a
+  URL. Leave them off for a client that runs with nobody watching, and
+  use read-only mode, logged in again, where reading is enough.
+- **Your client's approvals.** `manage_cell_comment` can make Google
+  email an assignee. Give it and the deletes an `ask` rule, as the
+  README shows.
+- **Where the token lives.** Keep a keyring available, and keep
+  `GSHEETS_REFRESH_TOKEN` out of shared shells and logs.
+- **What you paste.** `doctor`, `status` and a debug log are built to be
+  safe. A token, `token.json`, a client JSON and a tool result are not.

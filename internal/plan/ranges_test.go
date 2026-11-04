@@ -107,7 +107,7 @@ func TestBandingBuildsTheShadesFromOneColor(t *testing.T) {
 	}
 }
 
-// Exactly one member of the union, for every builder phase 2 adds. A
+// Exactly one member of the union, for every range and formatting builder. A
 // request with two would be a request nobody wrote and Google would
 // apply both.
 func TestPhase2BuildersSetOneUnionMember(t *testing.T) {
@@ -251,7 +251,7 @@ func TestParseGradientBuildsThePoints(t *testing.T) {
 		{"two points with values", []string{"NUMBER  0  #fff", "percent =MAX(B2:B9, 1) #000"},
 			`{"minpoint":{"colorStyle":{"rgbColor":{"red":1,"green":1,"blue":1,"alpha":1}},"type":"NUMBER","value":"0"},` +
 				`"maxpoint":{"colorStyle":{"rgbColor":{"alpha":1}},"type":"PERCENT","value":"=MAX(B2:B9, 1)"}}`},
-		// Google takes min and max as a midpoint (spike S Q2), and a scale
+		// Google takes min and max as a midpoint, and a scale
 		// read back from a sheet may carry either there.
 		{"min as the midpoint", []string{"number 1 #fff", "min #000", "max #fff"},
 			`{"minpoint":{"colorStyle":{"rgbColor":{"red":1,"green":1,"blue":1,"alpha":1}},"type":"NUMBER","value":"1"},` +

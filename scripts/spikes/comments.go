@@ -2,8 +2,8 @@
 
 package main
 
-// Spike R: cell-anchored comments, which the Sheets API published in
-// 2026-09 as five batchUpdate requests and a commentsViewMode on get.
+// Cell-anchored comments, which the Sheets API carries as batchUpdate
+// requests and a commentsViewMode on get.
 // The reference says what each request takes; it does not say what a
 // read returns under a field mask, where an anchor goes when rows move,
 // how an assignee reads back, what a bad id answers, or whether a failed
@@ -171,8 +171,7 @@ func selfAddress(ctx context.Context) string {
 	return out.User.EmailAddress
 }
 
-func spikeR(ctx context.Context) {
-	sec("Spike R: cell-anchored comments")
+func askCellComments(ctx context.Context) {
 	const sheet = "SpikeComments"
 	sheetID, err := addSheet(ctx, sheet)
 	if err != nil {

@@ -61,7 +61,7 @@ func registerDataSource(s *mcp.Server, d Deps) {
 	// connect_data_source is its own tool rather than an action of
 	// manage_data_source: a client remembers its approval per tool, never
 	// per argument, so an approval given for a refresh would otherwise
-	// cover a new query, billed to a project the call names (§9a).
+	// cover a new query, billed to a project the call names.
 	add(s, d, Def[ConnectDataSourceInput, *service.SourceResult]{
 		Name: "connect_data_source",
 		Description: "Connect a BigQuery query or table to a spreadsheet through Connected Sheets. Google makes a " +
@@ -81,22 +81,25 @@ func registerDataSource(s *mcp.Server, d Deps) {
 	})
 }
 
-// delete_data_source is its own tool for the reason edit_dimensions'
-// delete became delete_dimensions (§17a.10, §7.4): an action that
-// removes what nobody can read back does not belong inside a tool that
-// is not behind the destructive flag. A client remembers an approval per
-// tool, and a host in an auto-approve mode asks nobody.
+// delete_data_source is its own tool, as delete_dimensions is: an action
+// that removes what nobody can read back does not belong inside a tool
+// that is not behind the destructive flag. A client remembers an
+// approval per tool, and a host in an auto-approve mode asks nobody.
 //
 // It is Destructive rather than Connected, and needs no BigQuery scope:
-// spike N sent deleteDataSource under this server's two scopes and got a
-// 400 about the id, not a 403 about the scope. So it is reachable —
-// and therefore gateable — wherever a data source exists, including one
-// somebody else connected.
+// under this server's two scopes deleteDataSource answers 400 about the
+// id, where addDataSource answers 403 asking for bigquery.readonly. So
+// the delete reaches, and is gated, wherever a data source exists,
+// including one somebody else connected. Checked by the live step
+// "whether this server can reach a data source".
 //
-// It carries Claude Code's mark (§9a): it takes the source's sheet, and
-// Google unlinks every table, pivot table, formula and chart built on
-// the source, so what other objects depend on goes with it, and Sheets
-// cannot undo it.
+// It carries Claude Code's mark because other objects depend on what it
+// removes. The discovery document's DeleteDataSourceRequest "also
+// deletes the associated data source sheet, and unlinks all associated
+// data source objects": tables, pivot tables, formulas and charts built
+// on the source. Sheets cannot undo it. No live step reaches the
+// unlinking, since the driver cannot connect a source.
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#DeleteDataSourceRequest
 func registerDeleteDataSource(s *mcp.Server, d Deps) {
 	add(s, d, Def[DeleteDataSourceInput, *service.SourceResult]{
 		Name: "delete_data_source",

@@ -6,7 +6,7 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 )
 
-// The phase 4 builders: charts, slicers and the embedded-object requests
+// The chart builders: charts, slicers and the embedded-object requests
 // that serve both. A pivot table has no request of its own and is built
 // in pivot.go, through updateCells.
 

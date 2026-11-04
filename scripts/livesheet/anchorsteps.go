@@ -226,7 +226,7 @@ func (d *driver) anchorDurabilitySteps() []step {
 		},
 		{
 			name: "sort the block by the first column",
-			why:  "a sort rewrites which row holds what, and spike K found the anchor travels with the values",
+			why:  "a sort rewrites which row holds what, and Google moves the anchor with the values",
 			tool: "transform_range",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": anchorSheet, "range": "A11:B16",
@@ -287,7 +287,7 @@ func (d *driver) anchorRemovalSteps() []step {
 	return []step{
 		{
 			name: "deleting rows names the anchors it would take",
-			why:  "spike K: the row's anchor goes with it and Google's reply says nothing at all",
+			why:  "Google deletes a row's anchor with the row, and its reply says nothing at all",
 			tool: "delete_dimensions",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": anchorSheet,
@@ -322,7 +322,7 @@ func (d *driver) anchorRemovalSteps() []step {
 		},
 		{
 			name: "a delete through an anchor is refused, naming the band",
-			why:  "the call names the rows it deletes, so the client's prompt shows them rather than a label (§9a)",
+			why:  "the call names the rows it deletes, so the client's prompt shows them rather than a label",
 			tool: "delete_dimensions",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": anchorSheet,

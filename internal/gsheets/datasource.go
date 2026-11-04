@@ -1,8 +1,8 @@
 package gsheets
 
 // Connected Sheets: an external data source, its refresh and its
-// removal. Added in phase 4, behind a setting (§17.6a) because
-// addDataSource needs a scope this server does not ask for by default.
+// removal. Behind a setting, because addDataSource needs a scope this
+// server does not ask for by default.
 //
 // Only the BigQuery arm is modeled. Looker is the other, and it needs a
 // Looker instance rather than a Cloud project, which is a second thing

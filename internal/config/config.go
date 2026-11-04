@@ -58,7 +58,10 @@ const (
 )
 
 // Read budgets. The defaults keep a read well inside a client's result
-// limit; the maxima keep it inside the process.
+// limit: Claude Code warns above 10 000 tokens and cuts a result at
+// 25 000 by default. The maxima keep a read inside the process. Checked
+// by the live step "a budgeted read continues where it stopped".
+// https://code.claude.com/docs/en/mcp
 const (
 	DefaultMaxCells = 5000
 	MaxMaxCells     = 50000
@@ -75,16 +78,16 @@ type Config struct {
 	EnableDestructive bool
 	// EnableDataSources registers manage_data_source and adds the
 	// bigquery.readonly scope to what login asks for. Off by default:
-	// Connected Sheets cannot be reached without that scope (§17.6a),
-	// and a Sheets server whose login screen asks for BigQuery is asking
-	// most of its users to grant access to a product they do not have.
+	// Connected Sheets cannot be reached without that scope, and a Sheets
+	// server whose login screen asks for BigQuery is asking most of its
+	// users to grant access to a product they do not have.
 	EnableDataSources bool
 	// AllowExternalFormulas lets a write create a formula that reaches
 	// outside the spreadsheet: IMPORTXML, IMPORTDATA, IMPORTHTML,
 	// IMPORTFEED, IMAGE and HYPERLINK fetch a URL from Google's servers,
 	// and IMPORTRANGE pulls in another spreadsheet. Off by default, and
 	// the operator's to set rather than an argument: a model persuaded to
-	// write one would set the argument too (§7.3).
+	// write one would set the argument too.
 	AllowExternalFormulas bool
 	MaxCells              int
 	MaxChars              int

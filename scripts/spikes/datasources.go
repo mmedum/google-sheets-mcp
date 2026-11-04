@@ -12,27 +12,26 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/auth"
 )
 
-// spikeN answers §15.N: whether manage_data_source is a tool this
-// server can honestly ship.
+// askDataSourceReach asks whether this server can reach a data source,
+// and so whether manage_data_source is a tool it can honestly ship.
 //
-// §8 lists it for phase 4 and the discovery document attaches two
-// conditions the tool surface never mentioned. addDataSource "requires
-// an additional bigquery.readonly OAuth scope", and a BigQuery source
-// needs "a BigQuery enabled Google Cloud project with a billing account
-// attached", which any query against it is charged to. §17.6 decided
-// this server asks for spreadsheets and drive.readonly and nothing else.
+// The discovery document attaches two conditions. addDataSource
+// "requires an additional bigquery.readonly OAuth scope", and a BigQuery
+// source needs "a BigQuery enabled Google Cloud project with a billing
+// account attached", which any query against it is charged to. By
+// default this server asks for spreadsheets and drive.readonly and
+// nothing else.
 //
 // So the question is not how the tool should be shaped. It is whether
 // the calls behind it can be made at all under the scopes this server
-// holds, and what a caller sees when they cannot. A tool that returns a
-// 403 for every caller who has not separately built a billing-attached
-// BigQuery project is not a tool; it is a support ticket.
+// holds by default, and what a caller sees when they cannot. A tool that
+// returns a 403 for every caller who has not separately built a
+// billing-attached BigQuery project is not a tool; it is a support
+// ticket.
 //
 // Nothing here creates a data source. Every step is a call this server
 // would make, sent to see what comes back.
-func spikeN(ctx context.Context) {
-	sec("Spike N: data sources, and whether this server can reach one")
-
+func askDataSourceReach(ctx context.Context) {
 	line("")
 	line("  Q1: what scopes does this token actually carry?")
 	// The whole spike turns on this, and it is worth printing rather

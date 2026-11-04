@@ -37,18 +37,24 @@ const (
 	ScopeDriveReadonly        = "https://www.googleapis.com/auth/drive.readonly"
 	// ScopeBigQueryReadonly is asked for only with
 	// GSHEETS_ENABLE_DATA_SOURCES. Connected Sheets cannot be reached
-	// without it — addDataSource under the other two returns 403 naming
-	// this scope — and asking for it by default would put BigQuery on
-	// the consent screen of every user of a spreadsheet server (§17.6a).
+	// without it: addDataSource under the other two answers 403 naming
+	// this scope, as AddDataSourceRequest says, though batchUpdate's own
+	// scope list leaves it out. Asking for it by default would put BigQuery
+	// on the consent screen of every user of a spreadsheet server. Checked
+	// by the live step "whether this server can reach a data source".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#AddDataSourceRequest
 	ScopeBigQueryReadonly = "https://www.googleapis.com/auth/bigquery.readonly"
 )
 
 // Scopes returns the scope set for the requested access level.
 //
-// Read-only here is a real restriction rather than a label: with
-// spreadsheets.readonly the API itself refuses getByDataFilter, the
-// data-filter value reads and both developer-metadata reads, so those
-// paths are unavailable rather than merely unused.
+// Read-only here is a real restriction rather than a label: only
+// spreadsheets.get, values.get and values.batchGet take a read-only
+// scope, and the discovery document lists a write-capable one for
+// getByDataFilter, the data-filter value reads and both
+// developer-metadata reads, so those paths are unavailable rather than
+// merely unused.
+// https://sheets.googleapis.com/$discovery/rest?version=v4
 // dataSources adds the third scope, which is opt-in: it is a separate
 // argument rather than a wider default so that a login with the setting
 // off is byte for byte the login this server has always made.
@@ -260,6 +266,7 @@ const DefaultHTTPTimeout = 60 * time.Second
 // runs. The API client's own per-request timeout does not cover this,
 // because the refresh happens inside the token source rather than on
 // that client.
+// https://github.com/golang/oauth2/blob/v0.37.0/internal/transport.go
 func boundHTTP(ctx context.Context, timeout time.Duration) context.Context {
 	if timeout <= 0 {
 		timeout = DefaultHTTPTimeout

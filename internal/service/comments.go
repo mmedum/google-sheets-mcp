@@ -16,10 +16,12 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
 )
 
-// Cell comments (spike R). A thread sits on one cell through an anchor
-// that follows the cell as rows and columns move. Google lets only a
-// post's author edit or delete it, and emails a thread's assignee
-// (the discovery document's descriptions of the five requests).
+// Cell comments. A thread sits on one cell through an anchor that
+// follows the cell as rows and columns move. Google lets only a post's
+// author edit or delete it, and emails a thread's assignee (the
+// discovery document's descriptions of the five requests). Checked by
+// the live step "how cell comments read back and fail".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#InsertCommentRequest
 
 // Comment actions, for manage_cell_comment.
 const (
@@ -31,7 +33,11 @@ const (
 )
 
 // maxCommentBytes is Google's limit on a post's text and on an address:
-// 2048 UTF-8 code units.
+// 2048 UTF-8 code units, so bytes. 2048 x, 1024 é and 512 emoji are
+// taken and one more of each is refused, "content must not exceed 2048
+// UTF-8 code units". Checked by the live step "the unit the text limits
+// count".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#InsertCommentRequest
 const maxCommentBytes = 2048
 
 // A thread's status, as the comment tools report it.
@@ -74,7 +80,10 @@ type PostRecord struct {
 	Assignee string `json:"assignee,omitempty" jsonschema:"who the post assigned the thread to"`
 	Created  string `json:"created" jsonschema:"when it was posted, RFC 3339; empty when Google does not have the time"`
 	// Updated is Google's updateTime, which moves on an edit and also when
-	// a reply reassigns the thread, so it is not proof of an edit.
+	// a reply reassigns the thread, so it is not proof of an edit. Checked
+	// by the live step "include_resolved lists it, with both edits and the
+	// reassignment".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets#CommentThread
 	Updated string `json:"updated,omitempty" jsonschema:"when Google last changed the post, if after it was made: an edit, or a reply that reassigned the thread"`
 }
 
@@ -197,8 +206,12 @@ func (s *Service) comments(ctx context.Context, id string) (*gsheets.Spreadsheet
 
 // threadRecords places every thread on its sheet and cell, in sheet
 // order, then by row, column and when it was made, with the threads whose
-// cell was deleted last on their sheet. Google's own order is not
-// positional (spike R).
+// cell was deleted last on their sheet. A thread names only an anchorId,
+// which the sheet's commentAnchors map to a one-cell range that follows
+// inserted rows, and Google's order of threads is not positional.
+// Checked by the live steps "both threads moved down a row" and "how
+// cell comments read back and fail".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/sheets#CommentAnchor
 func threadRecords(sp *gsheets.Spreadsheet) []CommentRecord {
 	type place struct {
 		sheet   string
@@ -265,10 +278,14 @@ func compareBool(a, b bool) int {
 }
 
 // anchorCell is the one cell an anchor covers, or false when its row or
-// column was deleted. A deleted band leaves the range empty (spike R),
-// and Google leaves a zero index out of the JSON, so an anchor collapsed
-// at the first row arrives with no row indices at all. A live anchor
-// always has both ends, since an end is one past a start.
+// column was deleted. Deleting the band collapses the anchor to an empty
+// range, start equal to end, and the thread stays open. Google leaves a
+// zero index out of the JSON, so an anchor collapsed at the first row
+// arrives with no row indices at all. A live anchor always has both
+// ends, since an end is one past a start. Checked by the live steps "the
+// thread is still there, on no cell", "a ranged read leaves it out and
+// says so" and "how cell comments read back and fail".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/sheets#CommentAnchor
 func anchorCell(g *gsheets.GridRange) (a1.Rect, bool) {
 	if g == nil {
 		return a1.Rect{}, false
@@ -392,10 +409,14 @@ func checkText(text string, required bool) error {
 }
 
 // checkAssignee refuses what is not an address. Google accepts any
-// string here, even an address that cannot exist (spike R), so a typo is
-// this server's to catch and nobody's after that. An invisible or
-// reordering character is refused too: net/mail accepts one, and the
-// address a preview showed would not be the one sent.
+// string here with 200, even an address that cannot exist, so a typo is
+// this server's to catch and nobody's after that. Checked by the live
+// steps "an assignee that is not an address is refused here" and "how
+// cell comments read back and fail".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#InsertCommentRequest
+//
+// An invisible or reordering character is refused too: net/mail accepts
+// one, and the address a preview showed would not be the one sent.
 func checkAssignee(addr string) error {
 	if addr == "" {
 		return nil
@@ -417,7 +438,7 @@ var addressShape = regexp.MustCompile(`[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za
 // mentioned is every address the text names, once each. Google handles a
 // post's text the way the Sheets editor does, notifications included
 // (the discovery document on Post.content), and the editor notifies a
-// person whose address a comment mentions. Spike R did not probe it, so
+// person whose address a comment mentions. No live step probes it, so
 // the tools say such a person may be notified, not that they will be.
 func mentioned(text string) []string {
 	var out []string

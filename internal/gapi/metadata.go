@@ -12,11 +12,11 @@ import (
 
 // SearchDeveloperMetadata finds developer metadata entries by filter.
 //
-// A POST that only reads, and one of exactly three in this API (§11). It
-// is marked so rather than inferred: derived from the method it would
-// sit on the write limiter, refuse to retry, and be blocked under a dry
-// run — three wrong answers from one inference. A test over this
-// package's syntax tree allows the flag only on the three by name.
+// A POST that only reads, and one of exactly three in this API. It is
+// marked so rather than inferred: derived from the method it would sit
+// on the write limiter and refuse to retry, two wrong answers from one
+// inference. A test over this package's syntax tree allows the flag only
+// on the three by name.
 //
 // It needs a write-capable scope. `developerMetadata.search` lists
 // `spreadsheets`, `drive` and `drive.file`, and not

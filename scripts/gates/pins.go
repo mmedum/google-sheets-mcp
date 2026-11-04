@@ -11,17 +11,18 @@ import (
 // The workflow gate holds three rules that read as complete when they
 // are not.
 //
-// An action is pinned by a full commit SHA, because GitHub's own words
-// are that "pinning an action to a full-length commit SHA is currently
-// the only way to use an action as an immutable release".
+// An action is pinned by a full commit SHA. A tag can be moved or
+// deleted by whoever gains access to the action's repository, and
+// GitHub's secure-use reference says to "pin references to actions to a
+// commit SHA".
+// https://docs.github.com/en/actions/reference/security/secure-use
 //
 // And every tool an action installs is pinned beside it. A SHA pins the
 // action, never the tool the action fetches: cosign-installer and
 // download-syft install rather than do, and goreleaser-action's own
 // default is `~> v2`, which floats across a whole major line. Narrowing
 // that to `~> v2.18.0` changes the width of the range and not its kind,
-// and a sibling recorded exactly that narrowing as the fix while still
-// floating afterwards. So this is a gate and not a comment.
+// and still floats. So this is a gate and not a comment.
 //
 // And every workflow pins its shell at the workflow level. The runner
 // hands every `run` block to a shell, so this is not a property of
@@ -32,6 +33,7 @@ import (
 // suite carry on. Pinning it explicitly also turns on pipefail and drops
 // profile and rc files, which is the behavior to want and worth knowing
 // about.
+// https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
 var (
 	usesLine    = regexp.MustCompile(`(?m)^\s*-?\s*uses:\s*([^\s#]+)`)
 	fullSHA     = regexp.MustCompile(`^[0-9a-f]{40}$`)

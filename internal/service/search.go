@@ -124,14 +124,16 @@ func (s *Service) Describe(ctx context.Context) (string, error) {
 //
 // For the profile to record, and nothing else: Describe is the form for
 // anything printed, and the two share a call so a change to one cannot
-// leave the other reading a different account. §17.8 masks what is meant
-// to be pasted — a log, `doctor`, `status` — rather than what is stored
-// locally, which is why this exists and why it has exactly one caller.
+// leave the other reading a different account. What is meant to be
+// pasted — a log, `doctor`, `status` — is masked, and what is stored
+// locally is not, which is why this exists and why it has exactly one
+// caller.
 //
 // It comes from Drive rather than from the token because tokeninfo
 // returns an address only for a token carrying an email scope, and this
-// server asks for neither `openid` nor `userinfo.email` (§17.6). The
-// Drive call is one this server already makes.
+// server asks for neither `openid` nor `userinfo.email`. Drive's
+// about.get runs under the drive.readonly scope this server holds.
+// https://developers.google.com/workspace/drive/api/reference/rest/v3/about/get
 func (s *Service) Account(ctx context.Context) (string, error) {
 	u, err := s.api.About(ctx)
 	if err != nil {

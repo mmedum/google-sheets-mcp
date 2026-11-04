@@ -92,7 +92,9 @@ func writeNotes(b *strings.Builder, w Write) {
 		for _, c := range w.Coerced {
 			// Both kinds, always. Without them "12" -> "12" reads as a
 			// line reporting no change at all, when what changed is that
-			// the cell holds a number where it held text.
+			// the cell holds a number where it held text. Checked by the
+			// live step "a write into empty cells, with the coercion
+			// reported".
 			fmt.Fprintf(b, "  %s  %s %s -> %s %s", c.Address,
 				c.SentKind, quote(c.SentKind, c.Sent), c.Kind, quote(c.Kind, c.Stored))
 			// A date is stored as a serial number and displayed as a

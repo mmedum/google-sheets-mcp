@@ -283,7 +283,7 @@ func TestMissingScopes(t *testing.T) {
 	}
 }
 
-// TestScopesAreOptIn is the check behind §17.6a: turning data sources on
+// TestScopesAreOptIn holds the data-source opt-in: turning data sources on
 // adds one scope and changes nothing else, so a login made with the
 // setting off asks for exactly what this server has always asked for.
 func TestScopesAreOptIn(t *testing.T) {

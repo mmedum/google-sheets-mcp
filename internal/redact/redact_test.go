@@ -81,10 +81,10 @@ func TestPathMasksTheClientId(t *testing.T) {
 }
 
 // TestLineMasksWhatSomebodyElseAssembled is the live driver's
-// transcript. §9.1 promises it is safe to paste into a commit message,
-// and it was not: the driver substituted the ids it had created and let
-// everything Drive returned through — an owner's address and a folder
-// id, both on the never-list.
+// transcript, which is meant to be safe to paste into a commit message.
+// Substituting only the ids the driver created lets through what Drive
+// returns: an owner's address and a folder id, neither of which may
+// enter the repository.
 func TestLineMasksWhatSomebodyElseAssembled(t *testing.T) {
 	// Shaped like what Drive returns, invented throughout: a folder id
 	// is base64url starting 0A, and this one is not anybody's.

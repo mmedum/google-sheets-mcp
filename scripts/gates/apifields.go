@@ -24,11 +24,10 @@ import (
 // gap between the fields Google publishes and the fields this server
 // models to being a set of decisions rather than an accident.
 //
-// The coverage gate watches methods. Nothing watched fields, and a wire
-// type that silently lacks a field is a bug that looks like an empty
-// response: a sibling server spent a live-verification spike finding
-// that out, and found its types forty fields behind the discovery
-// document, thirty-nine of which nobody had ever counted.
+// The coverage gate watches methods, and a wire type that silently
+// lacks a field is a bug that looks like an empty response. Types fall
+// behind the discovery document a field at a time, and nobody counts
+// them unless a gate does.
 //
 // Two files, split by which of them a person writes:
 //

@@ -16,13 +16,16 @@ const CheckpointPrefix = "ck_"
 // Checkpoint hashes what a read saw: the spreadsheet, the range, and the
 // canonical form of the values.
 //
-// It stands in for a write guard the platform does not have. Sheets has
-// no writeControl, no requiredRevisionId and no ETag, and the API says
-// in its own words that a spreadsheet may not reflect exactly your
-// changes afterwards because of collaborators. So this narrows the
+// It stands in for a write guard the platform does not have: no
+// writeControl, requiredRevisionId or ETag occurs in the discovery
+// document. And batchUpdate says in its own words that "it is not
+// guaranteed that the spreadsheet will reflect exactly your changes
+// after this completes", because of collaborators. So this narrows the
 // window between reading and writing and cannot close it, and every
 // description that mentions it says so. Where a real guarantee is
-// needed, a protected range is the one the platform offers.
+// needed, a protected range is the one the platform offers. Checked by
+// the live step "the same checkpoint is now stale".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/batchUpdate
 func Checkpoint(spreadsheetID string, g *Grid) string {
 	h := sha256.New()
 	// One reused buffer, written once per row. Hashing string by string

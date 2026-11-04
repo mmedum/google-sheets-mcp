@@ -2,29 +2,23 @@
 
 ## Reporting a vulnerability
 
-Please open a [private security
-advisory](https://github.com/mmedum/google-sheets-mcp/security/advisories/new)
-rather than a public issue.
+Report it privately, through GitHub's
+[security advisory form](https://github.com/mmedum/google-sheets-mcp/security/advisories/new)
+on this repository. Do not open a public issue.
 
-Include what an attacker would be able to do and how to reproduce it.
-**Do not include anything from a real spreadsheet** — no cell values or
-formulas, no sheet or spreadsheet titles, no spreadsheet ids or links, no
-account addresses. A synthetic reproduction is always enough; if it is
-not, say so and we will work out how to get what is needed without it.
+Include what an attacker could do, how to reproduce it, and the version
+(`google-sheets-mcp --version`, a release tag or a commit). Never include
+anything from a real spreadsheet, a spreadsheet id or link, an account
+address or a token; a synthetic reproduction is enough.
 
-Expect an acknowledgment within a few days. Fixes go out as a normal
-tagged release with the advisory published alongside.
+## Supported version
 
-## Supported versions
+Only the latest release receives fixes. A fix ships as a release of its
+own, with the advisory published alongside.
 
-The latest release. This project is pre-1.0 and moves in phases; there
-are no backports.
+## Response
 
-## What the server does with your data
+We acknowledge a report within **7 days**.
 
-[docs/security.md](docs/security.md) is the detail: what it talks to,
-which scopes it asks for, where the refresh token is stored, what reaches
-a log and what the server refuses to do. In short — it talks only to
-Google over an allowlist checked with the port, the refresh token lives
-in the OS keyring, logs carry no cell values, formulas, titles, ranges or
-search terms, and a test fails the build if any of that changes.
+[`docs/security.md`](docs/security.md) is the threat model. It says what
+counts as a vulnerability here and what does not.

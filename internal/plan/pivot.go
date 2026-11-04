@@ -21,6 +21,13 @@ const PivotFieldMask = "pivotTable"
 
 // WritePivot anchors a pivot table at a one-based cell.
 //
+// A pivot table has no request of its own: it is the pivotTable field of
+// one CellData, written through updateCells at its anchor, and Google
+// answers the write with an empty reply. Checked by the live steps "what
+// a read sees where a pivot table sits", "add a pivot table, naming its
+// columns by heading" and "delete it, and everything it drew".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/pivot-tables#PivotTable
+//
 // `start` rather than `range`, because a pivot's output is computed and
 // its rectangle is not known here — a range would clear the named field
 // across a rectangle this code would have to guess at.
@@ -72,7 +79,9 @@ var dateTimeTypes = []string{
 // ones the discovery document says filters support, of those
 // manage_range already names. The others it marks "Supported by data
 // validation" alone, and Google refuses one in a filter: "ConditionType
-// 'ONE_OF_LIST' is not supported in filters" (spike U6).
+// 'ONE_OF_LIST' is not supported in filters". Checked by the live step
+// "what Google makes of a pivot definition".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/other#ConditionType
 var filterConditions = map[string]bool{
 	"number_greater": true, "number_greater_eq": true, "number_less": true, "number_less_eq": true,
 	"number_eq": true, "number_not_eq": true, "number_between": true, "number_not_between": true,
@@ -84,7 +93,11 @@ var filterConditions = map[string]bool{
 // relativeDates are the dates a filter's date condition may count from
 // today, in the spelling a read writes them: the API's enum, lower-cased,
 // without its unspecified member. The discovery document allows one on
-// DATE_BEFORE and DATE_AFTER, the two date conditions a filter takes.
+// DATE_BEFORE and DATE_AFTER, the two date conditions a filter takes,
+// and Google reads each back as a relativeDate. Checked by the live steps
+// "what Google makes of a pivot definition", "a relative date" and "list
+// reads the relative date back".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/other#RelativeDate
 var relativeDates = []string{"past_year", "past_month", "past_week", "yesterday", "today", "tomorrow"}
 
 // PivotGroupEntry is one entry of group_rows or group_columns, parsed.
@@ -146,6 +159,12 @@ func ParsePivotGroup(text string) (PivotGroupEntry, error) {
 	if err != nil {
 		return PivotGroupEntry{}, err
 	}
+	// Google refuses an interval of 0, "Histogram group rules require a
+	// positive value for interval", and a start past the end, "Start must
+	// be less than end"; it keeps a start of 0. Checked by the live steps
+	// "what Google makes of a pivot definition" and "group by age, ten
+	// years at a time".
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/pivot-tables#HistogramRule
 	if interval <= 0 {
 		return PivotGroupEntry{}, fmt.Errorf("%q has a bucket size of %s, and it has to be more than 0", text, tail[1])
 	}
@@ -221,7 +240,14 @@ type PivotValueEntry struct {
 // or a calculated value, which starts with "=" and needs a name:
 // "=SUM(Revenue)/SUM(Cost) as Margin" uses the formula as written
 // (CUSTOM), and "=Revenue-Cost sum as Margin" works it out per row and
-// sums it (SUM). Google takes no other summary for a formula.
+// sums it (SUM). Google takes no other summary for a formula, refuses
+// CUSTOM on a column, and draws a formula with no name under an empty
+// heading. A formula names the source's columns by heading, which Google
+// resolves; the reference says so of a filter's condition and not of a
+// formula. Checked by the live steps "what Google makes of a pivot
+// definition", "a calculated value with no name is refused here" and
+// "the month buckets, North left out".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/pivot-tables#PivotValue
 func ParsePivotValue(text string) (PivotValueEntry, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {

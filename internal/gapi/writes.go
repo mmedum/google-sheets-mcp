@@ -14,15 +14,18 @@ import (
 // Value input options, as the API spells them. The server never
 // substitutes one for the other: `typed` is what a person typing would
 // get and `literal` is what they typed, and which one is right depends
-// on the data (§17.3).
+// on the data.
 const (
 	InputUserEntered = "USER_ENTERED"
 	InputRaw         = "RAW"
 )
 
-// InsertRows is the one insert option an append sends. OVERWRITE writes
-// over whatever follows the block Google finds, which no read before the
-// call can witness, so it is not offered (§7.3).
+// InsertRows is the one insert option an append sends. It inserts rows,
+// so every row below the insert point moves down, and the result says
+// so. OVERWRITE writes over whatever follows the block Google finds,
+// which no read before the call can witness, so it is not offered
+// (D-29). Checked by the live step "where an append lands".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/append
 const InsertRows = "INSERT_ROWS"
 
 // WriteOptions are what every value write carries.
@@ -33,10 +36,10 @@ type WriteOptions struct {
 	Insert string
 }
 
-// readBack is the pair of parameters behind §4.4: ask for the stored
-// values in the same response, rendered as formulas, so the coercion
-// diff costs no extra request and sees what Google actually kept rather
-// than what it displays.
+// readBack is the pair of parameters behind the coercion report (D-27):
+// ask for the stored values in the same response, rendered as formulas,
+// so the diff costs no extra request and sees what Google actually kept
+// rather than what it displays.
 func readBack(v url.Values) {
 	v.Set("includeValuesInResponse", "true")
 	v.Set("responseValueRenderOption", RenderFormula)
@@ -75,7 +78,7 @@ func (c *Client) UpdateValues(ctx context.Context, id, a1Range string, values []
 // AppendValues adds rows after the block Google finds in the range.
 //
 // A POST that is never retried: repeating it appends the rows a second
-// time, and an ambiguous failure is reported as one (hard rule 8).
+// time, and an ambiguous failure is reported as one (D-45).
 func (c *Client) AppendValues(ctx context.Context, id, a1Range string, values [][]any, o WriteOptions) (*gsheets.AppendValuesResponse, error) {
 	if o.Input == "" || o.Insert == "" {
 		return nil, fmt.Errorf("%w: an append needs an explicit input and insert option", ErrInvalid)
@@ -140,9 +143,12 @@ func (c *Client) CreateSpreadsheet(ctx context.Context, in *gsheets.NewSpreadshe
 // BatchUpdate applies a batch of typed requests atomically.
 //
 // The discovery document is explicit that nothing is applied if any
-// request is invalid, and that the whole batch counts once against
-// quota. So an ops-shaped tool compiles to one of these rather than to
-// several calls, and a partial application cannot happen.
+// request is invalid, and the limits page that the whole batch counts
+// once against quota. So an ops-shaped tool compiles to one of these
+// rather than to several calls, and a partial application cannot
+// happen. Checked by the live step "everything in one call is one
+// batch".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/batchUpdate
 func (c *Client) BatchUpdate(ctx context.Context, id string, in *gsheets.BatchUpdateSpreadsheetRequest) (*gsheets.BatchUpdateSpreadsheetResponse, error) {
 	if in == nil || len(in.Requests) == 0 {
 		return nil, fmt.Errorf("%w: a batchUpdate with no requests changes nothing", ErrInvalid)

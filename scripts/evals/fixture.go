@@ -22,9 +22,9 @@ import (
 // tools cannot make — which would be worth knowing before scoring a
 // model on it.
 //
-// Everything in it is invented here. §9.1: an eval transcript carries
-// prompts, arguments and results, so the only way it can be safe to read
-// is for none of it to be anybody's.
+// Everything in it is invented here: an eval transcript carries prompts,
+// arguments and results, so the only way it can be safe to read is for
+// none of it to be anybody's.
 func build(ctx context.Context, bin string) (Fixture, func(), error) {
 	client := mcp.NewClient(&mcp.Implementation{Name: "evals-setup", Version: "0"}, nil)
 	cmd := exec.CommandContext(ctx, bin, "serve")
@@ -116,7 +116,7 @@ func build(ctx context.Context, bin string) (Fixture, func(), error) {
 	// the model to diagnose an error in a cell holding a plain 0.
 	//
 	// It replaces a formula, so it carries the checkpoint of what it
-	// replaces, from a dry run of the same write (§4.7).
+	// replaces, from a dry run of the same write.
 	errorWrite := map[string]any{
 		"spreadsheet": f.ID, "sheet": f.Sheet, "range": f.ErrorCell + ":E21",
 		"values":             [][]any{{"=C21/E21", 0}},

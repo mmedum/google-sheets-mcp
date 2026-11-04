@@ -14,8 +14,8 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
 )
 
-// spikeT answers what the reference leaves open about a table's typed
-// columns, which manage_range writes with column_types.
+// askTypedColumns asks what the reference leaves open about a table's
+// typed columns, which manage_range writes with column_types.
 //
 // The tables guide gives one addTable example, which types two of five
 // columns and names each, and says a dropdown "must" carry a ONE_OF_LIST
@@ -46,27 +46,25 @@ import (
 // Q9. What does an update sending the names as read do to a person chip
 // in a header cell? manage_range refuses the update over one.
 //
-// The run of 2026-10-09 answered most of these (§18) and left four
-// owed. Q3 sent no name and was refused, so Q3b sends one column with
-// its name. Q5 sent no names and was refused, so it sends them now. Q5's
-// and Q7's reads were cut short in the transcript, so every read here
-// prints whole. And the live driver's add of three typed columns was a
-// 500 where Q1's add of two was a 200, which Q11 bisects.
+// Google refuses an update entry with no name, so Q3b sends one column
+// with its name, and Q5 sends every column's. Every read here prints
+// whole, since a read cut short answers neither Q5 nor Q7. And the live
+// driver's add of three typed columns can be a 500 where Q1's add of two
+// is a 200, which Q11 bisects.
 //
 // Q10. What does an add do to a formula in a header cell of a column it
 // does not type? manage_range sends that column nothing, and still
 // refuses an update over a formula header in case one survives.
 // Q11. Which part of the live driver's add draws the 500: its exact
 // request, where it ran it, each column type alone, and each with the
-// column's name, which manage_range now sends.
+// column's name, which manage_range sends.
 //
-// The second run answered Q11: no part of the request. The driver's add
-// was taken first, and every add after the seventh table in the
-// spreadsheet was a 500, the requests just taken included. Q5 answered
-// that a word, the text TRUE and an empty cell all become FALSE; Q7 that
-// a name sent as read drops rich text's runs, and Q7 now formats A1 as a
-// whole cell too, which the run did not ask; and Q10 that Google takes no
-// table over a formula in its header row. So:
+// No part of the request draws the 500 (Q11): the driver's add is taken
+// first, and every add after the seventh table in the spreadsheet is a
+// 500, the requests just taken included. Under a boolean typing a word,
+// the text TRUE and an empty cell all become FALSE (Q5). A name sent as
+// read drops rich text's runs, and Q7 formats A1 as a whole cell too.
+// Google takes no table over a formula in its header row (Q10). So:
 //
 // Q5b. Is a TRUE or FALSE value kept under a boolean typing, on update
 // and on add? manage_range lets one through. The add's column holds a
@@ -74,14 +72,13 @@ import (
 //
 // Q12. Is it a count? In a fresh spreadsheet, the driver's add, a few
 // seconds apart, until one fails or twelve are taken; then one table
-// goes and the failed add is tried again. It is a selector of its own,
-// -only T12, since the third run's first add met the per-minute write
-// quota right after Q11.
+// goes and the failed add is tried again. It is a spike of its own,
+// askTableAddCount, since its first add meets the per-minute write quota
+// when it runs right after Q11.
 //
-// The third run answered Q5b, a TRUE or FALSE value is kept, and Q7's
-// whole-cell format, which stays (§18).
-func spikeT(ctx context.Context) {
-	sec("Spike T: typed table columns, and what an update does to them")
+// A TRUE or FALSE value is kept under a boolean typing (Q5b), and a
+// header formatted as a whole cell keeps that format (Q7).
+func askTypedColumns(ctx context.Context) {
 	const sheet = "SpikeTables"
 	sheetID, err := addSheet(ctx, sheet)
 	if err != nil {
@@ -299,32 +296,30 @@ func spikeT(ctx context.Context) {
 	line("    %-52s -> HTTP %d  %s", "a table over F1:G3, DOUBLE on G named Cost", status, whole(body))
 	cellsWhole(ctx, "  F1 after the add: formula kept?", a1.QuoteSheet(sheet)+"!F1")
 
-	spikeT11(ctx)
+	askTypedAdd500(ctx)
 }
 
-// spikeT13 asks what an update does to cells with a data validation rule
-// of their own, which Q1 answered only for an add. manage_range refuses a
-// dropdown typing over one, on update too, and sends a dropdown column
-// back unchanged without reading its cells.
+// askCellRuleUnderTyping asks what an update does to cells with a data
+// validation rule of their own, which Q1 answered only for an add.
+// manage_range refuses a dropdown typing over one, on update too, and
+// sends a dropdown column back unchanged without reading its cells.
 //
 // Q13. Does an update typing a column dropdown drop its cells' own lists,
 // as Q1's add did? And does an update that sends a dropdown column back
 // unchanged drop a list a cell in it was given since?
 //
-// The run of 2026-10-09 answered both (§18). The update dropped the
-// lists, and Google refused the list on a dropdown column's cell, "This
-// operation is not allowed on cells in typed columns.", so no such list
-// can be there to drop. manage_range now refuses a rule on a dropdown
-// column's cells first. So:
+// The update drops the lists, and Google refuses a list on a dropdown
+// column's cell, "This operation is not allowed on cells in typed
+// columns.", so no such list can be there to drop. manage_range refuses
+// a rule on a dropdown column's cells first. So:
 //
 // Q13b. Is a rule's removal refused there too? A rule over a range only
 // half in the column? A rule on a cell of a column typed text?
 //
-// It is a selector of its own, -only T13, with one add, because spike T's
-// adds have drawn a 500 on every add after about five, and a 429 on the
+// It is a spike of its own, with one add, because askTypedColumns'
+// adds draw a 500 on every add after about five, and a 429 on the
 // per-minute write quota.
-func spikeT13(ctx context.Context) {
-	sec("Spike T Q13: what an update does to a cell's own validation rule")
+func askCellRuleUnderTyping(ctx context.Context) {
 	const sheet = "SpikeDropdown"
 	sheetID, err := addSheet(ctx, sheet)
 	if err != nil {
@@ -399,12 +394,13 @@ func spikeT13(ctx context.Context) {
 	cellsAt(ctx, "  A2 after: a rule of its own?", a1.QuoteSheet(sheet)+"!A2")
 }
 
-// spikeT11 bisects the live driver's 500. The driver typed three of four
-// columns of a block with a header row, numbers, dates and words, on a
-// sheet with one row and one column frozen; spike T Q1 typed two, on a
-// plain sheet, and was taken. Each add here is on a block of its own,
-// seeded the way the driver seeded it, so no add sees another's types.
-func spikeT11(ctx context.Context) {
+// askTypedAdd500 bisects the live driver's 500. The driver types three
+// of four columns of a block with a header row, numbers, dates and
+// words, on a sheet with one row and one column frozen; askTypedColumns'
+// Q1 types two, on a plain sheet, and is taken. Each add here is on a
+// block of its own, seeded the way the driver seeds it, so no add sees
+// another's types.
+func askTypedAdd500(ctx context.Context) {
 	line("")
 	line("  Q11: which part of the live driver's add draws its 500")
 	const sheet = "SpikeTypes"
@@ -542,21 +538,21 @@ var typedSeed = [][]any{
 	{"Nardle", "40", "2026-10-03", ""},
 }
 
-// spikeT12 tells a count from timing. In Q11's spreadsheet every add
-// after the seventh table was a 500; the live run's add was a 500 after
-// one table, added and deleted. Here a fresh spreadsheet takes the
-// driver's add, each column named as manage_range sends it, three seconds
-// apart, until one fails or twelve are taken. Then the first table goes
-// and the failed add is tried again: taken means a count. If not, it is
-// tried once more a minute later, which is timing if taken. A plain add
-// with no types comes last, to say whether typing matters.
+// askTableAddCount tells a count from timing. In Q11's spreadsheet
+// every add after the seventh table is a 500; the live driver's add can
+// be a 500 after one table, added and deleted. Here a fresh spreadsheet
+// takes the driver's add, each column named as manage_range sends it,
+// three seconds apart, until one fails or twelve are taken. Then the
+// first table goes and the failed add is tried again: taken means a
+// count. If not, it is tried once more a minute later, which is timing
+// if taken. A plain add with no types comes last, to say whether typing
+// matters.
 //
-// Run it alone, with -only T12, a minute after any other spike's writes.
-// The third run's first add here answered 429 on the per-minute write
-// quota, right after Q11, and a plain add after it was taken, so it said
+// Run it alone, -only "how many typed table adds a spreadsheet takes",
+// a minute after any other spike's writes: right after askTypedColumns
+// its first add meets the per-minute write quota, and the answer says
 // nothing about a count.
-func spikeT12(ctx context.Context) {
-	sec("Spike T Q12: whether a spreadsheet takes only so many table adds")
+func askTableAddCount(ctx context.Context) {
 	line("  Q12: how many adds a fresh spreadsheet takes, and whether one table fewer lets the next in")
 	title := "spike scratch tables " + time.Now().UTC().Format("2006-01-02 15:04:05")
 	status, body := call(ctx, http.MethodPost, sheetsBase+"/spreadsheets", map[string]any{
