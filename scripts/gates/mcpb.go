@@ -624,8 +624,13 @@ func onlyMatch(pattern, what string) (string, error) {
 		return "", err
 	}
 	if len(found) != 1 {
+		// Slash paths, as every other message spells them on every platform.
+		shown := make([]string, 0, len(found))
+		for _, f := range found {
+			shown = append(shown, filepath.ToSlash(f))
+		}
 		return "", fmt.Errorf("expected exactly one file for %s matching %s, found %d: %s",
-			what, pattern, len(found), strings.Join(found, " "))
+			what, filepath.ToSlash(pattern), len(found), strings.Join(shown, " "))
 	}
 	return found[0], nil
 }

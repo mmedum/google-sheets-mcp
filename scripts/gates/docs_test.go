@@ -21,7 +21,6 @@ const (
 	fxClient     = "internal/gapi/client.go"
 	fxClientTest = "internal/gapi/client_test.go"
 	fxServer     = "cmd/server/main.go"
-	fxAllowlist  = "testdata/citation-allowlist.txt"
 	fxRecord     = "testdata/api-coverage.tsv"
 	fxFields     = "testdata/api-fields.tsv"
 	fxGolangci   = ".golangci.yml"
@@ -50,14 +49,14 @@ const (
 
 // The ends of the problems several tests expect, written once.
 const (
-	notAHolder = "which is not live, review, a make target, a gates command, an enabled linter or a test or fuzz function"
+	notAHolder = "which is not review, a make target, a gates command, an enabled linter or a test or fuzz function"
 	bySlug     = "cite a D-ID, docs/<file>.md#<slug> or a source link"
 )
 
 // docsFixture is a checkout the docs gate accepts as it stands. Between
 // them its files hold one of everything the gate must stay quiet about:
 // each kind of Held by item, a superseded decision cited only where that
-// is allowed, a repeated heading, an allowlisted bare section number,
+// is allowed, a repeated heading,
 // links to a file and a directory, a codemap naming each package, live
 // steps of each kind cited across comment lines, config comments, the
 // records' reasons, and citations in a fence, a string literal, a
@@ -75,6 +74,10 @@ func docsFixture() map[string]string {
 			".PHONY: docs",
 			"docs:",
 			"\t@go run ./scripts/gates docs",
+			"",
+			".PHONY: live",
+			"live:",
+			"\tgo run -tags=live ./scripts/livesheet",
 		),
 		fxGolangci: textLines(
 			`version: "2"`,
@@ -101,27 +104,9 @@ func docsFixture() map[string]string {
 			"paths = ['''internal/gapi/testdata/'''] # synthetic, as D-01 says",
 		),
 		"go.mod": textLines("module example.com/fixture", "", "go 1.21"),
-		// The commands are the string cases of each switch: main's own, and
-		// the one it hands a group of commands to.
-		fxGates: textLines(
-			"package main",
-			"",
-			`import "os"`,
-			"",
-			"func main() {",
-			"	switch os.Args[1] {",
-			`	case "smoke", "docs":`,
-			"	default:",
-			"		contract(os.Args[1])",
-			"	}",
-			"}",
-			"",
-			"func contract(name string) {",
-			"	switch name {",
-			`	case "api-diff":`,
-			"	}",
-			"}",
-		),
+		// The commands are the dispatch's own map, read in process, so
+		// the fixture's gates directory needs only to exist.
+		fxGates: textLines("package main"),
 		fxClient: textLines(
 			"package gapi",
 			"",
@@ -307,7 +292,7 @@ func docsFixture() map[string]string {
 			"",
 			"## Steps",
 			"",
-			"Follow §2 of the old runbook, in [the server](/cmd/server).",
+			"Follow the old runbook, in [the server](/cmd/server).",
 			"",
 			"Back to [the first steps](#steps).",
 			"",
@@ -333,10 +318,6 @@ func docsFixture() map[string]string {
 			"Run `make check`, or `go run ./scripts/gates docs` alone; `scripts/gates smoke` needs a binary.",
 			"A made-up id says so: `spreadsheets/AAAAsheet1`. Streams are named in `main`, never in `cmd/*/x.go`.",
 		),
-		fxAllowlist: textLines(
-			"# Files that still cite a section by number alone, and how many times.",
-			"docs/runbook.md 1",
-		),
 	}
 }
 
@@ -353,7 +334,12 @@ func drop(file string) docsEdit              { return docsEdit{file: file} }
 // turn a reject row into a copy of the accepted checkout.
 func docsEdited(t *testing.T, edits ...docsEdit) map[string]string {
 	t.Helper()
-	files := docsFixture()
+	return applyEdits(t, docsFixture(), edits...)
+}
+
+// applyEdits is files with the edits applied, as docsEdited applies them.
+func applyEdits(t *testing.T, files map[string]string, edits ...docsEdit) map[string]string {
+	t.Helper()
 	for _, e := range edits {
 		switch body := files[e.file]; {
 		case e.old == "" && e.new == "":
@@ -443,10 +429,6 @@ func checkDocs(t *testing.T, floors docsFloors, edits []docsEdit, want []string)
 func TestDocsGateAcceptsAConsistentCheckout(t *testing.T) {
 	checkDocsCases(t, []docsCase{
 		{name: "the fixture as it stands"},
-		{"no allowlist and no bare section number", []docsEdit{
-			drop(fxAllowlist),
-			replace(fxRunbook, "Follow §2 of the old runbook", "Follow the old runbook"),
-		}, nil},
 		{"a Go file under testdata is neither parsed nor read for citations", []docsEdit{
 			add("internal/gapi/testdata/fixture.go", "package fixture\n\n// Cites D-99.\nfunc {\n"),
 		}, nil},
@@ -492,7 +474,7 @@ func TestDocsGateAcceptsAConsistentCheckout(t *testing.T) {
 			replace(fxAgent, "needs a binary.", "needs a binary; `make <target>` and `go run ./scripts/gates <name>` run one,\n"+
 				"`make ...` and `scripts/gates ...` run more, and `go test ./internal/gone/...` tests them."),
 		}, nil},
-		{"a gates command dispatched from a group's own switch", []docsEdit{
+		{"a manual gates command", []docsEdit{
 			replace(fxAgent, "`scripts/gates smoke` needs a binary.", "`scripts/gates smoke` needs a binary and `scripts/gates api-diff` a network."),
 			replace(fxArch, "| forbidigo, lint, review |", "| forbidigo, api-diff, review |"),
 		}, nil},
@@ -535,7 +517,7 @@ func TestDocsGateSaysWhatItRead(t *testing.T) {
 	if err := docsRun(t, docsFixture(), docsFixtureFloors).verdict(&out); err != nil {
 		t.Fatalf("the fixture failed: %v", err)
 	}
-	want := "3 decisions, 2 packages, 8 live steps, 8 links and 14 code-span paths, in 22 files\n"
+	want := "3 decisions, 2 packages, 8 live steps, 8 links and 14 code-span paths, in 21 files\n"
 	if out.String() != want {
 		t.Errorf("printed %q, want %q", out.String(), want)
 	}
@@ -679,6 +661,22 @@ func TestDocsGateHoldsHeldByToWhatExists(t *testing.T) {
 		{"a decision held by nothing", []docsEdit{
 			replace(fxArch, "| TestRetry, smoke |", "| |"),
 		}, []string{"docs/architecture.md:12: D-01 is held by nothing"}},
+		// live is the Makefile's target, so it holds only while the target
+		// exists.
+		{"live, while make live exists", []docsEdit{
+			replace(fxArch, "| TestRetry, smoke |", "| TestRetry, live |"),
+		}, nil},
+		{"live, once make live is gone", []docsEdit{
+			replace(fxArch, "| TestRetry, smoke |", "| TestRetry, live |"),
+			replace(fxMakefile, ".PHONY: live\nlive:\n\tgo run -tags=live ./scripts/livesheet\n", ""),
+		}, []string{"docs/architecture.md:12: D-01 is held by \"live\", " + notAHolder}},
+		{"a linter list under keys with a comment after them", []docsEdit{
+			replace(fxGolangci, "linters:\n  default: none\n  enable:", "linters: # the set\n  default: none\n  enable: # every one named"),
+		}, nil},
+		{"a linter list with a tab before each comment", []docsEdit{
+			replace(fxGolangci, "  enable:\n    - errcheck\n    - forbidigo # stdout carries only frames\n",
+				"  enable:\t# every one named\n    - errcheck\t# unchecked errors\n    - forbidigo\t# stdout carries only frames\n"),
+		}, nil},
 	})
 }
 
@@ -734,6 +732,82 @@ func TestDocsGateHoldsLiveStepsToTheLiveRun(t *testing.T) {
 		{"an argument of a function value that is not its name", []docsEdit{
 			replace(fxClient, `"the rules read back"`, `"manage_pivot_table"`),
 		}, []string{`internal/gapi/client.go:13: names the live step "manage_pivot_table"` + undefined}},
+		// A citation of a name two steps share could mean either.
+		{"two steps of one name, and a spike of a step's name", []docsEdit{
+			replace(fxDriver, `		deleteStep("delete_sheet", "delete a draft"),`,
+				`		deleteStep("delete_sheet", "delete a draft"),`+"\n"+`		{name: "a file uploads", tool: "upload_file"},`),
+			replace(fxSpikes, `	{name: "the per-user rate limit", run: func() {}},`,
+				`	{name: "the per-user rate limit", run: func() {}},`+"\n"+`	{name: "delete a draft", run: func() {}},`),
+		}, []string{
+			`scripts/livesheet/main.go:28: names the live step "a file uploads", which scripts/livesheet/main.go:25 names too; a step's name is its own`,
+			`scripts/spikes/main.go:12: names the live step "delete a draft", which scripts/livesheet/main.go:27 names too; a step's name is its own`,
+		}},
+		// Prose, a record's reason and a config comment cite a live step as
+		// a Go comment does; a placeholder shows the form and names none.
+		{"a paragraph across a line break, a real step, a placeholder and a fenced example", []docsEdit{
+			replace(fxRunbook, "Back to [the first steps](#steps).", "Back to [the first steps](#steps). Checked by the live\n"+
+				`step "a file uploads", and by the live step "no such`+"\n"+`step". Written `+"`"+`the live step "<name>"`+"`.\n\n"+
+				"```text\n"+`the live step "a fenced example"`+"\n```"),
+		}, []string{`docs/runbook.md:13: names the live step "no such step"` + undefined}},
+		{"a step under [Unreleased], and one in a released section", []docsEdit{
+			replace(fxChangelog, "#codemap` says.", "#codemap` says, as the live step \"gone now\" checks."),
+			replace(fxChangelog, "true when written.", "true when written, as the live step \"gone then\" checked."),
+		}, []string{`CHANGELOG.md:5: names the live step "gone now"` + undefined}},
+		{"a record's reason", []docsEdit{
+			replace(fxRecord, "never writes (D-01)", "never writes (D-01), as the live step \"no such step\" shows"),
+		}, []string{`testdata/api-coverage.tsv:2: names the live step "no such step"` + undefined}},
+		{"config comments, on a line of their own and after a value", []docsEdit{
+			replace(fxMakefile, "# The checks CI runs (D-03).", "# The checks CI runs (D-03), as the live step\n# \"no such step\" shows."),
+			replace(fxGolangci, "    - forbidigo # stdout carries only frames", "    - forbidigo # stdout carries frames, as the live step \"gone too\" shows"),
+		}, []string{
+			`.golangci.yml:6: names the live step "gone too"` + undefined,
+			`Makefile:2: names the live step "no such step"` + undefined,
+		}},
+	})
+}
+
+// The changelog's scan reads the lines release-notes lifts, through the
+// one reader both share: a fenced heading ends neither, and a heading with
+// a tab after its #s ends both.
+func TestDocsGateScansWhatTheReleaseNoteLifts(t *testing.T) {
+	unreleased := "#codemap` says.\n"
+	checkDocsCases(t, []docsCase{
+		{"a heading in a fence", []docsEdit{
+			replace(fxChangelog, unreleased, unreleased+"\n~~~markdown\n## [1.0.0]\n~~~\n\n- As D-07 says.\n"),
+		}, []string{"CHANGELOG.md:11: cites D-07, which is not a decision"}},
+		{"a heading with a tab", []docsEdit{
+			replace(fxChangelog, unreleased, unreleased+"\n##\tLater\n\n- As D-07 says.\n"),
+		}, nil},
+	})
+}
+
+// A code span or a live step under [Unreleased]'s Removed heading names
+// what the release takes away; a decision and a link there still resolve.
+func TestDocsGateLetsTheRemovedSectionNameWhatIsGone(t *testing.T) {
+	const undefined = ", which neither scripts/livesheet nor scripts/spikes defines"
+	unreleased := "#codemap` says.\n"
+	checkDocsCases(t, []docsCase{
+		{"a removed path, target and live step", []docsEdit{
+			replace(fxChangelog, unreleased, unreleased+"\n### Removed\n\n- `internal/gone`, `make gone` and the live step \"gone now\".\n"),
+		}, nil},
+		{"a level-4 heading inside Removed keeps it", []docsEdit{
+			replace(fxChangelog, unreleased, unreleased+"\n### Removed\n\n#### Tools\n\n- `internal/gone`.\n"),
+		}, nil},
+		{"a decision and a link under Removed", []docsEdit{
+			replace(fxChangelog, unreleased, unreleased+"\n### Removed\n\n- D-07, and [the page](docs/gone.md).\n"),
+		}, []string{
+			"CHANGELOG.md:9: cites D-07, which is not a decision",
+			"CHANGELOG.md:9: links to docs/gone.md, which does not exist",
+		}},
+		{"the heading after Removed ends it", []docsEdit{
+			replace(fxChangelog, unreleased, unreleased+"\n### Removed\n\n- `internal/gone`.\n\n### Fixed\n\n- `internal/lost` and the live step \"lost\".\n"),
+		}, []string{
+			"CHANGELOG.md:13: names internal/lost, which does not exist",
+			`CHANGELOG.md:13: names the live step "lost"` + undefined,
+		}},
+		{"a Removed heading outside the changelog", []docsEdit{
+			replace(fxRunbook, "Back to [the first steps](#steps).", "### Removed\n\n`internal/gone`."),
+		}, []string{"docs/runbook.md:14: names internal/gone, which does not exist"}},
 	})
 }
 
@@ -893,31 +967,6 @@ func TestDocsGateResolvesCitations(t *testing.T) {
 	})
 }
 
-// The allowlist is a ratchet: each file's count of bare section citations
-// may only fall, and the list has to follow it down.
-func TestDocsGateHoldsTheAllowlistToItsCounts(t *testing.T) {
-	checkDocsCases(t, []docsCase{
-		{"a count that rises", []docsEdit{
-			replace(fxRunbook, "Back to [the first steps](#steps).", "Back to §1 and [the first steps](#steps)."),
-		}, []string{"testdata/citation-allowlist.txt:2: lists docs/runbook.md at 1 bare section citations, and it has 2; " + bySlug}},
-		{"a count that falls without the list following", []docsEdit{
-			replace(fxAllowlist, "docs/runbook.md 1", "docs/runbook.md 2"),
-		}, []string{"testdata/citation-allowlist.txt:2: lists docs/runbook.md at 2 bare section citations, and it has 1; lower the count"}},
-		{"a file with no bare section number left", []docsEdit{
-			replace(fxRunbook, "Follow §2 of the old runbook", "Follow the old runbook"),
-		}, []string{"testdata/citation-allowlist.txt:2: lists docs/runbook.md, which has no bare section citation left; remove it"}},
-		{"a file that does not exist", []docsEdit{
-			replace(fxAllowlist, "docs/runbook.md 1", "docs/runbook.md 1\ndocs/gone.md 1"),
-		}, []string{"testdata/citation-allowlist.txt:3: lists docs/gone.md, which does not exist"}},
-		{"a line with a count of zero", []docsEdit{
-			replace(fxAllowlist, "docs/runbook.md 1", "docs/runbook.md 0"),
-		}, []string{
-			`testdata/citation-allowlist.txt:2: "docs/runbook.md 0" is not a path and a count above zero`,
-			"docs/runbook.md:10: cites a section by number (§2); " + bySlug,
-		}},
-	})
-}
-
 func TestDocsGateHoldsPathsToTheRepository(t *testing.T) {
 	checkDocsCases(t, []docsCase{
 		{"a path in CLAUDE.md that does not exist", []docsEdit{
@@ -994,14 +1043,10 @@ func TestDocsGateRefusesToReadNothing(t *testing.T) {
 			drop(fxDriverTest), drop(fxSpikes), drop(fxGates),
 		}, []string{
 			"no .go files read: this gate would be looking at nothing",
-			"scripts/gates/main.go: no gates commands read: a Held by naming one would never match",
 			"scripts/livesheet: 0 live steps read, fewer than 1: the step literals are not being read",
 			"scripts/spikes: 0 live steps read, fewer than 1: the spike literals are not being read",
 			`docs/architecture.md:12: D-01 is held by "TestRetry", ` + notAHolder,
-			`docs/architecture.md:12: D-01 is held by "smoke", ` + notAHolder,
-			"CLAUDE.md:5: names scripts/gates docs, which is not a gates command",
 			"CLAUDE.md:5: names ./scripts/gates, which does not exist",
-			"CLAUDE.md:5: names scripts/gates smoke, which is not a gates command",
 			"CLAUDE.md:5: names scripts/gates, which does not exist",
 			"docs/architecture.md:5: names internal/gapi/client.go, which does not exist",
 			"docs/architecture.md:6: names cmd/server, which does not exist",

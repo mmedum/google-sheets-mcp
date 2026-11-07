@@ -7,39 +7,208 @@
 // "looked at nothing" print the same sentence otherwise, so every check
 // here also asserts a floor on how much it read.
 //
-//	go run ./scripts/gates coverage cov.out 80
-//	go run ./scripts/gates classes
-//	go run ./scripts/gates leaks [history]
-//	go run ./scripts/gates transcript
-//	go run ./scripts/gates live-cover ./google-sheets-mcp
-//	go run ./scripts/gates pins
-//	go run ./scripts/gates smoke ./google-sheets-mcp
-//	go run ./scripts/gates staleness ./google-sheets-mcp
-//	go run ./scripts/gates docs
-//	go run ./scripts/gates schema-diff ./google-sheets-mcp
-//	go run ./scripts/gates schema-baseline ./google-sheets-mcp
-//	go run ./scripts/gates schema-ack origin/main HEAD
-//	go run ./scripts/gates api-coverage
-//	go run ./scripts/gates api-fields
-//	go run ./scripts/gates api-diff
-//	go run ./scripts/gates parity
-//	go run ./scripts/gates release-tag v2.0.0
-//	go run ./scripts/gates precommit
+// `go run ./scripts/gates` lists the commands and their arguments.
 package main
 
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
 )
+
+// command is one thing this program does.
+type command struct {
+	// run is given the words after the command's name, as many as args
+	// allows.
+	run func(args []string)
+	// args spells those words for the usage text, and says how many the
+	// command takes: a word in brackets is optional, and a word in lower
+	// case is given as written.
+	args string
+	doc  string
+	// runsIn is the pipeline that has to run the command, which the parity
+	// gate holds.
+	runsIn pipeline
+}
+
+// pipeline is where a command has to run.
+type pipeline int
+
+const (
+	// manual is run by hand or by the pre-commit hook, never by `make
+	// check`. It starts at one, so a command that names no pipeline is
+	// refused rather than read as manual.
+	manual pipeline = iota + 1
+	// inCheck runs in `make check` and in CI.
+	inCheck
+	// inPR runs in CI's pull-request job and not in `make check`: it
+	// measures from the merge-base, which only a pull request has.
+	inPR
+	// inRelease runs in the release workflows or the goreleaser config.
+	inRelease
+)
+
+func (p pipeline) String() string {
+	switch p {
+	case manual:
+		return "manual"
+	case inCheck:
+		return "make check"
+	case inPR:
+		return "pull request"
+	case inRelease:
+		return "release"
+	}
+	return "no pipeline"
+}
+
+// commands is the one list of what this program does. The dispatch, the
+// usage text, the docs gate and the parity gate all read it, so none of
+// them can name a command the others do not.
+//
+// Filled in init rather than as a literal, because the docs and parity
+// gates read this map and Go sees that as an initialization cycle.
+var commands map[string]command
+
+func init() {
+	commands = map[string]command{
+		"coverage": {
+			run: coverageCmd, args: "PROFILE MIN",
+			doc: "enforce the coverage floor per package", runsIn: inCheck,
+		},
+		"classes": {
+			run: func([]string) { check(classGate(), "error classes") },
+			doc: "the error vocabulary, held closed from both sides", runsIn: inCheck,
+		},
+		"leaks": {
+			run:    func(a []string) { check(leakGate(len(a) > 0 && a[0] == "history"), "leak scan") },
+			args:   "[history]",
+			doc:    "identifiers and data in the working tree, or in every blob and message of the history",
+			runsIn: inCheck,
+		},
+		"transcript": {
+			run: func([]string) { check(transcriptGate(), "transcript redaction") },
+			doc: "the live drivers print only through their redactor", runsIn: inCheck,
+		},
+		"live-cover": {
+			run: func(a []string) { check(liveCoverGate(binArg(a)), "live driver coverage") }, args: "[BIN]",
+			doc: "the live driver exercises every tool option", runsIn: inCheck,
+		},
+		"pins": {
+			run: func([]string) { check(pinGate(), "workflow pins") },
+			doc: "actions pinned by SHA, tool versions exact, shells pinned", runsIn: inCheck,
+		},
+		"smoke": {
+			run: func(a []string) { check(smoke(binArg(a)), "stdio smoke") }, args: "[BIN]",
+			doc: "drive the binary over stdio", runsIn: inCheck,
+		},
+		"staleness": {
+			run: func(a []string) { check(staleness(binArg(a)), "staleness") }, args: "[BIN]",
+			doc: "the docs must match the code", runsIn: inCheck,
+		},
+		"docs": {
+			run: func([]string) { check(docsGate(os.Stdout), "docs") },
+			doc: "every decision, citation, link, path and live step the docs and code name resolves", runsIn: inCheck,
+		},
+		"schema-diff": {
+			run: func(a []string) { check(schemaDiff(binArg(a)), "schema diff") }, args: "[BIN]",
+			doc: "diff the tool schemas against the newest release's recorded baseline", runsIn: inCheck,
+		},
+		// A release commit runs it, recording the surface of the release
+		// being cut; on any other commit it refuses, since the build is not
+		// stamped as that release.
+		"schema-baseline": {
+			run: func(a []string) { check(writeBaseline(binArg(a)), "schema baseline") }, args: "[BIN]",
+			doc: "record the release being cut as the baseline, in its release commit", runsIn: manual,
+		},
+		"schema-ack": {
+			run: func(a []string) { check(schemaAck(os.Stdout, a[0], a[1]), "schema ack") }, args: "BASE HEAD",
+			doc: "every tool-surface change since the merge-base is named in a commit footer", runsIn: inPR,
+		},
+		"mcpb": {
+			run: func([]string) { check(mcpbGate(os.Stdout), "bundle manifest") },
+			doc: "the Claude Desktop bundle's manifest, against the files it will pack", runsIn: inCheck,
+		},
+		// The universal binary's post hook, where the binaries it packs
+		// exist; mcpb is the half that runs on every commit.
+		"mcpb-pack": {
+			run: mcpbPackCmd, args: "VERSION [DIST]",
+			doc: "pack the bundle from the built binaries", runsIn: inRelease,
+		},
+		"api-coverage": {
+			run: func([]string) { check(apiCoverageGate(), "API coverage") },
+			doc: "every published API method and batchUpdate request is used or written off", runsIn: inCheck,
+		},
+		"api-fields": {
+			run: func([]string) { check(apiFieldsGate(os.Stdout), "API fields") },
+			doc: "every published field is modeled on purpose or written off", runsIn: inCheck,
+		},
+		// Manual: it reaches the network. What CI holds is the snapshot
+		// this writes, not the fetch itself.
+		"api-diff": {
+			run:    func([]string) { check(apiDiff(os.Stdout), "API diff") },
+			doc:    "refetch the discovery documents and rewrite the API snapshot",
+			runsIn: manual,
+		},
+		// Manual for the same reason: a vendored schema's digest says the
+		// bytes are the ones somebody reviewed, never that upstream still
+		// serves them, and only a fetch can tell the difference.
+		"schema-refetch": {
+			run:    func([]string) { check(schemaRefetch(os.Stdout), "vendored schemas") },
+			doc:    "check the vendored schemas against what their sources serve",
+			runsIn: manual,
+		},
+		"parity": {
+			run: func([]string) { check(parityGate(), "make check and CI agree") },
+			doc: "`make check` and ci.yml run the same commands, and each command runs where it says", runsIn: inCheck,
+		},
+		// Not a gate: it prints the CHANGELOG section the workflow hands
+		// goreleaser as --release-notes, and nothing else, since stdout is
+		// the release body.
+		"release-notes": {
+			run: releaseNotesToStdout, args: "VERSION [CHANGELOG]",
+			doc: "print the CHANGELOG section a tag publishes", runsIn: inRelease,
+		},
+		// It runs before goreleaser, and refuses a tag whose major version
+		// is not go.mod's.
+		"release-tag": {
+			run: func(a []string) { check(releaseTag(a[0]), "release tag") }, args: "TAG",
+			doc: "refuse a tag whose major version is not go.mod's", runsIn: inRelease,
+		},
+		// Not a gate: it runs after a release, printing the entry the
+		// publish workflow hands mcp-publisher.
+		"registry-publish": {
+			run: func(a []string) {
+				if err := registryPublish(os.Stdout, a[0], a[1]); err != nil {
+					fail("registry-publish: %v", err)
+				}
+			},
+			args: "VERSION CHECKSUMS", doc: "print the MCP registry entry for a release's checksums", runsIn: inRelease,
+		},
+		// The pre-commit hook's own entry point; it runs other gates rather
+		// than being one.
+		"precommit": {
+			run: func([]string) { check(precommit(), "pre-commit") },
+			doc: "the checks the pre-commit hook runs", runsIn: manual,
+		},
+	}
+}
 
 func main() {
 	if len(os.Args) < 2 {
-		fail("usage: gates coverage PROFILE MIN | classes | leaks [history] | transcript | " +
-			"live-cover BIN | pins | smoke BIN | staleness BIN | docs | schema-diff BIN | schema-baseline BIN | schema-ack BASE HEAD | mcpb | " +
-			"mcpb-pack VERSION [DIST] | api-coverage | api-fields | api-diff | schema-refetch | parity | " +
-			"release-notes VERSION [CHANGELOG] | release-tag TAG | precommit")
+		fail("%s", usage())
+	}
+	name, args := os.Args[1], os.Args[2:]
+	c, ok := commands[name]
+	if !ok {
+		fail("unknown gate %q\n\n%s", name, usage())
+	}
+	if !fits(c.args, args) {
+		fail("usage: gates %s", synopsis(name))
 	}
 	root, err := repoRoot()
 	if err != nil {
@@ -48,123 +217,60 @@ func main() {
 	if err := os.Chdir(root); err != nil {
 		fail("%v", err)
 	}
-
-	// The commands about somebody else's contract are dispatched first
-	// and together: what the API publishes, and what the schemas this
-	// repository's documents cite say. Two of them reach the network and
-	// are manual by nature, because what CI holds is the snapshot or the
-	// vendored copy rather than the fetch.
-	if contractCommand(os.Args[1]) {
-		return
-	}
-
-	switch os.Args[1] {
-	case "coverage":
-		coverageCmd(os.Args[2:])
-	case "classes":
-		check(classGate(), "error classes")
-	case "leaks":
-		history := len(os.Args) > 2 && os.Args[2] == "history"
-		check(leakGate(history), "leak scan")
-	case "transcript":
-		check(transcriptGate(), "transcript redaction")
-	case "live-cover":
-		check(liveCoverGate(binArg()), "live driver coverage")
-	case "pins":
-		check(pinGate(), "workflow pins")
-	case "smoke":
-		check(smoke(binArg()), "stdio smoke")
-	case "staleness":
-		check(staleness(binArg()), "staleness")
-	case "docs":
-		check(docsGate(os.Stdout), "docs")
-	case "schema-diff", "schema-baseline", "schema-ack":
-		// One clause for the three, because this switch is at the
-		// cyclomatic limit.
-		schemaCommand(os.Args[1])
-	case "mcpb":
-		check(mcpbGate(os.Stdout), "bundle manifest")
-	case "mcpb-pack":
-		mcpbPackCmd(os.Args[2:])
-	case "release-notes":
-		// Not a gate: it runs at release time, printing the CHANGELOG
-		// section the workflow hands goreleaser as --release-notes. One
-		// statement, because this switch is already at the cyclomatic
-		// limit the linter enforces.
-		releaseNotesToStdout(os.Args[2:])
-	case "release-tag":
-		// Release only: it runs before goreleaser, and refuses a tag
-		// whose major version is not go.mod's.
-		check(releaseTag(tagArg()), "release tag")
-	case "registry-publish":
-		// Not a gate: it runs after a release, printing the entry the
-		// publish workflow hands mcp-publisher.
-		if len(os.Args) < 4 {
-			fail("usage: gates registry-publish VERSION CHECKSUMS")
-		}
-		if err := registryPublish(os.Stdout, os.Args[2], os.Args[3]); err != nil {
-			fmt.Fprintf(os.Stderr, "registry-publish: %v\n", err)
-			os.Exit(1)
-		}
-	case "parity":
-		check(parityGate(), "make check and CI agree")
-	case "precommit":
-		check(precommit(), "pre-commit")
-	default:
-		fail("unknown gate %q", os.Args[1])
-	}
+	c.run(args)
 }
 
-// contractCommand runs the gates that hold this repository against
-// somebody else's published contract, and reports whether it handled the
-// name.
-func contractCommand(name string) bool {
-	switch name {
-	case "api-coverage":
-		check(apiCoverageGate(), "API coverage")
-	case "api-fields":
-		check(apiFieldsGate(os.Stdout), "API fields")
-	case "api-diff":
-		// Manual: it reaches the network. What CI holds is the snapshot
-		// this writes, not the fetch itself.
-		check(apiDiff(os.Stdout), "API diff")
-	case "schema-refetch":
-		// Manual for the same reason: a vendored schema's digest says
-		// the bytes are the ones somebody reviewed, never that upstream
-		// still serves them, and only a fetch can tell the difference.
-		check(schemaRefetch(os.Stdout), "vendored schemas")
-	default:
+// arity is the fewest and the most words a command's args spells.
+func arity(args string) (least, most int) {
+	for _, word := range strings.Fields(args) {
+		most++
+		if !strings.HasPrefix(word, "[") {
+			least++
+		}
+	}
+	return least, most
+}
+
+// fits reports whether args fit a command's args spelling: as many words as
+// it spells, and a word it spells in lower case, such as [history], given
+// as that word, so a typo is refused rather than run as the default.
+func fits(spelling string, args []string) bool {
+	if least, most := arity(spelling); len(args) < least || len(args) > most {
 		return false
+	}
+	for i, word := range strings.Fields(spelling)[:len(args)] {
+		if literal := strings.Trim(word, "[]"); literal == strings.ToLower(literal) && args[i] != literal {
+			return false
+		}
 	}
 	return true
 }
 
-// schemaCommand runs schema-diff on every commit, schema-baseline in a
-// release commit, and schema-ack on a pull request.
-func schemaCommand(name string) {
-	switch name {
-	case "schema-baseline":
-		check(writeBaseline(binArg()), "schema baseline")
-	case "schema-ack":
-		if len(os.Args) < 4 {
-			fail("usage: gates schema-ack BASE HEAD")
-		}
-		check(schemaAck(os.Stdout, os.Args[2], os.Args[3]), "schema ack")
-	default:
-		check(schemaDiff(binArg()), "schema diff")
+// usage is generated from commands, so it cannot fall behind them.
+func usage() string {
+	names := slices.Sorted(maps.Keys(commands))
+	width := 0
+	for _, name := range names {
+		width = max(width, len(synopsis(name)))
 	}
+	var b strings.Builder
+	b.WriteString("usage: gates COMMAND [ARGS]\n\n")
+	for _, name := range names {
+		fmt.Fprintf(&b, "  %-*s  %s (%s)\n", width, synopsis(name), commands[name].doc, commands[name].runsIn)
+	}
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
-func tagArg() string {
-	if len(os.Args) < 3 {
-		fail("usage: gates release-tag TAG")
-	}
-	return os.Args[2]
+// synopsis is a command's name and the arguments it takes.
+func synopsis(name string) string {
+	return strings.TrimSpace(name + " " + commands[name].args)
 }
 
-func binArg() string {
-	if len(os.Args) > 2 {
-		return os.Args[2]
+// binArg is the binary a command was given, or the one `make build` and
+// CI write.
+func binArg(args []string) string {
+	if len(args) > 0 {
+		return args[0]
 	}
 	return defaultBinary()
 }
@@ -174,6 +280,15 @@ func check(err error, what string) {
 		failWith(exitCode(err), "%s: %v", what, err)
 	}
 	fmt.Printf("%s ok\n", what)
+}
+
+// floorProblems is a problem when a gate read fewer of what than least:
+// found nothing and looked at nothing print the same sentence otherwise.
+func floorProblems(what string, read, least int) []string {
+	if read >= least {
+		return nil
+	}
+	return []string{fmt.Sprintf("read %d %s, want at least %d: the reader is not seeing its input", read, what, least)}
 }
 
 // couldNotRun is a gate that could not reach a verdict, a failed build
@@ -201,9 +316,6 @@ func failWith(code int, format string, args ...any) {
 }
 
 func coverageCmd(args []string) {
-	if len(args) != 2 {
-		fail("usage: gates coverage PROFILE MIN")
-	}
 	minimum, err := strconv.ParseFloat(args[1], 64)
 	if err != nil {
 		fail("coverage: %v", err)
@@ -212,9 +324,6 @@ func coverageCmd(args []string) {
 }
 
 func mcpbPackCmd(args []string) {
-	if len(args) < 1 {
-		fail("usage: gates mcpb-pack VERSION [DIST]")
-	}
 	dist := ""
 	if len(args) > 1 {
 		dist = args[1]

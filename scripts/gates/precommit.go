@@ -27,7 +27,7 @@ func precommit() error {
 			}
 			return nil
 		}},
-		{"go vet", func() error { return command("go", "vet", "./...") }},
+		{"go vet", func() error { return runCommand("go", "vet", "./...") }},
 		{"leaks", func() error { return leakGate(false) }},
 		{"classes", classGate},
 		{"transcript", transcriptGate},
@@ -41,7 +41,7 @@ func precommit() error {
 	return nil
 }
 
-func command(name string, args ...string) error {
+func runCommand(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

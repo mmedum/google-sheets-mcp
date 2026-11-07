@@ -460,10 +460,10 @@ CHANGELOG to the code. Releasing is in [release.md](release.md).
 | D-64 | Coverage is floored per package over `internal/` and `cmd/`, from a derived list | accepted | cover, TestFloorPerPackage, TestBothTreesAreUnderAFloor |
 | D-65 | A rule is a test, its list derived from the code, and its checker asserts a floor on what it read | accepted | review |
 | D-66 | Everything the repository runs on itself is Go | accepted | review |
-| D-67 | `make check` and CI run the same set | accepted | parity, TestParityPassesOnThisRepository, TestParityFindsTheDriftsThatHappened |
+| D-67 | `make check` and CI run the same set | accepted | parity, TestParityPassesOnThisRepository, TestParityFindsTheDriftsThatHappened, TestParityHoldsAGateCallsArguments, TestParityHoldsTheTreesTagsToAVetPass |
 | D-68 | CI runs every gate on Linux, macOS and Windows under a pinned bash | accepted | pins, TestPinsShell |
-| D-69 | Every action is pinned by commit SHA and every tool by exact version | accepted | pins, TestPinPatterns, TestUnpinnedTools |
-| D-70 | A release is built from a tag, reproducible, signed and attested | accepted | release-tag, release-notes, registry-publish, TestBundleIsReproducible, TestTheTagMajorMustBeTheModules |
+| D-69 | Every action is pinned by commit SHA and every tool by exact version | accepted | pins, TestPinPatterns, TestPinsNamesEachProblem |
+| D-70 | A release is built from a tag, reproducible, signed and attested | accepted | release-tag, release-notes, registry-publish, TestBundleIsReproducible, TestTheTagMajorMustBeTheModules, TestTheReleaseAttestsEveryFileItPublishes |
 | D-71 | The bundle manifest is held to the staged tree and a pinned schema | accepted | mcpb, mcpb-pack, TestTheSixWaysAManifestBreaks, TestCommittedManifestPacks, TestAFailedWriteLeavesNoBundle, TestTheWaysAManifestMisdeclaresItsVersion, TestTheStampedManifestIsHeldToTheSchema, TestAVendoredSchemaIsHeldToItsRecordedDigest |
 | D-72 | The bundle asks for the settings a person sets elsewhere, each defaulting as the server does | accepted | mcpb, TestBundleVarsAreDerivedFromTheSettings, TestTheBundleSettingsRefuseEachBreak, TestVarsDescribeWhatBuildDoes, TestTheClientFileMayBeLeftEmpty |
 | D-73 | `main` is released code, and work reaches it through a pull request the maintainer merges | accepted | review |
@@ -755,6 +755,7 @@ Cost: each run leaves its spreadsheets, titled `livesheet scratch`, for
 a person to trash, since trashing needs a Drive write scope; the run
 ends by printing the search that finds them. The live driver and the
 evals each carry a copy of the redaction helper (#78).
+
 ### D-12 A1 is the contract: the model never sees a GridRange, and the conversion lives in `internal/a1`
 
 Every range the model sees or sends is A1, because that is what the
@@ -1016,6 +1017,7 @@ Cost: the cell window and the character budget can disagree, so a raised
 `max_cells` fetches rows no rendering reaches (#69). A window is spent
 on the sheet's allocated width rather than its data, and decoding the
 response is most of a large read's time (#70).
+
 ### D-23 Content is data, and a read shows formulas rather than resolving them
 
 What a read returns is data. The server never acts on what a cell, a
@@ -1069,6 +1071,7 @@ Cost: a guarded write is two requests. A write into a pivot table's
 output names the pivot only when its anchor lies within the read budget
 (#81). The guard's refusals name the tool's arguments, so renaming an
 argument means changing `internal/plan` too (#71).
+
 ### D-25 An overwrite carries the checkpoint of what it replaces
 
 `overwrite` and `overwrite_formulas` each need `expect_checkpoint`, the
@@ -1171,6 +1174,7 @@ Cost: a `find_replace` whose replacement names such a function is
 refused whatever it searches (#67). A pattern Go cannot compile, such as
 a lookbehind, cannot be run here first, so over formulas it is refused
 unless the setting allows it.
+
 ### D-29 `append_rows` only inserts, takes its range, and reports where Google put the rows
 
 `append_rows` always inserts rows, needs a range, and reports where the
@@ -1221,6 +1225,7 @@ Cost: nothing but each write's early return keeps it from sending under
 `clear_values`, `manage_sheet` and `manage_anchor` check some refusals
 before the preview, so a dry run there can answer with the refusal
 (#74).
+
 ### D-31 A write says what changed, read back from Google rather than restated from the request
 
 A write's result says what changed, from what Google reported rather
@@ -1365,6 +1370,7 @@ for a tool that reaches a second world.
 Cost: `cancel_refresh` with no `id` cancels every refresh, kept because
 it stops billing. `manage_cell_comment` assigns a comment to any
 address, and Google emails the assignee (#66).
+
 ### D-37 Per-call approval is the client's, and the server asks the person nothing
 
 The server never puts a question to the person. It sends no elicitation,
@@ -1521,6 +1527,7 @@ Cost: naming a band's anchors costs a developer metadata search on every
 band delete. `delete_dimensions` does not name the pivot tables whose
 source a band cuts, though their output can fall to a header and a grand
 total (#63).
+
 ### D-43 Connected Sheets is opt-in: one setting registers its tools and asks for `bigquery.readonly`
 
 Connected Sheets needs `bigquery.readonly`: `addDataSource` is refused
@@ -1549,6 +1556,7 @@ Cost: turning it on means signing in again, and a BigQuery source needs
 a Cloud project with billing. Whether a collaborator without BigQuery
 access sees the results is not known, so the description says only that
 they go into a sheet (#65).
+
 ### D-44 Every error is a tool result, `[class] message`, from a closed vocabulary that says what to do
 
 Every failure a caller sees is a tool result, not a protocol error, in
@@ -1576,6 +1584,7 @@ Rejected: a smaller vocabulary of six classes, which collapses
 Cost: the SDK's own schema validation answers outside the vocabulary, so
 an argument with a wrong name or type is refused in the SDK's words
 (#79).
+
 ### D-45 Repeatability follows the HTTP method
 
 Whether a request may be sent twice follows from its HTTP method. A GET
@@ -1605,6 +1614,7 @@ after a 503.
 Cost: a write that may have landed is `[ambiguous_outcome]`, and the
 caller reads before repeating it. A write canceled while its request is
 in flight comes back `[unavailable]` instead (#84).
+
 ### D-46 Requests are paced at the documented per-user quota, one in flight
 
 Requests are paced at the quota Google documents: 60 read requests and
@@ -1679,6 +1689,7 @@ Rejected: a five-second window, which never spans a turn.
 Cost: a sheet renamed by someone else inside the window fails the next
 call that names it, and a read after `append_rows` can miss the appended
 rows, until the window ends (#85).
+
 ### D-49 Scopes are `spreadsheets` plus `drive.readonly`, or their read-only pair
 
 The server asks for `spreadsheets` and `drive.readonly`. Read-only mode
@@ -1906,6 +1917,7 @@ the API cannot feed; a truncation note inside the CSV; reusing `Read`,
 which renders a grid nobody asked for.
 Cost: a resource builds a grid the size of its window rather than its
 data, and a change to the fetch window has two places to land (#77).
+
 ### D-59 Tests run against an in-memory Sheets that replays what Google was seen to do
 
 The unit suite runs against `internal/gapi/sheetstest`, an in-memory
@@ -1931,6 +1943,7 @@ table copied between the fake and the code.
 Cost: the fake ignores what a field mask asks for, so a mask that drops
 a needed field passes the suite (#80). Its table delete keeps the
 conditional format rules Google drops (#83).
+
 ### D-60 Behavior the reference does not pin down is probed live before code depends on it
 
 The discovery document and Google's guides are the first source. Where
@@ -1986,6 +1999,7 @@ truth; a static coverage check alone.
 Cost: a run needs a real account, leaves its spreadsheets behind and is
 read line by line. Some behaviors no run reaches, such as the data
 source tools without a BigQuery project (#68).
+
 ### D-62 Evals score the end state and the trace, through this server's tools alone
 
 `make evals` gives a model tasks with only this server's tools. Some ask
@@ -2032,6 +2046,7 @@ Rejected: `errors.Is(err, io.EOF)`.
 Cost: the smoke test is two runs of the binary, since one run cannot
 read the replies and catch the exit. No run kills the server during
 initialization (#76).
+
 ### D-64 Coverage is floored per package over `internal/` and `cmd/`, from a derived list
 
 `make cover` holds every package to a coverage floor. The package list
@@ -2099,11 +2114,19 @@ bundle manifest, are written and kept current here in Go.
 ### D-67 `make check` and CI run the same set
 
 `make check` and CI run the same checks. `scripts/gates parity` compares
-the Makefile's `check` target with `.github/workflows/ci.yml` and fails
-when either has a check the other lacks. The gate list is read from the
-`scripts/gates` dispatcher, so a gate is covered from its first commit.
-A gate that runs elsewhere on purpose, such as at release time or only
-on a pull request, is listed with the reason.
+them by what they run. Every command a target in `make check` runs, its
+Makefile variables expanded, is one `.github/workflows/ci.yml` runs with
+the same words, as the shell splits them, or one an action stands in
+for. A command beside a gate call on its line is compared on its own.
+Every go command `ci.yml` runs is one `make check` runs.
+
+The dispatch records where each gates command runs: in both, only on a
+pull request, at release time, or by hand, so a gate is held from its
+first commit. A gate both run takes the same arguments in both, and an
+omitted binary is the one the gate defaults to. Every file behind a
+build tag, read from its `//go:build` line, is vetted on both sides by a
+pass that compiles it. The reader does not read `if:` on a step or a
+job, so a command under a condition counts as one CI runs.
 
 A contributor runs `make check` believing it is what CI runs. If the two
 differ, a change that passes at home fails CI, or worse, a check CI
@@ -2114,8 +2137,8 @@ The two are the Makefile's `check` target and CI's job list, and no doc
 repeats either.
 
 Rejected: a Makefile comment claiming the two match.
-Cost: a check goes into both, or is listed in `scripts/gates/parity.go`
-with the reason it runs elsewhere.
+Cost: a command goes into both, in the same words, or is excused in
+`scripts/gates/parity.go` with the reason.
 
 ### D-68 CI runs every gate on Linux, macOS and Windows under a pinned bash
 
@@ -2128,7 +2151,8 @@ named `cov` and lets the suite carry on. A job-level default fixes the
 jobs that exist and leaves the next one bare. An explicit `bash` also
 runs with `-eo pipefail`, so a failing command in a pipe fails the step
 ([workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell)).
-`scripts/gates pins` requires the workflow-level default in every file.
+`scripts/gates pins` requires the workflow-level default in every file,
+and refuses a job's or a step's shell other than bash.
 
 No gate is conditioned on `runner.os`. A platform in the matrix that no
 gate reads is a platform nobody tests, while the matrix says it is
@@ -2154,12 +2178,15 @@ with a comment saying which half of the pin is load-bearing. The tools
 the Makefile runs go through `go run <module>@<version>`. Never a `~>`
 range: `goreleaser-action`'s own default is `~> v2`, and narrowing it to
 `~> v2.18.0` is still a range, so the tool that decides what the
-artifacts are would float. Every workflow starts at
-`permissions: contents: read` and raises it per job, and checkouts set
-`persist-credentials: false`.
+artifacts are would float. A tool named in two files is named at one
+version, and a container image is pinned by its digest. Every workflow
+starts at `permissions: contents: read` and raises it per job, and
+checkouts set `persist-credentials: false`.
 
-`scripts/gates pins` asserts all of it, because a comment cannot hold a
-version shut.
+`scripts/gates pins` asserts the SHAs and their version comments, the
+exact versions, one version per tool and the image digests, because a
+comment cannot hold a version shut. No gate reads the permissions or the
+checkout setting.
 
 Rejected: a `~>` range, which floats across a release line.
 Cost: every bump changes a SHA and its version together. A deployer's
@@ -2171,7 +2198,8 @@ repository cannot assume one.
 A release is built by GoReleaser from a `v*` tag, for Linux, macOS and
 Windows on amd64 and arm64. `checksums.txt` is signed keyless through
 Sigstore, every archive gets an SBOM, and the build gets a provenance
-attestation. `-trimpath` and `mod_timestamp` make a rebuilt tag byte for
+attestation, whose subject-path names the archives, the bundle and the
+checksum file. `-trimpath` and `mod_timestamp` make a rebuilt tag byte for
 byte the same. A release is never a draft. The steps are in
 [release.md](release.md).
 
@@ -2247,6 +2275,7 @@ installs, since settings change what registers; settings in `args` or an
 override's `env`; an optional key with no default.
 Cost: nothing holds the fields' sentences about read-only mode to what
 the server registers (#82).
+
 ### D-73 `main` is released code, and work reaches it through a pull request the maintainer merges
 
 `main` is released code. Nothing is pushed to it directly, release
@@ -2280,14 +2309,20 @@ note written at release time drifts from the log, and one generated from
 commit subjects is written for contributors rather than for the people
 who install the server.
 
-The staleness gate asks for an entry under `[Unreleased]` whenever Go
-code changed. `CONTRIBUTING.md` holds the rules for an entry, which are
-not optional since the section ships verbatim.
+The staleness gate asks for an entry under `[Unreleased]` whenever the
+binary's source changed since the newest release. That is a Go file
+other than a test in a package the binary imports, as `go list -deps`
+reports them, a file such a package embeds, or `go.mod` outside its
+`require` and `tool` lines. `CONTRIBUTING.md` holds the rules for an
+entry, which are not optional since the section ships verbatim.
 
 Rejected: a changelog generated from commit subjects; release notes
-written by hand at release time.
-Cost: the staleness gate asks for an entry whenever Go changed, a change
-no user sees included.
+written by hand at release time; a path filter over `cmd/` and
+`internal/`, which counts a package the binary never imports and misses
+`go.mod`.
+Cost: the staleness gate asks for an entry whenever the binary's source
+changed, a refactor no user sees included. A dependency bump passes it,
+the MCP SDK's too, whose entry `CONTRIBUTING.md` asks for.
 
 ### D-75 Own wire types over raw REST, and no generated client
 

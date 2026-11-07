@@ -64,12 +64,3 @@ func git(args ...string) (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
-
-// lastTag is the most recent tag, or "" when there is none yet.
-func lastTag() string {
-	tag, err := git("describe", "--tags", "--abbrev=0")
-	if err != nil {
-		return ""
-	}
-	return tag
-}
