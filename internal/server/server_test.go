@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/url"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"testing"
@@ -245,6 +246,33 @@ func TestToolErrorsAreResultsNotProtocolErrors(t *testing.T) {
 	}
 }
 
+// linkedVersion is the version of a module the test binary links, a
+// replacement's when go.mod replaces it. A replacement by a local path has
+// no version, so the test skips.
+func linkedVersion(t *testing.T, module string) string {
+	t.Helper()
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		t.Fatal("the test binary carries no build info")
+	}
+	for _, dep := range info.Deps {
+		if dep.Path != module {
+			continue
+		}
+		if dep.Replace == nil {
+			return dep.Version
+		}
+		// The go command records a path replacement's missing version as
+		// (devel) (https://github.com/golang/go/blob/go1.27.3/src/cmd/go/internal/load/pkg.go#L2381).
+		if dep.Replace.Version == "(devel)" {
+			t.Skipf("go.mod replaces %s with the path %s, which has no version to compare", module, dep.Replace.Path)
+		}
+		return dep.Replace.Version
+	}
+	t.Fatalf("the test binary links no %s; this test is asserting on nothing", module)
+	return ""
+}
+
 func TestDumpSchemas(t *testing.T) {
 	// The full surface, as --dump-schemas builds it: a dump that showed
 	// only what this configuration registers would let a destructive
@@ -270,8 +298,13 @@ func TestDumpSchemas(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &dump); err != nil {
 		t.Fatalf("the dump is not JSON: %v", err)
 	}
-	if dump.Server != server.Name || dump.SDK != server.SDKVersion {
-		t.Errorf("dump header = %+v", dump)
+	if dump.Server != server.Name {
+		t.Errorf("dump server = %q, want %q", dump.Server, server.Name)
+	}
+	// The SDK the binary links, not the constant again: a constant left
+	// behind by an upgrade would otherwise agree with itself.
+	if linked := linkedVersion(t, "github.com/modelcontextprotocol/go-sdk"); dump.SDK != linked {
+		t.Errorf("the dump records SDK %q and the binary links %q", dump.SDK, linked)
 	}
 	if len(dump.Tools) != len(allTools()) {
 		t.Fatalf("the dump has %d tools", len(dump.Tools))

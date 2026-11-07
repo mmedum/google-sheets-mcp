@@ -48,7 +48,7 @@ install: ## go install the binary
 
 .PHONY: fmt
 fmt: ## Fail if gofmt would change anything
-	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "gofmt issues:"; echo "$$out"; exit 1; fi
+	@out=$$(gofmt -l .); [ -z "$$out" ] || { echo "$$out"; exit 1; }
 
 .PHONY: vet
 vet: ## go vet, including the tagged tests so they keep compiling

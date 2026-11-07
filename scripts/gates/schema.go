@@ -687,15 +687,8 @@ func typeWord(typ string) string {
 // commit. Recording it after the tag instead would fail every branch
 // from the moment the tag is pushed until a second change lands.
 func baselineVersion(changelog string) string {
-	for _, line := range strings.Split(changelog, "\n") {
-		rest, ok := strings.CutPrefix(line, "## [")
-		if !ok {
-			continue
-		}
-		v, _, ok := strings.Cut(rest, "]")
-		if ok && v != "Unreleased" {
-			return "v" + v
-		}
+	if v := readChangelog(changelog).versions(); len(v) > 0 {
+		return "v" + v[0].label
 	}
 	return ""
 }

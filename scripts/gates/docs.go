@@ -26,14 +26,12 @@ import (
 // Evidence has no IDs. What was verified upstream is stated at the line
 // that depends on it, with its source link, so an E- citation fails.
 
-// The files the docs gate reads besides the records and the changelog.
+// The files the docs gate reads besides the records, the changelog, the
+// Makefile and the workflows.
 const (
 	architectureDoc = "docs/architecture.md"
 	docsAgentFile   = "CLAUDE.md"
-	docsAllowlist   = "testdata/citation-allowlist.txt"
-	docsMakefile    = "Makefile"
 	docsLintConfig  = ".golangci.yml"
-	docsWorkflowDir = ".github/workflows"
 )
 
 // A comment cites a live step by name, and the live run has two kinds: a
@@ -112,8 +110,6 @@ var (
 
 	docsSeparatorRow = regexp.MustCompile(`^\|(\s*:?-+:?\s*\|)+$`)
 	docsGatesCommand = regexp.MustCompile(`(?:^|\s|\./)scripts/gates\s+(\S+)`)
-	// A rule line: targets, a colon, and not the := of an assignment.
-	docsMakeRule = regexp.MustCompile(`(?m)^([^\s:#=]+(?:[ \t]+[^\s:#=]+)*)[ \t]*:(?:[^=]|$)`)
 )
 
 const docsSupersededBy = "superseded by "
@@ -198,7 +194,6 @@ func (g *docsCheck) run() {
 	g.readGo()
 	g.readVocabulary()
 	g.readDecisions()
-	g.readAllowlist()
 	g.checkCitations()
 	g.checkCodemap()
 }
@@ -225,11 +220,11 @@ type docsCheck struct {
 	comments map[string][]docsSourceLine
 	literals map[string][]docsSourceLine
 
-	tests         map[string]bool
-	gatesCommands map[string]bool
-	makeTargets   map[string]bool
-	linters       map[string]bool
-	liveSteps     map[string]bool
+	tests       map[string]bool
+	makeTargets map[string]bool
+	linters     map[string]bool
+	// liveSteps is each live step's name, where it is defined.
+	liveSteps map[string]token.Position
 	// liveShort is set when a live source read fewer names than its floor,
 	// and no citation of a step is held to what was read.
 	liveShort bool
@@ -237,10 +232,6 @@ type docsCheck struct {
 	// decisions stays nil when the architecture document cannot be read,
 	// so a citation of one is not also reported as unknown.
 	decisions map[string]*docsDecision
-
-	allowlist map[string]docsAllowance
-	// bare counts each allowlisted file's bare section citations.
-	bare map[string]int
 
 	// links and spanPaths count what the Markdown pass checked, and
 	// packages the directories the codemap is held to, each held to its
@@ -257,20 +248,18 @@ type docsSourceLine struct {
 
 func newDocsCheck(root string, files []string, floors docsFloors) *docsCheck {
 	g := &docsCheck{
-		root:          root,
-		files:         files,
-		present:       map[string]bool{},
-		dirs:          map[string]bool{},
-		reported:      map[string]bool{},
-		proseOf:       map[string][]string{},
-		slugs:         map[string]map[string]bool{},
-		comments:      map[string][]docsSourceLine{},
-		literals:      map[string][]docsSourceLine{},
-		tests:         map[string]bool{},
-		gatesCommands: map[string]bool{},
-		liveSteps:     map[string]bool{},
-		bare:          map[string]int{},
-		floors:        floors,
+		root:      root,
+		files:     files,
+		present:   map[string]bool{},
+		dirs:      map[string]bool{},
+		reported:  map[string]bool{},
+		proseOf:   map[string][]string{},
+		slugs:     map[string]map[string]bool{},
+		comments:  map[string][]docsSourceLine{},
+		literals:  map[string][]docsSourceLine{},
+		tests:     map[string]bool{},
+		liveSteps: map[string]token.Position{},
+		floors:    floors,
 	}
 	for _, f := range files {
 		g.present[f] = true
@@ -351,24 +340,46 @@ func (g *docsCheck) lines(rel string) ([]string, bool) {
 // rather than dropping keeps the line numbers.
 func docsProse(doc string) []string {
 	lines := strings.Split(doc, "\n")
-	fence := ""
+	var fence docsFence
 	for i, line := range lines {
-		line = strings.TrimRight(line, " \t\r")
-		lines[i] = line
-		unindented := strings.TrimLeft(line, " ")
-		marker := docsFenceMarker(unindented)
-		switch {
-		case fence == "" && marker != "":
-			fence = marker
-			lines[i] = ""
-		case fence != "":
-			if strings.HasPrefix(marker, fence) && strings.TrimLeft(unindented, marker[:1]) == "" {
-				fence = ""
-			}
+		lines[i] = strings.TrimRight(line, " \t\r")
+		if fence.code(lines[i]) {
 			lines[i] = ""
 		}
 	}
 	return lines
+}
+
+// docsFence follows a Markdown document's fenced code a line at a time.
+// Its zero value is outside any fence.
+type docsFence struct{ open string }
+
+// code reports whether a line opens, sits inside or closes fenced code. A
+// fence closes at a line of only its own character, at least as many
+// (https://spec.commonmark.org/0.31.2/#fenced-code-blocks).
+func (f *docsFence) code(line string) bool {
+	unindented := strings.TrimLeft(strings.TrimRight(line, " \t\r"), " ")
+	marker := docsFenceMarker(unindented)
+	switch {
+	case f.open == "" && marker != "":
+		f.open = marker
+	case f.open != "":
+		if strings.HasPrefix(marker, f.open) && strings.TrimLeft(unindented, marker[:1]) == "" {
+			f.open = ""
+		}
+	default:
+		return false
+	}
+	return true
+}
+
+// docsHeadingLevel is the level of an ATX heading line, or 0 for any other
+// line (https://spec.commonmark.org/0.31.2/#atx-headings).
+func docsHeadingLevel(line string) int {
+	if !docsATXHeading.MatchString(line) {
+		return 0
+	}
+	return len(line) - len(strings.TrimLeft(line, "#"))
 }
 
 // docsFenceMarker is the run of three or more backticks or tildes a line
@@ -459,11 +470,6 @@ func (g *docsCheck) readGo() {
 				}
 			}
 		}
-		if file == gatesMainFile {
-			for _, name := range gatesCommands(f, false) {
-				g.gatesCommands[name] = true
-			}
-		}
 		if !strings.HasSuffix(file, "_test.go") {
 			// A step a test builds is a fake, not one the live run takes.
 			if dir := path.Dir(file); dir == docsDriverDir || dir == docsSpikesDir {
@@ -483,41 +489,50 @@ func (g *docsCheck) readGo() {
 	if read == 0 {
 		g.fail("no .go files read: this gate would be looking at nothing")
 	}
-	if len(g.gatesCommands) == 0 {
-		g.at(gatesMainFile, 0, "no gates commands read: a Held by naming one would never match")
-	}
-	g.readLiveSource(docsDriverDir, "step", live[docsDriverDir], g.floors.steps)
-	g.readLiveSource(docsSpikesDir, "spike", live[docsSpikesDir], g.floors.spikes)
+	g.readLiveSource(fset, docsDriverDir, "step", live[docsDriverDir], g.floors.steps)
+	g.readLiveSource(fset, docsSpikesDir, "spike", live[docsSpikesDir], g.floors.spikes)
 }
 
 // readLiveSource adds the names a live source builds, and holds their
-// count to its floor.
-func (g *docsCheck) readLiveSource(dir, typ string, files []*ast.File, floor int) {
-	names := docsLiveNames(files, typ)
-	if len(names) < floor {
+// count to its floor. Two steps of one name would make a citation of it
+// ambiguous, so the second is refused.
+func (g *docsCheck) readLiveSource(fset *token.FileSet, dir, typ string, files []*ast.File, floor int) {
+	entries := docsLiveNames(files, typ)
+	if len(entries) < floor {
 		g.liveShort = true
-		g.at(dir, 0, "%d live steps read, fewer than %d: the %s literals are not being read", len(names), floor, typ)
+		g.at(dir, 0, "%d live steps read, fewer than %d: the %s literals are not being read", len(entries), floor, typ)
 	}
-	for _, name := range names {
-		g.liveSteps[name] = true
+	for _, e := range entries {
+		at := fset.Position(e.Pos())
+		if first, seen := g.liveSteps[e.name]; seen {
+			g.at(at.Filename, at.Line, "names the live step %q, which %s:%d names too; a step's name is its own",
+				e.name, first.Filename, first.Line)
+			continue
+		}
+		g.liveSteps[e.name] = at
 	}
 }
 
-// docsLiveNames is the name of every typ a source's own files build: a
-// literal of the type, which the driver hands to run alone or lists in a
-// table, and each entry of a table of typ, which is a literal with its
-// type left out or a call to a maker. A name that is not a constant
-// string names nothing a comment can quote.
-func docsLiveNames(files []*ast.File, typ string) []string {
+// docsLiveName is one step's name and the entry that gives it.
+type docsLiveName struct {
+	name string
+	ast.Expr
+}
+
+// docsLiveNames is the name of every typ a source's own files build, in
+// source order: a literal of the type, which the driver hands to run alone
+// or lists in a table, and each entry of a table of typ, which is a
+// literal with its type left out or a call to a maker. A name that is not
+// a constant string names nothing a comment can quote.
+func docsLiveNames(files []*ast.File, typ string) []docsLiveName {
 	makers := docsMakers(files, typ)
-	var names []string
+	var names []docsLiveName
 	for _, entry := range stepLiterals(files, typ) {
 		if name, ok := docsStepName(entry, makers); ok {
-			names = append(names, name)
+			names = append(names, docsLiveName{name, entry})
 		}
 	}
-	slices.Sort(names)
-	return slices.Compact(names)
+	return names
 }
 
 // docsMaker is a function that returns a literal of the type: its
@@ -716,16 +731,14 @@ func docsStringLines(fset *token.FileSet, f *ast.File) []docsSourceLine {
 // "Held by" item may name.
 func (g *docsCheck) readVocabulary() {
 	g.makeTargets = map[string]bool{}
-	if mk, ok := g.readFile(docsMakefile); ok {
-		for _, m := range docsMakeRule.FindAllStringSubmatch(mk, -1) {
-			for _, target := range strings.Fields(m[1]) {
-				if !strings.HasPrefix(target, ".") {
-					g.makeTargets[target] = true
-				}
+	if text, ok := g.readFile(makefilePath); ok {
+		for target := range parseMakefile(text).targets {
+			if !strings.HasPrefix(target, ".") {
+				g.makeTargets[target] = true
 			}
 		}
 		if len(g.makeTargets) == 0 {
-			g.at(docsMakefile, 0, "no targets read: a Held by naming one would never match")
+			g.at(makefilePath, 0, "no targets read: a Held by naming one would never match")
 		}
 	}
 	if cfg, ok := g.readFile(docsLintConfig); ok {
@@ -748,31 +761,37 @@ func docsEnabledLinters(cfg string) map[string]bool {
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		at := indent(raw)
+		at, key := indent(raw), docsYAMLKey(trimmed)
 		if at == 0 {
-			inLinters, inEnable, childIndent = trimmed == "linters:", false, -1
+			inLinters, inEnable, childIndent = key == "linters:", false, -1
 			continue
 		}
 		if !inLinters {
 			continue
 		}
 		if item, ok := strings.CutPrefix(trimmed, "- "); ok && inEnable {
-			value, _, _ := strings.Cut(item, " #")
-			out[strings.Trim(strings.TrimSpace(value), `"'`)] = true
+			value, _ := yamlCutComment(item)
+			out[strings.Trim(value, `"'`)] = true
 			continue
 		}
 		if childIndent < 0 {
 			childIndent = at
 		}
-		inEnable = at == childIndent && trimmed == "enable:"
+		inEnable = at == childIndent && key == "enable:"
 	}
 	return out
 }
 
+// docsYAMLKey is a YAML line without the comment after it.
+func docsYAMLKey(line string) string {
+	key, _ := yamlCutComment(line)
+	return key
+}
+
 // holds reports whether a "Held by" item names something that exists.
+// live is the Makefile's target, so it holds only while `make live` does.
 func (g *docsCheck) holds(item string) bool {
-	return item == "live" || item == "review" || g.gatesCommands[item] ||
-		g.makeTargets[item] || g.linters[item] || g.tests[item]
+	return item == "review" || docsIsGatesCommand(item) || g.makeTargets[item] || g.linters[item] || g.tests[item]
 }
 
 // docsListItems splits a comma-separated cell. A closing period and code
@@ -1011,41 +1030,10 @@ func (g *docsCheck) checkDecision(d *docsDecision) {
 	default:
 		for _, h := range holders {
 			if !g.holds(h) {
-				g.at(architectureDoc, d.line, "%s is held by %q, which is not live, review, a make target, "+
+				g.at(architectureDoc, d.line, "%s is held by %q, which is not review, a make target, "+
 					"a gates command, an enabled linter or a test or fuzz function", d.id, h)
 			}
 		}
-	}
-}
-
-// docsAllowance is an allowlist line: a file may keep count bare section
-// citations, and the count may only fall.
-type docsAllowance struct{ line, count int }
-
-func (g *docsCheck) readAllowlist() {
-	g.allowlist = map[string]docsAllowance{}
-	if !g.present[docsAllowlist] {
-		return
-	}
-	raw, ok := g.readFile(docsAllowlist)
-	if !ok {
-		return
-	}
-	for i, line := range strings.Split(raw, "\n") {
-		line, _, _ = strings.Cut(line, "#")
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		count := 0
-		if len(fields) == 2 {
-			count, _ = strconv.Atoi(fields[1])
-		}
-		if count < 1 {
-			g.at(docsAllowlist, i+1, "%q is not a path and a count above zero", strings.TrimSpace(line))
-			continue
-		}
-		g.allowlist[fields[0]] = docsAllowance{i + 1, count}
 	}
 }
 
@@ -1065,7 +1053,7 @@ func (g *docsCheck) scanned(file string, lines []string) (from, to int) {
 		return 0, len(lines)
 	}
 	raw, _ := g.readFile(file)
-	return changelogSection(strings.Split(raw, "\n"), "Unreleased")
+	return readChangelog(raw).section("Unreleased")
 }
 
 func (g *docsCheck) checkCitations() {
@@ -1076,28 +1064,26 @@ func (g *docsCheck) checkCitations() {
 	for _, file := range g.files {
 		switch {
 		case docsIsRecord(file):
-			// A record's reasons cite decisions, as a comment does.
+			// A record's reasons cite decisions and live steps, as a
+			// comment does.
 			if raw, ok := g.readFile(file); ok {
+				var rows []docsSourceLine
 				for i, line := range strings.Split(raw, "\n") {
-					g.checkComment(file, i+1, line)
+					rows = append(rows, docsSourceLine{i + 1, line})
 				}
+				g.checkComments(file, rows)
 			}
 		case docsInTestdata(file):
 		case strings.HasSuffix(file, ".go"):
-			for _, c := range g.comments[file] {
-				g.checkComment(file, c.line, c.text)
-			}
+			g.checkComments(file, g.comments[file])
 			for _, s := range g.literals[file] {
 				g.checkGoDocRefs(file, s.line, s.text, false)
 			}
-			g.checkLiveSteps(file, g.comments[file])
 		case strings.HasSuffix(file, ".md"):
 			g.checkMarkdown(file)
 		case docsIsConfigFile(file):
 			if raw, ok := g.readFile(file); ok {
-				for _, c := range docsConfigComments(file, raw) {
-					g.checkComment(file, c.line, c.text)
-				}
+				g.checkComments(file, docsConfigComments(file, raw))
 			}
 		}
 	}
@@ -1107,7 +1093,15 @@ func (g *docsCheck) checkCitations() {
 	if g.spanPaths < g.floors.spanPaths {
 		g.fail("%d code-span paths checked, fewer than %d: the code spans are not being read", g.spanPaths, g.floors.spanPaths)
 	}
-	g.checkAllowlist()
+}
+
+// checkComments checks each comment line, then the live steps the lines
+// name, since a name can wrap from one line to the next.
+func (g *docsCheck) checkComments(file string, comments []docsSourceLine) {
+	for _, c := range comments {
+		g.checkComment(file, c.line, c.text)
+	}
+	g.checkLiveSteps(file, comments)
 }
 
 // checkComment resolves what a comment line cites: decision IDs, section
@@ -1186,10 +1180,10 @@ func docsOutsideTOMLStrings(line, open string) (string, string) {
 	}
 }
 
-// checkLiveSteps holds each live step a file's comments name to one the
-// driver or the spikes define. A name wraps across comment lines, so
-// adjacent lines are read as one text. A source read below its floor
-// holds nothing to it.
+// checkLiveSteps holds each live step a file's comments, prose or record
+// rows name to one the driver or the spikes define. A name wraps across
+// lines, so adjacent lines are read as one text. A source read below its
+// floor holds nothing to it.
 func (g *docsCheck) checkLiveSteps(file string, comments []docsSourceLine) {
 	if g.liveShort {
 		return
@@ -1204,14 +1198,15 @@ func (g *docsCheck) checkLiveSteps(file string, comments []docsSourceLine) {
 	}
 }
 
-// checkLiveStepRun checks one run of adjacent comment lines, reporting an
-// unknown name at the line its opening quote is on.
+// checkLiveStepRun checks one run of adjacent lines, reporting an unknown
+// name at the line its opening quote is on.
 func (g *docsCheck) checkLiveStepRun(file string, run []docsSourceLine) {
 	var text strings.Builder
 	starts := make([]int, len(run))
 	for i, c := range run {
 		starts[i] = text.Len()
-		text.WriteString(strings.TrimSpace(strings.TrimPrefix(c.text, "//")))
+		// A comment's marker, // or #, is not text a name wraps across.
+		text.WriteString(strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(c.text, "//"), "#")))
 		text.WriteByte(' ')
 	}
 	joined := text.String()
@@ -1222,7 +1217,8 @@ func (g *docsCheck) checkLiveStepRun(file string, run []docsSourceLine) {
 		for _, q := range docsQuotedName.FindAllStringSubmatchIndex(joined[cite[2]:cite[3]], -1) {
 			at := cite[2] + q[0]
 			name := strings.Join(strings.Fields(joined[cite[2]+q[2]:cite[2]+q[3]]), " ")
-			if !g.liveSteps[name] {
+			// A placeholder such as "<name>" shows the form; it names no step.
+			if _, ok := g.liveSteps[name]; !ok && docsFollowable(name) {
 				i, _ := slices.BinarySearch(starts, at+1)
 				g.at(file, run[i-1].line, "names the live step %q, which neither %s nor %s defines",
 					name, docsDriverDir, docsSpikesDir)
@@ -1237,19 +1233,34 @@ func (g *docsCheck) checkMarkdown(file string) {
 		return
 	}
 	from, to := g.scanned(file, lines)
+	// A paragraph can cite a live step across a line break, as a comment
+	// can, so the prose is checked in runs of adjacent lines.
+	var text []docsSourceLine
+	removed := false
 	for i := from; i < to; i++ {
 		line := lines[i]
+		// A code span or a live step under [Unreleased]'s Removed heading
+		// names what the release takes away, so it need not exist. The scan
+		// ends at the next level-2 heading, so a level-3 heading sets or
+		// ends Removed, and a deeper one sits inside it.
+		if file == changelogPath && docsHeadingLevel(line) == 3 {
+			removed = docsATXHeading.FindStringSubmatch(line)[1] == "Removed"
+		}
+		if line != "" && !removed {
+			text = append(text, docsSourceLine{i + 1, line})
+		}
 		if docsIsTrailer(file, line) {
 			continue
 		}
 		g.checkLine(file, i+1, line)
 		g.checkLinks(file, i+1, line)
-		if strings.Contains(line, "`") {
+		if !removed && strings.Contains(line, "`") {
 			for _, span := range codeSpans(line) {
 				g.checkSpan(file, i+1, span)
 			}
 		}
 	}
+	g.checkLiveSteps(file, text)
 }
 
 // checkLine resolves the IDs and section numbers a line cites. Each regex
@@ -1268,19 +1279,12 @@ func (g *docsCheck) checkLine(file string, n int, text string) {
 	if !strings.Contains(text, "§") {
 		return
 	}
-	var bare []string
 	sources := docsSectionSource.FindAllStringIndex(text, -1)
 	for _, at := range docsBareSection.FindAllStringIndex(text, -1) {
 		if !slices.ContainsFunc(sources, func(s []int) bool { return s[0] <= at[0] && at[0] < s[1] }) {
-			bare = append(bare, text[at[0]:at[1]])
+			g.at(file, n, "cites a section by number (%s); cite a D-ID, docs/<file>.md#<slug> or a source link", text[at[0]:at[1]])
+			return
 		}
-	}
-	switch _, listed := g.allowlist[file]; {
-	case len(bare) == 0:
-	case listed:
-		g.bare[file] += len(bare)
-	default:
-		g.at(file, n, "cites a section by number (%s); cite a D-ID, docs/<file>.md#<slug> or a source link", bare[0])
 	}
 }
 
@@ -1294,27 +1298,6 @@ func (g *docsCheck) citeDecision(file string, n int, id string) {
 		g.at(file, n, "cites %s, which is not a decision", id)
 	case file != architectureDoc && d.lapsed():
 		g.at(file, n, "cites %s, which is %s", id, d.status)
-	}
-}
-
-// checkAllowlist holds each allowlisted file's count to what it has, so
-// the count can only fall and a file leaves the list when it reaches zero.
-func (g *docsCheck) checkAllowlist() {
-	paths := slices.Collect(maps.Keys(g.allowlist))
-	slices.SortFunc(paths, func(a, b string) int { return cmp.Compare(g.allowlist[a].line, g.allowlist[b].line) })
-	for _, p := range paths {
-		a, have := g.allowlist[p], g.bare[p]
-		switch {
-		case !g.present[p]:
-			g.at(docsAllowlist, a.line, "lists %s, which does not exist", p)
-		case have == 0:
-			g.at(docsAllowlist, a.line, "lists %s, which has no bare section citation left; remove it", p)
-		case have < a.count:
-			g.at(docsAllowlist, a.line, "lists %s at %d bare section citations, and it has %d; lower the count", p, a.count, have)
-		case have > a.count:
-			g.at(docsAllowlist, a.line, "lists %s at %d bare section citations, and it has %d; "+
-				"cite a D-ID, docs/<file>.md#<slug> or a source link", p, a.count, have)
-		}
 	}
 }
 
@@ -1440,12 +1423,18 @@ func (g *docsCheck) checkSpan(file string, n int, span string) {
 			}
 		}
 	}
-	if m := docsGatesCommand.FindStringSubmatch(span); m != nil && docsFollowable(m[1]) && !g.gatesCommands[m[1]] {
+	if m := docsGatesCommand.FindStringSubmatch(span); m != nil && docsFollowable(m[1]) && !docsIsGatesCommand(m[1]) {
 		g.at(file, n, "names scripts/gates %s, which is not a gates command", m[1])
 	}
 	for _, f := range fields {
 		g.checkPath(file, n, f)
 	}
+}
+
+// docsIsGatesCommand reports whether name is a command the dispatch runs.
+func docsIsGatesCommand(name string) bool {
+	_, ok := commands[name]
+	return ok
 }
 
 // checkPath holds a word to the tree when it starts at a top-level entry
@@ -1486,7 +1475,7 @@ func (g *docsCheck) checkPath(file string, n int, word string) {
 func (g *docsCheck) spanTarget(file, p string) (string, bool) {
 	tries := []string{p}
 	if !strings.Contains(p, "/") {
-		tries = []string{path.Join(path.Dir(file), p), p, path.Join(docsWorkflowDir, p)}
+		tries = []string{path.Join(path.Dir(file), p), p, path.Join(workflowDir, p)}
 	}
 	for _, t := range tries {
 		if g.exists(t) {

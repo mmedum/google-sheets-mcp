@@ -56,9 +56,8 @@ make check
 
 `make check` runs the gates CI runs, and the `check` target in the
 `Makefile` is the list. `make parity` fails when that list and `ci.yml`
-differ, so a check you add goes in both, with a row in `parityChecks`
-if it is not a gates command (D-67). CI runs it on Linux, macOS and
-Windows (D-68).
+run different commands, so a check you add goes in both, as the same
+command (D-67). CI runs it on Linux, macOS and Windows (D-68).
 
 Every check this repository runs on itself is Go, under `scripts/gates`.
 `go run ./scripts/gates` lists them, and `go run ./scripts/gates <name>`
@@ -236,7 +235,9 @@ checks the task table and needs no credentials.
 Every user-visible change gets an entry under `## [Unreleased]` in
 `CHANGELOG.md`, in the same pull request that makes the change. Leave
 out changes only contributors see, unless they must act on them.
-`make staleness` asks for an entry when Go changed since the last tag.
+`make staleness` asks for an entry when the binary's source changed
+since the last release: a package it imports, a file one embeds, or
+`go.mod` outside its `require` and `tool` lines.
 
 - **Sections** are the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   set and nothing else: Added, Changed, Deprecated, Removed, Fixed and

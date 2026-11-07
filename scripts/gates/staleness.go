@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
 	"os/exec"
+	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -15,12 +19,8 @@ import (
 	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
 )
 
-var (
-	// The README's tool table.
-	readmeTool = regexp.MustCompile("(?m)^\\| `([a-z_]+)` \\|")
-	// A version heading, as Keep a Changelog writes it.
-	versionHeading = regexp.MustCompile(`(?m)^## \[(\d+\.\d+\.\d+)\]`)
-)
+// The README's tool table.
+var readmeTool = regexp.MustCompile("(?m)^\\| `([a-z_]+)` \\|")
 
 // schemaDump is the shape of `google-sheets-mcp --dump-schemas`.
 type schemaDump struct {
@@ -87,6 +87,13 @@ func scopesAreDocumented() []string {
 // changed.
 func staleness(bin string) error {
 	var problems []string
+	// First, so a git that cannot answer stops the gate before it reads
+	// anything else.
+	if err := changelogDocumentsTheChange(); errors.As(err, new(couldNotRun)) {
+		return err
+	} else if err != nil {
+		problems = append(problems, err.Error())
+	}
 
 	_, dump, err := dumpSchemas(bin)
 	if err != nil {
@@ -141,9 +148,6 @@ func staleness(bin string) error {
 	vars := config.Vars()
 	problems = append(problems, configDocProblems(vars, fieldRules, string(conf))...)
 
-	if err := changelogDocumentsTheChange(); err != nil {
-		problems = append(problems, err.Error())
-	}
 	problems = append(problems, scopesAreDocumented()...)
 
 	if len(problems) > 0 {
@@ -241,58 +245,194 @@ func dumpSchemas(bin string) ([]byte, *schemaDump, error) {
 	return out, &d, nil
 }
 
-// changelogDocumentsTheChange requires entries when Go source changed
-// since the last tag.
+// changelogDocumentsTheChange requires entries when the binary's source,
+// as shippedChangedSince reads it, changed since the newest release. A
+// test, a fixture, a script under scripts/ and a dependency bump change
+// nothing an entry would describe, so a change confined to them needs none.
 //
 // The exception in the middle is a scar: a release commit moves the
 // entries out of [Unreleased] and under the version it is about to tag,
 // and CI runs before that tag can exist — so a gate without it fails on
 // the one pull request it was written to guard.
 func changelogDocumentsTheChange() error {
-	last := lastTag()
-	diffArgs := []string{"diff", "--quiet", "HEAD~1", "--", "*.go"}
-	if last != "" {
-		diffArgs = []string{"diff", "--quiet", last + "..HEAD", "--", "*.go"}
+	list, err := git("tag")
+	if err != nil {
+		return couldNotRun{err}
 	}
-	if exec.Command("git", diffArgs...).Run() == nil {
-		return nil // no Go changed
+	tags := strings.Fields(list)
+	since, last := "HEAD~1", stalenessNewestRelease(tags)
+	if last != "" {
+		since = "v" + last
+	}
+	changed, err := shippedChangedSince(since)
+	if err != nil {
+		return couldNotRun{err}
+	}
+	if !changed {
+		return nil
 	}
 
-	changelog, err := os.ReadFile("CHANGELOG.md")
+	changelog, err := os.ReadFile(changelogPath)
 	if err != nil {
 		return err
 	}
-	if entriesUnder(string(changelog), "## [Unreleased]") > 0 {
+	doc := readChangelog(string(changelog))
+	if doc.entries("Unreleased") > 0 {
 		return nil
 	}
-	if m := versionHeading.FindStringSubmatch(string(changelog)); m != nil {
-		tagged := exec.Command("git", "rev-parse", "-q", "--verify", "refs/tags/v"+m[1]).Run() == nil
-		if !tagged && entriesUnder(string(changelog), "## ["+m[1]+"]") > 0 {
-			return nil
-		}
+	if v := doc.versions(); len(v) > 0 && !slices.Contains(tags, "v"+v[0].label) && doc.entries(v[0].label) > 0 {
+		return nil
 	}
-	since := last
-	if since == "" {
+	if last == "" {
 		since = "the previous commit"
 	}
-	return fmt.Errorf("source changed since %s but CHANGELOG.md documents nothing new; "+
-		"put the entries under [Unreleased], or under the version heading this release is about to tag", since)
+	return fmt.Errorf("the binary's source changed since %s but %s documents nothing new; "+
+		"put the entries under [Unreleased], or under the version heading this release is about to tag", since, changelogPath)
 }
 
-// entriesUnder counts "- " bullets between a heading and the next one.
-func entriesUnder(changelog, heading string) int {
-	n, inside := 0, false
-	for line := range strings.Lines(changelog) {
-		switch {
-		case strings.HasPrefix(line, heading):
-			inside = true
-		case strings.HasPrefix(line, "## ["):
-			inside = false
-		case inside && strings.HasPrefix(line, "- "):
-			n++
+// stalenessNewestRelease is the newest release tag's version by semver
+// order, a prerelease included, or "" when there is none. git's version
+// sort puts v2.0.0-rc.1 after v2.0.0, so the order is semver's.
+func stalenessNewestRelease(tags []string) string {
+	newest := ""
+	for _, tag := range tags {
+		v, ok := strings.CutPrefix(tag, "v")
+		if ok && changelogVersion.MatchString(v) && (newest == "" || changelogCompare(v, newest) > 0) {
+			newest = v
 		}
 	}
-	return n
+	return newest
+}
+
+// shippedChangedSince reports whether the binary's source changed between
+// since and HEAD: a Go file other than a test in a package of this module
+// the binary imports, a file such a package embeds, or go.mod outside its
+// require and tool lines. A package counts by its directory, so a file
+// another platform builds counts, and so does a file removed from it.
+func shippedChangedSince(since string) (bool, error) {
+	out, err := git("diff", since+"..HEAD", "--name-only", "--no-renames", "-z")
+	if err != nil {
+		return false, err
+	}
+	var shipped *shippedSource
+	for _, file := range strings.Split(out, "\x00") {
+		switch file {
+		case "":
+		case "go.mod":
+			if changed, err := goModChangedSince(since); err != nil || changed {
+				return changed, err
+			}
+		default:
+			if shipped == nil {
+				if shipped, err = listShipped(); err != nil {
+					return false, err
+				}
+			}
+			if shipped.has(file) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// shippedSource is what the binary is built from in this module, on this
+// platform: its package directories and the files they embed, each
+// slash-separated from the module root.
+type shippedSource struct{ dirs, embeds map[string]bool }
+
+func (s *shippedSource) has(file string) bool {
+	return s.embeds[file] || strings.HasSuffix(file, ".go") && !strings.HasSuffix(file, "_test.go") && s.dirs[path.Dir(file)]
+}
+
+// listShipped asks the go command what ./cmd/... is built from. A package
+// of another module is a dependency, which go.mod's require lines name.
+func listShipped() (*shippedSource, error) {
+	const what = "go list -deps ./cmd/..."
+	out, err := exec.Command("go", "list", "-deps", "-json=Dir,EmbedFiles,Module", "./cmd/...").Output()
+	var exit *exec.ExitError
+	switch {
+	case errors.As(err, &exit):
+		return nil, fmt.Errorf("%s: %s", what, strings.TrimSpace(string(exit.Stderr)))
+	case err != nil:
+		return nil, fmt.Errorf("%s: %w", what, err)
+	}
+	s := &shippedSource{dirs: map[string]bool{}, embeds: map[string]bool{}}
+	for dec := json.NewDecoder(bytes.NewReader(out)); dec.More(); {
+		var p struct {
+			Dir        string
+			EmbedFiles []string
+			Module     *struct {
+				Main bool
+				Dir  string
+			}
+		}
+		if err := dec.Decode(&p); err != nil {
+			return nil, fmt.Errorf("%s: %w", what, err)
+		}
+		if p.Module == nil || !p.Module.Main {
+			continue
+		}
+		rel, err := filepath.Rel(p.Module.Dir, p.Dir)
+		if err != nil {
+			return nil, err
+		}
+		dir := filepath.ToSlash(rel)
+		s.dirs[dir] = true
+		for _, f := range p.EmbedFiles {
+			s.embeds[path.Join(dir, f)] = true
+		}
+	}
+	// An empty listing is not reading the binary, and would excuse every
+	// change.
+	if len(s.dirs) == 0 {
+		return nil, fmt.Errorf("%s named no package of this module, so it is not reading the binary", what)
+	}
+	return s, nil
+}
+
+// goModChangedSince reports whether go.mod changed between since and HEAD
+// outside its require and tool lines. A dependency bump needs no entry
+// (CONTRIBUTING.md#changelog); a go, toolchain or replace line changes what
+// the binary is built with.
+func goModChangedSince(since string) (bool, error) {
+	before, err := git("show", since+":go.mod")
+	if err != nil {
+		return false, err
+	}
+	after, err := git("show", "HEAD:go.mod")
+	if err != nil {
+		return false, err
+	}
+	return goModBuildLines(before) != goModBuildLines(after), nil
+}
+
+// goModBuildLines is a go.mod's lines, each trimmed and the blank ones
+// dropped, without its require and tool directives, a block's included
+// (https://go.dev/ref/mod#go-mod-file-require). A tool directive adds a
+// package `go tool` runs (https://go.dev/ref/mod#go-mod-file-tool). ( is a
+// token of its own, so `require(` opens a block as `require (` does
+// (https://go.dev/ref/mod#go-mod-file-lexical).
+func goModBuildLines(text string) string {
+	var kept []string
+	inBlock := false
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		verb, paren := "", false
+		if len(fields) > 0 {
+			verb, _, paren = strings.Cut(fields[0], "(")
+		}
+		switch {
+		case inBlock:
+			inBlock = len(fields) == 0 || !strings.HasPrefix(fields[0], ")")
+		case len(fields) == 0:
+		case verb == "require" || verb == "tool":
+			inBlock = paren || len(fields) > 1 && strings.HasPrefix(fields[1], "(")
+		default:
+			kept = append(kept, strings.Join(fields, " "))
+		}
+	}
+	return strings.Join(kept, "\n")
 }
 
 // difference returns the members of a that are not in b.
