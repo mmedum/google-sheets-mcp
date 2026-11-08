@@ -244,10 +244,13 @@ func write(t *testing.T, dir, name, body string) {
 	}
 }
 
+// gitIn runs git in dir with no automatic maintenance, whether or not the
+// test isolated git.
 func gitIn(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), gitNoMaintenance...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}

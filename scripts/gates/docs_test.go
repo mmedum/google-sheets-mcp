@@ -373,12 +373,87 @@ func docsTree(t *testing.T, files map[string]string) string {
 
 // isolateGit keeps the machine's git configuration from every git the
 // test runs, the gate's own included, so a global ignore file cannot hide
-// a fixture file.
+// a fixture file, and turns automatic maintenance off as gitNoMaintenance
+// does.
 func isolateGit(t *testing.T) {
 	t.Helper()
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	for _, kv := range gitNoMaintenance {
+		k, v, _ := strings.Cut(kv, "=")
+		t.Setenv(k, v)
+	}
+}
+
+// gitNoMaintenance turns automatic maintenance off for every git a test
+// runs, isolated or through gitIn. A commit starts it detached, and it
+// holds .git/objects/maintenance.lock after git returns, so a copy of the
+// repository races it, and so does t.TempDir's cleanup
+// (https://github.com/git/git/blob/v2.51.0/builtin/gc.c#L1663).
+var gitNoMaintenance = []string{
+	// Command-scope pairs, which every config file yields to:
+	// https://git-scm.com/docs/git-config#Documentation/git-config.txt-GITCONFIGCOUNT
+	"GIT_CONFIG_COUNT=2",
+	// No command starts git maintenance run --auto after a write:
+	// https://git-scm.com/docs/git-maintenance#Documentation/git-maintenance.txt-maintenanceauto
+	"GIT_CONFIG_KEY_0=maintenance.auto", "GIT_CONFIG_VALUE_0=false",
+	// A porcelain command that runs git gc --auto itself finds no work:
+	// https://git-scm.com/docs/git-gc#Documentation/git-gc.txt-gcauto
+	"GIT_CONFIG_KEY_1=gc.auto", "GIT_CONFIG_VALUE_1=0",
+}
+
+// A fixture's git leaves nothing running when it returns, as the gate's own
+// git runs under isolateGit and through gitIn alone: a commit starts no
+// maintenance, and a git gc --auto with more packs than its limit packs
+// nothing. gitIn adds the pairs itself, so the isolated case runs the gate's
+// git, which takes only the environment.
+func TestIsolatedGitRunsNoAutomaticMaintenance(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		isolated bool
+	}{{"the gate's git under isolateGit", true}, {"through gitIn alone", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, trace := t.TempDir(), filepath.Join(t.TempDir(), "trace")
+			run := func(args ...string) { gitIn(t, dir, args...) }
+			if tc.isolated {
+				isolateGit(t)
+				run = func(args ...string) {
+					t.Helper()
+					if _, err := git(append([]string{"-C", dir}, args...)...); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			initRepo(t, dir)
+			t.Setenv("GIT_TRACE", trace)
+			for _, msg := range []string{"first", "second"} {
+				run("commit", "--allow-empty", "-q", "-m", msg)
+				run("repack", "-q")
+			}
+			run("-c", "gc.autoPackLimit=1", "-c", "gc.autoDetach=false", "gc", "--auto", "--quiet")
+			out, err := os.ReadFile(trace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Before git 2.29 a commit starts git gc --auto itself, in the
+			// foreground, and gc.auto=0 returns it before it can detach
+			// (https://github.com/git/git/blob/v2.28.0/builtin/gc.c#L343):
+			// the pack count below holds that, so the trace may show it.
+			if !strings.Contains(string(out), "built-in: git commit") {
+				t.Fatalf("GIT_TRACE wrote %q, which traces no commit", out)
+			} else if strings.Contains(string(out), "git maintenance run") {
+				t.Errorf("GIT_TRACE wrote %q, want no git maintenance run started", out)
+			}
+			packs, err := filepath.Glob(filepath.Join(dir, ".git", "objects", "pack", "*.pack"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(packs) != 2 {
+				t.Errorf("git gc --auto over 2 packs with gc.autoPackLimit=1 left %d, want the 2 untouched", len(packs))
+			}
+		})
+	}
 }
 
 // docsFixtureFloors keeps the floors out of the rows whose subject is not a

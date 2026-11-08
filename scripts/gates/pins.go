@@ -268,6 +268,11 @@ func pinsWorkflow(gomod string, w workflowFile, r *pinsReport) {
 				pinsStep(gomod, w, s, r)
 			}
 		}
+		// This repository's own reusable workflow is one of the workflows
+		// read here, which holds a version it is given where it uses it.
+		if !s.reusable || !strings.HasPrefix(s.uses, "./") {
+			pinsInputs(w.path, s, r)
+		}
 	}
 	for _, img := range w.images {
 		if !pinsImageDigest.MatchString(img.value) {
@@ -276,7 +281,7 @@ func pinsWorkflow(gomod string, w workflowFile, r *pinsReport) {
 		}
 	}
 	for _, k := range w.env {
-		if !pinsEnvVersion.MatchString(k.key) {
+		if !workflowVersionKey.MatchString(k.key) {
 			continue
 		}
 		if tool := pinsToolByEnv(k.key); tool != "" {
@@ -314,8 +319,7 @@ func pinsActionRef(at string, s workflowStep, r *pinsReport) {
 }
 
 // pinsStep checks one step that uses an action: an installer sets the
-// key that pins its tool, any other action is classified, and every
-// version input names one exact version.
+// key that pins its tool, and any other action is classified.
 func pinsStep(gomod string, w workflowFile, s workflowStep, r *pinsReport) {
 	file, action := w.path, s.action()
 	at := fmt.Sprintf("%s:%d: %s", file, s.line, action)
@@ -330,7 +334,7 @@ func pinsStep(gomod string, w workflowFile, s workflowStep, r *pinsReport) {
 		r.installed[t.name] = true
 		// An env key is read from the step's environment, where the env
 		// pass records its version.
-		v, set := s.with[key]
+		v, set := s.input(key)
 		if pinsEnvVersion.MatchString(key) {
 			set = w.stepEnv(s, key)
 		}
@@ -350,10 +354,22 @@ func pinsStep(gomod string, w workflowFile, s workflowStep, r *pinsReport) {
 		r.fail("%s is not classified: add it to pinsTools with the input that pins its tool, "+
 			"or to pinsNotInstallers with the reason", at)
 	}
+}
+
+// pinsInputs holds every version input of a step or a reusable call to
+// one exact version, but the key an installer's tool is pinned by, which
+// pinsStep holds. An action's code, a local action's included, and a
+// reusable workflow from another repository are not read here, so the
+// version each is given is held where it is given.
+func pinsInputs(file string, s workflowStep, r *pinsReport) {
+	action := s.action()
 	for _, key := range slices.Sorted(maps.Keys(s.with)) {
 		v := s.with[key]
-		installs := slices.ContainsFunc(pinsTools, func(t pinsTool) bool { return t.actions[action] == key })
-		if installs || !workflowVersionKey.MatchString(key) {
+		installs := slices.ContainsFunc(pinsTools, func(t pinsTool) bool {
+			pin, ok := t.actions[action]
+			return ok && workflowInputName(pin) == workflowInputName(key)
+		})
+		if installs || !workflowVersionInput(key) {
 			continue
 		}
 		if !exactSemver.MatchString(v.value) {

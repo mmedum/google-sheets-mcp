@@ -312,12 +312,14 @@ func TestPinsNamesEachProblem(t *testing.T) {
 		}, []string{
 			`.github/workflows/release.yml:21: goreleaser/goreleaser-action: goreleaser is pinned to "~> v2", which is not one exact version`,
 			`.github/workflows/release.yml:22: goreleaser/goreleaser-action: setup-version is "v2", which is not one exact version`,
+			".github/workflows/release.yml:26: the env value version names a version of a tool pinsTools does not know",
 		}},
 		{"an installer whose version key sits under env:", []docsEdit{
 			replace(fxRelease, "      - name: Release\n        with:\n", "      - name: Release\n        env:\n"),
 		}, []string{
 			".github/workflows/release.yml:22: goreleaser/goreleaser-action is pinned by SHA and does not set version, " +
 				"so the tool it installs is whatever is current that morning",
+			".github/workflows/release.yml:21: the env value version names a version of a tool pinsTools does not know",
 			"goreleaser is pinned nowhere: a tool this gate names that no file pins is either gone or unread",
 		}},
 		// GitHub passes the workflow's env and the job's to each step.
@@ -339,6 +341,14 @@ func TestPinsNamesEachProblem(t *testing.T) {
 		{"an env version of a tool nobody named", []docsEdit{
 			replace(fxRelease, "PUBLISHER_VERSION: v1.8.1", "PUBLISHER_VERSION: v1.8.1\n          NODE_VERSION: 22.1.0"),
 		}, []string{".github/workflows/release.yml:26: the env value NODE_VERSION names a version of a tool pinsTools does not know"}},
+		// The with: inputs and the env keys are read by one predicate, so a
+		// release key under env: is a version as cosign-release is.
+		{"env versions named another way", []docsEdit{
+			replace(fxRelease, "PUBLISHER_VERSION: v1.8.1", "PUBLISHER_VERSION: v1.8.1\n          COSIGN_RELEASE: latest\n          node-version: latest"),
+		}, []string{
+			".github/workflows/release.yml:26: the env value COSIGN_RELEASE names a version of a tool pinsTools does not know",
+			".github/workflows/release.yml:27: the env value node-version names a version of a tool pinsTools does not know",
+		}},
 		{"@latest in a run line, with its flags before it", []docsEdit{
 			ci("govulncheck@v1.7.0 ./...", "govulncheck@v1.7.0 ./...\n      - run: go run -mod=mod golang.org/x/vuln/cmd/govulncheck@latest ./..."),
 		}, []string{
@@ -420,11 +430,35 @@ func TestPinsNamesEachProblem(t *testing.T) {
 			`Makefile:1: "ifdef CI" is a directive or an assignment, which this reader does not read`,
 			`Makefile:3: "endif" is a directive or an assignment, which this reader does not read`,
 		}},
-		{"jobs that call a reusable workflow, held to the SHA rule only", []docsEdit{
+		{"jobs that call a reusable workflow, held to the SHA rule and an exact version", []docsEdit{
 			replace(fxCodeQL, "analyze@"+pinSHA+" # codeql-bundle-v2.26.4\n", "analyze@"+pinSHA+" # codeql-bundle-v2.26.4\n"+
-				"  call:\n    uses: o/r/.github/workflows/x.yml@"+pinSHA+" # v1.0.0\n  tagged:\n    uses: o/r/.github/workflows/x.yml@v1\n"),
+				"  call:\n    uses: o/r/.github/workflows/x.yml@"+pinSHA+" # v1.0.0\n    with:\n      cosign-release: latest\n"+
+				"  tagged:\n    uses: o/r/.github/workflows/x.yml@v1\n"),
 		}, []string{
-			`.github/workflows/codeql.yml:15: o/r/.github/workflows/x.yml is pinned to "v1", a tag or branch that can be moved; pin the 40-character commit SHA`,
+			`.github/workflows/codeql.yml:15: o/r/.github/workflows/x.yml: cosign-release is "latest", which is not one exact version`,
+			`.github/workflows/codeql.yml:17: o/r/.github/workflows/x.yml is pinned to "v1", a tag or branch that can be moved; pin the 40-character commit SHA`,
+		}},
+		// The runner reads an input's name in upper case, so an installer's
+		// input in another case is the one that pins its tool.
+		{"an installer's input in another case", []docsEdit{
+			replace(fxRelease, "cosign-release: v3.1.3", "COSIGN-RELEASE: latest"),
+		}, []string{
+			`.github/workflows/release.yml:15: sigstore/cosign-installer: cosign is pinned to "latest", which is not one exact version`,
+		}},
+		{"a version input in another case on an action that installs nothing", []docsEdit{
+			replace(fxCI, "# v7.0.1\n      - uses: actions/setup-go", "# v7.0.1\n        with:\n          Tool-Version: latest\n      - uses: actions/setup-go"),
+		}, []string{
+			`.github/workflows/ci.yml:12: actions/checkout: Tool-Version is "latest", which is not one exact version`,
+		}},
+		// This repository's own reusable workflow is read as a workflow, so a
+		// version it is given is held where it uses it. A local action's
+		// action.yml is read by no gate, so its inputs are held here.
+		{"a version given to a local reusable workflow, and to a local action", []docsEdit{
+			replace(fxCodeQL, "analyze@"+pinSHA+" # codeql-bundle-v2.26.4\n", "analyze@"+pinSHA+" # codeql-bundle-v2.26.4\n"+
+				"  call:\n    uses: ./.github/workflows/x.yml\n    with:\n      release-version: ${{ github.ref_name }}\n"),
+			replace(fxCI, "# v7.0.1\n      - uses: actions/setup-go", "# v7.0.1\n      - uses: ./.github/actions/setup\n        with:\n          tool-version: latest\n      - uses: actions/setup-go"),
+		}, []string{
+			`.github/workflows/ci.yml:13: ./.github/actions/setup: tool-version is "latest", which is not one exact version`,
 		}},
 		{"a workflow with no shell", []docsEdit{
 			replace(fxCodeQL, "defaults:\n  run:\n    shell: bash\n", ""),
