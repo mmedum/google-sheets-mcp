@@ -2,6 +2,8 @@ package main
 
 import (
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -120,5 +122,45 @@ func TestMakefileRefusesWhatItCannotRead(t *testing.T) {
 	}
 	if got := mk.recipe("check"); !slices.Equal(got, []string{"go vet ./..."}) {
 		t.Errorf("check's recipe = %q, want [go vet ./...]", got)
+	}
+}
+
+// GNU make runs GNUmakefile or makefile in place of Makefile, so either one
+// in the module root is refused by name. Where the file system folds case,
+// makefile is Makefile itself, and that row skips.
+func TestMakefileRefusesAFileMakeReadsFirst(t *testing.T) {
+	const (
+		gnu   = "GNUmakefile: GNU make reads it before Makefile, so `make` runs a file no gate reads; fold it into Makefile"
+		lower = "makefile: GNU make reads it before Makefile, so `make` runs a file no gate reads; fold it into Makefile"
+	)
+	for _, tc := range []struct {
+		name  string
+		files []string
+		want  []string
+	}{
+		{"Makefile alone", nil, nil},
+		{"a GNUmakefile", []string{"GNUmakefile"}, []string{gnu}},
+		{"a makefile", []string{"makefile"}, []string{lower}},
+		{"both", []string{"makefile", "GNUmakefile"}, []string{gnu, lower}},
+		{"a GNUmakefile in a subdirectory", []string{"sub/GNUmakefile"}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			put(t, root, makefilePath, "all:\n\techo all\n")
+			for _, f := range tc.files {
+				if _, err := os.Stat(filepath.Join(root, f)); err == nil {
+					t.Skipf("this file system reads %s as %s, so the two are one file", f, makefilePath)
+				}
+				put(t, root, f, "secrets:\n\t@echo skipped\n")
+			}
+			t.Chdir(root)
+			mk, err := readMakefile()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(mk.refused, tc.want) {
+				t.Errorf("refused:\n  %s\nwant:\n  %s", strings.Join(mk.refused, "\n  "), strings.Join(tc.want, "\n  "))
+			}
+		})
 	}
 }

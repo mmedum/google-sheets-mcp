@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path"
 	"slices"
 	"strings"
 	"testing"
@@ -36,7 +37,7 @@ func TestTheReleaseAttestsEveryFileItPublishes(t *testing.T) {
 // releaseAttestProblems holds a release workflow's build-provenance step
 // to the files the goreleaser config publishes.
 func releaseAttestProblems(release workflowFile, cfg string) []string {
-	var problems []string
+	files, problems := releaseFiles(cfg)
 	attested := false
 	for _, s := range release.steps {
 		if s.action() != "actions/attest-build-provenance" {
@@ -48,7 +49,7 @@ func releaseAttestProblems(release workflowFile, cfg string) []string {
 			problems = append(problems, fmt.Sprintf("%s:%d: the attestation names no subject-path", release.path, s.line))
 			continue
 		}
-		problems = append(problems, releaseSubjectProblems(subjects.value, checksumNameTemplate(cfg))...)
+		problems = append(problems, releaseSubjectProblems(subjects.value, files)...)
 	}
 	if !attested {
 		problems = append(problems, release.path+" runs no build-provenance attestation")
@@ -56,10 +57,30 @@ func releaseAttestProblems(release workflowFile, cfg string) []string {
 	return problems
 }
 
-// releaseSubjectProblems holds the attestation's subject-path: a comma-
-// or newline-separated list naming the archives, the checksum file and
-// the bundle. A space-separated value is one literal glob.
-func releaseSubjectProblems(subjects, checksum string) []string {
+// releaseFiles is the subject-path entry for each file the release
+// publishes, in goreleaser's dist directory: an archive in each format,
+// the bundle, and checksum.name_template's file, which a fixed
+// subject-path has to match.
+func releaseFiles(cfg string) (files, problems []string) {
+	dist := goreleaserDist(cfg)
+	for _, f := range []string{"*.tar.gz", "*.zip", "*.mcpb"} {
+		files = append(files, path.Join(dist, f))
+	}
+	// Without a name_template goreleaser names the checksum file for the
+	// project and version, which a fixed subject-path does not match.
+	if checksum := checksumNameTemplate(cfg); checksum != "" {
+		files = append(files, path.Join(dist, checksum))
+	} else {
+		problems = append(problems, "checksum.name_template is empty, so nothing holds the subject-path to the "+
+			"file every other artifact is verified through")
+	}
+	return files, problems
+}
+
+// releaseSubjectProblems holds the attestation's subject-path, a comma-
+// or newline-separated list, to name each of files as an entry of its
+// own. A space-separated value is one literal glob.
+func releaseSubjectProblems(subjects string, files []string) []string {
 	var problems []string
 	parts := strings.FieldsFunc(subjects, func(r rune) bool { return r == ',' || r == '\n' })
 	for i, p := range parts {
@@ -69,21 +90,31 @@ func releaseSubjectProblems(subjects, checksum string) []string {
 		problems = append(problems, fmt.Sprintf("subject-path %q separates with a space, which is read as one "+
 			"glob; separate with commas or newlines", subjects))
 	}
-	// Without a name_template goreleaser names the checksum file for the
-	// project and version, which a fixed subject-path does not match.
-	if checksum == "" {
-		problems = append(problems, "checksum.name_template is empty, so nothing holds the subject-path to the "+
-			"file every other artifact is verified through")
-	}
-	// An entry ends with the file it covers: dist/*.mcpb.sigstore.json
-	// attests a signature, not the bundle.
-	for _, want := range []string{".tar.gz", ".zip", ".mcpb", checksum} {
-		if want != "" && !slices.ContainsFunc(parts, func(p string) bool { return strings.HasSuffix(p, want) }) {
+	// actions/attest skips a glob that matches nothing while another
+	// matches, so dist/unused/*.mcpb attests no bundle and
+	// dist/*.mcpb.sigstore.json only a signature
+	// (https://github.com/actions/attest/blob/508db95dd578ae2727ebd6217d5ba78e4fbda05d/src/subject.ts#L150).
+	for _, want := range files {
+		if !slices.Contains(parts, want) {
 			problems = append(problems, fmt.Sprintf("subject-path %q does not name %s, so it carries no attestation",
 				subjects, want))
 		}
 	}
 	return problems
+}
+
+// goreleaserDist is the directory goreleaser writes the release into: the
+// config's top-level dist, or dist where it sets none
+// (https://github.com/goreleaser/goreleaser/blob/v2.18.1/internal/pipe/dist/dist.go#L31-L32).
+func goreleaserDist(cfg string) string {
+	for _, raw := range strings.Split(cfg, "\n") {
+		if v, ok := strings.CutPrefix(raw, "dist:"); ok {
+			if value, _ := workflowValue(strings.TrimSpace(v)); value != "" {
+				return value
+			}
+		}
+	}
+	return "dist"
 }
 
 // checksumNameTemplate is a goreleaser config's top-level
@@ -115,21 +146,25 @@ func checksumNameTemplate(cfg string) string {
 	return ""
 }
 
+// releaseFixtureFiles is what releaseFiles makes of a config that names
+// checksums.txt and no dist directory.
+var releaseFixtureFiles = []string{"dist/*.tar.gz", "dist/*.zip", "dist/*.mcpb", "dist/checksums.txt"}
+
 func TestReleaseSubjectProblems(t *testing.T) {
 	for name, subjects := range map[string]string{
 		"commas":                        "dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/checksums.txt",
 		"newlines":                      "dist/*.tar.gz\ndist/*.zip\ndist/checksums.txt\ndist/*.mcpb",
 		"commas and a space after each": "dist/*.tar.gz, dist/*.zip, dist/checksums.txt, dist/*.mcpb",
 	} {
-		if p := releaseSubjectProblems(subjects, "checksums.txt"); len(p) != 0 {
+		if p := releaseSubjectProblems(subjects, releaseFixtureFiles); len(p) != 0 {
 			t.Errorf("%s: subjects refused: %v", name, p)
 		}
 	}
 	want := []string{
-		"checksum.name_template is empty, so nothing holds the subject-path to the file every other artifact is verified through",
-		`subject-path "dist/*.tar.gz,dist/*.zip.sigstore.json,dist/*.mcpb" does not name .zip, so it carries no attestation`,
+		`subject-path "dist/*.tar.gz,dist/*.zip.sigstore.json,dist/*.mcpb.sigstore.json,dist/checksums.txt" does not name dist/*.zip, so it carries no attestation`,
+		`subject-path "dist/*.tar.gz,dist/*.zip.sigstore.json,dist/*.mcpb.sigstore.json,dist/checksums.txt" does not name dist/*.mcpb, so it carries no attestation`,
 	}
-	if p := releaseSubjectProblems("dist/*.tar.gz,dist/*.zip.sigstore.json,dist/*.mcpb", ""); !slices.Equal(p, want) {
+	if p := releaseSubjectProblems("dist/*.tar.gz,dist/*.zip.sigstore.json,dist/*.mcpb.sigstore.json,dist/checksums.txt", releaseFixtureFiles); !slices.Equal(p, want) {
 		t.Errorf("problems\n got %q\nwant %q", p, want)
 	}
 }
@@ -150,13 +185,14 @@ func TestReleaseAttestProblems(t *testing.T) {
 		{"a literal block", step("        with:\n          subject-path: |\n            dist/*.tar.gz\n            dist/*.zip\n            dist/*.mcpb\n            dist/checksums.txt\n"), cfg, nil},
 		{"a folded block", step("        with:\n          subject-path: >\n            dist/*.tar.gz\n            dist/*.zip\n            dist/*.mcpb\n            dist/checksums.txt\n"), cfg, []string{
 			`subject-path "dist/*.tar.gz dist/*.zip dist/*.mcpb dist/checksums.txt" separates with a space, which is read as one glob; separate with commas or newlines`,
-			`subject-path "dist/*.tar.gz dist/*.zip dist/*.mcpb dist/checksums.txt" does not name .tar.gz, so it carries no attestation`,
-			`subject-path "dist/*.tar.gz dist/*.zip dist/*.mcpb dist/checksums.txt" does not name .zip, so it carries no attestation`,
-			`subject-path "dist/*.tar.gz dist/*.zip dist/*.mcpb dist/checksums.txt" does not name .mcpb, so it carries no attestation`,
+			`subject-path "dist/*.tar.gz dist/*.zip dist/*.mcpb dist/checksums.txt" does not name dist/*.tar.gz, so it carries no attestation`,
+			`subject-path "dist/*.tar.gz dist/*.zip dist/*.mcpb dist/checksums.txt" does not name dist/*.zip, so it carries no attestation`,
+			`subject-path "dist/*.tar.gz dist/*.zip dist/*.mcpb dist/checksums.txt" does not name dist/*.mcpb, so it carries no attestation`,
+			`subject-path "dist/*.tar.gz dist/*.zip dist/*.mcpb dist/checksums.txt" does not name dist/checksums.txt, so it carries no attestation`,
 		}},
 		{"another checksum file", step("        with:\n          subject-path: dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/checksums.txt\n"),
 			"checksum:\n  name_template: '{{ .ProjectName }}_checksums.txt'\n", []string{
-				`subject-path "dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/checksums.txt" does not name {{ .ProjectName }}_checksums.txt, so it carries no attestation`,
+				`subject-path "dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/checksums.txt" does not name dist/{{ .ProjectName }}_checksums.txt, so it carries no attestation`,
 			}},
 		{"no checksum name, only another block's", step("        with:\n          subject-path: dist/*.tar.gz,dist/*.zip,dist/*.mcpb\n"),
 			"release:\n  name_template: x\nchecksum:\n  algorithm: sha256\n", []string{
@@ -168,6 +204,23 @@ func TestReleaseAttestProblems(t *testing.T) {
 			}},
 		{"a tab before each comment", step("        with:\n          subject-path: dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/checksums.txt\n"),
 			"checksum:\t# signed\n  name_template: checksums.txt\t# fixed\n", nil},
+		// actions/attest skips a glob that matches nothing while another
+		// matches, so a bundle in another folder carries no provenance.
+		{"the bundle in another folder", step("        with:\n          subject-path: dist/*.tar.gz,dist/*.zip,dist/unused/*.mcpb,dist/checksums.txt\n"), cfg, []string{
+			`subject-path "dist/*.tar.gz,dist/*.zip,dist/unused/*.mcpb,dist/checksums.txt" does not name dist/*.mcpb, so it carries no attestation`,
+		}},
+		{"the checksum file in another folder", step("        with:\n          subject-path: dist/*.tar.gz,dist/*.zip,dist/*.mcpb,out/checksums.txt\n"), cfg, []string{
+			`subject-path "dist/*.tar.gz,dist/*.zip,dist/*.mcpb,out/checksums.txt" does not name dist/checksums.txt, so it carries no attestation`,
+		}},
+		{"another dist directory", step("        with:\n          subject-path: dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/checksums.txt\n"), "dist: ./out # built here\n" + cfg, []string{
+			`subject-path "dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/checksums.txt" does not name out/*.tar.gz, so it carries no attestation`,
+			`subject-path "dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/checksums.txt" does not name out/*.zip, so it carries no attestation`,
+			`subject-path "dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/checksums.txt" does not name out/*.mcpb, so it carries no attestation`,
+			`subject-path "dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/checksums.txt" does not name out/checksums.txt, so it carries no attestation`,
+		}},
+		{"the files in another dist directory", step("        with:\n          subject-path: out/*.tar.gz,out/*.zip,out/*.mcpb,out/checksums.txt\n"), "dist: out\n" + cfg, nil},
+		{"a dist key with no value, and dist: inside another value", step("        with:\n          subject-path: dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/checksums.txt\n"),
+			"dist: # goreleaser's default\nrelease:\n  footer: |\n    dist: out\nchecksum:\n  name_template: checksums.txt\n", nil},
 		{"no subject-path", step(""), cfg, []string{"release.yml:4: the attestation names no subject-path"}},
 		{"no attestation", parseWorkflow("release.yml", "jobs:\n  r:\n    steps:\n      - run: true\n"), cfg,
 			[]string{"release.yml runs no build-provenance attestation"}},
