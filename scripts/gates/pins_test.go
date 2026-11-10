@@ -491,6 +491,13 @@ func TestPinsNamesEachProblem(t *testing.T) {
 			"go-licenses is v1.6.0 at .github/workflows/ci.yml:19: go run github.com/google/go-licenses and v1.5.0 at " +
 				".goreleaser.yaml:6: github.com/google/go-licenses: one tool, one version",
 		}},
+		// goreleaser runs the one branch it renders, so a hook whose else
+		// branch fetches an unknown tool at a branch is refused, not read whole.
+		{"a goreleaser hook running a tool at a branch in its else", []docsEdit{
+			replace(parityGoreleaser, "    - go mod tidy", "    - go mod tidy\n"+
+				`    - "{{ if .IsSnapshot }}true{{ else }}go run github.com/someone/tool@main dist{{ end }}"`),
+		}, []string{".goreleaser.yaml:5: hooks: a template control action; goreleaser runs one branch, and the gates read only " +
+			"a command wrapped whole in one {{ if }}...{{ end }}"}},
 		{"a goreleaser shape the reader does not read", []docsEdit{
 			replace(parityGoreleaser, "    - go mod tidy", "    - go mod tidy\n'signs':\n  - cmd: cosign\nbuilds:\n  - hooks:\n      pre: &hook go run x\n"),
 		}, []string{
