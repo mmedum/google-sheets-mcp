@@ -2209,11 +2209,14 @@ as the runner reads it, and one given to this repository's own reusable
 workflow is held unless it passes one context on. It reads the commands
 `.goreleaser.yaml` runs by their key paths, as the GoReleaser version
 `release.yml` pins reads them, and fails when that version is another
-than the one the reader was checked against. The workflow reader refuses
-by name every shape it does not read, a line break YAML reads and it
-does not among them, and finds every `uses:` and version key its parse
-missed. The attestation test reads the release job's permissions
-(D-70); no gate reads another job's, or the checkout setting.
+than the one the reader was checked against. GoReleaser runs one branch
+of a template, so that reader refuses a command holding a control action
+other than one `{{ if }}` or `{{ with }}` wrapping it whole. The
+workflow reader refuses by name every shape it does not read, a line
+break YAML reads and it does not among them, and finds every `uses:`
+and version key its parse missed. The attestation test reads the
+release job's permissions (D-70); no gate reads another job's, or the
+checkout setting.
 
 Rejected: a `~>` range, which floats across a release line.
 Cost: every bump changes a SHA and its version together. A deployer's
