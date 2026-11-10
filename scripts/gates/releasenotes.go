@@ -66,17 +66,23 @@ func joinTrimmed(body []string) string {
 	return strings.Join(body, "\n")
 }
 
-// semverPattern is a version's numbers and a prerelease, whose identifiers
-// may hold a hyphen (https://semver.org/#spec-item-9).
-const semverPattern = `\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?`
+// semverPattern is a version's numbers and a prerelease: dot-separated
+// identifiers of ASCII letters, digits and hyphens, none empty
+// (https://semver.org/#spec-item-9). An identifier of hyphens alone, which
+// semver's grammar admits, is refused: it names no release.
+const semverPattern = `\d+\.\d+\.\d+(?:-` + semverIdentifier + `(?:\.` + semverIdentifier + `)*)?`
+
+// semverIdentifier is one prerelease identifier holding a letter or a digit.
+const semverIdentifier = `[0-9A-Za-z-]*[0-9A-Za-z][0-9A-Za-z-]*`
 
 var (
 	// changelogVersion is a release's version, a prerelease suffix allowed.
 	changelogVersion = regexp.MustCompile(`^` + semverPattern + `$`)
-	// changelogFooter is a line of the compare-link footer, `[Unreleased]:`
-	// or a version's, its URL on the same line or not yet written. Any other
-	// link definition sits in a section's prose.
-	changelogFooter = regexp.MustCompile(`^\[(?:Unreleased|` + semverPattern + `)\]:(?:[ \t]|$)`)
+	// changelogFooter is a compare-link footer line: Unreleased's or a
+	// version's, with or without a v, its URL written or not, the label in
+	// any case, as a label matches (https://spec.commonmark.org/0.31.2/#matches).
+	// Any other link definition sits in a section's prose.
+	changelogFooter = regexp.MustCompile(`^\[(?i:unreleased|v?` + semverPattern + `)\]:(?:[ \t]|$)`)
 )
 
 // changelogDoc is a CHANGELOG read once, fenced code as an example: a
@@ -147,6 +153,30 @@ func (c changelogDoc) versions() []changelogHeading {
 	return out
 }
 
+// lastTag is the newest release rev reaches: of the tags on its history,
+// the highest vX.Y.Z by semver, a prerelease included, so neither a newer
+// release on another line nor a nearer tag that names no release is rev's.
+// git's version sort puts v2.0.0-rc.1 after v2.0.0, so the order is
+// semver's. It is empty when rev reaches no release, which is a state,
+// not a failure; a git error is one.
+func lastTag(rev string) (string, error) {
+	tags, err := git("tag", "--merged", rev)
+	if err != nil {
+		return "", err
+	}
+	newest := ""
+	for _, tag := range strings.Fields(tags) {
+		v, ok := strings.CutPrefix(tag, "v")
+		if ok && changelogVersion.MatchString(v) && (newest == "" || changelogCompare(v, newest) > 0) {
+			newest = v
+		}
+	}
+	if newest == "" {
+		return "", nil
+	}
+	return "v" + newest, nil
+}
+
 // changelogCompare orders two versions changelogVersion matches by semver
 // precedence: by number, a prerelease before its release, and prerelease
 // fields compared in turn, numbers below words (https://semver.org/#spec-item-11).
@@ -189,12 +219,14 @@ func changelogDigits(s string) bool {
 	return s != "" && strings.Trim(s, "0123456789") == ""
 }
 
-// entries counts a section's "- " bullets, outside fenced code.
+// entries counts a section's "- " bullets at the margin, outside fenced
+// code. Only such a bullet is an entry: an indented one belongs to the
+// entry or the prose above it.
 func (c changelogDoc) entries(label string) int {
 	from, to := c.section(label)
 	n := 0
 	for _, line := range c.prose[from:to] {
-		if strings.HasPrefix(strings.TrimSpace(line), "- ") {
+		if strings.HasPrefix(line, "- ") {
 			n++
 		}
 	}

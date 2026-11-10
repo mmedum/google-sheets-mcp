@@ -1,6 +1,7 @@
 package main
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -34,16 +35,23 @@ func parityRepo(t *testing.T) map[string]string {
 // parityRepoTags is what the tree's //go:build lines need, read once: every
 // row reads the same tree.
 var parityRepoTags = sync.OnceValues(func() ([]parityTagNeed, error) {
-	root, err := repoRoot()
+	files, err := docsFiles(repoDir)
 	if err != nil {
 		return nil, err
 	}
-	return parityTreeTags(root)
+	return parityTreeTags(repoDir, files)
 })
 
 // parityRun runs the gate over files, with the tree's tags and those of
 // the extra Go files, and returns its problems, sorted.
 func parityRun(t *testing.T, files, extraGo map[string]string) []string {
+	t.Helper()
+	return parityRunExcused(t, files, extraGo, parityPrereqOnly)
+}
+
+// parityRunExcused is parityRun with prereqOnly in place of
+// parityPrereqOnly, so no row writes the package's own.
+func parityRunExcused(t *testing.T, files, extraGo, prereqOnly map[string]string) []string {
 	t.Helper()
 	atRepoRoot(t)
 	tree, err := parityRepoTags()
@@ -52,7 +60,7 @@ func parityRun(t *testing.T, files, extraGo map[string]string) []string {
 	}
 	needs := slices.Clone(tree)
 	if extraGo != nil {
-		more, err := parityTreeTags(docsTree(t, extraGo))
+		more, err := parityTreeTags(docsTree(t, extraGo), slices.Sorted(maps.Keys(extraGo)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -67,7 +75,7 @@ func parityRun(t *testing.T, files, extraGo map[string]string) []string {
 		}
 	}
 	r := parityCheck(parityInputs{mk: parseMakefile(files[fxMakefile]), flows: flows,
-		goreleaser: files[parityGoreleaser], hook: files[parityHook], needs: needs}, commands)
+		goreleaser: parseGoreleaser(files[parityGoreleaser]), hook: parseHook(files[parityHook]), needs: needs, prereqOnly: prereqOnly}, commands)
 	sort.Strings(r.problems)
 	return r.problems
 }
@@ -143,7 +151,8 @@ func TestParityFindsTheDriftsThatHappened(t *testing.T) {
 			tagged + "ci.yml vets no pass that builds it; it compiles only on a maintainer's machine",
 		}},
 		{name: "make check does not scan for secrets", remove: "secrets", want: []string{
-			"ci.yml uses gitleaks/gitleaks-action, and `make check` runs no gitleaks for it to stand in for",
+			".github/workflows/ci.yml:182 runs `go run github.com/zricethezav/gitleaks/v8@v8.30.1 git --log-opts=HEAD " +
+				"--config .gitleaks.toml --redact --no-banner .` and `make check` does not",
 		}},
 		{name: "make check does not check that go.mod is tidy", remove: "tidy", want: []string{
 			".github/workflows/ci.yml:149 runs `go mod tidy -diff` and `make check` does not",
@@ -157,6 +166,25 @@ func TestParityFindsTheDriftsThatHappened(t *testing.T) {
 		{name: "the pull-request gate is gone from CI", edits: []docsEdit{
 			replace(fxCI, `run: go run ./scripts/gates schema-ack "$PR_BASE_REF" "$PR_HEAD"`, "run: true"),
 		}, want: []string{"the schema-ack gate runs on pull requests by the dispatch, and ci.yml's pr job never calls it"}},
+		// A pull-request job does not run on a push to main, so a check gate
+		// or a command it alone runs passes nowhere main is checked.
+		{name: "a check gate and a command only the pr job runs", edits: []docsEdit{
+			replace(fxCI, "      - name: workflow pins\n        run: go run ./scripts/gates pins\n", ""),
+			replace(fxCI, "      - name: go.mod is tidy\n        run: go mod tidy -diff\n", ""),
+			replace(fxCI, "      - name: schema change acknowledged\n", "      - run: go run ./scripts/gates pins\n      - run: go mod tidy -diff\n"+
+				"      - name: schema change acknowledged\n"),
+		}, want: []string{
+			"`make tidy` runs \"go mod tidy -diff\", and ci.yml runs it only in its pr job, which a push to main does not run",
+			"the pins gate runs in make check by the dispatch, and ci.yml calls it only in its pr job, which a push to main does not run",
+		}},
+		// A vet pass only the pr job runs vets nothing on a push to main.
+		{name: "the tagged code vetted only in the pr job", edits: []docsEdit{
+			replace(fxCI, "      - name: vet the tagged code\n        run: go vet -tags=live ./...\n", ""),
+			replace(fxCI, "      - name: schema change acknowledged\n", "      - run: go vet -tags=live ./...\n      - name: schema change acknowledged\n"),
+		}, want: []string{
+			"`make vet` runs \"go vet -tags=live ./...\", and ci.yml runs it only in its pr job, which a push to main does not run",
+			tagged + "ci.yml vets no pass that builds it; it compiles only on a maintainer's machine",
+		}},
 		{name: "the pull-request gate moved out of the pr job", edits: []docsEdit{
 			replace(fxCI, `run: go run ./scripts/gates schema-ack "$PR_BASE_REF" "$PR_HEAD"`, "run: true"),
 			replace(fxCI, "run: go run ./scripts/gates docs\n", "run: go run ./scripts/gates docs\n      - run: go run ./scripts/gates schema-ack origin/main HEAD\n"),
@@ -184,7 +212,21 @@ func TestParityFindsTheDriftsThatHappened(t *testing.T) {
 		{name: "the release notes are no longer written", edits: []docsEdit{
 			replace(fxRelease, `run: go run ./scripts/gates release-notes "${REF_NAME}" > "${RUNNER_TEMP}/release-notes.md"`, "run: true"),
 		}, want: []string{
-			"the release-notes gate runs in release by the dispatch, and none of .goreleaser.yaml, release.yml, publish-mcp.yml calls it",
+			"the release-notes gate runs in release by the dispatch, and neither .goreleaser.yaml nor release.yml and the workflows it calls call it",
+		}},
+		// The release is release.yml and what it calls: a workflow it stopped
+		// calling runs nothing in a release.
+		{name: "the registry workflow not called", edits: []docsEdit{
+			replace(fxRelease, "    uses: ./.github/workflows/publish-mcp.yml\n    with:\n      tag: ${{ github.ref_name }}\n",
+				"    runs-on: ubuntu-latest\n    steps:\n      - run: true\n"),
+		}, want: []string{
+			"the registry-publish gate runs in release by the dispatch, and neither .goreleaser.yaml nor release.yml and the workflows it calls call it",
+		}},
+		{name: "the bundle packed only in a goreleaser comment", edits: []docsEdit{
+			replace(parityGoreleaser, "      post: go run ./scripts/gates mcpb-pack {{ .Version }} dist\n",
+				"      # post: go run ./scripts/gates mcpb-pack {{ .Version }} dist\n      post: true\n"),
+		}, want: []string{
+			"the mcpb-pack gate runs in release by the dispatch, and neither .goreleaser.yaml nor release.yml and the workflows it calls call it",
 		}},
 		{name: "a manual gate nothing runs", edits: []docsEdit{
 			replace(fxMakefile, "\t@$(GATES) api-diff\n", "\t@true\n"),
@@ -195,6 +237,21 @@ func TestParityFindsTheDriftsThatHappened(t *testing.T) {
 		{name: "a gate the dispatch does not have", edits: []docsEdit{
 			replace(fxMakefile, "\t@$(GATES) docs\n", "\t@$(GATES) docs\n\t@$(GATES) ghost\n"),
 		}, want: []string{"something runs `gates ghost`, which the dispatch does not have"}},
+		{name: "a gate the dispatch does not have, in another workflow", edits: []docsEdit{
+			replace(fxCodeQL, "          build-mode: autobuild\n", "          build-mode: autobuild\n      - run: go run ./scripts/gates ghost\n"),
+		}, want: []string{"something runs `gates ghost`, which the dispatch does not have"}},
+		// make ignores the failure of a command behind a -, so make check
+		// passes where CI, which runs it bare, fails.
+		{name: "a command whose failure make ignores", edits: []docsEdit{
+			replace(fxMakefile, "\t$(GO) run $(GOVULNCHECK) ./...\n", "\t-$(GO) run $(GOVULNCHECK) ./...\n"),
+			replace(fxMakefile, ".PHONY: clean\n", ".IGNORE: licenses\n\n.PHONY: clean\n"),
+		}, want: []string{
+			".IGNORE names licenses: make ignores the failure of every command `make licenses` runs",
+			"`make vuln` runs \"go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...\" behind a - prefix: make ignores this command's failure",
+		}},
+		{name: "every failure ignored", edits: []docsEdit{
+			replace(fxMakefile, ".PHONY: clean\n", ".IGNORE:\n\n.PHONY: clean\n"),
+		}, want: []string{".IGNORE names no target: make ignores the failure of every command"}},
 		{name: "a prerequisite a second check rule adds", edits: []docsEdit{
 			replace(fxMakefile, ".PHONY: clean\n", "check: ghostcheck\n\n.PHONY: clean\n"),
 		}, want: []string{"check: names ghostcheck, which the Makefile does not define"}},
@@ -239,10 +296,26 @@ func TestParityReadsWhatRuns(t *testing.T) {
 			replace(fxMakefile, "check: fmt", "# check: secrets\ncheck: fmt"),
 			replace(fxMakefile, " secrets api-coverage", " api-coverage"),
 		}, nil, []string{
-			"ci.yml uses gitleaks/gitleaks-action, and `make check` runs no gitleaks for it to stand in for",
+			".github/workflows/ci.yml:182 runs `go run github.com/zricethezav/gitleaks/v8@v8.30.1 git --log-opts=HEAD " +
+				"--config .gitleaks.toml --redact --no-banner .` and `make check` does not",
 		}},
-		{"gitleaks by the module path it moved to, which its action stands in for", []docsEdit{
-			replace(fxMakefile, "github.com/zricethezav/gitleaks/v8@", "github.com/gitleaks/gitleaks/v8@"),
+		// CI's make line runs the recipes make check runs, by the Makefile's
+		// own words, so the two cannot drift; a line that sets a variable
+		// runs another command and is read as written.
+		{"a CI make line that sets a variable", []docsEdit{
+			replace(fxCI, "        run: make secrets\n", "        run: make GITLEAKS_FLAGS=--no-banner secrets\n"),
+		}, nil, []string{
+			"`make secrets` runs \"go run github.com/zricethezav/gitleaks/v8@v8.30.1 git --log-opts=HEAD " +
+				"--config .gitleaks.toml --redact --no-banner .\" and ci.yml never does",
+		}},
+		{"a CI make line naming a target the Makefile lacks", []docsEdit{
+			replace(fxCI, "        run: make secrets\n", "        run: make secret\n"),
+		}, nil, []string{
+			"`make secrets` runs \"go run github.com/zricethezav/gitleaks/v8@v8.30.1 git --log-opts=HEAD " +
+				"--config .gitleaks.toml --redact --no-banner .\" and ci.yml never does",
+		}},
+		{"a CI make line with its output redirected", []docsEdit{
+			replace(fxCI, "        run: make secrets\n", "        run: make secrets > gitleaks.log 2>&1\n"),
 		}, nil, nil},
 		{"the gates binary under another name", []docsEdit{
 			replace(fxMakefile, "GATES     ?= ./.gates\n", "GATES     ?= bin/gates\n"),
@@ -251,7 +324,7 @@ func TestParityReadsWhatRuns(t *testing.T) {
 			replace(fxMakefile, "\t$(GO) mod tidy -diff\n", "\t$(GO)  mod tidy '-diff'\n"),
 		}, nil, nil},
 		{"a recipe line's prefixes, which are not part of the command", []docsEdit{
-			replace(fxMakefile, "\t$(GO) vet -tags=live ./...\n", "\t@-+$(GO) vet -tags=live ./...\n"),
+			replace(fxMakefile, "\t$(GO) vet -tags=live ./...\n", "\t@+ $(GO) vet -tags=live ./...\n"),
 		}, nil, nil},
 		{"a Makefile line the reader does not read", []docsEdit{
 			replace(fxMakefile, "GO        ?= go\n", "ifndef GO\nGO        ?= go\nendif\n"),
@@ -259,6 +332,11 @@ func TestParityReadsWhatRuns(t *testing.T) {
 			`Makefile:3: "ifndef GO" is a directive or an assignment, which this reader does not read`,
 			`Makefile:5: "endif" is a directive or an assignment, which this reader does not read`,
 		}},
+		// What the goreleaser reader refuses is a release command parity
+		// cannot see.
+		{"a goreleaser shape the reader does not read", []docsEdit{
+			replace(parityGoreleaser, "project_name: google-sheets-mcp\n", "project_name: google-sheets-mcp\n'before':\n  hooks:\n    - go mod tidy\n"),
+		}, nil, []string{".goreleaser.yaml:4: 'before': a quoted key; write the key plain"}},
 		{"a step the workflow reader does not read", []docsEdit{
 			replace(fxCI, stale, "      - {name: staleness, run: go run ./scripts/gates staleness}\n"),
 		}, nil, []string{
@@ -273,6 +351,11 @@ func TestParityReadsWhatRuns(t *testing.T) {
 		}, nil, []string{"`make docs` runs \"go vet -tags=foo ./...\" and ci.yml never does"}},
 		{"a command beside a gate call on one CI line", []docsEdit{
 			replace(fxCI, "run: go mod tidy -diff", "run: go run ./scripts/gates docs && go mod tidy -diff"),
+		}, nil, nil},
+		// A pipeline's other command runs beside a gate call too, and a
+		// redirection is neither a word nor an operator.
+		{"a command piped from a gate call on one CI line", []docsEdit{
+			replace(fxCI, "run: go mod tidy -diff", "run: go run ./scripts/gates docs 2>&1 | go mod tidy -diff"),
 		}, nil, nil},
 	})
 }
@@ -304,6 +387,17 @@ func TestParityHoldsAGateCallsArguments(t *testing.T) {
 		{"the default binary named in CI", []docsEdit{
 			replace(fxCI, "run: go run ./scripts/gates smoke\n", "run: go run ./scripts/gates smoke ./google-sheets-mcp\n"),
 		}, nil, nil},
+		// exec looks a name with no slash up on PATH, so a bare name is
+		// another binary than ./name.
+		{"the binary written without ./", []docsEdit{
+			replace(fxCI, "run: go run ./scripts/gates smoke\n", "run: go run ./scripts/gates smoke google-sheets-mcp\n"),
+		}, nil, []string{
+			".github/workflows/ci.yml:90 calls the smoke gate with `google-sheets-mcp` and `make check` never does",
+			"`make smoke` calls the smoke gate with `./google-sheets-mcp` and ci.yml never does",
+		}},
+		{"the default binary through a path that leaves and comes back", []docsEdit{
+			replace(fxCI, "run: go run ./scripts/gates smoke\n", "run: go run ./scripts/gates smoke ./cmd/../google-sheets-mcp\n"),
+		}, nil, nil},
 		{"the history scan in CI and the tree scan in make check", []docsEdit{
 			replace(fxCI, "run: go run ./scripts/gates leaks\n", "run: go run ./scripts/gates leaks history\n"),
 		}, nil, []string{
@@ -315,10 +409,11 @@ func TestParityHoldsAGateCallsArguments(t *testing.T) {
 
 // A gate that reads nothing passes everything, so each count has a floor.
 func TestParityRefusesToReadTooLittle(t *testing.T) {
-	r := parityCheck(parityInputs{mk: parseMakefile("check:\n"), flows: []workflowFile{parseWorkflow(fxCI, "jobs:\n")}},
-		map[string]command{})
+	r := parityCheck(parityInputs{mk: parseMakefile("check:\n"), flows: []workflowFile{parseWorkflow(fxCI, "jobs:\n")},
+		prereqOnly: parityPrereqOnly}, map[string]command{})
 	want := []string{
 		"the Makefile defines no GATES, the gates binary its recipes run",
+		"go build is excused as CI-only, and ci.yml runs no go build; drop the excuse",
 		"build is excused as a prerequisite and the Makefile does not define it; drop the excuse",
 		"gates is excused as a prerequisite and the Makefile does not define it; drop the excuse",
 		"read 0 check: prerequisites, want at least 15: the reader is not seeing its input",
@@ -332,13 +427,27 @@ func TestParityRefusesToReadTooLittle(t *testing.T) {
 	}
 }
 
-// A prerequisite excuse that outlived its target is refused.
+// An excuse that outlived what it excuses is refused: a prerequisite
+// excuse for a target the Makefile lacks, and a CI-only one for a go
+// command CI does not run.
 func TestParityRefusesAStaleExcuse(t *testing.T) {
-	parityPrereqOnly["gone"] = "a target that was renamed"
-	defer delete(parityPrereqOnly, "gone")
-	got := parityRun(t, parityRepo(t), nil)
+	excused := maps.Clone(parityPrereqOnly)
+	excused["gone"] = "a target that was renamed"
+	got := parityRunExcused(t, parityRepo(t), nil, excused)
 	want := []string{"gone is excused as a prerequisite and the Makefile does not define it; drop the excuse"}
 	if !slices.Equal(got, want) {
+		t.Errorf("problems = %q, want %q", got, want)
+	}
+	built := `run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            go build -o google-sheets-mcp.exe ./cmd/google-sheets-mcp
+          else
+            go build -o google-sheets-mcp ./cmd/google-sheets-mcp
+          fi
+`
+	files := applyEdits(t, parityRepo(t), replace(fxCI, "      - run: go build ./...\n", ""), replace(fxCI, built, "run: true\n"))
+	want = []string{"go build is excused as CI-only, and ci.yml runs no go build; drop the excuse"}
+	if got := parityRun(t, files, nil); !slices.Equal(got, want) {
 		t.Errorf("problems = %q, want %q", got, want)
 	}
 }
@@ -413,7 +522,7 @@ func TestParityTreeTags(t *testing.T) {
 		"a/testdata/x.go":   "//go:build fixture\n\npackage x\n",
 		".hidden/x.go":      "//go:build hidden\n\npackage x\n",
 	}
-	needs, err := parityTreeTags(docsTree(t, files))
+	needs, err := parityTreeTags(docsTree(t, files), slices.Sorted(maps.Keys(files)))
 	if err != nil {
 		t.Fatal(err)
 	}
