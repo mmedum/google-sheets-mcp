@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +36,11 @@ func TestRulesCatchPlantedIdentifiers(t *testing.T) {
 		{"user content url", "https://lh3.googleusercontent.com/a-/AOh14GhAbCdEfGhIjK", true},                                 // leakcheck:allow
 		{"real-looking spreadsheet id", "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms", true},                                 // leakcheck:allow
 		{"spreadsheet url", "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit", true}, // leakcheck:allow
+		// A host name is read in any case, so each host is matched in any
+		// case. Each id is made up, and no other rule matches it.
+		{"oauth client id, its host in mixed case", "999999-madeupclientidxyzxyzxyzxyz.Apps.GoogleUserContent.com", true}, // leakcheck:allow gitleaks:allow
+		{"user content url, its host in mixed case", "https://LH3.GoogleUserContent.com/a-/MadeUpPathForTest", true},      // leakcheck:allow
+		{"spreadsheet url, its host in mixed case", "https://Docs.Google.com/spreadsheets/d/1MadeUpSheetId/edit", true},   // leakcheck:allow
 		{"synthetic id", "1SyntheticFixtureSpreadsheetIdXXXXXXXXXXXXXXX", false},
 		{"invented by repetition", "1AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH", false},
 		{"a commit sha is not an id", "pinned at f06c13b6b1a9625abc9e6e439d9c05a8f2190e94", false},
@@ -102,14 +108,14 @@ func TestTheMarkerExcusesOneLineOnly(t *testing.T) {
 }
 
 func TestAllowlistEntriesHaveReasons(t *testing.T) {
-	if err := checkAllowlistHasReasons(); err != nil {
+	if err := checkAllowlistHasReasons(allowedValues); err != nil {
 		t.Error(err)
 	}
 	// An entry without a reason is how a gate quietly stops working, so
-	// the check itself is checked.
-	allowedValues["planted"] = ""
-	defer delete(allowedValues, "planted")
-	if err := checkAllowlistHasReasons(); err == nil {
+	// the check itself is checked, on a copy: no test writes the list.
+	planted := maps.Clone(allowedValues)
+	planted["planted"] = ""
+	if err := checkAllowlistHasReasons(planted); err == nil {
 		t.Error("an allowlist entry with no reason was accepted")
 	}
 }

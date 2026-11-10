@@ -40,12 +40,14 @@ var (
 	permissionID = regexp.MustCompile(`\b[0-9]{20}\b`)
 
 	// An OAuth client id, which is not a secret and is still an
-	// identifier of somebody's Cloud project.
-	clientID = regexp.MustCompile(`[0-9]{6,}-[a-z0-9]{20,}\.apps\.googleusercontent\.com`)
+	// identifier of somebody's Cloud project. A host name is read in any
+	// case (RFC 4343), so this rule, userContent and spreadsheetURL match
+	// their host in any case.
+	clientID = regexp.MustCompile(`[0-9]{6,}-[a-z0-9]{20,}(?i:\.apps\.googleusercontent\.com)`)
 
 	// A user-content URL carries an account id in its path. The bare
 	// host is allowed: the client's allowlist names it, and must.
-	userContent = regexp.MustCompile(`\b[a-z0-9\-]+\.googleusercontent\.com/[A-Za-z0-9_\-/]{8,}`)
+	userContent = regexp.MustCompile(`\b(?i:[a-z0-9\-]+\.googleusercontent\.com)/[A-Za-z0-9_\-/]{8,}`)
 
 	// A Drive or Sheets resource id, and the URL that carries one.
 	//
@@ -62,7 +64,7 @@ var (
 	// #1-create-a-project, is lowercase words after a short number. An id
 	// of random base64url bytes mixes cases.
 	headingSlug    = regexp.MustCompile(`^[0-9]{1,3}(-[a-z0-9]+)+$`)
-	spreadsheetURL = regexp.MustCompile(`docs\.google\.com/spreadsheets/d/([A-Za-z0-9_\-]{10,})`)
+	spreadsheetURL = regexp.MustCompile(`(?i:docs\.google\.com)/spreadsheets/d/([A-Za-z0-9_\-]{10,})`)
 
 	// What an invented id looks like: a marker word that a base64url id
 	// made of random bytes cannot contain by chance, or a run of one
@@ -100,7 +102,7 @@ const marker = "leakcheck:" + "allow"
 // leakGate scans the working tree, and on request every blob and message
 // in the history.
 func leakGate(history bool) error {
-	if err := checkAllowlistHasReasons(); err != nil {
+	if err := checkAllowlistHasReasons(allowedValues); err != nil {
 		return err
 	}
 	if err := scanTree(); err != nil {
@@ -155,8 +157,9 @@ func split0(out string) []string {
 	return strings.Split(trimmed, "\x00")
 }
 
-func checkAllowlistHasReasons() error {
-	for value, reason := range allowedValues {
+// checkAllowlistHasReasons refuses an entry of allowed with no reason.
+func checkAllowlistHasReasons(allowed map[string]string) error {
+	for value, reason := range allowed {
 		if strings.TrimSpace(reason) == "" {
 			return fmt.Errorf("the allowlist entry %q has no reason", value)
 		}

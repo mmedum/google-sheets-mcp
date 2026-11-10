@@ -104,9 +104,37 @@ func TestPinPatterns(t *testing.T) {
 		{"1.27", false},
 		{"latest", false},
 		{"", false},
+		// A prerelease is dot-separated identifiers, none empty and each
+		// holding a letter or a digit (https://semver.org/#spec-item-9).
+		{"v1.2.3-0.x-y", true},
+		{"v1.2.3-", false},
+		{"v1.2.3-.", false},
+		{"v1.2.3--", false},
+		{"v1.2.3-rc..1", false},
+		{"v1.2.3-rc.", false},
+		{"v1.2.3-rc.-", false},
 	} {
 		if got := exactSemver.MatchString(tc.version); got != tc.exact {
 			t.Errorf("exactSemver(%q) = %v, want %v", tc.version, got, tc.exact)
+		}
+	}
+	// go-version-file names a file rather than a version, and go.mod is
+	// the pin. A workflow's key is read in any case.
+	for key, want := range map[string]bool{
+		"go-version-file": false, "version": true, "cosign-release": true, "syft-version": true,
+		"GITLEAKS_VERSION": true, "COSIGN_RELEASE": true, "persist-credentials": false,
+		"Tool_Version": true, "TOOL_Release": true, "Syft-Version": true, "VERSION": true,
+	} {
+		if got := workflowVersionKey.MatchString(key); got != want {
+			t.Errorf("%q read as a workflow's version key = %v, want %v", key, got, want)
+		}
+	}
+	// The Makefile's VERSION is the server's, not a tool's.
+	for name, want := range map[string]bool{
+		"GITLEAKS_VERSION": true, "COSIGN_RELEASE": true, "VERSION": false, "GOVULNCHECK": false,
+	} {
+		if got := pinsVersionVar.MatchString(name); got != want {
+			t.Errorf("%q read as a Makefile version variable = %v, want %v", name, got, want)
 		}
 	}
 	if !fullSHA.MatchString("f06c13b6b1a9625abc9e6e439d9c05a8f2190e94") {
@@ -152,7 +180,9 @@ func pinsFixture() map[string]string {
 			"licenses:",
 			"\t$(GO) run $(GOLICENSES) check ./...",
 			"secrets:",
-			"\t$(GO) run $(GITLEAKS) dir .",
+			"\t$(GO) run $(GITLEAKS) git --log-opts=HEAD .",
+			"secrets-staged:",
+			"\t$(GO) run $(GITLEAKS) git --staged .",
 		),
 		fxCI: textLines(
 			"name: ci",
@@ -172,9 +202,9 @@ func pinsFixture() map[string]string {
 			"      - uses: golangci/golangci-lint-action@"+pinSHA+" # v9.3.0",
 			"        with:",
 			"          version: v2.14.0",
-			"      - uses: gitleaks/gitleaks-action@"+pinSHA+" # v3.0.0",
-			"        env:",
-			`          GITLEAKS_VERSION: "8.30.1"`,
+			"      - run: make secrets",
+			"      - run: go run github.com/google/go-licenses@v1.6.0 check ./...",
+			"      - uses: actions/upload-artifact@"+pinSHA+" # v7.0.2",
 		),
 		fxRelease: textLines(
 			"name: release",
@@ -217,6 +247,8 @@ func pinsFixture() map[string]string {
 			"      - uses: github/codeql-action/analyze@"+pinSHA+" # codeql-bundle-v2.26.4",
 		),
 		"scripts/gates/main.go": textLines("package main", "", "// Nothing pinned here."),
+		parityGoreleaser:        textLines("version: 2", "before:", "  hooks:", "    - go mod tidy"),
+		parityHook:              textLines("#!/bin/sh", "# Point git here with `make hooks`.", "exec go run ./scripts/gates precommit"),
 	}
 }
 
@@ -244,7 +276,6 @@ func pinsProblems(t *testing.T, files map[string]string) []string {
 // and every problem the gate names for it.
 func TestPinsNamesEachProblem(t *testing.T) {
 	const tag = "actions/checkout@v4"
-	const gitleaksEnv = "        env:\n          GITLEAKS_VERSION: \"8.30.1\"\n"
 	ci := func(old, new string) docsEdit { return replace(fxCI, old, new) }
 	step := "      - uses: actions/checkout@" + pinSHA + " # v7.0.1\n      - uses: actions/setup-go"
 	for _, tc := range []struct {
@@ -279,7 +310,7 @@ func TestPinsNamesEachProblem(t *testing.T) {
 			ci("- uses: actions/checkout@"+pinSHA+" # v7.0.1", `- uses: "actions/checkout@`+pinSHA+`" # v7.0.1`),
 		}, nil},
 		{"a merge key", []docsEdit{
-			ci("      - uses: gitleaks", "      - <<: {with: {x: y}}\n        uses: gitleaks"),
+			ci("      - run: make secrets", "      - <<: {with: {x: y}}\n        run: make secrets"),
 		}, []string{".github/workflows/ci.yml:18: GitHub Actions does not document merge keys; write the mapping out"}},
 		{"an alias and a block scalar where an action goes", []docsEdit{
 			ci(step, "      - uses: *checkout\n      - uses: >-\n          "+tag+"\n      - uses: actions/setup-go"),
@@ -322,22 +353,6 @@ func TestPinsNamesEachProblem(t *testing.T) {
 			".github/workflows/release.yml:21: the env value version names a version of a tool pinsTools does not know",
 			"goreleaser is pinned nowhere: a tool this gate names that no file pins is either gone or unread",
 		}},
-		// GitHub passes the workflow's env and the job's to each step.
-		{"an installer's env key in its job's env", []docsEdit{
-			ci(gitleaksEnv, ""), ci("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    env:\n      GITLEAKS_VERSION: \"8.30.1\"\n"),
-		}, nil},
-		{"an installer's env key in the workflow's env", []docsEdit{
-			ci(gitleaksEnv, ""), ci("jobs:\n", "env:\n  GITLEAKS_VERSION: \"8.30.1\"\njobs:\n"),
-		}, nil},
-		{"an installer's env key in a service's env", []docsEdit{
-			ci(gitleaksEnv, ""), ci("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    services:\n      db:\n        image: postgres@"+pinDigest+
-				"\n        env:\n          GITLEAKS_VERSION: \"8.30.1\"\n"),
-		}, []string{".github/workflows/ci.yml:23: gitleaks/gitleaks-action is pinned by SHA and does not set GITLEAKS_VERSION, " +
-			"so the tool it installs is whatever is current that morning"}},
-		{"an installer's env key in another job's env", []docsEdit{
-			ci(gitleaksEnv, "  other:\n    runs-on: ubuntu-latest\n    env:\n      GITLEAKS_VERSION: \"8.30.1\"\n"),
-		}, []string{".github/workflows/ci.yml:18: gitleaks/gitleaks-action is pinned by SHA and does not set GITLEAKS_VERSION, " +
-			"so the tool it installs is whatever is current that morning"}},
 		{"an env version of a tool nobody named", []docsEdit{
 			replace(fxRelease, "PUBLISHER_VERSION: v1.8.1", "PUBLISHER_VERSION: v1.8.1\n          NODE_VERSION: 22.1.0"),
 		}, []string{".github/workflows/release.yml:26: the env value NODE_VERSION names a version of a tool pinsTools does not know"}},
@@ -352,7 +367,7 @@ func TestPinsNamesEachProblem(t *testing.T) {
 		{"@latest in a run line, with its flags before it", []docsEdit{
 			ci("govulncheck@v1.7.0 ./...", "govulncheck@v1.7.0 ./...\n      - run: go run -mod=mod golang.org/x/vuln/cmd/govulncheck@latest ./..."),
 		}, []string{
-			".github/workflows/ci.yml:15: something is pinned to @latest",
+			".github/workflows/ci.yml:15: @latest installs whatever is newest. Name the version: what builds a release must not float",
 			`.github/workflows/ci.yml:15: go run golang.org/x/vuln/cmd/govulncheck: govulncheck is pinned to "latest", which is not one exact version`,
 			`govulncheck is v1.7.0 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and latest at ` +
 				`.github/workflows/ci.yml:15: go run golang.org/x/vuln/cmd/govulncheck: one tool, one version`,
@@ -372,36 +387,141 @@ func TestPinsNamesEachProblem(t *testing.T) {
 		}},
 		{"a version a reader cannot see, through bash -c", []docsEdit{
 			ci("govulncheck@v1.7.0 ./...", "govulncheck@v1.7.0 ./...\n      - run: bash -c \"go run golang.org/x/vuln/cmd/govulncheck@master ./...\""),
-		}, []string{`.github/workflows/ci.yml:15: govulncheck is pinned to "master", which is not one exact version`}},
+		}, []string{
+			`.github/workflows/ci.yml:15: golang.org/x/vuln/cmd/govulncheck: govulncheck is pinned to "master", which is not one exact version`,
+			"govulncheck is v1.7.0 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and master at " +
+				".github/workflows/ci.yml:15: golang.org/x/vuln/cmd/govulncheck: one tool, one version",
+		}},
 		{"CI and the Makefile at two versions of each tool", []docsEdit{
 			ci("govulncheck@v1.7.0", "govulncheck@v1.7.1"),
 			ci("version: v2.14.0", "version: v2.13.0"),
-			ci(`GITLEAKS_VERSION: "8.30.1"`, `GITLEAKS_VERSION: "8.30.0"`),
 		}, []string{
 			"golangci-lint is v2.13.0 at .github/workflows/ci.yml:17: golangci/golangci-lint-action and v2.14.0 at Makefile: GOLANGCI_LINT: one tool, one version",
-			"gitleaks is 8.30.0 at .github/workflows/ci.yml:20: GITLEAKS_VERSION and v8.30.1 at Makefile: GITLEAKS: one tool, one version",
 			"govulncheck is v1.7.1 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and v1.7.0 at Makefile: GOVULNCHECK: one tool, one version",
+		}},
+		// make check's secrets target runs gitleaks at the Makefile's
+		// version, and an env value a step hands `make` replaces it.
+		{"a tool's version in an env value a make target takes", []docsEdit{
+			ci("      - run: make secrets", "      - run: make vuln\n        env:\n          GOVULNCHECK: golang.org/x/vuln/cmd/govulncheck@v1.1.0\n      - run: make secrets"),
+		}, []string{
+			"govulncheck is v1.7.0 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and v1.1.0 at " +
+				".github/workflows/ci.yml:20: golang.org/x/vuln/cmd/govulncheck: one tool, one version",
 		}},
 		{"the Makefile at @latest, and a pin no recipe runs", []docsEdit{
 			replace(fxMakefile, "go-licenses@v1.6.0", "go-licenses@latest"),
 			replace(fxMakefile, "\t$(GO) run $(GOVULNCHECK) ./...", "\t@echo $(GOVULNCHECK)\n\tgovulncheck ./..."),
 		}, []string{
 			"Makefile: GOLICENSES is pinned to @latest",
+			"Makefile:13: @latest installs whatever is newest. Name the version: what builds a release must not float",
+			"Makefile:11: names govulncheck as a word of its own, which runs it from the PATH at whatever version is installed there; " + recipeRemedy,
 			"Makefile: GOVULNCHECK pins golang.org/x/vuln/cmd/govulncheck@v1.7.0 and no recipe runs it with the go command, so the tool runs from the PATH",
-			"go-licenses is pinned nowhere: a tool this gate names that no file pins is either gone or unread",
 		}},
 		{"a recipe that runs a tool at its own version", []docsEdit{
-			replace(fxMakefile, "\t$(GO) run $(GITLEAKS) dir .", "\t$(GO) run $(GITLEAKS) dir .\n\tgo run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./..."),
+			replace(fxMakefile, "\t$(GO) run $(GITLEAKS) git --log-opts=HEAD .", "\t$(GO) run $(GITLEAKS) git --log-opts=HEAD .\n\tgo run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./..."),
 		}, []string{
 			"govulncheck is v1.7.0 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and v1.6.0 at Makefile: secrets: one tool, one version",
 		}},
-		{"setup-go without go-version-file, and with another go.mod", []docsEdit{
-			ci("        with:\n          go-version-file: go.mod", "        with:\n          go-version: 1.27.3"),
+		{"a version kept apart from its module, and the server's own VERSION", []docsEdit{
+			replace(fxMakefile, "GOVULNCHECK   ?= golang.org/x/vuln/cmd/govulncheck@v1.7.0",
+				"VERSION ?= dev\nGOVULNCHECK_VERSION ?= v1.7.0\nGOVULNCHECK   ?= golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)"),
+		}, []string{
+			"Makefile: GOVULNCHECK_VERSION holds a version apart from its module; write the tool as one `NAME ?= module@version` variable",
+		}},
+		// A known tool's name as a word runs it from the PATH, wherever it
+		// sits, and a module whose path only ends in one is not it.
+		{"a recipe that names known tools", []docsEdit{
+			replace(fxMakefile, "\t$(GO) run $(GOLANGCI_LINT) run", "\t$(GO) run $(GOLANGCI_LINT) run\n"+
+				"\tgolangci-lint version | tee lint.log\n\techo $$(/usr/local/bin/govulncheck -version) && env -i gitleaks git .\n"+
+				"\t$(GO) run example.com/x/golangci-lint@v1.0.0 ./..."),
+		}, []string{
+			"Makefile:9: names golangci-lint as a word of its own, which runs it from the PATH at whatever version is installed there; " + recipeRemedy,
+			"Makefile:10: names govulncheck as a word of its own, which runs it from the PATH at whatever version is installed there; " + recipeRemedy,
+			"Makefile:10: names gitleaks as a word of its own, which runs it from the PATH at whatever version is installed there; " + recipeRemedy,
+			"Makefile: lint runs go run example.com/x/golangci-lint@v1.0.0, a tool pinsTools does not know",
+		}},
+		{"a recipe that fetches the latest release through a variable", []docsEdit{
+			replace(fxMakefile, "GO ?= go\n", "GO ?= go\nURL := https://github.com/x/y/releases/latest/download/z.tar.gz\n"),
+			replace(fxMakefile, "\t$(GO) run $(GOVULNCHECK) ./...", "\t$(GO) run $(GOVULNCHECK) ./...\n\tcurl -fsSLO $(URL)"),
+		}, []string{
+			"Makefile:12: releases/latest/download installs whatever is newest. Name the version: what builds a release must not float",
+		}},
+		{"a hook that names a known tool, and one that fetches whatever is newest", []docsEdit{
+			replace(parityHook, "exec go run", "gitleaks git --staged .\ncurl -fsSLO https://github.com/x/y/releases/latest/download/z\nexec go run"),
+		}, []string{
+			".githooks/pre-commit:3: names gitleaks as a word of its own, which runs it from the PATH at whatever version is installed there; " +
+				"run it through a Makefile target, whose version this gate holds",
+			".githooks/pre-commit:4: releases/latest/download installs whatever is newest. Name the version: what builds a release must not float",
+		}},
+		// A comment in the hook runs nothing.
+		{"a known tool named in a hook comment", []docsEdit{
+			replace(parityHook, "exec go run", "# gitleaks and golang.org/x/vuln/cmd/govulncheck@v1.1.0 run through make\nexec go run"),
+		}, nil},
+		// The hook's text is read for a known tool's version too, which no
+		// rule above sees in a go run of the module.
+		{"a tool's version in the hook", []docsEdit{
+			replace(parityHook, "exec go run", "go run golang.org/x/vuln/cmd/govulncheck@v1.1.0 ./...\nexec go run"),
+		}, []string{
+			"govulncheck is v1.7.0 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and v1.1.0 at " +
+				".githooks/pre-commit:3: golang.org/x/vuln/cmd/govulncheck: one tool, one version",
+		}},
+		// `make hooks` points git at all of .githooks/, and only pre-commit is read.
+		{"a second hook beside pre-commit", []docsEdit{
+			add(".githooks/pre-push", textLines("#!/bin/sh", "gitleaks git .")),
+		}, []string{
+			".githooks/pre-push: git runs each hook in .githooks by its name, and the gates read only .githooks/pre-commit; " +
+				"move it out, or make the gates read it",
+		}},
+		{"a download from the latest release in a workflow, and latest in a comment", []docsEdit{
+			ci("      - run: make secrets", "      # not releases/latest/download, which floats\n"+
+				"      - run: curl -fsSLO https://github.com/x/y/releases/latest/download/z.tar.gz\n      - run: make secrets"),
+		}, []string{
+			".github/workflows/ci.yml:19: releases/latest/download installs whatever is newest. Name the version: what builds a release must not float",
+		}},
+		// goreleaser runs its hooks in the release, and a sign's or an SBOM's
+		// words, so each is held as a run line is.
+		{"goreleaser commands at a floating version, another version and through bash -c", []docsEdit{
+			replace(parityGoreleaser, "    - go mod tidy", "    - go mod tidy\n    - go run golang.org/x/vuln/cmd/govulncheck@latest ./...\n"+
+				"    - bash -c \"go run github.com/google/go-licenses@v1.5.0 check ./...\"\n"+
+				"builds:\n  - id: x\n    hooks:\n      post:\n        - cmd: curl -fsSLO https://github.com/x/y/releases/latest/download/z\n"+
+				"sboms:\n  - cmd: go\n    args:\n      - run\n      - github.com/zricethezav/gitleaks/v8@v8.29.0"),
+		}, []string{
+			".goreleaser.yaml:5: @latest installs whatever is newest. Name the version: what builds a release must not float",
+			".goreleaser.yaml:11: releases/latest/download installs whatever is newest. Name the version: what builds a release must not float",
+			"gitleaks is v8.30.1 at Makefile: GITLEAKS and v8.29.0 at .goreleaser.yaml:16: github.com/zricethezav/gitleaks/v8: one tool, one version",
+			"go-licenses is v1.6.0 at .github/workflows/ci.yml:19: go run github.com/google/go-licenses and v1.5.0 at " +
+				".goreleaser.yaml:6: github.com/google/go-licenses: one tool, one version",
+		}},
+		{"a goreleaser shape the reader does not read", []docsEdit{
+			replace(parityGoreleaser, "    - go mod tidy", "    - go mod tidy\n'signs':\n  - cmd: cosign\nbuilds:\n  - hooks:\n      pre: &hook go run x\n"),
+		}, []string{
+			".goreleaser.yaml:5: 'signs': a quoted key; write the key plain",
+			".goreleaser.yaml:9: pre: an anchor, an alias or a tag; write the value out",
+		}},
+		{"goreleaser at a version the config reader was not checked against", []docsEdit{
+			replace(fxRelease, `          version: "v2.18.1"`, `          version: "v2.19.0"`),
+		}, []string{
+			".github/workflows/release.yml:21: goreleaser/goreleaser-action runs goreleaser v2.19.0, and the .goreleaser.yaml reader " +
+				"is checked against v2.18.1's source; check its key paths and template rule against v2.19.0's, then set goreleaserChecked",
+		}},
+		// setup-go reads go-version before go-version-file, so a go-version
+		// beside go.mod is the Go the step installs.
+		{"setup-go without go-version-file, with another go.mod, and with a go-version beside go.mod", []docsEdit{
+			ci("        with:\n          go-version-file: go.mod\n", ""),
 			replace(fxCodeQL, "      - uses: github/codeql-action/init", "      - uses: actions/setup-go@"+pinSHA+" # v7.0.0\n        with:\n          go-version-file: tools/go.mod\n      - uses: github/codeql-action/init"),
+			replace(fxRelease, "      - uses: sigstore/cosign-installer", "      - uses: actions/setup-go@"+pinSHA+" # v7.0.0\n        with:\n          go-version: 1.27.3\n          go-version-file: go.mod\n      - uses: sigstore/cosign-installer"),
 		}, []string{
 			".github/workflows/ci.yml:11: actions/setup-go is pinned by SHA and does not set go-version-file, " +
 				"so the tool it installs is whatever is current that morning",
 			`.github/workflows/codeql.yml:10: actions/setup-go sets go-version-file to "tools/go.mod", which is not the repository's go.mod`,
+			".github/workflows/release.yml:15: actions/setup-go sets go-version, which setup-go reads before go-version-file; " +
+				"pin Go by go.mod alone",
+		}},
+		// An installer's version given as an expression is no exact version,
+		// whatever env: sets it.
+		{"an installer's version given as an expression", []docsEdit{
+			replace(fxRelease, `          version: "v2.18.1"`, "          version: ${{ env.GORELEASER_VERSION }}"),
+		}, []string{
+			`.github/workflows/release.yml:21: goreleaser/goreleaser-action: goreleaser is pinned to "${{ env.GORELEASER_VERSION }}", which is not one exact version`,
 		}},
 		{"a toolchain line that names a Go line, not a release", []docsEdit{
 			replace("go.mod", "go 1.27.3", "go 1.27.3\n\ntoolchain go1.27"),
@@ -453,6 +573,36 @@ func TestPinsNamesEachProblem(t *testing.T) {
 		// This repository's own reusable workflow is read as a workflow, so a
 		// version it is given is held where it uses it. A local action's
 		// action.yml is read by no gate, so its inputs are held here.
+		// A literal given to this repository's own reusable workflow is held
+		// there too: a run step in it may fetch whatever version it is given.
+		// A literal inside an expression is a literal all the same.
+		{"a literal version given to a local reusable workflow", []docsEdit{
+			replace(fxCodeQL, "analyze@"+pinSHA+" # codeql-bundle-v2.26.4\n", "analyze@"+pinSHA+" # codeql-bundle-v2.26.4\n"+
+				"  call:\n    uses: ./.github/workflows/x.yml\n    with:\n      tool-version: latest\n"+
+				"      Other-Release: v1\n      quoted-version: ${{ 'latest' }}\n      fallback-version: ${{ inputs.v || 'latest' }}\n"+
+				"      ref-version: ${{ github.ref_name }}\n      exact-version: v1.2.3\n"),
+		}, []string{
+			`.github/workflows/codeql.yml:16: ./.github/workflows/x.yml: Other-Release is "v1", which is not one exact version`,
+			`.github/workflows/codeql.yml:18: ./.github/workflows/x.yml: fallback-version is "${{ inputs.v || 'latest' }}", which is not one exact version`,
+			`.github/workflows/codeql.yml:17: ./.github/workflows/x.yml: quoted-version is "${{ 'latest' }}", which is not one exact version`,
+			`.github/workflows/codeql.yml:15: ./.github/workflows/x.yml: tool-version is "latest", which is not one exact version`,
+		}},
+		// An env key is a version in any case: a run step reading
+		// $Tool_Version takes a version all the same.
+		{"env versions in another case", []docsEdit{
+			replace(fxRelease, "PUBLISHER_VERSION: v1.8.1", "PUBLISHER_VERSION: v1.8.1\n          Syft_Version: latest\n          TOOL_Release: v1"),
+		}, []string{
+			".github/workflows/release.yml:26: the env value Syft_Version names a version of a tool pinsTools does not know",
+			".github/workflows/release.yml:27: the env value TOOL_Release names a version of a tool pinsTools does not know",
+		}},
+		// A step written after a lone CR is the rest of the line before to a
+		// reader that breaks lines at LF.
+		{"a step hidden after a lone CR", []docsEdit{
+			ci("      - run: make secrets", "      - run: make secrets\r      - uses: evil-org/x@main"),
+		}, []string{
+			".github/workflows/ci.yml:18: a CR with no LF after it at byte 26 of the line, which YAML reads as a line break and this reader does not; " +
+				"break lines with LF or CRLF alone",
+		}},
 		{"a version given to a local reusable workflow, and to a local action", []docsEdit{
 			replace(fxCodeQL, "analyze@"+pinSHA+" # codeql-bundle-v2.26.4\n", "analyze@"+pinSHA+" # codeql-bundle-v2.26.4\n"+
 				"  call:\n    uses: ./.github/workflows/x.yml\n    with:\n      release-version: ${{ github.ref_name }}\n"),
@@ -473,6 +623,9 @@ func TestPinsNamesEachProblem(t *testing.T) {
 		})
 	}
 }
+
+// recipeRemedy is how a recipe runs a tool instead of from the PATH.
+const recipeRemedy = "run it as `$(GO) run $(NAME)`, NAME a `NAME ?= module@version` variable"
 
 // A gate that reads nothing passes everything, so each count has a floor.
 func TestPinsRefusesToReadTooLittle(t *testing.T) {

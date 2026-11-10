@@ -402,7 +402,7 @@ CHANGELOG to the code. Releasing is in [release.md](release.md).
 | D-06 | Stdout carries only MCP JSON-RPC frames | accepted | forbidigo, smoke, TestVersionFlagPrintsToStdoutAndNothingElse, TestTheLinuxLauncherPicksABinaryAndKeepsStdoutClean |
 | D-07 | Logs record the call, never the payload | accepted | TestLogsCarryNothingFromTheSpreadsheet, TestEveryToolIsDriven, TestTransportErrorsCarryNoURL, TestACanceledRequestCarriesNoURL |
 | D-08 | What is meant to be pasted is masked; a tool result is not, and fetches only what something needs | accepted | TestAccountIsStoredWholeAndPrintedMasked, TestPathMasksTheClientId, TestStatusKeepsTheDomainAndDropsTheRest, TestLineMasksWhatSomebodyElseAssembled |
-| D-09 | Nothing from a real spreadsheet, account or deployment enters the repository, and two allow-list scanners hold it | accepted | leaks, secrets, leaks-history, TestRulesCatchPlantedIdentifiers, TestAllowlistEntriesHaveReasons, TestTheMarkerExcusesOneLineOnly, TestScanReadsUntrackedFilesToo, TestATrackedBinaryIsAFinding, TestFindingsAreAbbreviated |
+| D-09 | Nothing from a real spreadsheet, account or deployment enters the repository, and two allow-list scanners hold it | accepted | leaks, secrets, secrets-staged, leaks-history, TestTheHookRunsTheStagedSecretScan, TestTheHookScansTheStagedChangesAtTheMakefilesVersion, TestRulesCatchPlantedIdentifiers, TestAllowlistEntriesHaveReasons, TestTheMarkerExcusesOneLineOnly, TestScanReadsUntrackedFilesToo, TestATrackedBinaryIsAFinding, TestFindingsAreAbbreviated |
 | D-10 | Fixtures and goldens are generated, never recorded | accepted | TestFixtureIsSyntheticThroughout, TestNumbersAreDeterministic, leaks |
 | D-11 | The live driver and the evals work only in spreadsheets they made, and print only through one redacting helper | accepted | transcript, TestPrintsOutside, live |
 | D-12 | A1 is the contract: the model never sees a GridRange, and the conversion lives in `internal/a1` | accepted | TestGridRangeConversion, TestZeroBased, TestDimensionRangesAreZeroBasedAndHalfOpen, TestPivotAddByHeading, review |
@@ -460,14 +460,14 @@ CHANGELOG to the code. Releasing is in [release.md](release.md).
 | D-64 | Coverage is floored per package over `internal/` and `cmd/`, from a derived list | accepted | cover, TestFloorPerPackage, TestBothTreesAreUnderAFloor |
 | D-65 | A rule is a test, its list derived from the code, and its checker asserts a floor on what it read | accepted | review |
 | D-66 | Everything the repository runs on itself is Go | accepted | review |
-| D-67 | `make check` and CI run the same set | accepted | parity, TestParityPassesOnThisRepository, TestParityFindsTheDriftsThatHappened, TestParityHoldsAGateCallsArguments, TestParityHoldsTheTreesTagsToAVetPass |
+| D-67 | `make check` and CI run the same set | accepted | parity, TestParityPassesOnThisRepository, TestParityFindsTheDriftsThatHappened, TestParityReadsWhatRuns, TestParityHoldsAGateCallsArguments, TestParityRefusesAStaleExcuse, TestParityHoldsTheTreesTagsToAVetPass |
 | D-68 | CI runs every gate on Linux, macOS and Windows under a pinned bash | accepted | pins, TestPinsShell |
-| D-69 | Every action is pinned by commit SHA and every tool by exact version | accepted | pins, TestPinPatterns, TestPinsNamesEachProblem |
-| D-70 | A release is built from a tag, reproducible, signed and attested | accepted | release-tag, release-notes, registry-publish, TestBundleIsReproducible, TestTheTagMajorMustBeTheModules, TestTheReleaseAttestsEveryFileItPublishes |
+| D-69 | Every action is pinned by commit SHA and every tool by exact version | accepted | pins, TestPinPatterns, TestPinsNamesEachProblem, TestReadersRefuseALineBreakTheyDoNotRead, TestGoreleaserRefusesWhatItCannotRead |
+| D-70 | A release is built from a tag, reproducible, signed and attested | accepted | release-tag, release-notes, registry-publish, TestBundleIsReproducible, TestTheTagMajorMustBeTheModules, TestTheReleaseAttestsEveryFileItPublishes, TestReleaseAttestProblems |
 | D-71 | The bundle manifest is held to the staged tree and a pinned schema | accepted | mcpb, mcpb-pack, TestTheSixWaysAManifestBreaks, TestCommittedManifestPacks, TestAFailedWriteLeavesNoBundle, TestTheWaysAManifestMisdeclaresItsVersion, TestTheStampedManifestIsHeldToTheSchema, TestAVendoredSchemaIsHeldToItsRecordedDigest |
 | D-72 | The bundle asks for the settings a person sets elsewhere, each defaulting as the server does | accepted | mcpb, TestBundleVarsAreDerivedFromTheSettings, TestTheBundleSettingsRefuseEachBreak, TestVarsDescribeWhatBuildDoes, TestTheClientFileMayBeLeftEmpty |
 | D-73 | `main` is released code, and work reaches it through a pull request the maintainer merges | accepted | review |
-| D-74 | The CHANGELOG section is the release note | accepted | staleness, release-notes, TestReleaseNotesTakesOnlyItsOwnVersion, TestReleaseNotesRefusesAnEmptySection |
+| D-74 | The CHANGELOG section is the release note | accepted | staleness, release-notes, TestReleaseNotesTakesOnlyItsOwnVersion, TestReleaseNotesRefusesAnEmptySection, TestTheChangelogRuleCountsWhatShips, TestLastTagIsOneTheRevisionReaches, TestStalenessVerdictKeepsEveryCheck |
 | D-75 | Own wire types over raw REST, and no generated client | accepted | depguard, api-fields |
 | D-76 | Every published method, union request and field has a written verdict | accepted | api-coverage, api-fields, TestTheRealRecordIsRead, TestFieldsProblemsCatchesAFieldGoogleAdds, TestAPIFieldsGate |
 | D-77 | The server confirms a write by asking the person through elicitation | rejected | — |
@@ -692,9 +692,11 @@ spreadsheet's id. It covers account addresses, Cloud project ids, OAuth
 client ids and secrets, refresh tokens, and the numeric account id.
 
 Two scanners hold it, because they catch different things. gitleaks
-(`make secrets`) covers credentials, with rules for Google client ids,
-client secrets and refresh tokens. `scripts/gates leaks` covers
-identifiers, which pass gitleaks untouched.
+covers credentials, with rules for Google client ids, client secrets and
+refresh tokens. `make secrets` scans every commit HEAD reaches, as CI
+runs it, and the pre-commit hook scans the staged changes through
+`make secrets-staged`, at the same version. `scripts/gates leaks`
+covers identifiers, which pass gitleaks untouched.
 
 Every rule in `leaks` is an allow-list. A synthetic id says so in its
 own text, with a marker such as `Fixture`. Each exception is listed by
@@ -2115,18 +2117,28 @@ bundle manifest, are written and kept current here in Go.
 
 `make check` and CI run the same checks. `scripts/gates parity` compares
 them by what they run. Every command a target in `make check` runs, its
-Makefile variables expanded, is one `.github/workflows/ci.yml` runs with
-the same words, as the shell splits them, or one an action stands in
-for. A command beside a gate call on its line is compared on its own.
-Every go command `ci.yml` runs is one `make check` runs.
+Makefile variables expanded, is one a job of `.github/workflows/ci.yml`
+that a push to `main` runs with the same words, as the shell splits
+them, or one an action stands in for. The `pr` job runs only on a pull
+request, so a check only it runs passes nowhere `main` is checked. A
+command beside a gate call on its line, in a list or a pipeline, is
+compared on its own, and a `make` line in `ci.yml` runs the recipes it
+names. Every go command `ci.yml` runs is one `make check` runs, and an
+excuse from either rule names a target or a command that exists. A
+command in `make check`'s closure whose failure make ignores, by a `-`
+prefix or `.IGNORE`, is refused.
 
 The dispatch records where each gates command runs: in both, only on a
 pull request, at release time, or by hand, so a gate is held from its
-first commit. A gate both run takes the same arguments in both, and an
-omitted binary is the one the gate defaults to. Every file behind a
-build tag, read from its `//go:build` line, is vetted on both sides by a
-pass that compiles it. The reader does not read `if:` on a step or a
-job, so a command under a condition counts as one CI runs.
+first commit. The release is `.goreleaser.yaml`, `release.yml` and the
+workflows `release.yml` calls, and a gate any workflow calls is one the
+dispatch has. A gate both run takes the same arguments in both, and an
+omitted binary is the one the gate defaults to; a binary named with no
+slash is looked up on the `PATH`, so it is another binary. Every file
+git lists behind a build tag, read from its `//go:build` line, is vetted
+on both sides by a pass that compiles it. The reader does not read `if:`
+on a step or a job, so a command under a condition counts as one CI
+runs.
 
 A contributor runs `make check` believing it is what CI runs. If the two
 differ, a change that passes at home fails CI, or worse, a check CI
@@ -2174,19 +2186,34 @@ references to actions to a commit SHA"
 
 Every tool an action installs is pinned beside it by exact version,
 `cosign-release`, `syft-version` and the GoReleaser version among them,
-with a comment saying which half of the pin is load-bearing. The tools
-the Makefile runs go through `go run <module>@<version>`. Never a `~>`
+with a comment saying which half of the pin is load-bearing. Go is
+pinned by `go-version-file: go.mod` alone, since setup-go reads a
+`go-version` first. The tools the Makefile runs go through
+`$(GO) run $(NAME)`, each `NAME ?= module@version` on one line, never by
+name from the `PATH`, in a recipe or the pre-commit hook. That hook is
+the only file in `.githooks/`, since git runs any hook there and the
+gates read only that one. Never a `~>`
 range: `goreleaser-action`'s own default is `~> v2`, and narrowing it to
 `~> v2.18.0` is still a range, so the tool that decides what the
-artifacts are would float. A tool named in two files is named at one
-version, and a container image is pinned by its digest. Every workflow
-starts at `permissions: contents: read` and raises it per job, and
-checkouts set `persist-credentials: false`.
+artifacts are would float. Nothing is fetched from a latest release or
+at `@latest`, the commands `.goreleaser.yaml` runs included. A tool
+named in two files is named at one version, wherever its module@version
+is written, and a container image is pinned by its digest. Every
+workflow starts at `permissions: contents: read` and raises it per job,
+and checkouts set `persist-credentials: false`.
 
 `scripts/gates pins` asserts the SHAs and their version comments, the
 exact versions, one version per tool and the image digests, because a
-comment cannot hold a version shut. No gate reads the permissions or the
-checkout setting.
+comment cannot hold a version shut. A version input is read in any case,
+as the runner reads it, and one given to this repository's own reusable
+workflow is held unless it passes one context on. It reads the commands
+`.goreleaser.yaml` runs by their key paths, as the GoReleaser version
+`release.yml` pins reads them, and fails when that version is another
+than the one the reader was checked against. The workflow reader refuses
+by name every shape it does not read, a line break YAML reads and it
+does not among them, and finds every `uses:` and version key its parse
+missed. The attestation test reads the release job's permissions
+(D-70); no gate reads another job's, or the checkout setting.
 
 Rejected: a `~>` range, which floats across a release line.
 Cost: every bump changes a SHA and its version together. A deployer's
@@ -2198,8 +2225,11 @@ repository cannot assume one.
 A release is built by GoReleaser from a `v*` tag, for Linux, macOS and
 Windows on amd64 and arm64. `checksums.txt` is signed keyless through
 Sigstore, every archive gets an SBOM, and the build gets a provenance
-attestation, whose subject-path names the archives, the bundle and the
-checksum file. `-trimpath` and `mod_timestamp` make a rebuilt tag byte for
+attestation, whose subject-path names the archives in each format the
+config packs, the bundle where mcpb-pack writes it, and the checksum
+file. The attest step sits in the job that runs GoReleaser, granted
+`id-token: write` and `attestations: write`: another job, or a workflow
+it calls, can be skipped while the release ships. `-trimpath` and `mod_timestamp` make a rebuilt tag byte for
 byte the same. A release is never a draft. The steps are in
 [release.md](release.md).
 
@@ -2310,11 +2340,15 @@ commit subjects is written for contributors rather than for the people
 who install the server.
 
 The staleness gate asks for an entry under `[Unreleased]` whenever the
-binary's source changed since the newest release. That is a Go file
-other than a test in a package the binary imports, as `go list -deps`
-reports them, a file such a package embeds, or `go.mod` outside its
-`require` and `tool` lines. `CONTRIBUTING.md` holds the rules for an
-entry, which are not optional since the section ships verbatim.
+binary's source changed since the newest release HEAD reaches, a
+prerelease included. That is any file but a test in a package the binary
+imports, as `go list -deps` reports them, a file such a package embeds,
+the bundle's manifest and Linux launcher, or `go.mod` outside its
+`require` and `tool` lines. The CHANGELOG is read with fenced code
+blanked. A checkout whose git cannot answer, or whose history reaches no
+release, gets no verdict from the rule, and the gate's other checks
+still run. `CONTRIBUTING.md` holds the rules for an entry, which are not
+optional since the section ships verbatim.
 
 Rejected: a changelog generated from commit subjects; release notes
 written by hand at release time; a path filter over `cmd/` and

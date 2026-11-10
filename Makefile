@@ -31,9 +31,10 @@ GOLANGCI_LINT ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 GOVULNCHECK   ?= golang.org/x/vuln/cmd/govulncheck@v1.7.0
 GOLICENSES    ?= github.com/google/go-licenses@v1.6.0
 # The module path is zricethezav, not gitleaks: the project moved
-# organization and the module path did not follow it. The version has to
-# match the one the CI action bundles, which the pin gate checks.
+# organization and the module path did not follow it. CI and the
+# pre-commit hook run gitleaks through the targets below, at this version.
 GITLEAKS      ?= github.com/zricethezav/gitleaks/v8@v8.30.1
+GITLEAKS_FLAGS = --config .gitleaks.toml --redact --no-banner
 
 .PHONY: all
 all: check
@@ -91,9 +92,17 @@ licenses:
 classes: gates ## The error vocabulary, held closed from both sides
 	@$(GATES) classes
 
+# HEAD's history, which is every commit CI's full checkout of a pull
+# request holds. With no --log-opts gitleaks walks every ref, a branch
+# never pushed included
+# (https://github.com/gitleaks/gitleaks/blob/v8.30.1/sources/git.go#L90-L94).
 .PHONY: secrets
-secrets: ## Credentials, as CI scans for them
-	$(GO) run $(GITLEAKS) dir . --config .gitleaks.toml --no-banner
+secrets: ## Credentials in HEAD's history, as CI scans for them
+	$(GO) run $(GITLEAKS) git --log-opts=HEAD $(GITLEAKS_FLAGS) .
+
+.PHONY: secrets-staged
+secrets-staged: ## Credentials in the staged changes; the pre-commit hook runs it
+	$(GO) run $(GITLEAKS) git --staged $(GITLEAKS_FLAGS) .
 
 .PHONY: leaks
 leaks: gates ## Identifiers and data in the working tree

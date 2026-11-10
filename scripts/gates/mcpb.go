@@ -187,7 +187,7 @@ func mcpbPack(out io.Writer, version, dist string) error {
 		return fmt.Errorf("usage: gates mcpb-pack VERSION [DIST]")
 	}
 	if dist == "" {
-		dist = "dist"
+		dist = mcpbPackDist
 	}
 	version = strings.TrimPrefix(version, "v")
 
@@ -210,13 +210,21 @@ func mcpbPack(out io.Writer, version, dist string) error {
 	if err != nil {
 		return err
 	}
-	bundle := filepath.Join(dist, fmt.Sprintf("%s_%s.mcpb", bundleName, version))
+	bundle := filepath.Join(dist, bundleFile(version))
 	if err := packTo(bundle, stamped, sources); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(out, "mcpb-pack: wrote %s (%d files)\n", bundle, len(sources)+1)
 	return nil
 }
+
+// mcpbPackDist is the directory mcpb-pack reads the binaries from and
+// writes the bundle to when its call names no DIST.
+const mcpbPackDist = "dist"
+
+// bundleFile is the name mcpb-pack gives the bundle for version, which
+// the release's upload and checksum globs have to match.
+func bundleFile(version string) string { return fmt.Sprintf("%s_%s.mcpb", bundleName, version) }
 
 // manifestRefused is the error that stops the gate, the packer and the
 // registry entry over the problems committedManifest found, naming each;
