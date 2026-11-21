@@ -5,7 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
 )
 
@@ -110,5 +112,85 @@ func TestAppendCoercionIsReported(t *testing.T) {
 	}
 	if len(res.Coerced) != 2 {
 		t.Errorf("%d coercion(s) from two coerced values: %+v", len(res.Coerced), res.Coerced)
+	}
+}
+
+// An append inserts rows, so the grid grows. A read straight after it,
+// inside the card's cache window, has to resolve against the grown grid
+// or it clamps off the rows the append just added.
+func TestAReadAfterAnAppendSeesTheAppendedRows(t *testing.T) {
+	srv := sheetstest.New(t)
+	doc, file := sheetstest.Large(4, 2)
+	srv.Add(doc, file)
+	svc := newService(t, srv)
+	ctx := context.Background()
+	read := func() string {
+		t.Helper()
+		res, err := svc.Read(ctx, service.ReadRequest{Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A:B"})
+		if err != nil {
+			t.Fatalf("Read: %v", err)
+		}
+		return res.Range
+	}
+	if got := read(); got != "'Bractal'!A1:B4" {
+		t.Fatalf("before the append the read covered %s, want 'Bractal'!A1:B4", got)
+	}
+	if _, err := svc.Append(ctx, service.AppendRequest{
+		Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A1:B1",
+		Values: [][]any{{"Zephrin", float64(12)}},
+	}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if got := read(); got != "'Bractal'!A1:B5" {
+		t.Errorf("after appending one row the read covered %s, want 'Bractal'!A1:B5", got)
+	}
+}
+
+// fetchFirst runs during once the first card read has come back from
+// Google and before the service stores it.
+type fetchFirst struct {
+	service.API
+	during func()
+}
+
+func (f *fetchFirst) GetSpreadsheet(ctx context.Context, id string, o gapi.GetOptions) (*gsheets.Spreadsheet, error) {
+	sp, err := f.API.GetSpreadsheet(ctx, id, o)
+	if during := f.during; during != nil {
+		f.during = nil
+		during()
+	}
+	return sp, err
+}
+
+// A card read before an append landed, and stored after it, would bring
+// back the row count the append made stale.
+func TestACardReadBeforeAnAppendIsNotKept(t *testing.T) {
+	srv := sheetstest.New(t)
+	doc, file := sheetstest.Large(4, 2)
+	srv.Add(doc, file)
+	fs, err := settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := &fetchFirst{API: srv.Client()}
+	svc := service.New(service.Deps{API: api, Config: fs})
+	ctx := context.Background()
+	api.during = func() {
+		if _, err := svc.Append(ctx, service.AppendRequest{
+			Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A1:B1",
+			Values: [][]any{{"Zephrin", float64(12)}},
+		}); err != nil {
+			t.Errorf("Append: %v", err)
+		}
+	}
+	if _, err := svc.Card(ctx, doc.ID); err != nil {
+		t.Fatal(err)
+	}
+	res, err := svc.Read(ctx, service.ReadRequest{Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A:B"})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if res.Range != "'Bractal'!A1:B5" {
+		t.Errorf("after the append the read covered %s, want 'Bractal'!A1:B5", res.Range)
 	}
 }

@@ -4,6 +4,8 @@ package main
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -533,8 +535,27 @@ func (d *driver) checkpointSteps() {
 	)
 }
 
+// sheetRows is a sheet's row count as the card renders it.
+func sheetRows(card, title string) (int, error) {
+	m := regexp.MustCompile(`(?m)^  ` + regexp.QuoteMeta(title) + ` \(id \d+, (\d+) rows x`).FindStringSubmatch(card)
+	if m == nil {
+		return 0, fmt.Errorf("the card gives no row count for %q", title)
+	}
+	return strconv.Atoi(m[1])
+}
+
 func (d *driver) appendSteps() []step {
 	return []step{
+		{
+			name: "the work sheet's rows before an append",
+			why:  "the next steps measure what the append does to the grid",
+			tool: "get_spreadsheet",
+			args: map[string]any{"spreadsheet": d.spreadsheet},
+			check: func(text string, _ map[string]any) (err error) {
+				d.workRows, err = sheetRows(text, d.workSheet)
+				return err
+			},
+		},
 		{
 			name: "rows land after the block Google finds",
 			why:  "the range picks the block and Google picks the destination; both are reported because neither is predictable",
@@ -551,6 +572,27 @@ func (d *driver) appendSteps() []step {
 				}
 				if !strings.Contains(text, "moved down") {
 					return fmt.Errorf("an inserting append did not say addresses moved")
+				}
+				return nil
+			},
+		},
+		{
+			// Inside the card's cache window, so it also shows that the
+			// append dropped the cached card.
+			name: "an append grows the grid by the rows it inserts",
+			why:  "insertDataOption INSERT_ROWS inserts rows, and a read that resolved against the old count would clamp them off",
+			tool: "get_spreadsheet",
+			args: map[string]any{"spreadsheet": d.spreadsheet},
+			check: func(text string, _ map[string]any) error {
+				if d.workRows == 0 {
+					return fmt.Errorf("no row count from before the append to compare with")
+				}
+				rows, err := sheetRows(text, d.workSheet)
+				if err != nil {
+					return err
+				}
+				if rows != d.workRows+1 {
+					return fmt.Errorf("the work sheet has %d rows after appending one to %d", rows, d.workRows)
 				}
 				return nil
 			},

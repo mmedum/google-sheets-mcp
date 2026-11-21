@@ -165,7 +165,6 @@ func (s *Service) ManageRange(ctx context.Context, req RangeRequest) (*RangeResu
 		}
 		view.Answered = answered
 	}
-	s.forget(ref.ID)
 	res.Summary = render.OpsDone(view)
 	return res, nil
 }
@@ -192,7 +191,6 @@ func (s *Service) settleTableAdd(ctx context.Context, ref Reference, props *gshe
 	if op.AddTable == nil || op.AddTable.Table == nil || !errors.Is(sendErr, gapi.ErrAmbiguousOutcome) {
 		return "", wrap(sendErr)
 	}
-	s.forget(ref.ID)
 	card, err := s.card(ctx, ref.ID)
 	if err != nil {
 		return "", wrap(sendErr)

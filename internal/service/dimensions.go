@@ -180,7 +180,6 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 	}); err != nil {
 		return nil, wrap(err)
 	}
-	s.forget(ref.ID)
 	res.Summary = render.DimensionDone(act)
 	return res, nil
 }

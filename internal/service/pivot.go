@@ -211,7 +211,6 @@ func (s *Service) writePivot(ctx context.Context, ref Reference, req PivotReques
 	}); err != nil {
 		return nil, wrap(err)
 	}
-	s.forget(ref.ID)
 	// The output is computed, so what it covers is only knowable by
 	// looking. Reporting the request's own arguments here would describe
 	// a rectangle nobody can rely on.
@@ -246,7 +245,6 @@ func (s *Service) deletePivot(ctx context.Context, ref Reference, req PivotReque
 	}); err != nil {
 		return nil, wrap(err)
 	}
-	s.forget(ref.ID)
 	res.Anchor = act.Anchor
 	res.Summary = render.PivotDone(act)
 	return res, nil

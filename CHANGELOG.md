@@ -5,6 +5,13 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+
+- A `read_range` straight after `append_rows` sees the appended rows; it could clamp them off for 30 seconds.
+- A read after a write that failed `[ambiguous_outcome]` sees what the write may have changed, rather than metadata cached before it.
+- A non-repeatable write refused only with HTTP 429, or whose connection failed before sending, reports what happened rather than `[ambiguous_outcome]`.
+- An `append_rows` or other non-repeatable write canceled after it was sent reports `[ambiguous_outcome]`, not `[unavailable]`, so the caller reads before repeating it.
+
 ### Security
 
 - Built with Go 1.27.4, which fixes CVE-2026-97054 (GO-2026-6859), a `net/http` race that can crash an HTTP/1 server.

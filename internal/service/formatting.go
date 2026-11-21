@@ -323,9 +323,6 @@ func (s *Service) FormatCells(ctx context.Context, req FormatRequest) (*FormatRe
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{Requests: ops}); err != nil {
 		return nil, mergedIntoPivot(err)
 	}
-	// A merge, an unmerge and a protection all change what the card
-	// says, and the card is what the next call resolves a range against.
-	s.forget(ref.ID)
 	res.Summary = render.OpsDone(view)
 	return res, nil
 }

@@ -188,7 +188,6 @@ func (s *Service) ConnectDataSource(ctx context.Context, req ConnectRequest) (*S
 	if err != nil {
 		return nil, wrap(err)
 	}
-	s.forget(ref.ID)
 	if r := firstReply(reply); r != nil && r.AddDataSource != nil {
 		if ds := r.AddDataSource.DataSource; ds != nil {
 			res.ID, act.ID = ds.DataSourceID, ds.DataSourceID
@@ -323,7 +322,6 @@ func (s *Service) DeleteDataSource(ctx context.Context, req DeleteSourceRequest)
 	}); err != nil {
 		return nil, wrap(err)
 	}
-	s.forget(ref.ID)
 	res.ID = id
 	res.Summary = render.SourceDone(act)
 	return res, nil

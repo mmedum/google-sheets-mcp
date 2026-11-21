@@ -313,6 +313,8 @@ type driver struct {
 	created    string
 	workSheet  string
 	checkpoint string
+	// workRows is the work sheet's row count before the first append.
+	workRows int
 	// commaLocale is the spreadsheet in a comma-decimal locale that the
 	// color-scale steps make, and typedTables the one the typed-column
 	// steps make.
