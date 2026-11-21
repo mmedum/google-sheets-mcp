@@ -1,5 +1,5 @@
 {
-  "fetched": "2026-11-04",
+  "fetched": "2026-11-21",
   "apis": [
     {
       "api": "sheets",
@@ -2491,6 +2491,7 @@
           "name": "Approval",
           "properties": [
             "approvalId",
+            "approvedRevisionId",
             "completeTime",
             "createTime",
             "dueTime",
