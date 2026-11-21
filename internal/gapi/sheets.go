@@ -99,8 +99,10 @@ const postFields = "postId,content,commentAction,assigneeEmail,author(displayNam
 // The whole spec, because an update replaces it whole and has to send
 // back what it read. It is deliberately not the card's mask:
 // live, one chart's full spec is about 2 KB against the 72 bytes a title
-// costs, so the card carries the title and this carries the rest.
-const ChartFields = "spreadsheetId,sheets(properties(sheetId,title),charts,slicers)"
+// costs, so the card carries the title and this carries the rest. The
+// grid tells a chart's sheet of cells from a sheet of its own, which an
+// update's unqualified range resolves against.
+const ChartFields = "spreadsheetId,sheets(properties(sheetId,title,gridProperties),charts,slicers)"
 
 // PivotFields is the field mask behind manage_pivot_table.
 //

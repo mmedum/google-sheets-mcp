@@ -2,6 +2,7 @@ package sheetstest
 
 import (
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -795,11 +796,25 @@ func replaceColumns(sh *Sheet, table *gsheets.Table, columns []*gsheets.TableCol
 	return out, nil
 }
 
+// deleteTable removes a table and, as Google does without saying so in
+// its reply, the conditional format rules over the table's range. Checked
+// by the live steps "acknowledged, the table and its rule go" and "and
+// the rule really did go with it", for a rule over the table's own range.
+// What Google does to a rule that reaches past the table is not probed,
+// so the fake keeps one rather than copy the guard's assumption.
 func deleteTable(d *Doc, id string) error {
 	for _, sh := range d.Sheets {
 		for i, t := range sh.Tables {
 			if t.TableID == id {
 				sh.Tables = append(sh.Tables[:i], sh.Tables[i+1:]...)
+				if t.Range != nil {
+					rect := a1.FromGridRange(t.Range)
+					sh.Conditional = slices.DeleteFunc(sh.Conditional, func(r *gsheets.ConditionalFormatRule) bool {
+						return len(r.Ranges) > 0 && !slices.ContainsFunc(r.Ranges, func(g *gsheets.GridRange) bool {
+							return !rect.Contains(a1.FromGridRange(g))
+						})
+					})
+				}
 				return nil
 			}
 		}

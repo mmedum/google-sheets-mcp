@@ -309,7 +309,8 @@ func (s *Server) spreadsheetsGet(w http.ResponseWriter, r *http.Request) {
 	// Google answers an unbalanced mask with this and nothing more. A
 	// fake that reads no mask lets a mask one parenthesis over pass every
 	// unit test and fail every live read.
-	if !balanced(q.Get("fields")) {
+	mask, ok := parseMask(q.Get("fields"))
+	if !ok {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "Request contains an invalid argument.")
 		return
 	}
@@ -333,7 +334,10 @@ func (s *Server) spreadsheetsGet(w http.ResponseWriter, r *http.Request) {
 			out.Sheets[i].CommentAnchors = wireAnchors(sh.CommentAnchors)
 		}
 	}
-	grid := q.Get("includeGridData") == "true"
+	// includeGridData is ignored when a mask is set: a mask that keeps
+	// sheets.data asks for cells by itself.
+	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/get
+	grid := q.Get("includeGridData") == "true" || mask.keeps("sheets", "data")
 	ranges := q["ranges"]
 	if grid {
 		for _, raw := range ranges {
@@ -356,7 +360,126 @@ func (s *Server) spreadsheetsGet(w http.ResponseWriter, r *http.Request) {
 			target.Data = append(target.Data, gridData(sh, clamp(sh, ref.Rect)))
 		}
 	}
-	writeJSON(w, out)
+	writeMasked(w, out, mask)
+}
+
+// writeMasked answers with only the fields the mask names, as Google
+// does, so a mask that leaves out a field the code reads fails a test
+// rather than every live read.
+// https://developers.google.com/workspace/sheets/api/guides/field-masks
+func writeMasked(w http.ResponseWriter, v any, m fieldMask) {
+	// The fake's own structs, so neither step can fail.
+	raw, _ := json.Marshal(v)
+	var tree any
+	_ = json.Unmarshal(raw, &tree)
+	writeJSON(w, prune(tree, m))
+}
+
+// fieldMask is a parsed mask: each name it keeps, and what it keeps
+// below that name, with nil keeping everything.
+type fieldMask map[string]fieldMask
+
+// parseMask reads a mask such as "a,b/c,d.e,f(g,h(*))", and reports
+// false for one whose parentheses do not balance, which Google answers
+// with a bare 400.
+func parseMask(mask string) (fieldMask, bool) {
+	m, i, ok := parseMaskList(mask, 0)
+	return m, ok && i == len(mask)
+}
+
+func parseMaskList(mask string, i int) (fieldMask, int, bool) {
+	out, all := fieldMask{}, false
+	for i < len(mask) && mask[i] != ')' {
+		start := i
+		for i < len(mask) && !strings.ContainsRune(",()", rune(mask[i])) {
+			i++
+		}
+		// '/' and '.' both step into a field.
+		path := strings.FieldsFunc(strings.TrimSpace(mask[start:i]), func(r rune) bool { return r == '/' || r == '.' })
+		var sub fieldMask
+		if i < len(mask) && mask[i] == '(' {
+			var ok bool
+			if sub, i, ok = parseMaskList(mask, i+1); !ok || i == len(mask) {
+				return nil, i, false
+			}
+			i++ // the ')'
+		}
+		for j := len(path) - 1; j >= 1; j-- {
+			if path[j] == "*" {
+				sub = nil
+			} else {
+				sub = fieldMask{path[j]: sub}
+			}
+		}
+		switch {
+		case len(path) == 0:
+		case path[0] == "*":
+			all = true
+		default:
+			merge(out, path[0], sub)
+		}
+		if i < len(mask) && mask[i] == ',' {
+			i++
+		}
+	}
+	if all {
+		return nil, i, true
+	}
+	return out, i, true
+}
+
+// merge adds what sub keeps under name, keeping a field kept whole whole.
+func merge(dst fieldMask, name string, sub fieldMask) {
+	prev, ok := dst[name]
+	switch {
+	case !ok:
+		dst[name] = sub
+	case prev == nil:
+	case sub == nil:
+		dst[name] = nil
+	default:
+		for k, v := range sub {
+			merge(prev, k, v)
+		}
+	}
+}
+
+// keeps reports whether m keeps the field at path.
+func (m fieldMask) keeps(path ...string) bool {
+	for _, name := range path {
+		if m == nil {
+			return true
+		}
+		sub, ok := m[name]
+		if !ok {
+			return false
+		}
+		m = sub
+	}
+	return true
+}
+
+// prune keeps what m names in v, element by element through arrays.
+func prune(v any, m fieldMask) any {
+	if m == nil {
+		return v
+	}
+	switch t := v.(type) {
+	case map[string]any:
+		out := map[string]any{}
+		for name, sub := range m {
+			if x, ok := t[name]; ok {
+				out[name] = prune(x, sub)
+			}
+		}
+		return out
+	case []any:
+		for i := range t {
+			t[i] = prune(t[i], m)
+		}
+		return t
+	}
+	return v
 }
 
 // docCard is a Doc as spreadsheets.get and spreadsheets.create both
@@ -587,7 +710,24 @@ func (s *Server) filesGet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "File not found: "+id)
 		return
 	}
-	writeJSON(w, f)
+	writeDriveMasked(w, r, f)
+}
+
+// writeDriveMasked answers a Drive read with what its mask names, and
+// whole without one, as Drive does.
+// https://developers.google.com/workspace/drive/api/guides/fields-parameter
+func writeDriveMasked(w http.ResponseWriter, r *http.Request, v any) {
+	fields := r.URL.Query().Get("fields")
+	if fields == "" {
+		writeJSON(w, v)
+		return
+	}
+	mask, ok := parseMask(fields)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "Invalid field selection "+fields)
+		return
+	}
+	writeMasked(w, v, mask)
 }
 
 func (s *Server) filesList(w http.ResponseWriter, r *http.Request) {
@@ -617,7 +757,7 @@ func (s *Server) filesList(w http.ResponseWriter, r *http.Request) {
 		out.Files = out.Files[:n]
 		out.NextPageToken = "next-page-fixture"
 	}
-	writeJSON(w, out)
+	writeDriveMasked(w, r, out)
 }
 
 func sortFiles(files []*gapi.File) {
@@ -664,21 +804,4 @@ func rpcFor(status int) string {
 		return "UNAVAILABLE"
 	}
 	return "INTERNAL"
-}
-
-// balanced says every parenthesis in a field mask closes, in order.
-func balanced(mask string) bool {
-	depth := 0
-	for _, r := range mask {
-		switch r {
-		case '(':
-			depth++
-		case ')':
-			depth--
-			if depth < 0 {
-				return false
-			}
-		}
-	}
-	return depth == 0
 }

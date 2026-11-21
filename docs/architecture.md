@@ -1931,7 +1931,10 @@ The unit suite runs against `internal/gapi/sheetstest`, an in-memory
 Sheets with Drive's endpoints, behind `httptest`. It models sheets with
 formulas and error values, merges, protected ranges, validation and
 notes, and the `batchUpdate` union. It models append's table detection,
-a write that skips rather than clears, and ragged responses. It injects
+a write that skips rather than clears, and ragged responses. A read
+answers with only the fields its mask names, so a mask that drops a
+field the code reads fails the suite. A table delete takes the
+conditional format rules inside the table's range. It injects
 failures such as a 429, a 5xx, a cut connection and a timeout. A batch
 applies nothing when one request in it fails, as Google's does.
 
@@ -1947,9 +1950,8 @@ render one error two ways.
 
 Rejected: a fake that simulates `USER_ENTERED` from the documentation; a
 table copied between the fake and the code.
-Cost: the fake ignores what a field mask asks for, so a mask that drops
-a needed field passes the suite (#80). Its table delete keeps the
-conditional format rules Google drops (#83).
+Cost: the fake accepts a field name Google does not know, and keeps a
+rule that reaches past a deleted table, which no probe has settled.
 
 ### D-60 Behavior the reference does not pin down is probed live before code depends on it
 

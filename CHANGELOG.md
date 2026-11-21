@@ -7,6 +7,7 @@ and this project follows [semantic versioning](https://semver.org).
 
 ### Fixed
 
+- `manage_chart` `update` works without `sheet`; it refused every chart as if it sat on a sheet of its own.
 - A `read_range` straight after `append_rows` sees the appended rows; it could clamp them off for 30 seconds.
 - A read after a write that failed `[ambiguous_outcome]` sees what the write may have changed, rather than metadata cached before it.
 - A non-repeatable write refused only with HTTP 429, or whose connection failed before sending, reports what happened rather than `[ambiguous_outcome]`.

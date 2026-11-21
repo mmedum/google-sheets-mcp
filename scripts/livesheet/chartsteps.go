@@ -194,6 +194,21 @@ func (d *driver) chartEditSteps() []step {
 			},
 		},
 		{
+			name: "an update with no sheet resolves on the chart's own sheet",
+			why:  "an update names the chart by id, so its sheet is known, and a range there means that sheet's cells",
+			tool: "manage_chart",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "action": "update", "id": d.chartID,
+				"subtitle": "resolved without a sheet",
+			},
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "Change the subtitle") {
+					return fmt.Errorf("the update does not report the subtitle it changed: %s", text)
+				}
+				return nil
+			},
+		},
+		{
 			name: "stacking a line chart is refused here",
 			why: "Google refuses the whole request when stackedType reaches a LINE chart, so the refusal is " +
 				"made where it can name the types that do take it",
