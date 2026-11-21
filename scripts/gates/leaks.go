@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -212,6 +215,93 @@ func scanTree() error {
 	return report(findings)
 }
 
+// coAuthor is a Co-authored-by trailer and the address in it.
+var coAuthor = regexp.MustCompile(`(?im)^co-authored-by:[^<\n]*<([^>\n]+)>[ \t]*$`)
+
+// dropOwnCoAuthors removes the address from each Co-authored-by trailer
+// whose address is the author or committer of a commit in this history,
+// and leaves the rest of the line to the scan. Those are git's
+// own identity lines, public in the log by construction, and GitHub adds
+// one to a squash merge when the person merging pushed to the branch. A
+// trailer naming anyone else is still scanned.
+// https://docs.github.com/en/pull-requests/committing-changes-to-your-project/creating-and-editing-commits/creating-a-commit-with-multiple-authors
+func dropOwnCoAuthors(messages, identities string) string {
+	own := map[string]bool{}
+	for line := range strings.Lines(identities) {
+		own[strings.ToLower(strings.TrimSpace(line))] = true
+	}
+	return coAuthor.ReplaceAllStringFunc(messages, func(trailer string) string {
+		if addr := coAuthor.FindStringSubmatch(trailer)[1]; own[strings.ToLower(addr)] {
+			return strings.Replace(trailer, "<"+addr+">", "", 1)
+		}
+		return trailer
+	})
+}
+
+// catBlobs reads every object through one `git cat-file --batch`, rather
+// than one process each, and hands each blob to each by its index in
+// shas. A tree, which rev-list lists beside the blobs, is skipped.
+// https://git-scm.com/docs/git-cat-file#_batch_output
+func catBlobs(shas []string, each func(i int, data []byte)) error {
+	cmd := exec.Command("git", "cat-file", "--batch")
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	// stop ends git and reaps it before saying why the read failed.
+	stop := func(format string, args ...any) error {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return fmt.Errorf(format+"; git said: %s", append(args, strings.TrimSpace(stderr.String()))...)
+	}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	// Written from its own goroutine, so a full pipe one way cannot stall
+	// the other.
+	go func() {
+		w := bufio.NewWriter(stdin)
+		for _, sha := range shas {
+			_, _ = fmt.Fprintln(w, sha)
+		}
+		_ = w.Flush()
+		_ = stdin.Close()
+	}()
+	r := bufio.NewReader(stdout)
+	for i := range shas {
+		header, err := r.ReadString('\n')
+		if err != nil {
+			return stop("git cat-file stopped after %d of %d objects: %w", i, len(shas), err)
+		}
+		// "<sha> <type> <size>", or "<sha> missing".
+		fields := strings.Fields(header)
+		if len(fields) != 3 {
+			continue
+		}
+		size, err := strconv.Atoi(fields[2])
+		if err != nil {
+			return stop("git cat-file answered %q", header)
+		}
+		data := make([]byte, size+1) // the content and its newline
+		if _, err := io.ReadFull(r, data); err != nil {
+			return stop("git cat-file cut %s short: %w", fields[0], err)
+		}
+		if fields[1] == "blob" {
+			each(i, data[:size])
+		}
+	}
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("git cat-file: %w; git said: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
 // scanHistory walks every blob and every commit and tag message, from
 // the message down: the author and tagger lines above it are git's own,
 // and an identity is public in every repository by construction.
@@ -238,25 +328,36 @@ func scanHistory() error {
 
 	var findings []string
 	scanned := 0
-	for _, b := range blobs {
-		data, err := exec.Command("git", "cat-file", "blob", b.sha).Output()
-		if err != nil || isBinary(data) {
-			continue
+	shas := make([]string, len(blobs))
+	for i, b := range blobs {
+		shas[i] = b.sha
+	}
+	err = catBlobs(shas, func(i int, data []byte) {
+		if isBinary(data) {
+			return
 		}
 		scanned++
+		b := blobs[i]
 		for _, f := range findLeaks(strip(string(data))) {
 			// The commit is named because a finding in history is not
 			// fixed by editing a file: it needs the history rewritten,
 			// or a decision that this one is harmless.
 			findings = append(findings, fmt.Sprintf("%s (blob %s): %s", b.path, b.sha[:12], f))
 		}
+	})
+	if err != nil {
+		return err
 	}
 
 	messages, err := git("log", "--all", "--format=%B%n--%n")
 	if err != nil {
 		return err
 	}
-	for _, f := range findLeaks(strip(messages)) {
+	identities, err := git("log", "--all", "--format=%ae%n%ce")
+	if err != nil {
+		return err
+	}
+	for _, f := range findLeaks(strip(dropOwnCoAuthors(messages, identities))) {
 		findings = append(findings, "a commit message: "+f)
 	}
 	tags, err := git("for-each-ref", "--format=%(contents)", "refs/tags")

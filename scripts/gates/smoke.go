@@ -105,7 +105,7 @@ func smokeSession(bin string) error {
 
 	for _, m := range smokeMessages {
 		if _, err := fmt.Fprintln(stdin, m); err != nil {
-			return fmt.Errorf("write stdin: %w", err)
+			return smokeDied(cmd, stderr, err)
 		}
 	}
 
@@ -146,7 +146,7 @@ func smokeSession(bin string) error {
 			if err != nil {
 				return err
 			}
-			return fmt.Errorf("stdout ended after %d of %d replies; stderr:\n%s", len(seen), smokeReplies, stderr.String())
+			return smokeDied(cmd, stderr, fmt.Errorf("stdout ended after %d of %d replies", len(seen), smokeReplies))
 		case <-deadline:
 			return fmt.Errorf("only %d of %d replies arrived; stderr:\n%s", len(seen), smokeReplies, stderr.String())
 		}
@@ -204,17 +204,39 @@ func checkSmokeReplies(seen map[int]smokeFrame) error {
 	return nil
 }
 
+// smokeDied explains a session cut short: a server that exits while it
+// starts breaks the pipe, and "write stdin: broken pipe" alone says
+// nothing about why. The exit code and stderr do.
+func smokeDied(cmd *exec.Cmd, stderr *strings.Builder, cause error) error {
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			return fmt.Errorf("the server exited %d before it answered (%w); stderr:\n%s", ee.ExitCode(), cause, stderr.String())
+		}
+		return fmt.Errorf("the server stopped before it answered (%w); stderr:\n%s", cause, stderr.String())
+	case <-time.After(5 * time.Second):
+		// Reaped before stderr is read, which its copier writes until then.
+		_ = cmd.Process.Kill()
+		<-done
+		return fmt.Errorf("%w; the server was still running, so it was stopped; stderr:\n%s", cause, stderr.String())
+	}
+}
+
 func smokeAbruptClose(bin string) error {
 	cmd, stdin, stdout, stderr, err := startSmoke(bin)
 	if err != nil {
 		return err
 	}
+	defer func() { _ = cmd.Process.Kill() }()
 	// Drain stdout so the server never blocks writing to a full pipe.
 	go func() { _, _ = io.Copy(io.Discard, stdout) }()
 
 	for _, m := range smokeMessages {
 		if _, err := fmt.Fprintln(stdin, m); err != nil {
-			return fmt.Errorf("write stdin: %w", err)
+			return smokeDied(cmd, stderr, err)
 		}
 	}
 	// Immediately, with the last reply still in flight.

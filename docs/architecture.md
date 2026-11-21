@@ -702,7 +702,9 @@ Every rule in `leaks` is an allow-list. A synthetic id says so in its
 own text, with a marker such as `Fixture`. Each exception is listed by
 value with its reason. A tracked binary is a finding, findings print
 abbreviated, and a scan that read nothing fails. `leaks history` walks
-every blob and every commit and tag message.
+every blob and every commit and tag message. A `Co-authored-by` trailer
+naming an address that already authored or committed a commit is git's
+own identity line, as the author lines are, and is not a finding.
 
 Rejected: a deny-list naming the domain or the organization, which would
 itself be the disclosure; an inline `gitleaks:allow` comment, which
@@ -755,8 +757,7 @@ spreadsheet reused across runs; a driver credential with a wider Drive
 scope.
 Cost: each run leaves its spreadsheets, titled `livesheet scratch`, for
 a person to trash, since trashing needs a Drive write scope; the run
-ends by printing the search that finds them. The live driver and the
-evals each carry a copy of the redaction helper (#78).
+ends by printing the search that finds them.
 
 ### D-12 A1 is the contract: the model never sees a GridRange, and the conversion lives in `internal/a1`
 
@@ -2053,8 +2054,7 @@ cannot do both.
 
 Rejected: `errors.Is(err, io.EOF)`.
 Cost: the smoke test is two runs of the binary, since one run cannot
-read the replies and catch the exit. No run kills the server during
-initialization (#76).
+read the replies and catch the exit.
 
 ### D-64 Coverage is floored per package over `internal/` and `cmd/`, from a derived list
 
@@ -2310,11 +2310,14 @@ key with no default would reach the server as the literal
 Claude Desktop lets a person set a tool to always allow, so a switch
 left off is the guard a bundle install keeps.
 
+The bundle gate holds each switch's description to the tools that
+switch registers, by name, and holds read-only to leaving the other
+switches nothing to register.
+
 Rejected: a `tools` list, which is display only and wrong for most
 installs, since settings change what registers; settings in `args` or an
 override's `env`; an optional key with no default.
-Cost: nothing holds the fields' sentences about read-only mode to what
-the server registers (#82).
+Cost: the gate starts the server once per switch and pair, in process.
 
 ### D-73 `main` is released code, and work reaches it through a pull request the maintainer merges
 

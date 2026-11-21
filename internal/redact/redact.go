@@ -14,7 +14,9 @@ package redact
 
 import (
 	"regexp"
+	"slices"
 	"strings"
+	"sync"
 )
 
 // clientID is the shape Google issues, and the same one the repository's
@@ -136,3 +138,43 @@ func mask(s string) string {
 // then safe without its author knowing the rule, and a writer wrapper
 // could split an address across two Write calls and miss it.
 func Accounts(s string) string { return address.ReplaceAllStringFunc(s, Account) }
+
+// Registry replaces values a program registered with placeholders, and
+// then masks what Line masks. Its zero value is ready to use.
+type Registry struct {
+	mu     sync.Mutex
+	values map[string]string
+}
+
+// Add registers a value to replace wherever it is printed. An empty
+// value would replace nothing usefully, so it is ignored.
+func (r *Registry) Add(value, placeholder string) {
+	if value == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.values == nil {
+		r.values = map[string]string{}
+	}
+	r.values[value] = placeholder
+}
+
+// Line replaces every registered value, longest first so a value that
+// contains another is handled before it, and then masks anything
+// identifying that was never registered.
+func (r *Registry) Line(s string) string {
+	r.mu.Lock()
+	keys := make([]string, 0, len(r.values))
+	values := make(map[string]string, len(r.values))
+	for k, v := range r.values {
+		keys = append(keys, k)
+		values[k] = v
+	}
+	r.mu.Unlock()
+	slices.SortFunc(keys, func(a, b string) int { return len(b) - len(a) })
+	for _, k := range keys {
+		s = strings.ReplaceAll(s, k, values[k])
+	}
+	return Line(s)
+}

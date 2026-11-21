@@ -3,10 +3,6 @@
 package main
 
 import (
-	"sort"
-	"strings"
-	"sync"
-
 	redactpkg "github.com/mmedum/google-sheets-mcp/v4/internal/redact"
 )
 
@@ -24,40 +20,10 @@ import (
 // Registration covers what this harness knows in advance. redactpkg.Line
 // masks what it does not, which is the half a run can leak without any
 // test noticing.
-var (
-	mu           sync.Mutex
-	replacements = map[string]string{}
-)
+var registry redactpkg.Registry
 
 // reg registers a value to replace wherever it is printed.
-func reg(value, placeholder string) {
-	if value == "" {
-		return
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	replacements[value] = placeholder
-}
+func reg(value, placeholder string) { registry.Add(value, placeholder) }
 
 // redactLine is the only way this program reaches the terminal.
-func redactLine(s string) string {
-	return redactpkg.Line(substitute(s))
-}
-
-// substitute replaces every registered value, longest first so a value
-// that contains another is handled before it.
-func substitute(s string) string {
-	mu.Lock()
-	keys := make([]string, 0, len(replacements))
-	values := make(map[string]string, len(replacements))
-	for k, v := range replacements {
-		keys = append(keys, k)
-		values[k] = v
-	}
-	mu.Unlock()
-	sort.Slice(keys, func(i, j int) bool { return len(keys[i]) > len(keys[j]) })
-	for _, k := range keys {
-		s = strings.ReplaceAll(s, k, values[k])
-	}
-	return s
-}
+func redactLine(s string) string { return registry.Line(s) }

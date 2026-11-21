@@ -148,3 +148,18 @@ func TestAnAlreadyMaskedAddressIsStillRedacted(t *testing.T) {
 		t.Errorf("the organization domain survived into the artifact: %s", got)
 	}
 }
+
+// A registered value is replaced longest first, so one that contains
+// another is not split by the shorter; an empty value replaces nothing;
+// and what nobody registered is still masked.
+func TestRegistryReplacesThenMasks(t *testing.T) {
+	var r Registry
+	r.Add("1SyntheticId", "<id>")
+	r.Add("1SyntheticIdLonger", "<other id>")
+	r.Add("", "<nothing>")
+	got := r.Line("1SyntheticIdLonger and 1SyntheticId, shared with plimth@quorbinnardle.co.uk") // leakcheck:allow
+	want := "<other id> and <id>, shared with p…@q….uk"
+	if got != want {
+		t.Errorf("Line = %q, want %q", got, want)
+	}
+}

@@ -335,3 +335,31 @@ func TestHistoryKeepsWhatTheTreeDropped(t *testing.T) {
 		t.Errorf("an address in a commit message was missed: %v", err)
 	}
 }
+
+// GitHub adds a Co-authored-by trailer to a squash merge when the person
+// merging pushed to the branch. An address that already authored a
+// commit is git's own identity line; any other address is a finding.
+func TestHistoryAllowsCoAuthorsWhoAlreadyCommitted(t *testing.T) {
+	dir := fixtureRepo(t)
+	inDir(t, dir)
+	gitIn(t, dir, "-c", "user.email=plimth@quorbinnardle.co.uk", "commit", "-q", "--allow-empty", "-m", "a commit of their own") // leakcheck:allow
+	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m",
+		"merge\n\nCo-authored-by: Plimth <plimth@quorbinnardle.co.uk>") // leakcheck:allow
+	if err := scanHistory(); err != nil {
+		t.Fatalf("a co-author who authored a commit was refused: %v", err)
+	}
+
+	// The name beside an address that is allowed is still read.
+	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m",
+		"merge\n\nCo-authored-by: 1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789 <plimth@quorbinnardle.co.uk>") // leakcheck:allow
+	if err := scanHistory(); err == nil || !strings.Contains(err.Error(), "a commit message: ") {
+		t.Errorf("an id beside an allowed co-author was not found: %v", err)
+	}
+	gitIn(t, dir, "reset", "-q", "--hard", "HEAD~1")
+
+	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m",
+		"merge\n\nCo-authored-by: Nardle <nardle@quorbinnardle.co.uk>") // leakcheck:allow
+	if err := scanHistory(); err == nil || !strings.Contains(err.Error(), "a commit message: ") {
+		t.Errorf("a co-author who never committed was not found: %v", err)
+	}
+}
