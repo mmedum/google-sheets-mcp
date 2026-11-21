@@ -266,7 +266,7 @@ const DefaultHTTPTimeout = 60 * time.Second
 // runs. The API client's own per-request timeout does not cover this,
 // because the refresh happens inside the token source rather than on
 // that client.
-// https://github.com/golang/oauth2/blob/v0.37.0/internal/transport.go
+// https://github.com/golang/oauth2/blob/v0.38.0/internal/transport.go
 func boundHTTP(ctx context.Context, timeout time.Duration) context.Context {
 	if timeout <= 0 {
 		timeout = DefaultHTTPTimeout
