@@ -306,6 +306,7 @@ func (s *Service) FormatCells(ctx context.Context, req FormatRequest) (*FormatRe
 	res.Applied = appliedLines(applied)
 
 	report, err := s.formatGuard(ctx, ref, props, rect, plan2)
+	boundary, err := stateRefusal(req.DryRun, err)
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +314,7 @@ func (s *Service) FormatCells(ctx context.Context, req FormatRequest) (*FormatRe
 	view := render.Ops{Range: res.Range, Applied: applied}
 	if req.DryRun {
 		res.DryRun = true
-		view.Blockers = blockerLines(report, ack)
+		view.Blockers = append(blockerLines(report, ack), boundary...)
 		res.Summary = render.OpsPreview(view)
 		return res, nil
 	}

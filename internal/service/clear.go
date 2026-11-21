@@ -148,13 +148,15 @@ func (s *Service) Clear(ctx context.Context, req ClearRequest) (*ClearResult, er
 	// clear has. Asking the full guard and then muting the rest with
 	// acknowledgments this tool does not offer would let a blocker added
 	// later pass a clear silently.
-	if err := refuse(plan.CheckDestination(before), plan.Ack{}); err != nil {
-		return nil, err
-	}
+	guard := plan.CheckDestination(before)
 	if req.DryRun {
 		res.DryRun = true
-		res.Summary = render.ClearPreview(res.Range, counts, clearNotes(before, counts, false))
+		res.Summary = render.ClearPreview(res.Range, counts, clearNotes(before, counts, false)) +
+			render.WouldRefuse(blockerLines(guard, plan.Ack{}))
 		return res, nil
+	}
+	if err := refuse(guard, plan.Ack{}); err != nil {
+		return nil, err
 	}
 	if !req.Confirm {
 		return nil, Errorf("blocked",

@@ -148,10 +148,11 @@ func (s *Service) Transform(ctx context.Context, req TransformRequest) (*Transfo
 	// overwrite here can replace. An action that reads nothing first has
 	// nothing to compare.
 	var seen witness
+	var stale []string
 	switch {
 	case read != nil:
 		seen = witness{checkpoint: grid.Checkpoint(ref.ID, read), where: a1.Format(read.Sheet, read.Rect)}
-		if err := checkpointMatches(req.ExpectCheckpoint, ref.ID, read, read.Rect); err != nil {
+		if stale, err = stateRefusal(req.DryRun, checkpointMatches(req.ExpectCheckpoint, ref.ID, read, read.Rect)); err != nil {
 			return nil, err
 		}
 	case req.ExpectCheckpoint != "":
@@ -169,6 +170,7 @@ func (s *Service) Transform(ctx context.Context, req TransformRequest) (*Transfo
 		if read != nil {
 			view.Blockers = seen.previewBlockers(report, ack, req.ExpectCheckpoint)
 		}
+		view.Blockers = append(view.Blockers, stale...)
 		view.Checkpoint, view.Read = seen.checkpoint, seen.where
 		res.Summary = render.OpsPreview(view)
 		return res, nil

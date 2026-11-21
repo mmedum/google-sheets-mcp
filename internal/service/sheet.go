@@ -76,6 +76,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*CreateResult,
 		return nil, err
 	}
 	var seed [][]any
+	var refused []string
 	if len(req.Values) > 0 || req.TSV != "" {
 		if seed, err = valuesOf(req.Values, req.TSV); err != nil {
 			return nil, err
@@ -86,7 +87,9 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*CreateResult,
 		// half of the guard applies. It still applies: a formula that
 		// fetches a URL is no less outbound for being in a fresh file,
 		// and the operator's setting is what allows one here too.
-		if err := refuse(report, s.ack(false, false)); err != nil {
+		if req.DryRun {
+			refused = blockerLines(report, s.ack(false, false))
+		} else if err := refuse(report, s.ack(false, false)); err != nil {
 			return nil, err
 		}
 	}
@@ -96,7 +99,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*CreateResult,
 	if req.DryRun {
 		res.DryRun = true
 		res.Sheets = req.Sheets
-		res.Summary = render.CreatePreview(title, req.Sheets, len(seed))
+		res.Summary = render.CreatePreview(title, req.Sheets, len(seed)) + render.WouldRefuse(refused)
 		return res, nil
 	}
 
@@ -240,12 +243,13 @@ func (s *Service) ManageSheet(ctx context.Context, req SheetRequest) (*SheetResu
 	}
 
 	op, act, err := sheetRequest(req, sp, props)
+	refused, err := stateRefusal(req.DryRun, err)
 	if err != nil {
 		return nil, err
 	}
 	if req.DryRun {
 		res.DryRun = true
-		res.Summary = render.SheetPreview(act)
+		res.Summary = render.SheetPreview(act) + render.WouldRefuse(refused)
 		return res, nil
 	}
 	got, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{Requests: []*gsheets.Request{op}})

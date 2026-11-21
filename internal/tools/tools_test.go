@@ -11,6 +11,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
 	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
 )
 
@@ -53,7 +55,7 @@ func TestDryRunIsFoundByReflectionNotByMemory(t *testing.T) {
 		{"dry_run of the wrong type", Write, badDryRun{}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := checkDryRun(tc.kind, reflect.TypeOf(tc.in))
+			_, err := checkDryRun(tc.kind, reflect.TypeOf(tc.in))
 			if tc.ok && err != nil {
 				t.Errorf("checkDryRun = %v, want no error", err)
 			}
@@ -62,7 +64,7 @@ func TestDryRunIsFoundByReflectionNotByMemory(t *testing.T) {
 			}
 		})
 	}
-	if err := checkDryRun(Write, nil); err != nil {
+	if _, err := checkDryRun(Write, nil); err != nil {
 		t.Errorf("a nil input type is not this check's business: %v", err)
 	}
 }
@@ -341,4 +343,53 @@ func registeredUnder(t *testing.T, cfg config.Config) map[string]bool {
 		out[name] = true
 	}
 	return out
+}
+
+// A write whose handler forgets to return before sending under dry_run
+// still sends nothing: the client refuses any write made during a dry
+// run (D-80), so the mistake fails closed rather than writing.
+func TestADryRunThatForgetsItsReturnSendsNothing(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	api := srv.Client()
+	s := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+	add(s, Deps{Config: config.Config{}}, Def[withDryRun, fakeOut]{
+		Name: "forgetful_write", Description: "writes whatever dry_run says", Kind: Write,
+		Handle: func(ctx context.Context, in withDryRun) (fakeOut, error) {
+			_, err := api.UpdateValues(ctx, in.Spreadsheet, "'"+sheetstest.SecondSheet+"'!A1", [][]any{{"Quorbin"}},
+				gapi.WriteOptions{Input: gapi.InputRaw})
+			return fakeOut{Summary: "written"}, err
+		},
+	})
+	for _, dryRun := range []bool{true, false} {
+		srv.Reset()
+		res := callTool(t, s, "forgetful_write", map[string]any{"spreadsheet": sheetstest.FixtureID, "dry_run": dryRun})
+		sent := slices.ContainsFunc(srv.Calls(), func(c sheetstest.Call) bool { return c.Op == "values.update" })
+		if sent == dryRun {
+			t.Errorf("dry_run=%v: the write reached Google = %v", dryRun, sent)
+		}
+		if res.IsError != dryRun {
+			t.Errorf("dry_run=%v: the call failed = %v", dryRun, res.IsError)
+		}
+	}
+}
+
+func callTool(t *testing.T, s *mcp.Server, name string, args map[string]any) *mcp.CallToolResult {
+	t.Helper()
+	ctx := context.Background()
+	ct, st := mcp.NewInMemoryTransports()
+	ss, err := s.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ss.Close() })
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
 }
