@@ -284,6 +284,14 @@ func ParseBand(dimension, band string) (Band, error) {
 // Rows reports whether the band runs down rather than across.
 func (b Band) Rows() bool { return b.Dimension == gsheets.DimensionRows }
 
+// Rect is the band as a rectangle open along the other axis.
+func (b Band) Rect() a1.Rect {
+	if b.Rows() {
+		return a1.Rect{FirstRow: b.First, LastRow: b.Last}
+	}
+	return a1.Rect{FirstCol: b.First, LastCol: b.Last}
+}
+
 // A band has no String, Unit, Start or Count: they are render.Band's,
 // because this package is below the renderer, and phrasing decided below
 // it is phrasing the goldens cannot cover. The count is there too,

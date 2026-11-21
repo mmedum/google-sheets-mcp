@@ -62,6 +62,9 @@ type DimensionResult struct {
 	// with its data: it stays where it is and loses the series, and
 	// nothing in the API's reply says so.
 	Charts []render.ChartLoss `json:"charts_affected,omitempty" jsonschema:"the charts reading the deleted rows or columns, which stay in place and lose those series"`
+	// Pivots are the pivot tables reading the band. A pivot is not
+	// deleted with it: its source shrinks and it draws less.
+	Pivots []string `json:"pivots_affected,omitempty" jsonschema:"the pivot tables whose source the deleted rows or columns cut, which stay in place and read less"`
 	// Cells and Formulas are what a delete took with it.
 	Cells    int  `json:"cells,omitempty"`
 	Formulas int  `json:"formulas,omitempty"`
@@ -149,14 +152,20 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 		//
 		// A pivot whose source the band cuts is silent too: its source
 		// shrinks with the delete and its output can fall to a header
-		// and Grand Total. This does not name pivots. Checked by the live
-		// step "what a read sees where a pivot table sits".
+		// and Grand Total. Checked by the live steps "what a read sees
+		// where a pivot table sits" and "an unconfirmed delete names the
+		// pivot whose source it shrinks".
 		// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#DeleteDimensionRequest
 		charts, err := s.chartsOnBand(ctx, ref, props, band)
 		if err != nil {
 			return nil, err
 		}
 		res.Charts, act.Charts = charts, charts
+		pivots, unsearched, err := s.pivotsOnBand(ctx, ref, props, band)
+		if err != nil {
+			return nil, err
+		}
+		res.Pivots, act.Pivots, act.PivotsUnsearched = pivots, pivots, unsearched
 	}
 
 	op, err := dimensionRequest(req, band, props)
@@ -171,9 +180,9 @@ func (s *Service) EditDimensions(ctx context.Context, req DimensionRequest) (*Di
 	if req.Action == DimDelete && !req.Confirm {
 		return nil, Errorf("blocked",
 			"deleting %s on %q takes %d non-empty cell(s) and %d formula(s) with them%s%s, and Sheets cannot undo it. "+
-				"Pass confirm to go ahead",
+				"%sPass confirm to go ahead",
 			act.Band, props.Title, res.Cells, res.Formulas,
-			render.AnchorsTaken(res.Anchors), chartClause(res.Charts))
+			render.AnchorsTaken(res.Anchors), chartClause(res.Charts), sentence(render.PivotsShrunk(act.Pivots, act.PivotsUnsearched)))
 	}
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*gsheets.Request{op},
@@ -254,9 +263,18 @@ func (s *Service) countBand(ctx context.Context, ref Reference, props *gsheets.S
 // chartClause is the refusal's chart sentence. The renderer owns the
 // words; this owns where they sit in the sentence around them, since a
 // clause written for one sentence reads as a run-on in the other.
+
 func chartClause(losses []render.ChartLoss) string {
 	if len(losses) == 0 {
 		return ""
 	}
 	return "; the chart(s) stay where they are and " + render.ChartsAffected(losses)
+}
+
+// sentence is s followed by the space the next sentence needs, or "".
+func sentence(s string) string {
+	if s == "" {
+		return ""
+	}
+	return s + " "
 }

@@ -376,8 +376,8 @@ func blockerLines(r plan.Report, ack plan.Ack) []string {
 	out := make([]string, 0, len(blockers))
 	for _, b := range blockers {
 		line := b.Why
-		if b.Allow != "" {
-			line += "; pass " + b.Allow + " to allow it"
+		if arg := allowArgument(b.Allow); arg != "" {
+			line += "; pass " + arg + " to allow it"
 		}
 		out = append(out, line)
 	}
@@ -406,6 +406,17 @@ func stateRefusal(dryRun bool, err error) ([]string, error) {
 		return dryRunRefusal(dryRun, err)
 	}
 	return nil, err
+}
+
+// allowArgument is the tool argument that carries an allowance.
+func allowArgument(a plan.Allowance) string {
+	switch a {
+	case plan.AllowOverwrite:
+		return "overwrite"
+	case plan.AllowOverwriteFormulas:
+		return "overwrite_formulas (and overwrite)"
+	}
+	return ""
 }
 
 // refuse turns the guard's findings into the one [blocked] a caller
@@ -469,8 +480,8 @@ func refuseWitnessed(r plan.Report, ack plan.Ack, w witness) error {
 	allowable := true
 	for _, b := range blockers {
 		line := b.Why
-		if b.Allow != "" {
-			line += "; pass " + b.Allow + " to allow it"
+		if arg := allowArgument(b.Allow); arg != "" {
+			line += "; pass " + arg + " to allow it"
 		} else {
 			allowable = false
 		}

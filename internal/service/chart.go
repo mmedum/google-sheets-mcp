@@ -1214,12 +1214,7 @@ func (s *Service) chartsOnBand(ctx context.Context, ref Reference, props *gsheet
 	if err != nil {
 		return nil, wrap(err)
 	}
-	rect := a1.Rect{}
-	if band.Rows() {
-		rect.FirstRow, rect.LastRow = band.First, band.Last
-	} else {
-		rect.FirstCol, rect.LastCol = band.First, band.Last
-	}
+	rect := band.Rect()
 	var out []render.ChartLoss
 	for _, sh := range sp.Sheets {
 		for _, c := range sh.Charts {

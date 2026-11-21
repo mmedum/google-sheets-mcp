@@ -1540,3 +1540,30 @@ func TestPivotUpdateKeepsAGroupingMadeByHand(t *testing.T) {
 		t.Errorf("the grouping by hand was not kept: %s", sent)
 	}
 }
+
+// The anchors and what they draw are one read. Two reads would split the
+// cell budget, and on a wide sheet the second would come back a few rows
+// tall and miss the write, losing the pivot's name.
+func TestAWriteIntoAPivotOnAWideSheetNamesThePivot(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	srv.Doc(sheetstest.FixtureID).Find(sheetstest.FirstSheet).Props.GridProperties.ColumnCount = 300
+	svc := newServiceBudget(t, srv, 1000)
+	addPivot(t, svc, "F1")
+	srv.Reset()
+	_, err := svc.Write(context.Background(), service.WriteRequest{
+		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet, Range: "G5",
+		Values: [][]any{{"over the pivot"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "the pivot table anchored at F1") {
+		t.Fatalf("a write into a pivot's output on a wide sheet gave %v", err)
+	}
+	gets := 0
+	for _, c := range srv.Calls() {
+		if c.Op == "spreadsheets.get" && c.Query.Get("fields") == gapi.PivotCoverFields {
+			gets++
+		}
+	}
+	if gets != 1 {
+		t.Errorf("the pivot behind the refusal took %d reads, want 1", gets)
+	}
+}

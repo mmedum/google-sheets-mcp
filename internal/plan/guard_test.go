@@ -32,7 +32,7 @@ func target(cells ...grid.Cell) *grid.Grid {
 func blockerText(r plan.Report, ack plan.Ack) string {
 	var parts []string
 	for _, b := range r.Blockers(ack) {
-		parts = append(parts, b.Why+"|"+b.Allow)
+		parts = append(parts, b.Why+"|"+b.Allow.String())
 	}
 	return strings.Join(parts, " ;; ")
 }
@@ -44,12 +44,12 @@ func TestFormulasNeedTheirOwnAcknowledgment(t *testing.T) {
 	g := target(grid.Cell{Kind: grid.KindFormula, Formula: "=B1+1", Display: "3"})
 	r := plan.Check(g, [][]any{{"x", "y"}, {"z", "w"}}, evaluated)
 
-	if got := blockerText(r, plan.Ack{}); !strings.Contains(got, "A1") || !strings.Contains(got, "formulas") {
+	if got := blockerText(r, plan.Ack{}); !strings.Contains(got, "A1") || !strings.Contains(got, "AllowOverwriteFormulas") {
 		t.Errorf("a formula in the target did not block the write: %q", got)
 	}
 	// overwrite alone is not enough.
 	got := blockerText(r, plan.Ack{Overwrite: true})
-	if !strings.Contains(got, "overwrite_formulas") {
+	if !strings.Contains(got, "AllowOverwriteFormulas") {
 		t.Errorf("overwrite alone allowed a write over a formula: %q", got)
 	}
 	if len(r.Blockers(plan.Ack{Overwrite: true, OverwriteFormulas: true})) != 0 {
@@ -68,7 +68,7 @@ func TestAnErroredFormulaStillNeedsOverwriteFormulas(t *testing.T) {
 		t.Fatal("an errored formula was not reported as a formula")
 	}
 	got := blockerText(r, plan.Ack{Overwrite: true})
-	if !strings.Contains(got, "overwrite_formulas") {
+	if !strings.Contains(got, "AllowOverwriteFormulas") {
 		t.Errorf("overwrite alone replaced a formula that had errored: %q", got)
 	}
 }
@@ -76,7 +76,7 @@ func TestAnErroredFormulaStillNeedsOverwriteFormulas(t *testing.T) {
 func TestNonEmptyCellsNeedOverwrite(t *testing.T) {
 	g := target(grid.Cell{Kind: grid.KindText, Display: "Plimth"})
 	r := plan.Check(g, [][]any{{"x", "y"}, {"z", "w"}}, evaluated)
-	if got := blockerText(r, plan.Ack{}); !strings.Contains(got, "not empty") || !strings.Contains(got, "overwrite") {
+	if got := blockerText(r, plan.Ack{}); !strings.Contains(got, "not empty") || !strings.Contains(got, "AllowOverwrite") {
 		t.Errorf("an occupied cell did not block the write: %q", got)
 	}
 	if n := len(r.Blockers(plan.Ack{Overwrite: true})); n != 0 {
@@ -103,8 +103,8 @@ func TestProtectionAndPartialMergeCannotBeAcknowledged(t *testing.T) {
 		t.Fatalf("acknowledged everything and %d blocker(s) remain: %+v", len(blockers), blockers)
 	}
 	for _, b := range blockers {
-		if b.Allow != "" {
-			t.Errorf("%q offers %q as a way through, and there is none", b.Why, b.Allow)
+		if b.Allow != plan.AllowNothing {
+			t.Errorf("%q offers %v as a way through, and there is none", b.Why, b.Allow)
 		}
 	}
 	if !strings.Contains(blockers[0].Why, "heading row") {
@@ -173,10 +173,10 @@ func TestASmartChipIsNamedBeforeAWriteErasesIt(t *testing.T) {
 	var why []string
 	for _, b := range r.Blockers(plan.Ack{}) {
 		if strings.Contains(b.Why, "smart chip") {
-			why = append(why, b.Why+" / "+b.Allow)
+			why = append(why, b.Why+" / "+b.Allow.String())
 		}
 	}
-	if want := "A1 holds a smart chip (a person or a file link), which a value write erases / overwrite"; len(why) != 1 || why[0] != want {
+	if want := "A1 holds a smart chip (a person or a file link), which a value write erases / AllowOverwrite"; len(why) != 1 || why[0] != want {
 		t.Errorf("chip blockers = %q, want [%q]", why, want)
 	}
 	if bs := r.Blockers(plan.Ack{Overwrite: true}); len(bs) != 0 {
@@ -204,7 +204,7 @@ func TestExternalFormulasAreGated(t *testing.T) {
 	// argument: a model persuaded to write one would pass that too.
 	gated := 0
 	for _, b := range r.Blockers(plan.Ack{Overwrite: true, OverwriteFormulas: true}) {
-		if strings.HasSuffix(b.Why, "unless the person running it sets GSHEETS_ALLOW_EXTERNAL_FORMULAS") && b.Allow == "" {
+		if strings.HasSuffix(b.Why, "unless the person running it sets GSHEETS_ALLOW_EXTERNAL_FORMULAS") && b.Allow == plan.AllowNothing {
 			gated++
 		}
 	}
@@ -327,7 +327,7 @@ func TestCheckDestinationIsOnlyTheUnacknowledgeableRefusals(t *testing.T) {
 		t.Errorf("the partial merge did not block: %+v", withMerges.Merges)
 	}
 	for _, b := range blockers {
-		if b.Allow != "" {
+		if b.Allow != plan.AllowNothing {
 			t.Errorf("%q offers a way through, and there is none", b.Why)
 		}
 	}
@@ -373,7 +373,7 @@ func TestAMergeReportsWhatItWouldDiscard(t *testing.T) {
 	if cols.Discarded.Total != 2 || !strings.Contains(cols.Discarded.String(), "A2") {
 		t.Errorf("merging by columns would discard %v", cols.Discarded)
 	}
-	if got := blockerText(all, plan.Ack{}); !strings.Contains(got, "overwrite") {
+	if got := blockerText(all, plan.Ack{}); !strings.Contains(got, "AllowOverwrite") {
 		t.Errorf("a discarding merge did not say what would allow it: %q", got)
 	}
 	if len(all.Blockers(plan.Ack{Overwrite: true})) != 0 {

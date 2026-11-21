@@ -186,3 +186,72 @@ func TestDimensionDryRunSendsNothing(t *testing.T) {
 		}
 	}
 }
+
+// A delete that cuts a pivot table's source shrinks it, and Google's
+// reply says nothing, so the delete names the pivot beforehand. A band
+// clear of the source names none, and a sheet the read budget did not
+// finish is named as not searched.
+func TestADeleteNamesThePivotWhoseSourceItCuts(t *testing.T) {
+	ctx := context.Background()
+	del := func(band string) service.DimensionRequest {
+		return service.DimensionRequest{Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
+			Action: service.DimDelete, Dimension: "columns", Band: band, DryRun: true}
+	}
+	_, svc := destructive(t)
+	addPivot(t, svc, "H1")
+
+	res, err := svc.EditDimensions(ctx, del("B:B"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "the pivot table at 'Vandel'!H1, which reads 'Vandel'!A1:C6"
+	if len(res.Pivots) != 1 || res.Pivots[0] != want {
+		t.Errorf("pivots = %q, want [%q]", res.Pivots, want)
+	}
+	if !strings.Contains(res.Render(), "The pivot table at 'Vandel'!H1, which reads 'Vandel'!A1:C6 stays where it is") ||
+		strings.Contains(res.Render(), "did not reach") {
+		t.Errorf("the preview does not name the pivot, or says it did not search:\n%s", res.Render())
+	}
+	confirmless := del("B:B")
+	confirmless.DryRun = false
+	if _, err := svc.EditDimensions(ctx, confirmless); err == nil ||
+		!strings.Contains(err.Error(), "Sheets cannot undo it. The pivot table at 'Vandel'!H1, which reads 'Vandel'!A1:C6 stays") {
+		t.Errorf("the refusal does not name the pivot: %v", err)
+	}
+
+	clear, err := svc.EditDimensions(ctx, del("K:K"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(clear.Pivots) != 0 {
+		t.Errorf("a band clear of the source named %q", clear.Pivots)
+	}
+	// A band that takes the anchor takes the pivot, which is not one
+	// that stays and reads less.
+	if takes, err := svc.EditDimensions(ctx, del("A:H")); err != nil || len(takes.Pivots) != 0 {
+		t.Errorf("a band over the anchor named %q as staying (%v)", pivotsOf(takes), err)
+	}
+
+	srv := sheetstest.Standard(t)
+	fs, err := settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs.EnableDestructive, fs.MaxCells = true, 4
+	small := service.New(service.Deps{API: srv.Client(), Config: fs})
+	addPivot(t, small, "H1")
+	res, err = small.EditDimensions(ctx, del("B:B"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Render(), "The search for pivot tables did not reach") {
+		t.Errorf("a search the budget cut short is not said to be:\n%s", res.Render())
+	}
+}
+
+func pivotsOf(r *service.DimensionResult) []string {
+	if r == nil {
+		return nil
+	}
+	return r.Pivots
+}

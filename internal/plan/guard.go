@@ -247,6 +247,17 @@ type PivotOutput struct {
 	Anchor string
 	Output string
 	Hit    string
+	// Clipped says the read stopped before the output did, so Output is
+	// where it reaches at least.
+	Clipped bool
+}
+
+// atLeast qualifies an extent the read stopped short of.
+func atLeast(clipped bool) string {
+	if clipped {
+		return "at least "
+	}
+	return ""
 }
 
 // AddDrawnBy records a pivot table whose output this write lands in.
@@ -255,15 +266,41 @@ type PivotOutput struct {
 // Report is still only written by this package. Every other finding
 // comes out of a Check function here; this one comes from a read the
 // guard cannot make, and it should not cost the invariant.
-func (r *Report) AddDrawnBy(anchor, output, hit string) {
-	r.DrawnBy = append(r.DrawnBy, PivotOutput{Anchor: anchor, Output: output, Hit: hit})
+func (r *Report) AddDrawnBy(p PivotOutput) {
+	r.DrawnBy = append(r.DrawnBy, p)
+}
+
+// Allowance is the acknowledgment that lifts a blocker. The guard names
+// it by kind, and the service names the tool argument that carries it,
+// so an argument renamed in a tool changes no refusal here.
+type Allowance int
+
+const (
+	// AllowNothing is a blocker no argument lifts.
+	AllowNothing Allowance = iota
+	// AllowOverwrite is lifted by the overwrite acknowledgment.
+	AllowOverwrite
+	// AllowOverwriteFormulas needs the formula acknowledgment as well.
+	AllowOverwriteFormulas
+)
+
+// String is the constant's name, for a test or a log; the words a caller
+// reads are the service's.
+func (a Allowance) String() string {
+	switch a {
+	case AllowOverwrite:
+		return "AllowOverwrite"
+	case AllowOverwriteFormulas:
+		return "AllowOverwriteFormulas"
+	}
+	return "AllowNothing"
 }
 
 // Blocker is one reason a write is refused, and the argument that would
-// allow it. An empty Allow means nothing does.
+// allow it. AllowNothing means nothing does.
 type Blocker struct {
 	Why   string
-	Allow string
+	Allow Allowance
 }
 
 // Blockers is what stands between this report and the write, given the
@@ -304,21 +341,21 @@ func (r Report) Blockers(ack Ack) []Blocker {
 		out = append(out, Blocker{
 			Why: fmt.Sprintf("merging would keep the top-left value and discard %s, which %s not empty",
 				r.Discarded, r.Discarded.Verb("is", "are")),
-			Allow: "overwrite",
+			Allow: AllowOverwrite,
 		})
 	}
 	if r.NoteReplaced.Any() && !ack.Overwrite {
 		out = append(out, Blocker{
 			Why: fmt.Sprintf("%s already %s a note, which no values read shows, so this would replace or remove "+
 				"something you have not seen", r.NoteReplaced, r.NoteReplaced.Verb("has", "have")),
-			Allow: "overwrite",
+			Allow: AllowOverwrite,
 		})
 	}
 	if r.Formatted.Any() && !ack.Overwrite {
 		out = append(out, Blocker{
 			Why: fmt.Sprintf("%s %s formatting of its own, which clearing removes", r.Formatted,
 				r.Formatted.Verb("has", "have")),
-			Allow: "overwrite",
+			Allow: AllowOverwrite,
 		})
 	}
 
@@ -330,7 +367,7 @@ func (r Report) Blockers(ack Ack) []Blocker {
 		out = append(out, Blocker{
 			Why: fmt.Sprintf("%s %s a formula, which a value write replaces with a plain value", r.Formulas,
 				r.Formulas.Verb("holds", "hold")),
-			Allow: "overwrite_formulas (and overwrite)",
+			Allow: AllowOverwriteFormulas,
 		})
 	}
 	// Named before the plain non-empty finding, like a formula: a chip
@@ -339,14 +376,14 @@ func (r Report) Blockers(ack Ack) []Blocker {
 		out = append(out, Blocker{
 			Why: fmt.Sprintf("%s %s a smart chip (a person or a file link), which a value write erases",
 				r.Chips, r.Chips.Verb("holds", "hold")),
-			Allow: "overwrite",
+			Allow: AllowOverwrite,
 		})
 	}
 	if r.Pivots.Any() && !ack.Overwrite {
 		out = append(out, Blocker{
 			Why: fmt.Sprintf("%s %s a pivot table, and a write there replaces it and clears everything it draws",
 				r.Pivots, r.Pivots.Verb("anchors", "anchor")),
-			Allow: "overwrite",
+			Allow: AllowOverwrite,
 		})
 	}
 	// Before the plain non-empty finding, and as well as it: the cells
@@ -371,16 +408,16 @@ func (r Report) Blockers(ack Ack) []Blocker {
 			break
 		}
 		out = append(out, Blocker{
-			Why: fmt.Sprintf("%s is inside the output of the pivot table anchored at %s, which covers %s as it "+
+			Why: fmt.Sprintf("%s is inside the output of the pivot table anchored at %s, which covers %s%s as it "+
 				"stands. A write there stops the whole pivot drawing and collapses it to #REF! at %s; clearing "+
-				"the cell again brings all of it back", p.Hit, p.Anchor, p.Output, p.Anchor),
-			Allow: "overwrite",
+				"the cell again brings all of it back", p.Hit, p.Anchor, atLeast(p.Clipped), p.Output, p.Anchor),
+			Allow: AllowOverwrite,
 		})
 	}
 	if r.NonEmpty.Any() && !ack.Overwrite {
 		out = append(out, Blocker{
 			Why:   fmt.Sprintf("%s %s not empty", r.NonEmpty, r.NonEmpty.Verb("is", "are")),
-			Allow: "overwrite",
+			Allow: AllowOverwrite,
 		})
 	}
 	return out
