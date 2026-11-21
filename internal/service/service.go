@@ -78,6 +78,10 @@ type Error struct {
 
 func (e *Error) Error() string { return "[" + e.Class + "] " + e.Msg }
 
+// WithDryRun marks ctx as a dry run's, so the client refuses any write
+// made under it.
+func WithDryRun(ctx context.Context) context.Context { return gapi.WithDryRun(ctx) }
+
 // Errorf builds an Error.
 func Errorf(class, format string, args ...any) *Error {
 	return &Error{Class: class, Msg: fmt.Sprintf(format, args...)}

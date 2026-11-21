@@ -280,3 +280,12 @@ func ClearDone(rangeA1 string, c grid.Counts, notes string) string {
 		"Formatting, notes and validation rules were left alone.\n",
 		rangeA1, c.Removable(), c.Formulas, notes)
 }
+
+// WouldRefuse is what a dry run adds when the call it previews would be
+// refused, one line for each thing that would stop it.
+func WouldRefuse(refusals []string) string {
+	if len(refusals) == 0 {
+		return ""
+	}
+	return "\nAs asked, this would be refused:\n  " + strings.Join(refusals, "\n  ") + "\n"
+}

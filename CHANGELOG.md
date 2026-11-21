@@ -5,6 +5,10 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+
+- A `dry_run` that would be refused previews and names the refusal in every write tool; several answered with the refusal alone.
+
 ### Fixed
 
 - `manage_chart` `update` works without `sheet`; it refused every chart as if it sat on a sheet of its own.

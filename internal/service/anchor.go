@@ -123,15 +123,20 @@ func (s *Service) placeAnchor(ctx context.Context, ref Reference, req AnchorRequ
 	// choose. Checked by the live steps "a second anchor cannot take the
 	// same name" and "whether developer metadata is a durable anchor".
 	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.developerMetadata#DeveloperMetadata
+	var refusal error
 	switch {
 	case action == AnchorAdd && existing != nil:
-		return nil, Errorf("invalid",
+		refusal = Errorf("invalid",
 			"this spreadsheet already has an anchor called %q, on %s. Use action=move to point it somewhere else, "+
 				"or choose another name", req.Name, s.anchorWhere(ctx, ref.ID, existing))
 	case action == AnchorMove && existing == nil:
-		return nil, Errorf("not_found",
+		refusal = Errorf("not_found",
 			"this spreadsheet has no anchor called %q; action=add creates one, and action=list shows what it has",
 			req.Name)
+	}
+	refused, err := dryRunRefusal(req.DryRun, refusal)
+	if err != nil {
+		return nil, err
 	}
 
 	// The note reported is the one that will be stored, which for a move
@@ -152,7 +157,7 @@ func (s *Service) placeAnchor(ctx context.Context, ref Reference, req AnchorRequ
 	if req.DryRun {
 		res.Summary = render.AnchorAct(render.AnchorActed{
 			Action: action, Preview: true, Anchor: anchorView(record),
-		})
+		}) + render.WouldRefuse(refused)
 		return res, nil
 	}
 	loc := at.Location(props.SheetID)
@@ -179,7 +184,12 @@ func (s *Service) removeAnchor(ctx context.Context, id string, req AnchorRequest
 		return nil, err
 	}
 	if existing == nil {
-		return nil, Errorf("not_found", "this spreadsheet has no anchor called %q", req.Name)
+		refused, err := dryRunRefusal(req.DryRun, Errorf("not_found", "this spreadsheet has no anchor called %q", req.Name))
+		if err != nil {
+			return nil, err
+		}
+		res.Summary = "Dry run: nothing was sent." + render.WouldRefuse(refused)
+		return res, nil
 	}
 	record := s.anchorRecord(ctx, id, existing)
 	res.Anchors = []AnchorRecord{record}

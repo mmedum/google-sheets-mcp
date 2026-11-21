@@ -129,6 +129,7 @@ func (s *Service) writePivot(ctx context.Context, ref Reference, req PivotReques
 	// so a field this server does not model survives; held is the same
 	// pivot as it read, typed.
 	pivot, held := map[string]any{}, &gsheets.PivotTable{}
+	var refused []string
 	if req.Action == PivotUpdate {
 		if pivot, held, err = s.pivotAt(ctx, ref, props, anchor); err != nil {
 			return nil, err
@@ -143,10 +144,12 @@ func (s *Service) writePivot(ctx context.Context, ref Reference, req PivotReques
 		if found, err := s.pivotsIn(ctx, ref, props, anchor); err != nil {
 			return nil, err
 		} else if len(found) > 0 {
-			return nil, Errorf("blocked",
+			if refused, err = dryRunRefusal(req.DryRun, Errorf("blocked",
 				"a pivot table is already anchored at %s on %q, and adding one there would replace it and "+
 					"everything it draws. Use action=update to change it, or delete it first",
-				anchorName(anchor), props.Title)
+				anchorName(anchor), props.Title)); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -203,7 +206,7 @@ func (s *Service) writePivot(ctx context.Context, ref Reference, req PivotReques
 	}
 	if req.DryRun {
 		res.DryRun = true
-		res.Summary = render.PivotPreview(act)
+		res.Summary = render.PivotPreview(act) + render.WouldRefuse(refused)
 		return res, nil
 	}
 	if _, err := s.api.BatchUpdate(ctx, ref.ID, &gsheets.BatchUpdateSpreadsheetRequest{

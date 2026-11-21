@@ -128,7 +128,8 @@ func add[In any, Out service.Rendered](s *mcp.Server, d Deps, def Def[In, Out]) 
 	// dump happens to force the full surface. The check is pure and
 	// costs nothing, so every Def is validated whether or not this
 	// configuration registers it.
-	if err := checkDryRun(def.Kind, reflect.TypeFor[In]()); err != nil {
+	dryRun, err := checkDryRun(def.Kind, reflect.TypeFor[In]())
+	if err != nil {
 		// A programming error, found the first time the server starts.
 		// Failing loudly is the point: a write tool that offers dry_run
 		// and ignores it is a preview that wrote.
@@ -152,6 +153,9 @@ func add[In any, Out service.Rendered](s *mcp.Server, d Deps, def Def[In, Out]) 
 	}
 	mcp.AddTool(s, tool, func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		var zero Out
+		if dryRun >= 0 && reflect.ValueOf(in).Field(dryRun).Bool() {
+			ctx = service.WithDryRun(ctx)
+		}
 		out, err := def.Handle(ctx, in)
 		if err != nil {
 			return nil, zero, fail(err)
@@ -245,28 +249,28 @@ const DryRunField = "dry_run"
 // A write that offers dry_run and does not honor it is a preview that
 // wrote, so the flag is looked for in the type rather than remembered
 // per tool. Reads have nothing to preview and must not offer one.
-func checkDryRun(k Kind, in reflect.Type) error {
+func checkDryRun(k Kind, in reflect.Type) (field int, err error) {
+	field = -1
 	if in == nil || in.Kind() != reflect.Struct {
-		return nil
+		return field, nil
 	}
-	found := false
 	for i := range in.NumField() {
 		f := in.Field(i)
 		if jsonName(f.Tag.Get("json")) != DryRunField {
 			continue
 		}
 		if f.Type.Kind() != reflect.Bool {
-			return fmt.Errorf("%s must be a bool, not %s", DryRunField, f.Type)
+			return -1, fmt.Errorf("%s must be a bool, not %s", DryRunField, f.Type)
 		}
-		found = true
+		field = i
 	}
 	switch {
-	case k == Read && found:
-		return errors.New("a read has nothing to preview, so it must not offer " + DryRunField)
-	case k != Read && !found:
-		return errors.New("a write must offer " + DryRunField + "; a caller that cannot preview will not")
+	case k == Read && field >= 0:
+		return -1, errors.New("a read has nothing to preview, so it must not offer " + DryRunField)
+	case k != Read && field < 0:
+		return -1, errors.New("a write must offer " + DryRunField + "; a caller that cannot preview will not")
 	}
-	return nil
+	return field, nil
 }
 
 func jsonName(tag string) string {

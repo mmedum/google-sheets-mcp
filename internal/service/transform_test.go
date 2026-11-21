@@ -707,3 +707,26 @@ func TestALandingOnASmartChipNamesIt(t *testing.T) {
 		})
 	}
 }
+
+// A dry run with a stale checkpoint previews and names the conflict, as
+// every write's dry run names what would stop it (D-30).
+func TestATransformDryRunNamesAStaleCheckpoint(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	svc := newService(t, srv)
+	ctx := context.Background()
+	doc := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet)
+	doc.Set(1, 1, sheetstest.Str("Quorbin,Vandel"))
+	req := transformReq(service.TransformTextToColumns, "A1:A2")
+	req.Delimiter = "comma"
+	req = transformWitnessed(t, svc, req)
+	doc.Set(1, 2, sheetstest.Str("Skerry"))
+
+	req.Overwrite, req.DryRun = true, true
+	res, err := svc.Transform(ctx, req)
+	if err != nil {
+		t.Fatalf("a dry run with a stale checkpoint was refused rather than previewed: %v", err)
+	}
+	if _, refusal, ok := strings.Cut(res.Render(), "would be refused:\n"); !ok || !strings.Contains(refusal, "changed since") {
+		t.Errorf("the preview does not name the conflict:\n%s", res.Render())
+	}
+}

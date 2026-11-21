@@ -369,12 +369,7 @@ func OpsPreview(o Ops) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Dry run: nothing was sent. This would make %d change(s) to %s.\n", len(o.Applied), o.Range)
 	opLines(&b, o.Applied)
-	if len(o.Blockers) > 0 {
-		b.WriteString("\nAs asked, this would be refused:\n")
-		for _, line := range o.Blockers {
-			fmt.Fprintf(&b, "  %s\n", line)
-		}
-	}
+	b.WriteString(WouldRefuse(o.Blockers))
 	if o.Checkpoint != "" {
 		fmt.Fprintf(&b, "\n%s reads %s now, which overwrite needs as expect_checkpoint.\n", o.Read, o.Checkpoint)
 	}

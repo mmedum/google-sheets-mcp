@@ -115,6 +115,10 @@ func (s *Service) ManageRange(ctx context.Context, req RangeRequest) (*RangeResu
 		return nil, err
 	}
 
+	refused, err := stateRefusal(req.DryRun, s.rulesTaken(ctx, req, action, ref, props, rect))
+	if err != nil {
+		return nil, err
+	}
 	op, applied, err := s.rangeOp(ctx, req, action, ref, card, props, rect)
 	if err != nil {
 		return nil, err
@@ -149,7 +153,7 @@ func (s *Service) ManageRange(ctx context.Context, req RangeRequest) (*RangeResu
 	}
 	if req.DryRun {
 		res.DryRun = true
-		view.Blockers = blockerLines(report, plan.Ack{})
+		view.Blockers = append(blockerLines(report, plan.Ack{}), refused...)
 		res.Summary = render.OpsPreview(view)
 		return res, nil
 	}
@@ -219,29 +223,39 @@ func (s *Service) settleTableAdd(ctx context.Context, ref Reference, props *gshe
 			"typed after that is not known", answered, want.Name, a1.FormatRect(rect))
 }
 
+// rulesTaken refuses a table delete that would take the conditional
+// format rules over the table's range with it, unless overwrite says to.
+//
+// Deleting a table takes the conditional format rules over its range
+// with it, and nothing in the reply says so; adding a table leaves
+// them alone. The reference says neither. Checked by the live steps
+// "deleting the table is refused while a rule is over it", "and the
+// rule really did go with it" and "what a table does to the rules
+// over its range".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#DeleteTableRequest
+func (s *Service) rulesTaken(ctx context.Context, req RangeRequest, action string, ref Reference,
+	props *gsheets.SheetProperties, rect a1.Rect) error {
+
+	if !strings.EqualFold(strings.TrimSpace(req.Kind), RangeTable) || action != RangeDelete || req.Overwrite {
+		return nil
+	}
+	rules, err := s.rulesOver(ctx, ref, props.SheetID, rect)
+	if err != nil {
+		return err
+	}
+	if len(rules) > 0 {
+		return Errorf("blocked",
+			"deleting the table on %s takes %d conditional format rule(s) over that range with it, "+
+				"and nothing in Sheets brings them back: %s. Pass overwrite to go ahead",
+			a1.FormatRect(rect), len(rules), join(rules))
+	}
+	return nil
+}
+
 // rangeOp compiles one kind and action into one union member.
 func (s *Service) rangeOp(ctx context.Context, req RangeRequest, action string, ref Reference,
 	card *gsheets.Spreadsheet, props *gsheets.SheetProperties, rect a1.Rect,
 ) (*gsheets.Request, []render.Applied, error) {
-	// Deleting a table takes the conditional format rules over its range
-	// with it, and nothing in the reply says so; adding a table leaves
-	// them alone. The reference says neither. Checked by the live steps
-	// "deleting the table is refused while a rule is over it", "and the
-	// rule really did go with it" and "what a table does to the rules
-	// over its range".
-	// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#DeleteTableRequest
-	if strings.EqualFold(strings.TrimSpace(req.Kind), RangeTable) && action == RangeDelete && !req.Overwrite {
-		rules, err := s.rulesOver(ctx, ref, props.SheetID, rect)
-		if err != nil {
-			return nil, nil, err
-		}
-		if len(rules) > 0 {
-			return nil, nil, Errorf("blocked",
-				"deleting the table on %s takes %d conditional format rule(s) over that range with it, "+
-					"and nothing in Sheets brings them back: %s. Pass overwrite to go ahead",
-				a1.FormatRect(rect), len(rules), join(rules))
-		}
-	}
 	kind := strings.ToLower(strings.TrimSpace(req.Kind))
 	if len(req.Gradient) > 0 && kind != RangeRule {
 		return nil, nil, Errorf("invalid", "gradient is a color scale, which only kind conditional_format takes")

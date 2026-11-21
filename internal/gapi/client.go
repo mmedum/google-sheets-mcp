@@ -286,8 +286,24 @@ func (r request) repeatable() bool {
 	}
 }
 
+// dryRunKey marks a context whose call is a dry run.
+type dryRunKey struct{}
+
+// WithDryRun marks ctx as a dry run's, under which the client refuses to
+// send any write (D-80). Each write already returns before sending under
+// dry_run; this makes one that forgot fail closed rather than write.
+func WithDryRun(ctx context.Context) context.Context {
+	return context.WithValue(ctx, dryRunKey{}, true)
+}
+
 // do performs one logical request with rate limiting and retries.
 func (c *Client) do(ctx context.Context, r request) ([]byte, error) {
+	// [invalid] because no class names a defect in this server, and this
+	// one tells the caller nothing was sent and the server is at fault.
+	if dry, _ := ctx.Value(dryRunKey{}).(bool); dry && r.writes() {
+		return nil, fmt.Errorf("%w: %s was about to be sent during a dry run, which sends nothing; "+
+			"this is a defect in the server, so nothing was sent", ErrInvalid, r.op)
+	}
 	lim, timeout := c.readLim, c.readTimeout
 	if r.writes() {
 		lim, timeout = c.writeLim, c.writeTimeout

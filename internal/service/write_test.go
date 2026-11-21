@@ -616,3 +616,136 @@ func TestAFormulaIntoATableHeaderIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// A dry run answers with its preview even when the call would be refused,
+// and names the refusal there, because a refusal's own advice is to
+// dry-run the call (D-30). Each write that finds a refusal before its
+// preview goes through one helper that decides the order.
+func TestADryRunPreviewsWhatWouldBeRefused(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name string
+		// setup prepares the spreadsheet, and returns a checkpoint where
+		// the case needs one.
+		setup func(t *testing.T, svc *service.Service) string
+		run   func(svc *service.Service, checkpoint string) (service.Rendered, error)
+		want  string
+	}{
+		{"clear_values over a row this account may not edit", nil,
+			func(svc *service.Service, _ string) (service.Rendered, error) {
+				return svc.Clear(ctx, service.ClearRequest{Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.FirstSheet,
+					Range: "A1:B1", DryRun: true})
+			},
+			"protected"},
+		{"create_spreadsheet seeding a formula that fetches a URL", nil,
+			func(svc *service.Service, _ string) (service.Rendered, error) {
+				return svc.Create(ctx, service.CreateRequest{Title: "Quorbin", DryRun: true,
+					Values: [][]any{{`=IMPORTXML("https://example.test/","//p")`}}})
+			},
+			"fetches a URL"},
+		{"manage_sheet shrinking a sheet", nil,
+			func(svc *service.Service, _ string) (service.Rendered, error) {
+				return svc.ManageSheet(ctx, service.SheetRequest{Spreadsheet: sheetstest.FixtureID,
+					Action: service.SheetResize, Sheet: sheetstest.SecondSheet, Rows: 2, DryRun: true})
+			},
+			"would shrink it"},
+		{"manage_anchor adding a name that is taken",
+			func(t *testing.T, svc *service.Service) string {
+				if _, err := svc.Anchors(ctx, service.AnchorRequest{Spreadsheet: sheetstest.FixtureID,
+					Action: service.AnchorAdd, Name: "totals", Sheet: sheetstest.SecondSheet, Range: "2:2"}); err != nil {
+					t.Fatal(err)
+				}
+				return ""
+			},
+			func(svc *service.Service, _ string) (service.Rendered, error) {
+				return svc.Anchors(ctx, service.AnchorRequest{Spreadsheet: sheetstest.FixtureID,
+					Action: service.AnchorAdd, Name: "totals", Sheet: sheetstest.SecondSheet, Range: "3:3", DryRun: true})
+			},
+			"already has an anchor called"},
+		{"manage_anchor removing a name nobody gave", nil,
+			func(svc *service.Service, _ string) (service.Rendered, error) {
+				return svc.Anchors(ctx, service.AnchorRequest{Spreadsheet: sheetstest.FixtureID,
+					Action: service.AnchorRemove, Name: "nowhere", DryRun: true})
+			},
+			"no anchor called"},
+		{"manage_pivot_table adding onto a pivot",
+			func(t *testing.T, svc *service.Service) string { addPivot(t, svc, "H1"); return "" },
+			func(svc *service.Service, _ string) (service.Rendered, error) {
+				return svc.ManagePivotTable(ctx, service.PivotRequest{Spreadsheet: sheetstest.FixtureID,
+					Sheet: sheetstest.FirstSheet, Action: service.PivotAdd, Anchor: "H1",
+					Source: "A1:C6", Rows: []string{"A"}, Values: []string{"B sum"}, DryRun: true})
+			},
+			"already anchored"},
+		{"manage_range deleting a table over a rule",
+			func(t *testing.T, svc *service.Service) string {
+				table := rangeReq(service.RangeTable, service.RangeAdd, "A1:B3")
+				table.Name = "Trennow"
+				rule := rangeReq(service.RangeRule, service.RangeAdd, "A1:B3")
+				rule.Condition, rule.Color = "not_blank", "#d9ead3"
+				for _, req := range []service.RangeRequest{table, rule} {
+					if _, err := svc.ManageRange(ctx, req); err != nil {
+						t.Fatal(err)
+					}
+				}
+				return ""
+			},
+			func(svc *service.Service, _ string) (service.Rendered, error) {
+				req := rangeReq(service.RangeTable, service.RangeDelete, "A1:B3")
+				req.DryRun = true
+				return svc.ManageRange(ctx, req)
+			},
+			"conditional format rule"},
+		{"format_cells merging across a frozen row", nil,
+			func(svc *service.Service, _ string) (service.Rendered, error) {
+				return svc.FormatCells(ctx, service.FormatRequest{Spreadsheet: sheetstest.FixtureID,
+					Sheet: sheetstest.FirstSheet, Range: "E1:F3", Merge: "all", Overwrite: true, DryRun: true})
+			},
+			"frozen row"},
+		{"write_values with a stale checkpoint",
+			func(t *testing.T, svc *service.Service) string {
+				read, err := svc.Read(ctx, service.ReadRequest{Spreadsheet: sheetstest.FixtureID,
+					Sheet: sheetstest.SecondSheet, Range: "A1:B1"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := svc.Write(ctx, service.WriteRequest{Spreadsheet: sheetstest.FixtureID,
+					Sheet: sheetstest.SecondSheet, Range: "A1:B1", Values: [][]any{{"x", "y"}},
+					Overwrite: true, OverwriteFormulas: true, ExpectCheckpoint: read.Checkpoint}); err != nil {
+					t.Fatal(err)
+				}
+				return read.Checkpoint
+			},
+			func(svc *service.Service, checkpoint string) (service.Rendered, error) {
+				return svc.Write(ctx, service.WriteRequest{Spreadsheet: sheetstest.FixtureID,
+					Sheet: sheetstest.SecondSheet, Range: "A1:B1", Values: [][]any{{"p", "q"}},
+					Overwrite: true, OverwriteFormulas: true, ExpectCheckpoint: checkpoint, DryRun: true})
+			},
+			"changed since"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, svc := standard(t)
+			checkpoint := ""
+			if tc.setup != nil {
+				checkpoint = tc.setup(t, svc)
+			}
+			srv.Reset()
+			res, err := tc.run(svc, checkpoint)
+			if err != nil {
+				t.Fatalf("the dry run was refused rather than previewed: %v", err)
+			}
+			out := res.Render()
+			_, refusal, ok := strings.Cut(out, "would be refused:\n")
+			if !ok || !strings.Contains(refusal, tc.want) {
+				t.Errorf("the preview does not name the refusal (%q):\n%s", tc.want, out)
+			}
+			if strings.Contains(out, "dry_run shows") {
+				t.Errorf("the preview tells a dry run to dry-run:\n%s", out)
+			}
+			for _, c := range srv.Calls() {
+				if c.Method != http.MethodGet && c.Op != "spreadsheets.getByDataFilter" && c.Op != "developerMetadata.search" {
+					t.Errorf("the dry run sent %s", c.Op)
+				}
+			}
+		})
+	}
+}

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -110,7 +111,8 @@ func (s *Service) Write(ctx context.Context, req WriteRequest) (*WriteResult, er
 	if err != nil {
 		return nil, err
 	}
-	if err := checkpointMatches(req.ExpectCheckpoint, tgt.ref.ID, before, tgt.rect); err != nil {
+	stale, err := stateRefusal(req.DryRun, checkpointMatches(req.ExpectCheckpoint, tgt.ref.ID, before, tgt.rect))
+	if err != nil {
 		return nil, err
 	}
 	ack := s.ack(req.Overwrite, req.OverwriteFormulas)
@@ -153,7 +155,7 @@ func (s *Service) Write(ctx context.Context, req WriteRequest) (*WriteResult, er
 			// From the report rather than a second walk of the grid: it
 			// counted the same cells a moment ago.
 			Counts:   grid.Counts{NonEmpty: report.NonEmpty.Total, Formulas: report.Formulas.Total},
-			Blockers: seen.previewBlockers(report, ack, req.ExpectCheckpoint),
+			Blockers: append(seen.previewBlockers(report, ack, req.ExpectCheckpoint), stale...),
 		})
 		return res, nil
 	}
@@ -380,6 +382,30 @@ func blockerLines(r plan.Report, ack plan.Ack) []string {
 		out = append(out, line)
 	}
 	return out
+}
+
+// dryRunRefusal decides the order of a refusal found before a write's
+// preview, for every write: under dry_run it becomes a line of the
+// preview, so the call a refusal's own advice names answers (D-30), and
+// otherwise it is the answer. A write passes it only refusals about what
+// the spreadsheet holds; an error about the arguments goes back as it is.
+func dryRunRefusal(dryRun bool, refusal error) (lines []string, err error) {
+	var se *Error
+	if dryRun && errors.As(refusal, &se) {
+		return []string{se.Msg}, nil
+	}
+	return nil, refusal
+}
+
+// stateRefusal routes err through dryRunRefusal when it is one of the
+// classes that describe what the spreadsheet holds, and returns any other
+// error as it is.
+func stateRefusal(dryRun bool, err error) ([]string, error) {
+	var se *Error
+	if errors.As(err, &se) && (se.Class == "blocked" || se.Class == "conflict") {
+		return dryRunRefusal(dryRun, err)
+	}
+	return nil, err
 }
 
 // refuse turns the guard's findings into the one [blocked] a caller

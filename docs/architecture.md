@@ -423,7 +423,7 @@ CHANGELOG to the code. Releasing is in [release.md](release.md).
 | D-27 | The caller chooses typed or literal input, and every write reports what Google changed | accepted | TestCoercionIsReported, TestDiffReportsWhatGoogleStored, TestDiffComparesKindAsWellAsText, TestLiteralInputStoresWhatWasSent, TestInputEnumIsClosedBeforeAnythingIsSent |
 | D-28 | A formula that reaches outside the spreadsheet is written only when the operator allows it | accepted | TestExternalFormulasAreOffUnlessTheOperatorSaysSo, TestTheOperatorAllowsExternalFormulas, TestAReplacementCannotWriteAnExternalFormula, TestAFormulaRewriteCannotReachOutside, TestACopyCannotMultiplyAnExternalFormula, TestCreateStillGatesExternalFormulas, TestFormulasCreatedAreNamed |
 | D-29 | `append_rows` only inserts, takes its range, and reports where Google put the rows | accepted | TestAppendOnlyInserts, TestAppendNeedsARange, TestAppendReportsWhereItLanded |
-| D-30 | Every write takes `dry_run`, which sends nothing and previews even a refused write | accepted | TestDryRunIsFoundByReflectionNotByMemory, TestRegisteringAWriteWithoutDryRunPanics, TestDryRunSendsNothing, TestDryRunPreviewsAWriteThatWouldBeRefused |
+| D-30 | Every write takes `dry_run`, which sends nothing and previews even a refused write | accepted | TestDryRunIsFoundByReflectionNotByMemory, TestRegisteringAWriteWithoutDryRunPanics, TestDryRunSendsNothing, TestDryRunPreviewsAWriteThatWouldBeRefused, TestADryRunPreviewsWhatWouldBeRefused |
 | D-31 | A write says what changed, read back from Google rather than restated from the request | accepted | TestDiffReportsWhatGoogleStored, TestOpsCarryTheCountsTheAPIReported, TestTailLeftIsReported, TestSourceAddReportsTheRefreshRatherThanClaimingItArrived, TestOpsDoneAndPreviewDescribeTheSameChange |
 | D-32 | One tool call is one API request, and ops compile to one atomic batch | accepted | TestFormatCellsSendsOneBatch, TestFindIsOneRequestForEverySheet, TestAnchorListIsOneRequest, TestBatchUpdateAppliesNothingWhenOneRequestFails |
 | D-33 | Formatting and transforms guard what they destroy, and read only when an op can destroy | accepted | TestMergingOverValuesIsRefused, TestClearingFormatIsRefusedOverFormattedCells, TestReplacingANoteIsRefused, TestCopyPasteGuardsItsDestination, TestTextToColumnsGuardsWhatIsToTheRight, TestReplacingInsideFormulasNeedsAcknowledging, TestAutoFillGuardsWhereItWouldLand, TestDeletingATableThatTakesRulesIsRefused |
@@ -473,6 +473,7 @@ CHANGELOG to the code. Releasing is in [release.md](release.md).
 | D-77 | The server confirms a write by asking the person through elicitation | rejected | — |
 | D-78 | Changes arrive by a watch or push channel | rejected | — |
 | D-79 | A tool changes the spreadsheet's title, locale or recalculation setting | rejected | — |
+| D-80 | The client refuses a write made during a dry run | accepted | TestADryRunThatForgetsItsReturnSendsNothing |
 
 ### D-01 One stdio binary per person, signed in to their own Google account through their own OAuth client
 
@@ -1221,13 +1222,18 @@ who followed it would otherwise get the same refusal again. A dry run
 sends nothing, so there is nothing to guard. Sheets has no tracked
 changes, so the dry run stands in for a suggestion mode.
 
+A refusal a write finds before its preview, one that depends on what the
+spreadsheet holds, goes through one helper, `dryRunRefusal`: a guard
+refusal, a stale checkpoint, a name that is taken or missing, a pivot
+already on the anchor. Under `dry_run` it becomes a line of the preview,
+in the words the call would be refused with; otherwise it is the
+answer. A refusal about the arguments' shape stays an error.
+
 Rejected: the guard refusing before the preview; tracked-change modes,
 which Sheets lacks.
-Cost: nothing but each write's early return keeps it from sending under
-`dry_run`, so a write added without one would send (#64).
-`clear_values`, `manage_sheet` and `manage_anchor` check some refusals
-before the preview, so a dry run there can answer with the refusal
-(#74).
+Cost: a write that finds a refusal of its own must route it through the
+helper, and `TestADryRunPreviewsWhatWouldBeRefused` holds each one that
+does. The client refuses a write that forgot its early return (D-80).
 
 ### D-31 A write says what changed, read back from Google rather than restated from the request
 
@@ -2483,4 +2489,23 @@ Cost: a person changes a spreadsheet's title, locale or recalculation
 setting in Sheets itself, and `testdata/api-coverage.tsv` records the
 verdict.
 
-Next ID: D-80
+### D-80 The client refuses a write made during a dry run
+
+A call made with `dry_run` runs under a context that marks it a dry
+run, and the API client refuses any write sent under that context, with
+`[invalid]` and nothing sent. `add` sets the mark from the input's
+`dry_run` field, the same field it finds by reflection for D-30.
+
+Each write still returns before sending under `dry_run`, and the preview
+is that early return's to give. The mark is the second line: a write
+added without the early return fails closed, as a refused call, rather
+than writing while it claims to preview. A read, and a POST marked
+read-only, are sent as usual.
+
+Rejected: the early return and a test per tool alone, which leave a
+write added without one free to send; refusing in the service, where
+each write would have to remember to ask.
+Cost: a dry-run defect surfaces as `[invalid]` naming the method, not
+as a preview.
+
+Next ID: D-81
