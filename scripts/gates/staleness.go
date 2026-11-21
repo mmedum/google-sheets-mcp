@@ -37,8 +37,8 @@ type schemaDump struct {
 	} `json:"tools"`
 }
 
-// scopesAreDocumented checks the README lists every scope `login` asks
-// for, in full.
+// scopesAreDocumented checks the README's prose, readme, lists every scope
+// `login` asks for, in full.
 //
 // A setup step that says "add the two scopes below" with no scope in the
 // file leaves a reader following the instructions nothing to add, and
@@ -48,34 +48,35 @@ type schemaDump struct {
 // The full URL, because that is what somebody pastes into a consent
 // screen. A bare "spreadsheets" in a table column is not the string the
 // Cloud console takes.
-func scopesAreDocumented() []string {
-	body, err := os.ReadFile("README.md")
-	if err != nil {
-		return []string{"README.md cannot be read to check its scopes: " + err.Error()}
-	}
-	// Every combination, not the default one: a scope this server asks
-	// for only under a setting is still a scope somebody with an
-	// External app has to add in the Cloud console before login works,
-	// and the README is where they find out.
-	want := map[string]bool{}
-	for _, readOnly := range []bool{false, true} {
-		for _, dataSources := range []bool{false, true} {
-			for _, scope := range auth.Scopes(readOnly, dataSources) {
-				want[scope] = true
-			}
-		}
-	}
+func scopesAreDocumented(readme string) []string {
+	want := loginScopes()
 	if len(want) < 2 {
 		return []string{"auth.Scopes returned fewer than two distinct scopes; this check is reading nothing"}
 	}
 	var problems []string
-	for scope := range want {
-		if !strings.Contains(string(body), scope) {
+	for _, scope := range want {
+		if !strings.Contains(readme, scope) {
 			problems = append(problems, "README.md does not list the scope "+scope+", which `login` requests")
 		}
 	}
-	sort.Strings(problems)
 	return problems
+}
+
+// loginScopes is every scope `login` can ask for, sorted, each once.
+// Every combination, not the default one: a scope this server asks for
+// only under a setting is still a scope somebody with an External app has
+// to add in the Cloud console before login works, and the README is where
+// they find out.
+func loginScopes() []string {
+	scopes := map[string]bool{}
+	for _, readOnly := range []bool{false, true} {
+		for _, dataSources := range []bool{false, true} {
+			for _, scope := range auth.Scopes(readOnly, dataSources) {
+				scopes[scope] = true
+			}
+		}
+	}
+	return slices.Sorted(maps.Keys(scopes))
 }
 
 // staleness fails when the documentation drifts from the code.
@@ -84,15 +85,13 @@ func scopesAreDocumented() []string {
 // asking: does the README list the tools that exist, the scopes login
 // asks for and a permission rule for every delete, does the configuration
 // document mention every setting, and does the CHANGELOG say what
-// changed.
+// changed. The README and the configuration page are read with their
+// fences blanked, since an example documents nothing.
 func staleness(bin string) error {
-	var problems []string
-	// First, so a git that cannot answer stops the gate before it reads
-	// anything else.
-	if err := changelogDocumentsTheChange(); errors.As(err, new(couldNotRun)) {
-		return err
-	} else if err != nil {
-		problems = append(problems, err.Error())
+	// A CHANGELOG rule that cannot run holds back no other check.
+	problems, unrun := checkChangelog()
+	if unrun != nil && !errors.As(unrun, new(couldNotRun)) {
+		return unrun
 	}
 
 	_, dump, err := dumpSchemas(bin)
@@ -127,19 +126,8 @@ func staleness(bin string) error {
 	if err != nil {
 		return err
 	}
-	var documented []string
-	for _, m := range readmeTool.FindAllStringSubmatch(string(readme), -1) {
-		documented = append(documented, m[1])
-	}
-	sort.Strings(documented)
-	if missing := difference(registered, documented); len(missing) > 0 {
-		problems = append(problems, "README's tool table is missing: "+strings.Join(missing, ", "))
-	}
-	if extra := difference(documented, registered); len(extra) > 0 {
-		problems = append(problems, "README's tool table names tools that are not registered: "+strings.Join(extra, ", "))
-	}
 	sort.Strings(deletes)
-	problems = append(problems, permissionRulesAreTools(string(readme), registered, deletes)...)
+	problems = append(problems, readmeProblems(string(readme), registered, deletes)...)
 
 	conf, err := os.ReadFile(configDocPath)
 	if err != nil {
@@ -148,25 +136,62 @@ func staleness(bin string) error {
 	vars := config.Vars()
 	problems = append(problems, configDocProblems(vars, fieldRules, string(conf))...)
 
-	problems = append(problems, scopesAreDocumented()...)
-
-	if len(problems) > 0 {
-		return fmt.Errorf("%d problem(s):\n  %s", len(problems), strings.Join(problems, "\n  "))
+	if err := stalenessVerdict(problems, unrun); err != nil {
+		return err
 	}
 	fmt.Printf("%d tools documented, %d settings documented\n", len(registered), len(vars))
 	return nil
+}
+
+// readmeProblems holds the README, text, to the tools the binary registers,
+// the deletes among them and the scopes login asks for. The tool table and
+// the scopes are read from its prose, its fences blanked: an example
+// documents nothing. The permission rules sit in a fence of their own.
+func readmeProblems(text string, registered, deletes []string) []string {
+	readme := strings.ReplaceAll(text, "\r\n", "\n")
+	prose := strings.Join(docsProse(readme), "\n")
+	rows := readmeTool.FindAllStringSubmatch(prose, -1)
+	documented := make([]string, 0, len(rows))
+	for _, m := range rows {
+		documented = append(documented, m[1])
+	}
+	sort.Strings(documented)
+	var problems []string
+	if missing := difference(registered, documented); len(missing) > 0 {
+		problems = append(problems, "README's tool table is missing: "+strings.Join(missing, ", "))
+	}
+	if extra := difference(documented, registered); len(extra) > 0 {
+		problems = append(problems, "README's tool table names tools that are not registered: "+strings.Join(extra, ", "))
+	}
+	problems = append(problems, permissionRulesAreTools(readme, registered, deletes)...)
+	return append(problems, scopesAreDocumented(prose)...)
+}
+
+// stalenessVerdict is the gate's verdict on what its checks found, with
+// unrun why the CHANGELOG rule could not run, or nil. A finding fails and
+// names that reason too; the reason alone is no verdict.
+func stalenessVerdict(problems []string, unrun error) error {
+	if len(problems) == 0 {
+		return unrun
+	}
+	if unrun != nil {
+		problems = append(problems, unrun.Error())
+	}
+	return fmt.Errorf("%d problem(s):\n  %s", len(problems), strings.Join(problems, "\n  "))
 }
 
 // configDocPath is the page every setting is documented on.
 const configDocPath = "docs/configuration.md"
 
 // configDocProblems holds the configuration page, text, to the variables
-// the server reads, vars, both ways. It names every one as a whole word,
-// the removed one it refuses and the two read outside Define included,
-// and names no other. And it states each of rules, the bundle's
-// fieldRules, in the words the server refuses a value with, so a rule
-// added for the bundle's field is held on the page too.
+// the server reads, vars, both ways. Its prose names every one as a whole
+// word, the removed one it refuses and the two read outside Define
+// included, and names no other; a fenced example documents nothing. And it
+// states each of rules, the bundle's fieldRules, in the words the server
+// refuses a value with, so a rule added for the bundle's field is held on
+// the page too.
 func configDocProblems(vars []config.Var, rules map[string]fieldRule, text string) []string {
+	text = strings.Join(docsProse(text), "\n")
 	var problems []string
 	documented := map[string]bool{}
 	for _, m := range settingWord.FindAllStringSubmatch(text, -1) {
@@ -245,70 +270,72 @@ func dumpSchemas(bin string) ([]byte, *schemaDump, error) {
 	return out, &d, nil
 }
 
-// changelogDocumentsTheChange requires entries when the binary's source,
-// as shippedChangedSince reads it, changed since the newest release. A
-// test, a fixture, a script under scripts/ and a dependency bump change
-// nothing an entry would describe, so a change confined to them needs none.
+// checkChangelog holds the checkout to changelogRule, measured from
+// lastTag, the newest release HEAD reaches. No such tag, or a git or go
+// call that cannot answer, is couldNotRun, never "source changed".
+func checkChangelog() ([]string, error) {
+	last, err := lastTag("HEAD")
+	if err != nil {
+		return nil, changelogUnrun(err)
+	}
+	if last == "" {
+		return nil, changelogUnrun(errors.New("HEAD reaches no release tag (vX.Y.Z) to measure from"))
+	}
+	list, err := git("tag")
+	if err != nil {
+		return nil, changelogUnrun(err)
+	}
+	changed, err := shippedChangedSince(last)
+	if err != nil {
+		return nil, changelogUnrun(err)
+	}
+	raw, err := os.ReadFile(changelogPath)
+	if err != nil {
+		return nil, err
+	}
+	// A version is released once a tag names it on any line of history.
+	tags := strings.Fields(list)
+	tagged := func(version string) bool { return slices.Contains(tags, "v"+version) }
+	return changelogRule(string(raw), changed, last, tagged), nil
+}
+
+// changelogUnrun is why the CHANGELOG rule could not run. A shallow clone
+// fetches no tag and too little history, so the reason names one.
+func changelogUnrun(err error) error {
+	if shallow, _ := git("rev-parse", "--is-shallow-repository"); shallow == "true" {
+		err = fmt.Errorf("%w; the checkout is a shallow clone: check it out with fetch-depth: 0", err)
+	}
+	return couldNotRun{fmt.Errorf("the CHANGELOG rule: %w", err)}
+}
+
+// changelogRule requires entries when the binary's source changed since
+// the release since. A test, a fixture, a script under scripts/ and a
+// dependency bump change nothing an entry would describe, so a change
+// confined to them needs none.
 //
 // The exception in the middle is a scar: a release commit moves the
 // entries out of [Unreleased] and under the version it is about to tag,
 // and CI runs before that tag can exist — so a gate without it fails on
 // the one pull request it was written to guard.
-func changelogDocumentsTheChange() error {
-	list, err := git("tag")
-	if err != nil {
-		return couldNotRun{err}
-	}
-	tags := strings.Fields(list)
-	since, last := "HEAD~1", stalenessNewestRelease(tags)
-	if last != "" {
-		since = "v" + last
-	}
-	changed, err := shippedChangedSince(since)
-	if err != nil {
-		return couldNotRun{err}
-	}
-	if !changed {
+func changelogRule(text string, sourceChanged bool, since string, tagged func(version string) bool) []string {
+	if !sourceChanged {
 		return nil
 	}
-
-	changelog, err := os.ReadFile(changelogPath)
-	if err != nil {
-		return err
-	}
-	doc := readChangelog(string(changelog))
+	doc := readChangelog(text)
 	if doc.entries("Unreleased") > 0 {
 		return nil
 	}
-	if v := doc.versions(); len(v) > 0 && !slices.Contains(tags, "v"+v[0].label) && doc.entries(v[0].label) > 0 {
+	if v := doc.versions(); len(v) > 0 && !tagged(v[0].label) && doc.entries(v[0].label) > 0 {
 		return nil
 	}
-	if last == "" {
-		since = "the previous commit"
-	}
-	return fmt.Errorf("the binary's source changed since %s but %s documents nothing new; "+
-		"put the entries under [Unreleased], or under the version heading this release is about to tag", since, changelogPath)
-}
-
-// stalenessNewestRelease is the newest release tag's version by semver
-// order, a prerelease included, or "" when there is none. git's version
-// sort puts v2.0.0-rc.1 after v2.0.0, so the order is semver's.
-func stalenessNewestRelease(tags []string) string {
-	newest := ""
-	for _, tag := range tags {
-		v, ok := strings.CutPrefix(tag, "v")
-		if ok && changelogVersion.MatchString(v) && (newest == "" || changelogCompare(v, newest) > 0) {
-			newest = v
-		}
-	}
-	return newest
+	return []string{fmt.Sprintf("the binary's source changed since %s but %s documents nothing new; "+
+		"put the entries under [Unreleased], or under the version heading this release is about to tag", since, changelogPath)}
 }
 
 // shippedChangedSince reports whether the binary's source changed between
-// since and HEAD: a Go file other than a test in a package of this module
-// the binary imports, a file such a package embeds, or go.mod outside its
-// require and tool lines. A package counts by its directory, so a file
-// another platform builds counts, and so does a file removed from it.
+// since and HEAD: a file shippedSource has, or go.mod outside its require
+// and tool lines. A package counts by its directory, so a file another
+// platform builds counts, and so does a file removed from it.
 func shippedChangedSince(since string) (bool, error) {
 	out, err := git("diff", since+"..HEAD", "--name-only", "--no-renames", "-z")
 	if err != nil {
@@ -341,8 +368,15 @@ func shippedChangedSince(since string) (bool, error) {
 // slash-separated from the module root.
 type shippedSource struct{ dirs, embeds map[string]bool }
 
+// has reports whether a file is one users get: any file but a test in one
+// of the binary's package directories, an embedded file, the bundle's
+// manifest, or a program the bundle packs from the tree, the Linux
+// launcher. The README and LICENSE it packs are read, not run. Every file
+// of a package directory counts: the go command builds a package from
+// assembly, a .syso and C as well as Go (`go help filetype`).
 func (s *shippedSource) has(file string) bool {
-	return s.embeds[file] || strings.HasSuffix(file, ".go") && !strings.HasSuffix(file, "_test.go") && s.dirs[path.Dir(file)]
+	runs := slices.ContainsFunc(bundleFiles, func(f staged) bool { return f.source == file && f.program() })
+	return file == mcpbManifestPath || runs || s.embeds[file] || !strings.HasSuffix(file, "_test.go") && s.dirs[path.Dir(file)]
 }
 
 // listShipped asks the go command what ./cmd/... is built from. A package

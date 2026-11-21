@@ -46,7 +46,8 @@ Go is the only prerequisite, at the version in `go.mod`. Every other
 tool runs at a pinned version through `go run`, never from your `PATH`
 (D-66, D-69). `make hooks` points git at `.githooks/`, whose pre-commit
 hook runs `go run ./scripts/gates precommit`: gofmt, vet, the leak scan,
-the error classes and the transcript check.
+gitleaks over the staged changes, the error classes and the transcript
+check.
 
 ## Gates that must pass
 
@@ -236,8 +237,8 @@ Every user-visible change gets an entry under `## [Unreleased]` in
 `CHANGELOG.md`, in the same pull request that makes the change. Leave
 out changes only contributors see, unless they must act on them.
 `make staleness` asks for an entry when the binary's source changed
-since the last release: a package it imports, a file one embeds, or
-`go.mod` outside its `require` and `tool` lines.
+since the newest release your branch reaches (D-74). An entry is a `- `
+bullet at the margin.
 
 - **Sections** are the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   set and nothing else: Added, Changed, Deprecated, Removed, Fixed and

@@ -1,6 +1,10 @@
 package main
 
 import (
+	"encoding/json"
+	"maps"
+	"os/exec"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -54,6 +58,11 @@ func TestGoRunsInSkipsTheFlags(t *testing.T) {
 			{pkg: "x.org/y@v1"}},
 		"go run x.org/y@v1 # go run x.org/z@v2": {
 			{pkg: "x.org/y@v1"}},
+		// A redirection is neither an argument nor the end of the command.
+		"go run ./scripts/gates smoke ./google-sheets-mcp 2>&1 | tee smoke.log": {
+			{pkg: "./scripts/gates", args: []string{"smoke", "./google-sheets-mcp"}}},
+		"2>/dev/null go run x.org/y@v1 >&2 a &>> log b": {
+			{pkg: "x.org/y@v1", args: []string{"a", "b"}}},
 	} {
 		got := goRunsIn(line)
 		if !slices.EqualFunc(got, want, func(a, b goRun) bool { return a.pkg == b.pkg && slices.Equal(a.args, b.args) }) {
@@ -97,6 +106,81 @@ func TestGoAfterFlagsSkipsTheValues(t *testing.T) {
 	}
 }
 
+// goValueFlags is exactly the flags the go command reads a value for on
+// the commands the gates read, run, install and vet, at the toolchain
+// go.mod names: `go help build`, `go help run`, `go help vet` and the vet
+// tool's own. A value flag it lacks reads its value as the package, so
+// `go run -pgo file tool@v1` would run file; a boolean it holds reads the
+// package as the flag's value, so `go run -race tool@v1` would run nothing.
+// `go help test` is not read: no gate reads a go test's words, and there
+// -c is a boolean where vet's -c takes a value.
+func TestGoValueFlagsAreTheFlagsTheHelpGivesAValue(t *testing.T) {
+	gomod := repoFile(t, "go.mod")
+	goCmd := func(args ...string) string {
+		cmd := exec.Command("go", args...)
+		cmd.Dir = repoDir
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("go %s: %v", strings.Join(args, " "), err)
+		}
+		return string(out)
+	}
+	// A GOEXPERIMENT build carries its experiments after the release.
+	version := strings.FieldsFunc(goCmd("env", "GOVERSION"), func(r rune) bool { return r == '-' || r == ' ' || r == '\n' })
+	if want := "go" + pinsGoVersion(string(gomod)); len(version) == 0 || version[0] != want {
+		t.Skipf("go is %v, not go.mod's %s, whose help the map is held to; GOTOOLCHAIN=auto runs it", version, want)
+	}
+	// A flag line in the help, with the word that names its value or with
+	// none, or a flag in a usage line, with the word that names its value.
+	valueLine := regexp.MustCompile(`(?m)^\t-([\w.-]+) \S|\[-([\w.-]+) \w+\]`)
+	boolLine := regexp.MustCompile(`(?m)^\t-([\w.-]+)$`)
+	value, boolean := map[string]bool{}, map[string]bool{}
+	for _, help := range []string{goCmd("help", "build"), goCmd("help", "run"), goCmd("help", "vet")} {
+		for _, m := range valueLine.FindAllStringSubmatch(help, -1) {
+			value[m[1]+m[2]] = true
+		}
+		for _, m := range boolLine.FindAllStringSubmatch(help, -1) {
+			boolean[m[1]] = true
+		}
+	}
+	var vetFlags []struct {
+		Name string
+		Bool bool
+	}
+	if err := json.Unmarshal([]byte(goCmd("tool", "vet", "-flags")), &vetFlags); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range vetFlags {
+		if f.Bool {
+			boolean[f.Name] = true
+		} else {
+			value[f.Name] = true
+		}
+	}
+	// The help leaves out three debug flags that take a value
+	// (https://github.com/golang/go/blob/go1.27.3/src/cmd/go/internal/work/build.go#L358-L361).
+	for _, name := range []string{"debug-actiongraph", "debug-runtime-trace", "debug-trace"} {
+		value[name] = true
+	}
+	if len(value) < 25 || len(boolean) < 20 {
+		t.Fatalf("read %d value flags and %d boolean flags from the help, want at least 25 and 20", len(value), len(boolean))
+	}
+	for _, name := range slices.Sorted(maps.Keys(value)) {
+		if !goValueFlags[name] {
+			t.Errorf("the help gives -%s a value, and goValueFlags does not have it", name)
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(goValueFlags)) {
+		switch {
+		case value[name]:
+		case boolean[name]:
+			t.Errorf("goValueFlags has -%s, which the help lists as a boolean", name)
+		default:
+			t.Errorf("goValueFlags has -%s, which no help lists", name)
+		}
+	}
+}
+
 func TestShellSplit(t *testing.T) {
 	for line, want := range map[string][]string{
 		`a "b c" 'd e' f\ g`: {"a", "b c", "d e", "f g"},
@@ -113,8 +197,38 @@ func TestShellSplit(t *testing.T) {
 		"# all of it":    nil,
 		"a $(b) `c` (d)": {"a", "$(", "b", ")", "`", "c", "`", "(", "d", ")"},
 	} {
-		if got := shellText(line); !slices.Equal(got, want) {
-			t.Errorf("shellText(%q) = %q, want %q", line, got, want)
+		if got := shellTexts(shellSplit(line)); !slices.Equal(got, want) {
+			t.Errorf("shellSplit(%q) = %q, want %q", line, got, want)
+		}
+	}
+}
+
+// A redirection is one word of its own, its operator and its target
+// joined, and neither a word of the command nor an operator that ends it
+// (https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html#tag_19_07).
+// Digits are its file descriptor only when they are the whole word, unquoted.
+func TestShellSplitReadsARedirection(t *testing.T) {
+	word := func(s string) shellWord { return shellWord{text: s} }
+	redir := func(s string) shellWord { return shellWord{text: s, redir: true} }
+	op := func(s string) shellWord { return shellWord{text: s, op: true} }
+	for line, want := range map[string][]shellWord{
+		"a 2>&1 b":           {word("a"), redir("2>&1"), word("b")},
+		"a >&2":              {word("a"), redir(">&2")},
+		"a 0<&3 <&4":         {word("a"), redir("0<&3"), redir("<&4")},
+		"a &> log":           {word("a"), redir("&>log")},
+		"a &>>log b":         {word("a"), redir("&>>log"), word("b")},
+		"a > out >>all < in": {word("a"), redir(">out"), redir(">>all"), redir("<in")},
+		"a 2> err 1>>out":    {word("a"), redir("2>err"), redir("1>>out")},
+		`a> "x y"`:           {word("a"), redir(">x y")},
+		`a2>x "2">y 2\>z`:    {word("a2"), redir(">x"), word("2"), redir(">y"), word("2>z")},
+		"a 2>&1 | b; c":      {word("a"), redir("2>&1"), op("|"), word("b"), op(";"), word("c")},
+		"a &>b && c &":       {word("a"), redir("&>b"), op("&&"), word("c"), op("&")},
+		`echo ">" '2>&1'`:    {word("echo"), word(">"), word("2>&1")},
+		"a > # b":            {word("a"), redir(">")},
+		"a >":                {word("a"), redir(">")},
+	} {
+		if got := shellSplit(line); !slices.Equal(got, want) {
+			t.Errorf("shellSplit(%q) = %+v, want %+v", line, got, want)
 		}
 	}
 }
@@ -126,6 +240,7 @@ func TestShellListsSplitAtTheListOperators(t *testing.T) {
 		"a && b || c; d & e | f": {"a", "b", "c", "d", "e | f"},
 		"x=$(a b) y; ; z;":       {"x= $( a b ) y", "z"},
 		`echo "a && b"`:          {"echo a && b"},
+		"a &> log; b 2>&1 & c":   {"a &>log", "b 2>&1", "c"},
 		"":                       nil,
 	} {
 		var got []string

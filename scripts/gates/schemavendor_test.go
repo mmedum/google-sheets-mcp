@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"strings"
 	"testing"
@@ -18,14 +19,14 @@ func TestAVendoredSchemaIsHeldToItsRecordedDigest(t *testing.T) {
 	}
 
 	// And the check bites: a schema whose digest is not the recorded
-	// one is refused rather than used.
-	saved := vendoredSchemas["mcpb-manifest-v0.3.schema.json"]
-	t.Cleanup(func() { vendoredSchemas["mcpb-manifest-v0.3.schema.json"] = saved })
-	wrong := saved
+	// one is refused rather than used. The table is a copy: no test writes
+	// the package's own.
+	vendored := maps.Clone(vendoredSchemas)
+	wrong := vendored["mcpb-manifest-v0.3.schema.json"]
 	wrong.sha256 = strings.Repeat("0", 64)
-	vendoredSchemas["mcpb-manifest-v0.3.schema.json"] = wrong
+	vendored["mcpb-manifest-v0.3.schema.json"] = wrong
 
-	_, err := loadSchema("mcpb-manifest-v0.3.schema.json")
+	_, err := loadSchemaFrom(vendored, "mcpb-manifest-v0.3.schema.json")
 	if err == nil {
 		t.Fatal("a schema that does not match its recorded digest was used anyway")
 	}

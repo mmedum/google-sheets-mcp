@@ -2,6 +2,7 @@ package main
 
 import (
 	"path"
+	"slices"
 	"strings"
 )
 
@@ -23,6 +24,8 @@ type goRun struct {
 // (https://pkg.go.dev/cmd/go#hdr-Compile_packages_and_dependencies). The
 // help leaves out three debug flags that take a value too
 // (https://github.com/golang/go/blob/go1.27.3/src/cmd/go/internal/work/build.go#L358-L361).
+// c is the vet tool's lines of context. `go test -c` is a boolean, so no
+// gate reads a go test's words through this map.
 var goValueFlags = map[string]bool{
 	"C": true, "p": true, "covermode": true, "coverpkg": true, "asmflags": true, "buildmode": true,
 	"compiler": true, "gccgoflags": true, "gcflags": true, "installsuffix": true, "ldflags": true,
@@ -54,7 +57,8 @@ func goAfterFlags(words []string) []string {
 	i := 0
 	for i < len(words) && strings.HasPrefix(words[i], "-") {
 		name, _, inline := strings.Cut(strings.TrimLeft(words[i], "-"), "=")
-		if i++; !inline && goValueFlags[name] {
+		i++
+		if !inline && goValueFlags[name] {
 			i++
 		}
 	}
@@ -73,8 +77,10 @@ type goCommand struct {
 // hold commands of their own, so `OUT=$(go run x@v1)` runs x@v1.
 func goCommands(line string) []goCommand { return goCommandsOf(shellSplit(line)) }
 
-// goCommandsOf is goCommands over a line already split.
+// goCommandsOf is goCommands over a line already split. A redirection is
+// no word of the command it sits in.
 func goCommandsOf(words []shellWord) []goCommand {
+	words = slices.DeleteFunc(slices.Clone(words), func(w shellWord) bool { return w.redir })
 	var out []goCommand
 	for i := 0; i+1 < len(words); i++ {
 		// The go command by any path, such as $GOROOT/bin/go.
@@ -93,10 +99,11 @@ func goCommandsOf(words []shellWord) []goCommand {
 }
 
 // shellWord is one word of a command line, op when it is an operator that
-// ends a command rather than text.
+// ends a command rather than text, and redir when it is a redirection.
 type shellWord struct {
-	text string
-	op   bool
+	text  string
+	op    bool
+	redir bool
 }
 
 // shellSplit splits a command line into words as a POSIX shell does,
@@ -107,71 +114,143 @@ type shellWord struct {
 // $(, (, ) and a backtick are operators too, since a command substitution
 // or a subshell holds commands of its own
 // (https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html#tag_19_06_03).
+// A redirection, such as 2>&1, < in or bash's &>log, is one word with its
+// target, and neither a word of its command nor an operator that ends it
+// (https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html#tag_19_07,
+// https://www.gnu.org/software/bash/manual/bash.html#Redirecting-Standard-Output-and-Standard-Error).
 func shellSplit(line string) []shellWord {
 	var s shellSplitter
 	for i := 0; i < len(line); i++ {
 		switch c := line[i]; {
 		case s.quote == '\'':
-			if c == '\'' {
-				s.quote = 0
-			} else {
-				s.word.WriteByte(c)
-			}
-		case c == '\\' && i+1 < len(line) && (s.quote == 0 || strings.IndexByte("\"\\$`", line[i+1]) >= 0):
+			s.inQuote(c)
+		case s.escaped(line, i):
 			i++
-			s.word.WriteByte(line[i])
-			s.inWord = true
+			s.add(line[i])
 		case s.substitution(line, &i):
 		case s.quote == '"':
-			if c == '"' {
-				s.quote = 0
-			} else {
-				s.word.WriteByte(c)
-			}
-		case c == '\'' || c == '"':
+			s.inQuote(c)
+		case strings.IndexByte(`'"`, c) >= 0:
 			s.quote, s.inWord = c, true
 		case c == '#' && !s.inWord:
-			return s.words
-		case c == ' ' || c == '\t':
+			return s.finish()
+		case strings.IndexByte(" \t", c) >= 0:
 			s.flush()
-		case strings.IndexByte(";&|", c) >= 0:
-			j := i
-			for j+1 < len(line) && line[j+1] == c {
-				j++
-			}
-			s.operator(line[i : j+1])
-			i = j
+		case s.redirection(line, &i):
+		case s.operatorRun(line, &i):
 		default:
-			s.word.WriteByte(c)
-			s.inWord = true
+			s.add(c)
 		}
 	}
-	s.flush()
-	return s.words
+	return s.finish()
 }
 
 // shellSplitter is shellSplit's state: the words read, the one being read,
-// the quote the reader is in, and the substitutions and subshells around
-// it, each with the character that ends it and the quote it was opened in.
+// the quote the reader is in, the substitutions and subshells around it,
+// each with the character that ends it and the quote it was opened in, and
+// a redirection's operator waiting for its target.
 type shellSplitter struct {
-	words  []shellWord
-	word   strings.Builder
-	inWord bool
-	quote  byte
-	opened []struct{ end, quote byte }
+	words    []shellWord
+	word     strings.Builder
+	inWord   bool
+	quote    byte
+	opened   []struct{ end, quote byte }
+	redirect string
 }
 
+// inQuote reads c inside a quote, whose own character ends it.
+func (s *shellSplitter) inQuote(c byte) {
+	if c == s.quote {
+		s.quote = 0
+	} else {
+		s.word.WriteByte(c)
+	}
+}
+
+// escaped reports whether line[i] is a backslash that keeps the next
+// character: any outside quotes, and in double quotes one before ", \, $
+// or a backtick.
+func (s *shellSplitter) escaped(line string, i int) bool {
+	return line[i] == '\\' && i+1 < len(line) && (s.quote == 0 || strings.IndexByte("\"\\$`", line[i+1]) >= 0)
+}
+
+// add appends c to the word being read.
+func (s *shellSplitter) add(c byte) {
+	s.word.WriteByte(c)
+	s.inWord = true
+}
+
+// operatorRun reads a run of one of ;, & or | at line[*i] as one
+// operator, moving *i to its last character, and reports whether there
+// was one.
+func (s *shellSplitter) operatorRun(line string, i *int) bool {
+	c := line[*i]
+	if strings.IndexByte(";&|", c) < 0 {
+		return false
+	}
+	j := *i
+	for j+1 < len(line) && line[j+1] == c {
+		j++
+	}
+	s.operator(line[*i : j+1])
+	*i = j
+	return true
+}
+
+// flush ends the word being read, the target of a waiting redirection
+// when there is one.
 func (s *shellSplitter) flush() {
 	if s.inWord {
-		s.words = append(s.words, shellWord{text: s.word.String()})
+		w := shellWord{text: s.word.String()}
+		if s.redirect != "" {
+			w = shellWord{text: s.redirect + w.text, redir: true}
+			s.redirect = ""
+		}
+		s.words = append(s.words, w)
 		s.word.Reset()
 		s.inWord = false
 	}
 }
 
-func (s *shellSplitter) operator(op string) {
+// finish ends the line: the word being read, and a redirection that never
+// got its target, as it is.
+func (s *shellSplitter) finish() []shellWord {
 	s.flush()
-	s.words = append(s.words, shellWord{text: op, op: true})
+	if s.redirect != "" {
+		s.words = append(s.words, shellWord{text: s.redirect, redir: true})
+		s.redirect = ""
+	}
+	return s.words
+}
+
+func (s *shellSplitter) operator(op string) {
+	s.words = append(s.finish(), shellWord{text: op, op: true})
+}
+
+// redirection reads a redirection operator at line[*i], moving *i to its
+// last character, and reports whether there was one. The operator waits
+// for the next word as its target. A word of digits alone and unquoted
+// before it is the file descriptor it redirects, part of the redirection
+// (https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html#tag_19_10_01).
+func (s *shellSplitter) redirection(line string, i *int) bool {
+	c := line[*i]
+	if c != '<' && c != '>' && !strings.HasPrefix(line[*i:], "&>") {
+		return false
+	}
+	j := *i + 1
+	for j < len(line) && strings.IndexByte("<>&|", line[j]) >= 0 {
+		j++
+	}
+	op := line[*i:j]
+	if fd := s.word.String(); s.inWord && s.redirect == "" && c != '&' && fd != "" &&
+		strings.Trim(fd, "0123456789") == "" && strings.HasSuffix(line[:*i], fd) {
+		op = fd + op
+		s.word.Reset()
+		s.inWord = false
+	}
+	s.finish()
+	s.redirect, *i = op, j-1
+	return true
 }
 
 // substitution reads the start or the end of a substitution or a subshell
@@ -203,10 +282,7 @@ func (s *shellSplitter) substitution(line string, i *int) bool {
 	return true
 }
 
-// shellText is the words of a command line, operators included, as text.
-func shellText(line string) []string { return shellTexts(shellSplit(line)) }
-
-// shellTexts is split words, operators included, as text.
+// shellTexts is split words, operators and redirections included, as text.
 func shellTexts(split []shellWord) []string {
 	words := make([]string, 0, len(split))
 	for _, w := range split {
@@ -219,13 +295,21 @@ func shellTexts(split []shellWord) []string {
 // (https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html#tag_19_09_03).
 var shellListOps = map[string]bool{";": true, "&": true, "&&": true, "||": true}
 
+// shellPipeOps is the operator between the commands of a pipeline
+// (https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html#tag_19_09_02).
+var shellPipeOps = map[string]bool{"|": true}
+
 // shellLists splits a line's words at its list operators into the commands
 // they separate, an empty one dropped. A pipeline stays one command.
-func shellLists(words []shellWord) [][]shellWord {
+func shellLists(words []shellWord) [][]shellWord { return shellSplitAt(words, shellListOps) }
+
+// shellSplitAt splits words at each operator in ops into the runs between
+// them, an empty one dropped.
+func shellSplitAt(words []shellWord, ops map[string]bool) [][]shellWord {
 	var out [][]shellWord
 	start := 0
 	for i := 0; i <= len(words); i++ {
-		if i < len(words) && (!words[i].op || !shellListOps[words[i].text]) {
+		if i < len(words) && (!words[i].op || !ops[words[i].text]) {
 			continue
 		}
 		if i > start {

@@ -149,16 +149,21 @@ func TestReadChangelog(t *testing.T) {
 	if from, to := readChangelog("## [1.0.0]\n- a\n# Notes\n- b\n").section("1.0.0"); from != 1 || to != 2 {
 		t.Errorf("a section ends at an h1 too: lines [%d, %d), want [1, 2)", from, to)
 	}
-	// The footer's own labels end a section, its URL written or not: a link
-	// definition with any other label is prose.
+	// The footer's own labels end a section, its URL written or not, with or
+	// without a v and in any case, as a label matches: a link definition
+	// with any other label is prose.
 	for line, ends := range map[string]bool{
 		"[Unreleased]:":                       true,
 		"[Unreleased]: https://example.com/u": true,
+		"[unreleased]: https://example.com/u": true,
 		"[2.0.0-rc.1]:\thttps://example.com":  true,
+		"[v1.0.0]: https://example.com":       true,
+		"[V2.0.0-RC.1]: https://example.com":  true,
 		"[note]: see below":                   false,
 		"[1.0.0]:x":                           false,
-		"[v1.0.0]: https://example.com":       false,
 		"[1.0]: https://example.com":          false,
+		"[1.0.0--]: https://example.com":      false,
+		"[vv1.0.0]: https://example.com":      false,
 	} {
 		if _, to := readChangelog("## [1.0.0]\n- a\n" + line + "\n- b\n").section("1.0.0"); (to == 2) != ends {
 			t.Errorf("%q ends the section: %v, want %v", line, to == 2, ends)
