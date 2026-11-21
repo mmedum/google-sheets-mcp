@@ -11,6 +11,11 @@ PR_HEAD   ?= HEAD
 PKG        = github.com/mmedum/google-sheets-mcp/v4
 LDFLAGS    = -s -w -X $(PKG)/internal/version.Version=$(VERSION)
 COVER_MIN ?= 80
+# go.mod's exact toolchain, the one CI and a release build with. A
+# distribution's Go reports a version such as "go1.27.3-X:nodwarf5", and
+# govulncheck skips the standard library under it. The pins gate refuses
+# a run on any toolchain but go.mod's, which holds this line to go.mod.
+export GOTOOLCHAIN ?= go1.27.4
 # The gates are one binary. Building it once and running it saves six
 # links per `make check`, which is several seconds every time.
 GATES     ?= ./.gates
