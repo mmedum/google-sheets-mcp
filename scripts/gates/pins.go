@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -183,7 +184,10 @@ func (r *pinsReport) judgeLatest(text string) {
 	}
 }
 
-func pinGate() error {
+func pinGate() error { return pinsCheck(runtime.Version()) }
+
+// pinsCheck is the gate, run by the toolchain whose version is running.
+func pinsCheck(running string) error {
 	flows, err := readWorkflows()
 	if err != nil {
 		return err
@@ -213,7 +217,9 @@ func pinGate() error {
 	}
 	r.problems = append(r.problems, mk.refused...)
 	pinsMakefileRecipes(mk, pinsMakefileVars(mk, r), r)
-	r.add("go", pinsGoVersion(gomod), "go.mod")
+	goVersion := pinsGoVersion(gomod)
+	r.add("go", goVersion, "go.mod")
+	pinsToolchain(running, goVersion, r)
 	pinsGoreleaser(goreleaser, r)
 	pinsHook(hook, r)
 	if err := pinsHookDir(r); err != nil {
@@ -608,6 +614,18 @@ func pinsGoVersion(gomod string) string {
 		return m[1]
 	}
 	return ""
+}
+
+// pinsToolchain refuses a gate run on any Go but go.mod's exact version.
+// The gates and govulncheck build with the same go command, and govulncheck
+// skips the standard library when the version carries a suffix such as a
+// distribution's "-X:nodwarf5", so it would pass a vulnerable net/http.
+func pinsToolchain(running, want string, r *pinsReport) {
+	// A go line that is not one exact version is refused where it is read.
+	if exactSemver.MatchString(want) && running != "go"+want {
+		r.fail("the gates run on %s and go.mod pins go%s; set GOTOOLCHAIN in the Makefile to go%s",
+			running, want, want)
+	}
 }
 
 // pinsMakefileVars reads every `module@version` variable, and returns each

@@ -5,6 +5,10 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Security
+
+- Built with Go 1.27.4, which fixes CVE-2026-97054 (GO-2026-6859), a `net/http` race that can crash an HTTP/1 server.
+
 ## [4.2.1] - 2026-11-04
 
 ### Changed
