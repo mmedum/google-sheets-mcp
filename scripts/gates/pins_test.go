@@ -165,7 +165,7 @@ const (
 // classified and pinned by SHA.
 func pinsFixture() map[string]string {
 	return map[string]string{
-		"go.mod": textLines("module example.com/fixture", "", "go 1.27.3"),
+		"go.mod": textLines("module example.com/fixture", "", "go "+fxGoVersion),
 		fxMakefile: textLines(
 			"GO ?= go",
 			"GOLANGCI_LINT ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0",
@@ -257,7 +257,7 @@ func pinsFixture() map[string]string {
 func pinsProblems(t *testing.T, files map[string]string) []string {
 	t.Helper()
 	t.Chdir(docsTree(t, files))
-	err := pinGate()
+	err := pinsCheck(fxGoRunning)
 	if err == nil {
 		return nil
 	}
@@ -626,6 +626,29 @@ func TestPinsNamesEachProblem(t *testing.T) {
 			got := pinsProblems(t, applyEdits(t, pinsFixture(), tc.edits...))
 			if !slices.Equal(got, tc.want) {
 				t.Errorf("problems:\n  %s\nwant:\n  %s", strings.Join(got, "\n  "), strings.Join(tc.want, "\n  "))
+			}
+		})
+	}
+}
+
+// fxGoVersion is the fixture go.mod's go line, and fxGoRunning the
+// toolchain that runs the gate on it.
+const (
+	fxGoVersion = "1.27.3"
+	fxGoRunning = "go" + fxGoVersion
+)
+
+// govulncheck skips the standard library under a suffixed version, so the
+// gate runs only on go.mod's exact toolchain.
+func TestPinsRefusesAnyToolchainButGoMods(t *testing.T) {
+	for _, running := range []string{"go1.27.3-X:nodwarf5", "go1.27.4", "go1.27"} {
+		t.Run(running, func(t *testing.T) {
+			t.Chdir(docsTree(t, pinsFixture()))
+			err := pinsCheck(running)
+			want := "the gates run on " + running + " and go.mod pins go1.27.3; " +
+				"set GOTOOLCHAIN in the Makefile to go1.27.3"
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("pinsCheck(%q) = %v, want a problem %q", running, err, want)
 			}
 		})
 	}
