@@ -274,17 +274,18 @@ func TableDelete(id string) *gsheets.Request {
 	return &gsheets.Request{DeleteTable: &gsheets.DeleteTableRequest{TableID: id}}
 }
 
-// BandingAdd colors alternate rows of a rectangle.
-//
-// Rows, because that is what manage_range offers; the column form would
-// want one more argument on a tool that already takes many. BandingUpdate
-// does take the axis, because a column banding made elsewhere can be
-// recolored here and writing rowProperties onto one leaves it carrying
-// both sets, which the API rejects.
-func BandingAdd(sheetID int, rect a1.Rect, props *gsheets.BandingProperties) *gsheets.Request {
-	return &gsheets.Request{AddBanding: &gsheets.AddBandingRequest{
-		BandedRange: &gsheets.BandedRange{Range: rect.GridRange(sheetID), RowProperties: props},
-	}}
+// BandingAdd colors alternate rows of a rectangle, or alternate columns.
+// A banded range carries one set of properties: writing both makes the
+// API reject it, so the axis picks which field is set.
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/sheets#BandedRange
+func BandingAdd(sheetID int, rect a1.Rect, columns bool, props *gsheets.BandingProperties) *gsheets.Request {
+	b := &gsheets.BandedRange{Range: rect.GridRange(sheetID)}
+	if columns {
+		b.ColumnProperties = props
+	} else {
+		b.RowProperties = props
+	}
+	return &gsheets.Request{AddBanding: &gsheets.AddBandingRequest{BandedRange: b}}
 }
 
 // BandingUpdate re-colors an existing banding.

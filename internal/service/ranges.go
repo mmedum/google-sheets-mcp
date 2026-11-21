@@ -66,6 +66,8 @@ type RangeRequest struct {
 	ColumnTypes []string
 	// Header gives a banding a heading row in a darker shade.
 	Header bool
+	// ByColumns bands across columns rather than down rows, on add.
+	ByColumns bool
 	// Index names a conditional format rule, which is the only one of
 	// these the API identifies by position rather than by what it covers.
 	Index int
@@ -887,8 +889,12 @@ func bandingOp(req RangeRequest, action string, card *gsheets.Spreadsheet,
 		if err != nil {
 			return nil, nil, err
 		}
-		return plan.BandingAdd(props.SheetID, rect, shades),
-			[]render.Applied{{Kind: "banding added to", Value: a1.FormatRect(rect) + " in " + req.Color}}, nil
+		kind := "banding added to"
+		if req.ByColumns {
+			kind = "column banding added to"
+		}
+		return plan.BandingAdd(props.SheetID, rect, req.ByColumns, shades),
+			[]render.Applied{{Kind: kind, Value: a1.FormatRect(rect) + " in " + req.Color}}, nil
 	}
 	found, err := matchOne("banding", rect, rectsOf(sheet.BandedRanges, func(b *gsheets.BandedRange) *gsheets.GridRange { return b.Range }, props))
 	if err != nil {

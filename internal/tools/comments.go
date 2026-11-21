@@ -66,7 +66,8 @@ func registerComments(s *mcp.Server, d Deps) {
 			"notified too, as in the Sheets editor, and the result names each one. dry_run says what would be posted and " +
 			"who would be reached. Thread ids come from read_cell_comments. Deleting one is delete_cell_comment, which " +
 			"is off by default and needs confirm.",
-		Kind: Notifying,
+		Kind:    Notifying,
+		Actions: commentActions,
 		Handle: func(ctx context.Context, in ManageCommentInput) (*service.ManageCommentResult, error) {
 			return d.Service.ManageComment(ctx, service.ManageCommentRequest{
 				Spreadsheet: in.Spreadsheet, Action: in.Action, Sheet: in.Sheet, Cell: in.Cell,
@@ -89,4 +90,13 @@ func registerComments(s *mcp.Server, d Deps) {
 			})
 		},
 	})
+}
+
+// commentActions is what each manage_cell_comment action reads.
+var commentActions = &ActionArgs{
+	Shared: []string{"spreadsheet"},
+	Reads: map[string][]string{
+		"add": {"sheet", "cell", "text", "assignee"}, "reply": {"comment_id", "text", "assignee"},
+		"edit": {"comment_id", "post_id", "text"}, "resolve": {"comment_id", "text"}, "reopen": {"comment_id", "text"},
+	},
 }

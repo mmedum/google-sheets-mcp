@@ -75,7 +75,8 @@ type ManageRangeInput struct {
 	TextColor string   `json:"text_color,omitempty" jsonschema:"for conditional_format: the text color the rule applies"`
 	Bold      *bool    `json:"bold,omitempty" jsonschema:"for conditional_format: whether the rule makes the text bold"`
 	Gradient  []string `json:"gradient,omitempty" jsonschema:"for conditional_format: a color scale instead of a condition. Two or three points, lowest first, each \"<min|max|number|percent|percentile> [value] #hex\", such as [\"min #ffffff\", \"percentile 50 #ffd666\", \"max #57bb8a\"]. min and max take no value and may also be the middle point; min is never last, nor max first. A number is written the way the spreadsheet's locale writes it: 1,5 under de_DE, where Google refuses 1.5. Not with condition, values, color, text_color or bold"`
-	Header    bool     `json:"header,omitempty" jsonschema:"for banding: give the first row a darker shade of the color"`
+	Header    bool     `json:"header,omitempty" jsonschema:"for banding: give the first row, or the first column with by_columns, a darker shade of the color"`
+	ByColumns bool     `json:"by_columns,omitempty" jsonschema:"for banding, on add: alternate the shade across columns rather than down rows"`
 	Index     int      `json:"index,omitempty" jsonschema:"for conditional_format: which rule, counted from zero in the order they are evaluated. read_formatting lists the rules with their indexes. On add it is where the new rule goes, so 0 makes it the first to be tried"`
 
 	Overwrite bool `json:"overwrite,omitempty" jsonschema:"allow deleting a table that takes conditional format rules with it. Deleting a table removes every rule over its range, and nothing in Sheets brings them back"`
@@ -171,7 +172,8 @@ func registerFormat(s *mcp.Server, d Deps) {
 			"read_formatting reports. " +
 			"A protected range is the real guarantee this server can offer against a concurrent edit; a checkpoint is " +
 			"only best effort.",
-		Kind: Write,
+		Kind:    Write,
+		Actions: rangeActions,
 		Handle: func(ctx context.Context, in ManageRangeInput) (*service.RangeResult, error) {
 			return d.Service.ManageRange(ctx, service.RangeRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range,
@@ -179,7 +181,8 @@ func registerFormat(s *mcp.Server, d Deps) {
 				Name: in.Name, ColumnTypes: in.ColumnTypes, Description: in.Description, WarningOnly: in.WarningOnly,
 				Condition: in.Condition, Values: in.Values, Strict: in.Strict, Message: in.Message,
 				Color: in.Color, TextColor: in.TextColor, Bold: in.Bold, Gradient: in.Gradient, Header: in.Header,
-				Index: in.Index, Overwrite: in.Overwrite, DryRun: in.DryRun,
+				ByColumns: in.ByColumns,
+				Index:     in.Index, Overwrite: in.Overwrite, DryRun: in.DryRun,
 			})
 		},
 	})
@@ -194,7 +197,8 @@ func registerFormat(s *mcp.Server, d Deps) {
 			"which the refusal gives. remove_duplicates deletes rows. " +
 			"sort, randomize, remove_duplicates and cut_paste all move rows, so an address or a checkpoint from before " +
 			"the call no longer points where it did, and the result says so.",
-		Kind: Write,
+		Kind:    Write,
+		Actions: transformActions,
 		Handle: func(ctx context.Context, in TransformRangeInput) (*service.TransformResult, error) {
 			return d.Service.Transform(ctx, service.TransformRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range, Action: in.Action,
@@ -209,4 +213,40 @@ func registerFormat(s *mcp.Server, d Deps) {
 			})
 		},
 	})
+}
+
+// rangeActions is what each manage_range action reads.
+var rangeActions = &ActionArgs{
+	By:     []string{"kind", "action"},
+	Shared: []string{"spreadsheet", "sheet", "range"},
+	Reads: map[string][]string{
+		"named_range/add": {"name"}, "named_range/update": {"name"}, "named_range/delete": {"name"},
+		"protected_range/add": {"description", "warning_only"}, "protected_range/update": {"description", "warning_only"},
+		"protected_range/delete": {},
+		"data_validation/add":    {"condition", "values", "strict", "message"},
+		"data_validation/update": {"condition", "values", "strict", "message"},
+		"data_validation/delete": {},
+		"table/add":              {"name", "column_types"}, "table/update": {"name", "column_types"},
+		"table/delete": {"overwrite"},
+		"banding/add":  {"color", "header", "by_columns"}, "banding/update": {"color", "header"},
+		"banding/delete":            {},
+		"conditional_format/add":    {"condition", "values", "color", "text_color", "bold", "gradient", "index"},
+		"conditional_format/update": {"condition", "values", "color", "text_color", "bold", "gradient", "index"},
+		"conditional_format/delete": {"index"},
+	},
+}
+
+// transformActions is what each transform_range action reads.
+var transformActions = &ActionArgs{
+	// overwrite and its witness are shared: each action that reads cells
+	// first takes them, and the service refuses a checkpoint from one that
+	// reads nothing, naming why.
+	Shared: []string{"spreadsheet", "sheet", "range", "overwrite", "overwrite_formulas", "expect_checkpoint"},
+	Reads: map[string][]string{
+		"sort":            {"sort_by"},
+		"find_replace":    {"find", "replace", "match_case", "match_entire_cell", "regex", "in_formulas"},
+		"trim_whitespace": {}, "remove_duplicates": {"columns"}, "text_to_columns": {"delimiter"},
+		"randomize": {}, "auto_fill": {"fill_rows", "fill_length"},
+		"copy_paste": {"destination", "paste", "transpose"}, "cut_paste": {"destination", "paste"},
+	},
 }

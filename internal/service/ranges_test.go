@@ -1368,3 +1368,23 @@ func TestTableColumnTypeRefusals(t *testing.T) {
 		})
 	}
 }
+
+// Banding across columns sets the column properties, and only those: a
+// banded range carrying both is one the API rejects.
+func TestBandingAcrossColumns(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	svc := newService(t, srv)
+	req := rangeReq(service.RangeBanding, service.RangeAdd, "A1:B3")
+	req.Color, req.ByColumns = "#d9e2f3", true
+	res, err := svc.ManageRange(context.Background(), req)
+	if err != nil {
+		t.Fatalf("adding a column banding: %v", err)
+	}
+	if !strings.Contains(res.Render(), "column banding added to — A1:B3 in #d9e2f3") {
+		t.Errorf("the result does not say the banding runs across columns:\n%s", res.Render())
+	}
+	b := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Bandings
+	if len(b) != 1 || b[0].ColumnProperties == nil || b[0].RowProperties != nil {
+		t.Fatalf("bandings = %+v, want one with column properties alone", b)
+	}
+}

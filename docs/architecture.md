@@ -427,7 +427,7 @@ CHANGELOG to the code. Releasing is in [release.md](release.md).
 | D-31 | A write says what changed, read back from Google rather than restated from the request | accepted | TestDiffReportsWhatGoogleStored, TestOpsCarryTheCountsTheAPIReported, TestTailLeftIsReported, TestSourceAddReportsTheRefreshRatherThanClaimingItArrived, TestOpsDoneAndPreviewDescribeTheSameChange |
 | D-32 | One tool call is one API request, and ops compile to one atomic batch | accepted | TestFormatCellsSendsOneBatch, TestFindIsOneRequestForEverySheet, TestAnchorListIsOneRequest, TestBatchUpdateAppliesNothingWhenOneRequestFails |
 | D-33 | Formatting and transforms guard what they destroy, and read only when an op can destroy | accepted | TestMergingOverValuesIsRefused, TestClearingFormatIsRefusedOverFormattedCells, TestReplacingANoteIsRefused, TestCopyPasteGuardsItsDestination, TestTextToColumnsGuardsWhatIsToTheRight, TestReplacingInsideFormulasNeedsAcknowledging, TestAutoFillGuardsWhereItWouldLand, TestDeletingATableThatTakesRulesIsRefused |
-| D-34 | Every tool registers through one function, and its Kind decides annotations, registration and rendering | accepted | TestAnnotationsFollowTheKind, TestAHintOnTheWrongKindPanics, TestFullSurfaceRegistersEverything, TestRegistrationGatesAreServerSide |
+| D-34 | Every tool registers through one function, and its Kind decides annotations, registration and rendering | accepted | TestAnnotationsFollowTheKind, TestAHintOnTheWrongKindPanics, TestFullSurfaceRegistersEverything, TestRegistrationGatesAreServerSide, TestAnActionTableIsHeldToItsInput, TestAnArgumentTheActionDoesNotReadIsRefused, TestEveryLiveStepPassesItsActionsArguments |
 | D-35 | A tool that removes what cannot be read back is unregistered unless enabled, and needs `confirm` | accepted | TestDeleteIsOffUnlessDestructiveIsOn, TestSourceDeleteIsOffWithoutTheDestructiveFlag, TestClearNeedsConfirmAndSaysWhatIsThere, TestDeleteCommentNeedsConfirm, TestDeleteCountsThenNeedsConfirm, staleness |
 | D-36 | A risky variant is its own tool, never an argument | accepted | TestDeleteIsNotAManageAction, TestManageDataSourceDoesNotConnect, TestSourceRefreshNeedsAnID, TestAppendOnlyInserts |
 | D-37 | Per-call approval is the client's, and the server asks the person nothing | accepted | TestRemovedRequirePrompt, TestLogsCarryNothingFromTheSpreadsheet, review |
@@ -1334,6 +1334,13 @@ and Notifying for a comment that emails a person.
 Registration gates the tool, and the service gates the act. `confirm`
 lives in the service, where the caller can be told why, which keeps
 `Kind` from becoming a matrix.
+
+A tool that takes an action argument names, in its `Def`, the arguments
+each action reads. Registration refuses a table that names an argument
+the input lacks or leaves one read by no action, and a call that passes
+an argument its action does not read is refused with `[invalid]`, naming
+it, rather than the argument dropped without a word. Every live step is
+held to its action's list, so a call that worked is not refused.
 
 Rejected: the rules kept by hand at each call site.
 Cost: `Kind` grows an axis the first time a tool touches a second world.

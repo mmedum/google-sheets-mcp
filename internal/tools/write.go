@@ -186,7 +186,8 @@ func registerWrite(s *mcp.Server, d Deps) {
 			"columns and says what is on them first; it is registered only when deletes are allowed. freeze pins rows at the top and columns at the left, and " +
 			"zero unfreezes. copy_to copies into another spreadsheet; duplicate copies inside this one. " +
 			"The result lists the sheets afterwards, so the next call can name one exactly.",
-		Kind: IdempotentWrite,
+		Kind:    IdempotentWrite,
+		Actions: sheetActions,
 		Handle: func(ctx context.Context, in SheetInput) (*service.SheetResult, error) {
 			return d.Service.ManageSheet(ctx, service.SheetRequest{
 				Spreadsheet: in.Spreadsheet, Action: in.Action, Sheet: in.Sheet, Title: in.Title,
@@ -205,7 +206,8 @@ func registerWrite(s *mcp.Server, d Deps) {
 			"before the call no longer points where it did; move's to is where the band ends up. " +
 			"auto_resize sizes columns to their contents, which is the one people usually want after a write. " +
 			"Removing rows or columns is delete_dimensions, which is a separate tool because it cannot be undone.",
-		Kind: Write,
+		Kind:    Write,
+		Actions: dimensionActions,
 		Handle: func(ctx context.Context, in DimensionInput) (*service.DimensionResult, error) {
 			return d.Service.EditDimensions(ctx, service.DimensionRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Action: in.Action,
@@ -263,4 +265,24 @@ func registerWrite(s *mcp.Server, d Deps) {
 			})
 		},
 	})
+}
+
+// sheetActions is what each manage_sheet action reads.
+var sheetActions = &ActionArgs{
+	Shared: []string{"spreadsheet"},
+	Reads: map[string][]string{
+		"add": {"title", "index", "rows", "cols"}, "rename": {"sheet", "title"},
+		"duplicate": {"sheet", "title", "index"}, "copy_to": {"sheet", "destination"},
+		"hide": {"sheet"}, "unhide": {"sheet"}, "reorder": {"sheet", "index"},
+		"resize": {"sheet", "rows", "cols"}, "freeze": {"sheet", "rows", "cols"}, "tab_color": {"sheet", "color"},
+	},
+}
+
+// dimensionActions is what each edit_dimensions action reads.
+var dimensionActions = &ActionArgs{
+	Shared: []string{"spreadsheet", "sheet", "dimension", "band"},
+	Reads: map[string][]string{
+		"insert": {"inherit"}, "move": {"to"}, "resize": {"pixels"}, "auto_resize": {},
+		"group": {}, "ungroup": {}, "hide": {}, "unhide": {},
+	},
 }
