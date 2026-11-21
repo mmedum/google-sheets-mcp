@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
 )
 
 // The write steps. Every one of them changes the scratch spreadsheet the
@@ -310,7 +310,7 @@ func (d *driver) writeSteps() []step {
 					return fmt.Errorf("the preview does not describe the target: %s", text)
 				}
 				if ck, _ := s["checkpoint"].(string); !strings.Contains(text, "Its checkpoint is "+ck+
-					", which overwrite needs as expect_checkpoint") {
+					", which overwrite needs passed back") {
 					return fmt.Errorf("the preview does not give the checkpoint overwrite needs: %s", text)
 				}
 				return nil
@@ -323,7 +323,7 @@ func (d *driver) writeSteps() []step {
 			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1", "values": [][]any{{"Vandel"}}, "overwrite": true},
 			expectError: "invalid",
 			check: func(text string, _ map[string]any) error {
-				if !strings.Contains(text, "overwrite needs expect_checkpoint") || !strings.Contains(text, "!A1 reads ck_") {
+				if !strings.Contains(text, "overwrite needs checkpoint") || !strings.Contains(text, "!A1 reads ck_") {
 					return fmt.Errorf("the refusal does not hand over the checkpoint: %s", text)
 				}
 				return nil
@@ -335,7 +335,7 @@ func (d *driver) writeSteps() []step {
 			tool: "write_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1",
-				"values": [][]any{{"Vandel"}}, "overwrite": true, "expect_checkpoint": fromDryRun,
+				"values": [][]any{{"Vandel"}}, "overwrite": true, "checkpoint": fromDryRun,
 			},
 		},
 		{
@@ -391,7 +391,7 @@ func (d *driver) writeSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "D1",
 				"values": [][]any{{float64(3)}}, "overwrite": true, "overwrite_formulas": true,
-				"expect_checkpoint": fromDryRun,
+				"checkpoint": fromDryRun,
 			},
 		},
 		{
@@ -466,7 +466,7 @@ func (d *driver) afterExternalSteps() []step {
 			tool: "write_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A20:C22",
-				"values": [][]any{{"Trennow"}}, "overwrite": true, "expect_checkpoint": fromDryRun,
+				"values": [][]any{{"Trennow"}}, "overwrite": true, "checkpoint": fromDryRun,
 			},
 			check: func(text string, s map[string]any) error {
 				tail, _ := s["tail_left"].(string)
@@ -518,7 +518,7 @@ func (d *driver) checkpointSteps() {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:C1",
 				"values":    [][]any{{"Nardle", "Grivet", "Oblisk"}},
-				"overwrite": true, "overwrite_formulas": true, "expect_checkpoint": d.checkpoint,
+				"overwrite": true, "overwrite_formulas": true, "checkpoint": d.checkpoint,
 			},
 		},
 		step{
@@ -528,7 +528,7 @@ func (d *driver) checkpointSteps() {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:C1",
 				"values":    [][]any{{"Yalmic", "Bractal", "Umberly"}},
-				"overwrite": true, "overwrite_formulas": true, "expect_checkpoint": d.checkpoint,
+				"overwrite": true, "overwrite_formulas": true, "checkpoint": d.checkpoint,
 			},
 			expectError: "conflict",
 		},
@@ -670,7 +670,7 @@ func (d *driver) dimensionSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A2:A3",
 				"values": [][]any{{"MovedFirst"}, {"MovedSecond"}}, "overwrite": true, "overwrite_formulas": true,
-				"expect_checkpoint": fromDryRun,
+				"checkpoint": fromDryRun,
 			},
 		},
 		{
@@ -821,7 +821,7 @@ func (d *driver) deleteDimensionSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A30:B31",
 				"values": [][]any{{"Yalmic", "=2+2"}, {"Bractal", float64(9)}}, "overwrite": true,
-				"expect_checkpoint": fromDryRun,
+				"checkpoint": fromDryRun,
 			},
 		},
 		{
@@ -882,7 +882,7 @@ func (d *driver) clearSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A40:B41",
 				"values": [][]any{{"Quorbin", "=1+1"}, {"Skerry", float64(2)}}, "overwrite": true,
-				"expect_checkpoint": fromDryRun,
+				"checkpoint": fromDryRun,
 			},
 		},
 		{

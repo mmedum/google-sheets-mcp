@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
 )
 
 // The fake's cell comments, written from what Google answers when the

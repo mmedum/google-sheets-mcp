@@ -12,6 +12,9 @@ and this project follows [semantic versioning](https://semver.org).
 
 ### Changed
 
+- **Breaking:** the module path is `github.com/mmedum/google-sheets-mcp/v5`. Install with `go install github.com/mmedum/google-sheets-mcp/v5/cmd/google-sheets-mcp@latest`.
+- **Breaking:** `write_values` and `transform_range` take `checkpoint`, the name reads return it under, not `expect_checkpoint`. Rename the argument in saved prompts and calls.
+- An argument the schema refuses, of the wrong type, unknown or missing, is refused with `[invalid]` rather than in the SDK's unclassed words.
 - The `manage_*` tools refuse an argument the call's action does not read, with `[invalid]` naming it, where they dropped it silently.
 - `read_range` fetches no more rows than its character budget can show, and a cut-short read names a narrower range that reads more rows a call.
 - A `dry_run` that would be refused previews and names the refusal in every write tool; several answered with the refusal alone.

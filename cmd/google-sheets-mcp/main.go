@@ -31,16 +31,16 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/auth"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/credentials"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/redact"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/server"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/tools"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/userconfig"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/version"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/credentials"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/redact"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/server"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/tools"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/userconfig"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/version"
 )
 
 // below takes them as io.Writer, so nothing else can reach stdout.

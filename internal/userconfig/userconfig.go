@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
 )
 
 // AppDir is the directory name under the user's config directory.

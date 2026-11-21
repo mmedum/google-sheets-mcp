@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/service"
 )
 
 // classGate holds the error vocabulary closed, from both sides.

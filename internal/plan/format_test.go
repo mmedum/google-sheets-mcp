@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/plan"
 )
 
 var rect = a1.Rect{FirstRow: 1, FirstCol: 1, LastRow: 3, LastCol: 2}

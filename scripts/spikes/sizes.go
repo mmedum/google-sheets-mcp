@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
 )
 
 // askSizeLimits asks what a write past the size limits answers: what

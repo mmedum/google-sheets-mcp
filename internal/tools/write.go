@@ -5,7 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/service"
 )
 
 // CreateInput is what create_spreadsheet takes.
@@ -35,10 +35,10 @@ type WriteInput struct {
 	TSV         string  `json:"tsv,omitempty" jsonschema:"the same values as tab-separated text, one row per line. Give this or values, not both"`
 	Input       string  `json:"input,omitempty" jsonschema:"typed (default) parses as a person typing: 007 becomes 7, 1-2 becomes a date, =A1+1 becomes a formula. literal stores exactly what you send, which is what a product code or a leading-zero identifier needs. Every value Google changes is named in the result"`
 
-	Overwrite         bool `json:"overwrite,omitempty" jsonschema:"allow the write over cells that are not empty, carrying the person's decision to replace them. Without it a write into occupied cells is refused with their addresses. Needs expect_checkpoint"`
+	Overwrite         bool `json:"overwrite,omitempty" jsonschema:"allow the write over cells that are not empty, carrying the person's decision to replace them. Without it a write into occupied cells is refused with their addresses. Needs checkpoint"`
 	OverwriteFormulas bool `json:"overwrite_formulas,omitempty" jsonschema:"allow the write over cells holding formulas, which a value write replaces with plain values. Needs overwrite as well: a formula and its result look identical in a read, so this one is asked for separately"`
 
-	ExpectCheckpoint string `json:"expect_checkpoint,omitempty" jsonschema:"the checkpoint of the cells the write covers, as a refusal, a dry run or a read_range of that same rectangle gives it; the write is refused if they changed since. Required with overwrite. Best effort — Sheets has no atomic guard — so a protected range is the real one"`
+	ExpectCheckpoint string `json:"checkpoint,omitempty" jsonschema:"the checkpoint of the cells the write covers, as a refusal, a dry run or a read_range of that same rectangle gives it; the write is refused if they changed since. Required with overwrite. Best effort — Sheets has no atomic guard — so a protected range is the real one"`
 	DryRun           bool   `json:"dry_run,omitempty" jsonschema:"report what the write would find and change, and send nothing"`
 }
 
@@ -142,7 +142,7 @@ func registerWrite(s *mcp.Server, d Deps) {
 			"A formula into a table's header row is refused outright: Google replaces it with a column name of its own. " +
 			"Each refusal names the cells and the argument that would allow it. Sheets has no undo, so this is the only " +
 			"guard there is. overwrite carries the person's decision to replace what is there, not a way past a " +
-			"refusal, and it needs expect_checkpoint, which the refusal gives. " +
+			"refusal, and it needs checkpoint, which the refusal gives. " +
 			"A formula that fetches a URL, or IMPORTRANGE, is refused unless the person running the server allows them. " +
 			"After writing it asks Google for the stored values back and names every one it changed: with input=typed, " +
 			"007 becomes 7 and 2026-09-05 becomes a date serial that still displays as a date. " +

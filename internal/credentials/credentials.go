@@ -23,7 +23,7 @@ import (
 
 	"github.com/zalando/go-keyring"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
 )
 
 // ServiceName is the keyring service identifier.

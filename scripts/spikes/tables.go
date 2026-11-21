@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
 )
 
 // askTypedColumns asks what the reference leaves open about a table's

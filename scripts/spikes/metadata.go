@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
 )
 
 // askDurableAnchor asks whether developer metadata is a durable anchor.

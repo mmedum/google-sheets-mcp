@@ -20,8 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/server"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/server"
 )
 
 // The Claude Desktop bundle. A `.mcpb` is a zip carrying a manifest, the

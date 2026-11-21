@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/render"
 )
 
 // maxBlocks is how many formatting blocks a read lists before it starts

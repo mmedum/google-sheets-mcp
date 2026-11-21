@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
 )
 
 // The formatting half of the renderer: how a cell's format is put into
@@ -371,7 +371,7 @@ func OpsPreview(o Ops) string {
 	opLines(&b, o.Applied)
 	b.WriteString(WouldRefuse(o.Blockers))
 	if o.Checkpoint != "" {
-		fmt.Fprintf(&b, "\n%s reads %s now, which overwrite needs as expect_checkpoint.\n", o.Read, o.Checkpoint)
+		fmt.Fprintf(&b, "\n%s reads %s now, which overwrite needs passed back.\n", o.Read, o.Checkpoint)
 	}
 	opNotes(&b, o, "would move")
 	return b.String()

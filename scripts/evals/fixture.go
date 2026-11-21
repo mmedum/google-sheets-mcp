@@ -130,7 +130,7 @@ func build(ctx context.Context, bin string) (Fixture, func(), error) {
 		return Fixture{}, nil, err
 	}
 	delete(errorWrite, "dry_run")
-	errorWrite["expect_checkpoint"] = dry["checkpoint"]
+	errorWrite["checkpoint"] = dry["checkpoint"]
 	if _, err := call("write_values", errorWrite); err != nil {
 		closeSession()
 		return Fixture{}, nil, err

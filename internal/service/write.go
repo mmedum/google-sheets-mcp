@@ -7,12 +7,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/render"
 )
 
 // Input options as the caller spells them. The server never substitutes
@@ -70,7 +70,7 @@ type WriteResult struct {
 	Sheet       string `json:"sheet"`
 	Range       string `json:"range" jsonschema:"the range actually written, in A1 with the sheet quoted"`
 	Cells       int    `json:"cells" jsonschema:"how many cells the write covered"`
-	Checkpoint  string `json:"checkpoint,omitempty" jsonschema:"after a write, a checkpoint over what was just written, to hand to a later write; after a dry run, over what the target holds now, which overwrite needs as expect_checkpoint"`
+	Checkpoint  string `json:"checkpoint,omitempty" jsonschema:"after a write, a checkpoint over what was just written, to hand to a later write; after a dry run, over what the target holds now, which overwrite needs passed back"`
 	// Coerced, Formulas and Lost are the three things a caller cannot see
 	// from the values they sent.
 	Coerced  []Coercion `json:"coerced,omitempty" jsonschema:"cells Google stored differently from how they were sent"`
@@ -438,7 +438,7 @@ type witness struct {
 //
 // overwrite and overwrite_formulas replace whatever the cells hold when
 // the write lands, which after a refusal may be a collaborator's edit
-// nobody read. expect_checkpoint binds them to what was read, and the
+// nobody read. checkpoint binds them to what was read, and the
 // refusal hands over the checkpoint this call read, so no second read
 // is needed.
 func (w witness) holds(ack plan.Ack, expect string) error {
@@ -454,7 +454,7 @@ func (w witness) missing(ack plan.Ack, expect string) string {
 	if (!ack.Overwrite && !ack.OverwriteFormulas) || expect != "" {
 		return ""
 	}
-	return fmt.Sprintf("overwrite needs expect_checkpoint, so that what it replaces is what was read: %s reads %s "+
+	return fmt.Sprintf("overwrite needs checkpoint, so that what it replaces is what was read: %s reads %s "+
 		"now. Pass that, and a change there before the write is refused", w.where, w.checkpoint)
 }
 
@@ -489,7 +489,7 @@ func refuseWitnessed(r plan.Report, ack plan.Ack, w witness) error {
 	}
 	msg := strings.Join(lines, ". ")
 	if allowable && w.checkpoint != "" {
-		msg += fmt.Sprintf(". Pass expect_checkpoint %s with it: that is %s as this call read it, and a change there "+
+		msg += fmt.Sprintf(". Pass checkpoint %s with it: that is %s as this call read it, and a change there "+
 			"before the write is refused", w.checkpoint, w.where)
 	}
 	if allowable {
@@ -510,7 +510,7 @@ func checkpointMatches(expect, id string, g *grid.Grid, rect a1.Rect) error {
 		return nil
 	}
 	if !grid.IsCheckpoint(expect) {
-		return Errorf("invalid", "expect_checkpoint %q is not a checkpoint; read_range returns one, and it looks like ck_ followed by twelve hex digits", expect)
+		return Errorf("invalid", "the checkpoint argument %q is not one a read gives; read_range returns one, and it looks like ck_ followed by twelve hex digits", expect)
 	}
 	if got := grid.Checkpoint(id, g); got != expect {
 		return Errorf("conflict",

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/mmedum/google-sheets-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mmedum/google-sheets-mcp/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/mmedum/google-sheets-mcp?sort=semver)](https://github.com/mmedum/google-sheets-mcp/releases/latest)
-[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/google-sheets-mcp/v4.svg)](https://pkg.go.dev/github.com/mmedum/google-sheets-mcp/v4)
+[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/google-sheets-mcp/v5.svg)](https://pkg.go.dev/github.com/mmedum/google-sheets-mcp/v5)
 [![License: Apache 2.0](https://img.shields.io/github/license/mmedum/google-sheets-mcp)](./LICENSE)
 
 Google Sheets as MCP tools. Read and write ranges without destroying the
@@ -131,7 +131,7 @@ Drive listing, and no subscriptions, since the Sheets API has no push.
 ## Install
 
 ```bash
-go install github.com/mmedum/google-sheets-mcp/v4/cmd/google-sheets-mcp@latest
+go install github.com/mmedum/google-sheets-mcp/v5/cmd/google-sheets-mcp@latest
 ```
 
 Or take an archive for Linux, macOS or Windows, on amd64 or arm64, from
@@ -287,7 +287,7 @@ settings register, so leave `GSHEETS_ENABLE_DESTRUCTIVE` and
 **A write never destroys what it cannot see.** Overwriting anything
 non-empty needs `overwrite`, and a formula needs `overwrite_formulas` as
 well, because a formula and its result look identical in a read. Each
-refusal names the cells. An overwrite also needs `expect_checkpoint`,
+refusal names the cells. An overwrite also needs `checkpoint`,
 which the refusal and a dry run give, so a collaborator's edit after
 that read makes the write a `[conflict]` rather than something replaced
 unseen. The guard also covers what Google removes without saying so:

@@ -8,7 +8,7 @@ VERSION   ?= dev
 # The range schema-ack measures on a local run; CI passes its own.
 PR_BASE_REF ?= origin/main
 PR_HEAD   ?= HEAD
-PKG        = github.com/mmedum/google-sheets-mcp/v4
+PKG        = github.com/mmedum/google-sheets-mcp/v5
 LDFLAGS    = -s -w -X $(PKG)/internal/version.Version=$(VERSION)
 COVER_MIN ?= 80
 # go.mod's exact toolchain, the one CI and a release build with. A

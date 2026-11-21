@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/render"
 )
 
 // MaxResourceChars is what one resource hands back.

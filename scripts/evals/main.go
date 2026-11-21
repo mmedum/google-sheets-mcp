@@ -34,7 +34,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
 )
 
 // scratchTitle is the prefix every spreadsheet this makes carries, so

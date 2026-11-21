@@ -13,13 +13,13 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/server"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/tools"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/server"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/tools"
 )
 
 func newServer(t *testing.T, cfg config.Config, log *slog.Logger) (*mcp.Server, *sheetstest.Server) {
@@ -516,5 +516,33 @@ func TestDumpSchemasListsEverythingAClientIsTold(t *testing.T) {
 	}
 	if dump.Instructions != "Read before writing." {
 		t.Errorf("instructions = %q, want the server's", dump.Instructions)
+	}
+}
+
+// The SDK checks arguments against the schema before any handler runs,
+// and answers in its own words; the error vocabulary holds there too, so
+// a caller reads a wrongly typed argument as [invalid] like any other.
+func TestASchemaRefusalCarriesAClass(t *testing.T) {
+	s, _ := newServer(t, config.Config{}, nil)
+	cs := connect(t, s)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "read_range", Arguments: map[string]any{"spreadsheet": 3, "sheet": sheetstest.FirstSheet},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	if !res.IsError || !strings.HasPrefix(text, "[invalid] validating") {
+		t.Errorf("a wrongly typed argument answered %q", text)
+	}
+	// And a handler's own refusal keeps its class, not a second one.
+	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "read_range", Arguments: map[string]any{"spreadsheet": sheetstest.FixtureID, "sheet": "Nowhere"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := res.Content[0].(*mcp.TextContent).Text; strings.HasPrefix(text, "[invalid] [") {
+		t.Errorf("a classed refusal was classed again: %q", text)
 	}
 }

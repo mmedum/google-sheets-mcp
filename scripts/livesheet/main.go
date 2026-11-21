@@ -42,12 +42,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/auth"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/credentials"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/livecover"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/userconfig"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/credentials"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/livecover"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/userconfig"
 )
 
 func main() {
@@ -270,7 +270,7 @@ type step struct {
 	check func(text string, structured map[string]any) error
 }
 
-// fromDryRun stands for expect_checkpoint in a step's arguments. run
+// fromDryRun stands for checkpoint in a step's arguments. run
 // replaces it with the checkpoint a dry run of the same call gives, which
 // is what a caller passing overwrite carries. The option is still
 // written in the step, where the coverage gate reads it.
@@ -435,11 +435,11 @@ func (d *driver) run(steps ...step) {
 // overwrite gets the witness it needs. Arguments without it come back
 // as they are.
 func (d *driver) witnessed(tool string, args map[string]any) (map[string]any, error) {
-	if args["expect_checkpoint"] != fromDryRun {
+	if args["checkpoint"] != fromDryRun {
 		return args, nil
 	}
 	dry := maps.Clone(args)
-	delete(dry, "expect_checkpoint")
+	delete(dry, "checkpoint")
 	dry["dry_run"] = true
 	_, structured, err := d.call(tool, dry)
 	if err != nil {
@@ -449,9 +449,9 @@ func (d *driver) witnessed(tool string, args map[string]any) (map[string]any, er
 	if !strings.HasPrefix(ck, "ck_") {
 		return nil, fmt.Errorf("the dry run gave no checkpoint")
 	}
-	line("     expect_checkpoint %s, from a dry run of the same call", ck)
+	line("     checkpoint %s, from a dry run of the same call", ck)
 	out := maps.Clone(args)
-	out["expect_checkpoint"] = ck
+	out["checkpoint"] = ck
 	return out, nil
 }
 

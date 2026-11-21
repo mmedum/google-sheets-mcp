@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
 )
 
 // askPivotMergeClear asks what a merge and a clear do to a pivot table.

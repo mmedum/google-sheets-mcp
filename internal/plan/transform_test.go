@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/plan"
 )
 
 // A sort key is written as a column letter and reaches the API as the

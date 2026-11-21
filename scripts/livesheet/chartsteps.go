@@ -606,7 +606,7 @@ func (d *driver) pivotSteps() []step {
 			tool: "write_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "I3",
-				"values": [][]any{{"over the pivot"}}, "overwrite": true, "expect_checkpoint": fromDryRun,
+				"values": [][]any{{"over the pivot"}}, "overwrite": true, "checkpoint": fromDryRun,
 			},
 		},
 		{

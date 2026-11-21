@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
 )
 
 // The words for a structural change, in one place.

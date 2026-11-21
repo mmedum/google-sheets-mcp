@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/plan"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/plan"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/render"
 )
 
 // What transform_range does.
@@ -88,7 +88,7 @@ type TransformResult struct {
 	Applied     []string `json:"applied,omitempty"`
 	// Checkpoint is over the cells the guard read, on a dry run: what an
 	// overwrite of them needs as its witness.
-	Checkpoint string `json:"checkpoint,omitempty" jsonschema:"on a dry run, the checkpoint of the cells the action reads before it writes (where a copy or fill lands, where a split spills, or the formulas a replacement rewrites), which overwrite needs as expect_checkpoint"`
+	Checkpoint string `json:"checkpoint,omitempty" jsonschema:"on a dry run, the checkpoint of the cells the action reads before it writes (where a copy or fill lands, where a split spills, or the formulas a replacement rewrites), which overwrite needs passed back"`
 	DryRun     bool   `json:"dry_run,omitempty"`
 }
 
@@ -157,7 +157,7 @@ func (s *Service) Transform(ctx context.Context, req TransformRequest) (*Transfo
 		}
 	case req.ExpectCheckpoint != "":
 		return nil, Errorf("invalid", "%s reads no cells before it writes, so there is no checkpoint to compare; "+
-			"leave expect_checkpoint out", req.Action)
+			"leave checkpoint out", req.Action)
 	}
 	view := render.Ops{
 		Range: res.Range, Applied: []render.Applied{t.applied},

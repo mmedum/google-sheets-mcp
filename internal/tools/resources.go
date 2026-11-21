@@ -9,7 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/service"
 )
 
 // Scheme is this server's resource scheme.

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
 )
 
 // A permission rule names a registered tool, and every delete has one.

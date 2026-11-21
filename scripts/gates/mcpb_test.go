@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
 )
 
 // Break the manifest every way it breaks and watch each be refused
@@ -368,9 +368,9 @@ func TestManifestProblemsRunsEveryCheck(t *testing.T) {
 			want: "the manifest has server.mcp_config.env.GSHEETS_PROFILE more than once"},
 		// The install hint is held to go.mod, which moves at every major
 		// version.
-		{name: "a go.mod at another major version", file: "go.mod", old: "/v4", new: "/v3",
-			want: `the launcher says "go install github.com/mmedum/google-sheets-mcp/v4/cmd/google-sheets-mcp@latest", ` +
-				`and go.mod's module gives "go install github.com/mmedum/google-sheets-mcp/v3/cmd/google-sheets-mcp@latest"`},
+		{name: "a go.mod at another major version", file: "go.mod", old: "/v5", new: "/v4",
+			want: `the launcher says "go install github.com/mmedum/google-sheets-mcp/v5/cmd/google-sheets-mcp@latest", ` +
+				`and go.mod's module gives "go install github.com/mmedum/google-sheets-mcp/v4/cmd/google-sheets-mcp@latest"`},
 		{name: "no README to pack", file: "README.md", gone: true, want: "README.md is packed as README.md and cannot be read"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

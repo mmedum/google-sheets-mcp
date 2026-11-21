@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/livecover"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/livecover"
 )
 
 // The live driver covers every tool and every option (D-61). A guarantee

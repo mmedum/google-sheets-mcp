@@ -15,8 +15,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/auth"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
 )
 
 // The README's tool table.
