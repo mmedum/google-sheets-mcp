@@ -32,9 +32,11 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -296,9 +298,13 @@ func (c *Client) do(ctx context.Context, r request) ([]byte, error) {
 	// context error for a write already sent once would hide that its
 	// outcome is unknown, and an unrepeatable write whose outcome nobody
 	// can know says so.
+	//
+	// Only an attempt that may have landed makes the write ambiguous: a
+	// 429 is a refusal to begin, which is why a POST retries on it.
 	var lastErr error
+	var landed bool
 	finish := func(err error) error {
-		if r.writes() && !r.repeatable() && lastErr != nil {
+		if r.writes() && !r.repeatable() && landed {
 			return markAmbiguous(r.op, lastErr)
 		}
 		return err
@@ -317,6 +323,7 @@ func (c *Client) do(ctx context.Context, r request) ([]byte, error) {
 			return res.body, nil
 		}
 		lastErr = err
+		landed = landed || mayHaveLanded(err)
 		retry, after := retryable(r, err)
 		c.log.DebugContext(ctx, "google api failed",
 			"op", r.op, "spreadsheet", ShortID(r.spreadsheet), "attempt", attempt,
@@ -376,13 +383,35 @@ func (c *Client) once(ctx context.Context, r request, timeout time.Duration) (*a
 	if r.body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	// Whether any of the request was written, which decides whether a
+	// failed write that is not repeatable may have landed. WroteHeaders
+	// fires for HTTP/1 and HTTP/2 alike, and early: a write it calls
+	// written may not have left, which errs toward ambiguous, never
+	// toward a repeat. The transport calls it from its own goroutine.
+	var written atomic.Bool
+	if r.writes() && !r.repeatable() {
+		req = req.WithContext(httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+			WroteHeaders: func() { written.Store(true) },
+		}))
+	}
 	start := time.Now()
 	resp, err := c.httpc.Do(req)
 	if err != nil {
 		if errors.Is(err, context.Canceled) && ctx.Err() == context.Canceled {
+			// A write Google holds may land after the cancel (D-45), so a
+			// bare cancellation would invite a repeat; as unavailable, the
+			// retry loop reports it ambiguous.
+			if written.Load() {
+				return nil, fmt.Errorf("%w: %s was canceled after it was sent (%w)", ErrUnavailable, r.op, ctx.Err())
+			}
 			// The context's own error, not the transport's: a
 			// *url.Error names the URL, which carries the payload.
 			return nil, ctx.Err()
+		}
+		if r.writes() && !r.repeatable() && !written.Load() {
+			// A refused connection or a failed lookup: nothing reached
+			// Google, so nothing can have landed.
+			return nil, unsentError{wrapTransportError(r.op, err)}
 		}
 		return nil, wrapTransportError(r.op, err)
 	}
@@ -428,18 +457,30 @@ func retryable(r request, err error) (bool, time.Duration) {
 	return false, 0
 }
 
+// unsentError is a transport failure before any of a write was written.
+type unsentError struct{ error }
+
+func (u unsentError) Unwrap() error { return u.error }
+
+// mayHaveLanded reports whether a failed attempt may have applied: a
+// 5xx, a cut connection or a cancel after sending. A refusal Google
+// explained, a 429 among them, never ran, and neither did a write the
+// transport never wrote.
+func mayHaveLanded(err error) bool {
+	if errors.As(err, new(unsentError)) {
+		return false
+	}
+	var ae *APIError
+	if errors.As(err, &ae) {
+		return ae.Status >= 500
+	}
+	return errors.Is(err, ErrUnavailable)
+}
+
 // markAmbiguous re-classifies a failed unrepeatable write whose outcome
 // nobody can know from here.
 func markAmbiguous(op string, err error) error {
-	if err == nil {
-		return nil
-	}
-	// A refusal Google explained is not ambiguous: it never ran.
-	var ae *APIError
-	if errors.As(err, &ae) && ae.Status < 500 && ae.Status != 429 {
-		return err
-	}
-	if !errors.Is(err, ErrUnavailable) && !errors.Is(err, ErrRateLimited) {
+	if err == nil || !mayHaveLanded(err) {
 		return err
 	}
 	return fmt.Errorf("%w: %s may have been applied; read the spreadsheet before repeating it, "+

@@ -187,7 +187,6 @@ func (s *Service) Transform(ctx context.Context, req TransformRequest) (*Transfo
 	if err != nil {
 		return nil, wrap(err)
 	}
-	s.forget(ref.ID)
 	view.Counted = transformCount(got)
 	res.Changed = view.Counted.Total()
 	res.Summary = render.OpsDone(view)

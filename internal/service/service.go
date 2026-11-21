@@ -133,6 +133,10 @@ type Service struct {
 
 	mu    sync.Mutex
 	cards map[string]cacheEntry
+	// gen counts forgets, so a fetch that began before one cannot store
+	// the card it read. One counter for every spreadsheet: a write to
+	// another one costs a fetch at most one cache entry.
+	gen uint64
 }
 
 type cacheEntry struct {
@@ -157,7 +161,8 @@ const CacheWindow = 30 * time.Second
 
 // New builds a Service.
 func New(d Deps) *Service {
-	s := &Service{api: d.API, cfg: d.Config, log: d.Logger, now: d.Now, cards: map[string]cacheEntry{}}
+	s := &Service{cfg: d.Config, log: d.Logger, now: d.Now, cards: map[string]cacheEntry{}}
+	s.api = forgetting{API: d.API, s: s}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
 	}
@@ -174,6 +179,7 @@ func (s *Service) card(ctx context.Context, id string) (*gsheets.Spreadsheet, er
 		s.mu.Unlock()
 		return e.card, nil
 	}
+	gen := s.gen
 	s.mu.Unlock()
 
 	sp, err := s.api.GetSpreadsheet(ctx, id, gapi.GetOptions{Fields: gapi.CardFields})
@@ -181,9 +187,39 @@ func (s *Service) card(ctx context.Context, id string) (*gsheets.Spreadsheet, er
 		return nil, wrap(err)
 	}
 	s.mu.Lock()
-	s.cards[id] = cacheEntry{card: sp, at: s.now()}
+	// A write that landed while this read was in flight forgot the card,
+	// and what this read saw may be from before it.
+	if s.gen == gen {
+		s.cards[id] = cacheEntry{card: sp, at: s.now()}
+	}
 	s.mu.Unlock()
 	return sp, nil
+}
+
+// forgetting drops the cached card after every write that can change
+// it, whatever the outcome: a write that failed ambiguously may have
+// landed, and the read the caller is then told to make must not answer
+// from before it.
+type forgetting struct {
+	API
+	s *Service
+}
+
+func (f forgetting) BatchUpdate(ctx context.Context, id string, in *gsheets.BatchUpdateSpreadsheetRequest) (*gsheets.BatchUpdateSpreadsheetResponse, error) {
+	defer f.s.forget(id)
+	return f.API.BatchUpdate(ctx, id, in)
+}
+
+// AppendValues inserts rows, which grows the grid.
+func (f forgetting) AppendValues(ctx context.Context, id, a1Range string, values [][]any, o gapi.WriteOptions) (*gsheets.AppendValuesResponse, error) {
+	defer f.s.forget(id)
+	return f.API.AppendValues(ctx, id, a1Range, values, o)
+}
+
+// CopySheetTo adds a sheet to the destination.
+func (f forgetting) CopySheetTo(ctx context.Context, id string, sheetID int, destination string) (*gsheets.SheetProperties, error) {
+	defer f.s.forget(destination)
+	return f.API.CopySheetTo(ctx, id, sheetID, destination)
 }
 
 // Rendered is what every tool's output type implements. Registration

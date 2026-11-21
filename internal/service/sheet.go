@@ -15,12 +15,14 @@ import (
 
 // forget drops a spreadsheet's cached metadata.
 //
-// Called after every structural write. Without it a rename inside the
-// cache window would leave the next call resolving the old title, which
-// is the one way the cache could cost correctness rather than a request.
+// forgetting calls it after every write that can change the card.
+// Without it a rename inside the cache window would leave the next call
+// resolving the old title, which is the one way the cache could cost
+// correctness rather than a request.
 func (s *Service) forget(id string) {
 	s.mu.Lock()
 	delete(s.cards, id)
+	s.gen++
 	s.mu.Unlock()
 }
 
@@ -250,7 +252,6 @@ func (s *Service) ManageSheet(ctx context.Context, req SheetRequest) (*SheetResu
 	if err != nil {
 		return nil, wrap(err)
 	}
-	s.forget(ref.ID)
 	if p := addedSheet(got); p != nil {
 		res.Sheet, res.SheetID = p.Title, p.SheetID
 	}
@@ -405,7 +406,6 @@ func (s *Service) copySheet(ctx context.Context, ref Reference, props *gsheets.S
 	if err != nil {
 		return nil, wrap(err)
 	}
-	s.forget(dest.ID)
 	res.Sheet, res.SheetID = copied.Title, copied.SheetID
 	res.Summary = render.CopyDone(act, copied.Title)
 	return res, nil
@@ -491,7 +491,6 @@ func (s *Service) DeleteSheet(ctx context.Context, req DeleteSheetRequest) (*Del
 	}); err != nil {
 		return nil, wrap(err)
 	}
-	s.forget(ref.ID)
 	after, err := s.card(ctx, ref.ID)
 	if err != nil {
 		return nil, err

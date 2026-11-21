@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
@@ -311,6 +312,31 @@ func TestARenameIsVisibleImmediately(t *testing.T) {
 	}
 	if !slices.Contains(card.Sheets, "Oblisk") {
 		t.Errorf("the card still shows %v after a rename", card.Sheets)
+	}
+}
+
+// A write that failed ambiguously may have landed, and the read the
+// caller is told to make must not answer from the card before it.
+func TestAnAmbiguousRenameStillDropsTheCard(t *testing.T) {
+	srv, svc := standard(t)
+	ctx := context.Background()
+	if _, err := svc.Card(ctx, sheetstest.FixtureID); err != nil {
+		t.Fatal(err)
+	}
+	srv.FailOnce("spreadsheets.batchUpdate", sheetstest.Failure{Status: http.StatusInternalServerError, Applied: true})
+	_, err := svc.ManageSheet(ctx, service.SheetRequest{
+		Spreadsheet: sheetstest.FixtureID, Action: service.SheetRename,
+		Sheet: sheetstest.SecondSheet, Title: "Oblisk",
+	})
+	if err == nil || !strings.HasPrefix(err.Error(), "[ambiguous_outcome]") {
+		t.Fatalf("a rename answered 500 gave %v, want [ambiguous_outcome]", err)
+	}
+	card, err := svc.Card(ctx, sheetstest.FixtureID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(card.Sheets, "Oblisk") {
+		t.Errorf("the card still shows %v after a rename that landed", card.Sheets)
 	}
 }
 

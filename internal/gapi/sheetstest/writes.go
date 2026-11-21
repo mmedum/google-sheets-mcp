@@ -152,6 +152,19 @@ func (s *Server) valuesAppend(w http.ResponseWriter, r *http.Request) {
 	if insert == gapi.InsertRows {
 		s.mu.Lock()
 		shiftRowsDown(sh, first, len(in.Values))
+		// The grid grows by the rows inserted: the discovery document's
+		// insertDataOption says "Rows are inserted for the new data."
+		// https://sheets.googleapis.com/$discovery/rest?version=v4
+		// Checked by the live step "an append grows the grid by the rows
+		// it inserts".
+		if sh.Props.GridProperties == nil {
+			sh.Props.GridProperties = &gsheets.GridProperties{}
+		}
+		gp := sh.Props.GridProperties
+		if gp.RowCount == 0 {
+			gp.RowCount = defaultRows
+		}
+		gp.RowCount += len(in.Values)
 		s.mu.Unlock()
 	}
 	written := s.put(sh, first, table.FirstCol, in.Values, input)

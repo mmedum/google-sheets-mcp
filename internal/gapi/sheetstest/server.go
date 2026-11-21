@@ -392,8 +392,12 @@ func docCard(d *Doc) *gsheets.Spreadsheet {
 // zero the same way the service does. Without the guard a fixture that
 // left GridProperties unset clamped to nothing here and to 1000x26
 // there, so the fake and the server disagreed about the same sheet.
+// defaultRows and defaultCols are a grid's size when its properties
+// leave it out, which is a new sheet's.
+const defaultRows, defaultCols = 1000, 26
+
 func clamp(sh *Sheet, rect a1.Rect) a1.Rect {
-	rows, cols := 1000, 26
+	rows, cols := defaultRows, defaultCols
 	if gp := sh.Props.GridProperties; gp != nil {
 		if gp.RowCount > 0 {
 			rows = gp.RowCount

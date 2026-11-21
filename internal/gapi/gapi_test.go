@@ -609,48 +609,66 @@ func TestAPartialRetryPolicyDoesNotPanic(t *testing.T) {
 	}
 }
 
-// TestACanceledWriteIsStillAmbiguous covers the two ways out of the
-// retry loop that are not a response: a context canceled while waiting
-// on the limiter, and one canceled during the backoff. A write that has
-// already been sent once may have landed, and saying "canceled" instead
-// tells the caller nothing about what is in their spreadsheet.
-func TestACanceledWriteIsStillAmbiguous(t *testing.T) {
-	attempts := 0
+// A 429 is a refusal to begin, so an append canceled while it backs off
+// after one never ran, and saying "may have landed" would send the caller
+// to look for rows that are not there.
+func TestACancelAfterARefusalIsNotAmbiguous(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		attempts++
-		// A 429, the one answer that lets an append reach the backoff.
+	c, srv := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
 		_, _ = w.Write([]byte(`{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"quota"}}`))
-	}))
-	defer srv.Close()
-
-	c := New(staticToken{}, Options{
-		SheetsBaseURL: srv.URL + "/v4",
-		ReadLimiter:   rate.NewLimiter(rate.Inf, 1),
-		WriteLimiter:  rate.NewLimiter(rate.Inf, 1),
-		AllowURL:      func(*url.URL) bool { return true },
-		// The cancellation lands during the backoff, after the request
-		// has been sent once.
-		Sleep: func(context.Context, time.Duration) error { cancel(); return ctx.Err() },
 	})
+	c.sleep = func(context.Context, time.Duration) error { cancel(); return ctx.Err() }
 	_, err := c.do(ctx, request{op: "values.append", spreadsheet: "id", method: http.MethodPost, url: srv.URL + "/v4/x"})
-	if got := Class(err); got != "ambiguous_outcome" {
-		t.Fatalf("a canceled append classified as %q (%v); it may already have inserted rows", got, err)
+	if got := Class(err); got != "unavailable" || !errors.Is(err, context.Canceled) {
+		t.Errorf("an append canceled after a 429: class %q (%v), want a plain cancellation", got, err)
 	}
+}
 
-	// And a read canceled the same way is not ambiguous: nothing was
-	// changed, so there is nothing to go and look at.
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	c2 := New(staticToken{}, Options{
-		SheetsBaseURL: srv.URL + "/v4",
-		ReadLimiter:   rate.NewLimiter(rate.Inf, 1),
-		AllowURL:      func(*url.URL) bool { return true },
-		Sleep:         func(context.Context, time.Duration) error { cancel2(); return ctx2.Err() },
-	})
-	_, err = c2.do(ctx2, request{op: "values.get", spreadsheet: "id", method: http.MethodGet, url: srv.URL + "/v4/x"})
-	if got := Class(err); got == "ambiguous_outcome" {
-		t.Errorf("a canceled read was reported as an ambiguous write")
+// roundTripper is a transport that never writes, standing for a send
+// that fails before any of the request leaves.
+type roundTripper func(*http.Request) (*http.Response, error)
+
+func (f roundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// A write that Google may hold can land after its call fails, so an
+// append canceled or cut once its request was written is ambiguous. A
+// read failed the same way, and an append that never left, are not.
+func TestAFailureOnTheWire(t *testing.T) {
+	hold := func(cancel func()) http.HandlerFunc {
+		return func(_ http.ResponseWriter, r *http.Request) { cancel(); <-r.Context().Done() }
+	}
+	for _, tc := range []struct {
+		name, op, method string
+		// never replaces the transport with one that writes nothing.
+		never  bool
+		cancel bool
+		want   string
+	}{
+		{"an append canceled while Google holds it", "values.append", http.MethodPost, false, true, "ambiguous_outcome"},
+		{"a read canceled while Google holds it", "values.get", http.MethodGet, false, true, "unavailable"},
+		{"an append canceled before it was written", "values.append", http.MethodPost, true, true, "unavailable"},
+		{"an append whose connection was refused", "values.append", http.MethodPost, true, false, "unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			c, srv := testClient(t, hold(cancel))
+			if tc.never {
+				c.httpc = &http.Client{Transport: roundTripper(func(r *http.Request) (*http.Response, error) {
+					if tc.cancel {
+						cancel()
+						<-r.Context().Done()
+						return nil, r.Context().Err()
+					}
+					return nil, errors.New("dial tcp: connection refused")
+				})}
+			}
+			_, err := c.do(ctx, request{op: tc.op, spreadsheet: "id", method: tc.method, url: srv.URL + "/v4/x"})
+			if got := Class(err); got != tc.want {
+				t.Errorf("%s: class %q (%v), want %q", tc.op, got, err, tc.want)
+			}
+		})
 	}
 }
 

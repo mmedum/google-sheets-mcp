@@ -222,7 +222,6 @@ func (s *Service) addChart(ctx context.Context, ref Reference, req ChartRequest,
 	if err != nil {
 		return nil, wrap(err)
 	}
-	s.forget(ref.ID)
 	if r := firstReply(reply); r != nil && r.AddChart != nil && r.AddChart.Chart != nil {
 		res.ID = r.AddChart.Chart.ChartID
 		act.ID = res.ID
@@ -272,7 +271,6 @@ func (s *Service) addSlicer(ctx context.Context, ref Reference, props *gsheets.S
 	if err != nil {
 		return nil, wrap(err)
 	}
-	s.forget(ref.ID)
 	if r := firstReply(reply); r != nil && r.AddSlicer != nil && r.AddSlicer.Slicer != nil {
 		res.ID = r.AddSlicer.Slicer.SlicerID
 		act.ID = res.ID
@@ -343,7 +341,6 @@ func (s *Service) updateChart(ctx context.Context, ref Reference, req ChartReque
 	}); err != nil {
 		return nil, wrap(err)
 	}
-	s.forget(ref.ID)
 	res.ID = req.ID
 	res.Summary = render.ChartDone(act)
 	return res, nil
@@ -402,7 +399,6 @@ func (s *Service) updateSlicer(ctx context.Context, ref Reference, req ChartRequ
 	}); err != nil {
 		return nil, wrap(err)
 	}
-	s.forget(ref.ID)
 	res.ID = req.ID
 	res.Summary = render.ChartDone(act)
 	return res, nil
@@ -454,7 +450,6 @@ func (s *Service) moveChart(ctx context.Context, ref Reference, req ChartRequest
 	if err != nil {
 		return nil, wrap(err)
 	}
-	s.forget(ref.ID)
 	// The reply carries where it landed, so the result reports the API's
 	// answer rather than the request's own arguments.
 	if r := firstReply(reply); r != nil && r.UpdateEmbeddedObjectPosition != nil {
@@ -496,7 +491,6 @@ func (s *Service) deleteChart(ctx context.Context, ref Reference, req ChartReque
 	}); err != nil {
 		return nil, wrap(err)
 	}
-	s.forget(ref.ID)
 	res.ID = req.ID
 	res.Summary = render.ChartDone(act)
 	return res, nil

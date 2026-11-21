@@ -438,10 +438,10 @@ CHANGELOG to the code. Releasing is in [release.md](release.md).
 | D-42 | A delete counts and names what it takes, including what Google removes silently | accepted | TestDeleteSheetCountsBeforeItAsks, TestDeletingRowsNamesTheAnchorsItWouldTake, TestARefusalCountsTheSeriesItWouldTake, TestClearOverPivotAnchorSaysWhatItTakes, TestSourceDeleteNamesTheSheetItTakes, TestClearCountsOnlyWhatItCanRemove |
 | D-43 | Connected Sheets is opt-in: one setting registers its tools and asks for `bigquery.readonly` | accepted | TestScopesAreOptIn, TestScopes, staleness |
 | D-44 | Every error is a tool result, `[class] message`, from a closed vocabulary that says what to do | accepted | classes, TestClassesAreClosedAndDistinct, TestClassesAreTheOnesClassReturns, TestToolErrorsAreResultsNotProtocolErrors, TestFailFormatsTheClass, TestMissingScopeIsForbiddenNotAuth |
-| D-45 | Repeatability follows the HTTP method | accepted | TestRepeatabilityComesFromTheMethod, TestUnrepeatableWritesAreNotRepeated, TestAnAppendRetriesOnlyARefusalToBegin, TestAnAppendIsNotRepeatedAfterA5xx, TestReadOnlyFlagOnlyOnTheThreeReadingPOSTs, TestACanceledWriteIsStillAmbiguous, TestRetryAfterIsHonored |
+| D-45 | Repeatability follows the HTTP method | accepted | TestRepeatabilityComesFromTheMethod, TestUnrepeatableWritesAreNotRepeated, TestAnAppendRetriesOnlyARefusalToBegin, TestAnAppendIsNotRepeatedAfterA5xx, TestReadOnlyFlagOnlyOnTheThreeReadingPOSTs, TestAFailureOnTheWire, TestACancelAfterARefusalIsNotAmbiguous, TestRetryAfterIsHonored |
 | D-46 | Requests are paced at the documented per-user quota, one in flight | accepted | review |
 | D-47 | Every request runs under a deadline, the token refresh included | accepted | TestTokenRefreshIsBounded, TestBoundedClientTakesTheConfiguredTimeout, TestLoginTimesOutWaitingForTheBrowser |
-| D-48 | Spreadsheet metadata is cached briefly and never trusted for correctness | accepted | TestCardIsCachedBriefly, TestARenameIsVisibleImmediately |
+| D-48 | Spreadsheet metadata is cached briefly and never trusted for correctness | accepted | TestCardIsCachedBriefly, TestARenameIsVisibleImmediately, TestAnAmbiguousRenameStillDropsTheCard, TestACardReadBeforeAnAppendIsNotKept |
 | D-49 | Scopes are `spreadsheets` plus `drive.readonly`, or their read-only pair | accepted | TestScopes, TestMissingScopes, staleness |
 | D-50 | Read-only mode asks for read-only scopes and registers only the reads | accepted | TestReadOnlyModeKeepsTheReads, TestScopes |
 | D-51 | Sign-in is Google's desktop flow: a loopback redirect on 127.0.0.1, a random port and PKCE | accepted | TestLoginRoundTrip, TestLoginRefusesAMismatchedState, TestLoginReportsAnAuthorizationDenial |
@@ -1601,8 +1601,11 @@ not repeatable is `[ambiguous_outcome]`. It says to read the spreadsheet
 before repeating the write. Google's `code.proto` says of `UNAVAILABLE`
 that it is "not always safe to retry non-idempotent operations"
 ([code.proto](https://github.com/googleapis/googleapis/blob/master/google/rpc/code.proto)).
-A write canceled while a retry waits, after a first attempt was sent,
-is ambiguous too.
+A write canceled once any of its request was written is ambiguous too,
+since Google may hold it. A write canceled or refused a connection
+before that, or canceled while it backs off after a 429, never ran.
+Only an attempt that may have landed makes a write ambiguous, so a write
+that met nothing but 429s is `[rate_limited]`.
 
 Three POSTs only read: `spreadsheets.getByDataFilter`,
 `values.batchGetByDataFilter` and `developerMetadata.search`. A
@@ -1614,8 +1617,8 @@ Rejected: retrying a write the API calls idempotent; a method-name
 pattern for the reading POSTs; retrying a write that is not repeatable
 after a 503.
 Cost: a write that may have landed is `[ambiguous_outcome]`, and the
-caller reads before repeating it. A write canceled while its request is
-in flight comes back `[unavailable]` instead (#84).
+caller reads before repeating it, even when a cancel reached it before
+Google did.
 
 ### D-46 Requests are paced at the documented per-user quota, one in flight
 
@@ -1679,18 +1682,20 @@ saved call is about a second. The gap between two tool calls is model
 latency, not machine latency, so a window of a few seconds never fires.
 The window is long enough to span a turn, and not much more.
 
-A structural write through this server drops the cached card, so a
-rename through this server is visible at once. A values write does not:
-after `append_rows` adds rows, a read can resolve its window against the
-row count from before the append until the window ends. A sheet renamed
+Every `batchUpdate`, `values.append` and `sheets.copyTo` through this
+server drops the cached card when it returns, whatever the outcome, so a
+rename is visible at once and so are the rows an append inserts. A write
+that failed ambiguously may have landed, and the read the caller is then
+told to make must not answer from before it. A card read that began
+before such a drop is not stored. A values write inside the grid leaves
+the card as it is. A sheet renamed
 by someone else inside the window fails the next call loudly rather than
 reading the wrong rectangle. `delete_data_source` reads the card again
 before it refuses a source or a sheet it does not find (D-41).
 
 Rejected: a five-second window, which never spans a turn.
 Cost: a sheet renamed by someone else inside the window fails the next
-call that names it, and a read after `append_rows` can miss the appended
-rows, until the window ends (#85).
+call that names it, until the window ends.
 
 ### D-49 Scopes are `spreadsheets` plus `drive.readonly`, or their read-only pair
 
