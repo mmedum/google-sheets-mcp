@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
 )
 
 // smoke drives the built binary over stdio without credentials, in two

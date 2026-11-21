@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/service"
 )
 
 func newService(t *testing.T, s *sheetstest.Server) *service.Service {

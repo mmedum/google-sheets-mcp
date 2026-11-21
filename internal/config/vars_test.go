@@ -19,9 +19,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/credentials"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/userconfig"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/credentials"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/userconfig"
 )
 
 // A variable of spaces alone is unset, as an empty one is, and the spaces

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/render"
 )
 
 // The words for a band live in render, so this is where they are

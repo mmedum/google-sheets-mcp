@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
 )
 
 // Decoding a response is where a read's time actually goes.

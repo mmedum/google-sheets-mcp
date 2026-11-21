@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/service"
 )
 
 func transformReq(action, rangeA1 string) service.TransformRequest {
@@ -137,7 +137,7 @@ func transformWitnessed(t *testing.T, svc *service.Service, req service.Transfor
 
 // An overwrite here replaces cells the caller never named, so it is held
 // to the cells the guard read: where a split spills, here. Without
-// expect_checkpoint it is refused with the checkpoint, the guard's own
+// checkpoint it is refused with the checkpoint, the guard's own
 // refusal and the dry run hand it over, and a change to those cells
 // after it was read is a conflict.
 func TestATransformOverwriteIsHeldToWhatItRead(t *testing.T) {
@@ -156,15 +156,15 @@ func TestATransformOverwriteIsHeldToWhatItRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	ck := preview.Checkpoint
-	if !strings.Contains(preview.Render(), "'Ürväl'!B1:B2 reads "+ck+" now, which overwrite needs as expect_checkpoint.\n") {
+	if !strings.Contains(preview.Render(), "'Ürväl'!B1:B2 reads "+ck+" now, which overwrite needs passed back.\n") {
 		t.Errorf("the dry run does not give the checkpoint:\n%s", preview.Render())
 	}
 	if _, err := svc.Transform(ctx, req); err == nil || !strings.Contains(err.Error(),
-		"; pass overwrite to allow it. Pass expect_checkpoint "+ck+" with it: that is 'Ürväl'!B1:B2 as this call read it") {
+		"; pass overwrite to allow it. Pass checkpoint "+ck+" with it: that is 'Ürväl'!B1:B2 as this call read it") {
 		t.Errorf("the guard's refusal = %v", err)
 	}
 	req.Overwrite = true
-	want := "[invalid] overwrite needs expect_checkpoint, so that what it replaces is what was read: 'Ürväl'!B1:B2 " +
+	want := "[invalid] overwrite needs checkpoint, so that what it replaces is what was read: 'Ürväl'!B1:B2 " +
 		"reads " + ck + " now. Pass that, and a change there before the write is refused"
 	if _, err := svc.Transform(ctx, req); err == nil || err.Error() != want {
 		t.Errorf("an overwrite with no witness:\n got %v\nwant %s", err, want)
@@ -190,7 +190,7 @@ func TestATransformThatReadsNothingTakesNoCheckpoint(t *testing.T) {
 	req.ExpectCheckpoint = "ck_0123456789ab"
 	_, err := newService(t, srv).Transform(context.Background(), req)
 	if err == nil || err.Error() != "[invalid] trim_whitespace reads no cells before it writes, so there is no "+
-		"checkpoint to compare; leave expect_checkpoint out" {
+		"checkpoint to compare; leave checkpoint out" {
 		t.Errorf("error = %v", err)
 	}
 }

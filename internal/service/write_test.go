@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/service"
 )
 
 // wrote reports whether a value write reached the fake.
@@ -350,7 +350,7 @@ func readCheckpoint(t *testing.T, svc *service.Service, sheet, rng string) strin
 }
 
 // overwrite carries the person's decision to replace what was read, so
-// it is held to what was read: without expect_checkpoint it is refused,
+// it is held to what was read: without checkpoint it is refused,
 // and the refusal hands over the checkpoint of the cells as this call
 // read them, the same one read_range gives that rectangle. Nothing is
 // written until it comes back.
@@ -365,7 +365,7 @@ func TestOverwriteNeedsTheCheckpointOfWhatItReplaces(t *testing.T) {
 		req.Spreadsheet, req.Sheet, req.Range, req.Values = sheetstest.FixtureID, sheetstest.SecondSheet, "A1:B1",
 			[][]any{{"x", "y"}}
 		_, err := svc.Write(ctx, req)
-		want := "[invalid] overwrite needs expect_checkpoint, so that what it replaces is what was read: 'Ürväl'!A1:B1 " +
+		want := "[invalid] overwrite needs checkpoint, so that what it replaces is what was read: 'Ürväl'!A1:B1 " +
 			"reads " + ck + " now. Pass that, and a change there before the write is refused"
 		if err == nil || err.Error() != want {
 			t.Errorf("overwrite %v, overwrite_formulas %v:\n got %v\nwant %s", req.Overwrite, req.OverwriteFormulas, err, want)
@@ -383,7 +383,7 @@ func TestOverwriteNeedsTheCheckpointOfWhatItReplaces(t *testing.T) {
 }
 
 // A dry run lists what the same call would be refused for, and an
-// overwrite with no expect_checkpoint is one of those, in write_values and
+// overwrite with no checkpoint is one of those, in write_values and
 // transform_range alike.
 func TestADryRunSaysAnOverwriteNeedsItsWitness(t *testing.T) {
 	srv, svc := standard(t)
@@ -396,7 +396,7 @@ func TestADryRunSaysAnOverwriteNeedsItsWitness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "  overwrite needs expect_checkpoint, so that what it replaces is what was read: 'Ürväl'!A1:B1 reads " + ck +
+	want := "  overwrite needs checkpoint, so that what it replaces is what was read: 'Ürväl'!A1:B1 reads " + ck +
 		" now. Pass that, and a change there before the write is refused\n"
 	if !strings.Contains(write.Render(), "would be refused:\n"+want) {
 		t.Errorf("write_values dry run does not list the refusal %q:\n%s", want, write.Render())
@@ -409,7 +409,7 @@ func TestADryRunSaysAnOverwriteNeedsItsWitness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = "  overwrite needs expect_checkpoint, so that what it replaces is what was read: 'Ürväl'!B1:B2 reads " +
+	want = "  overwrite needs checkpoint, so that what it replaces is what was read: 'Ürväl'!B1:B2 reads " +
 		preview.Checkpoint + " now. Pass that, and a change there before the write is refused\n"
 	if !strings.Contains(preview.Render(), "would be refused:\n"+want) {
 		t.Errorf("transform_range dry run does not list the refusal %q:\n%s", want, preview.Render())
@@ -427,7 +427,7 @@ func TestARefusalAndADryRunGiveTheCheckpoint(t *testing.T) {
 		Spreadsheet: sheetstest.FixtureID, Sheet: sheetstest.SecondSheet, Range: "A1:B1", Values: [][]any{{"x", "y"}},
 	}
 	_, err := svc.Write(ctx, req)
-	if err == nil || !strings.Contains(err.Error(), "; pass overwrite to allow it. Pass expect_checkpoint "+ck+
+	if err == nil || !strings.Contains(err.Error(), "; pass overwrite to allow it. Pass checkpoint "+ck+
 		" with it: that is 'Ürväl'!A1:B1 as this call read it, and a change there before the write is refused. ") {
 		t.Errorf("refusal = %v", err)
 	}
@@ -437,7 +437,7 @@ func TestARefusalAndADryRunGiveTheCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	if res.Checkpoint != ck || !strings.Contains(res.Render(), "Its checkpoint is "+ck+
-		", which overwrite needs as expect_checkpoint.\n") {
+		", which overwrite needs passed back.\n") {
 		t.Errorf("dry run checkpoint %q, want %q:\n%s", res.Checkpoint, ck, res.Render())
 	}
 }

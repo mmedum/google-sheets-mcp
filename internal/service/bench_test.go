@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/service"
 )
 
 // The end-to-end numbers this server holds itself to, measured through

@@ -249,7 +249,7 @@ With `dry_run`, the same call reports the guard's findings and the
 region it would change, and returns before anything is sent (D-30).
 
 Sent again with `overwrite`, `overwrite_formulas` and
-`expect_checkpoint`, the service reads the target again and compares. A
+`checkpoint`, the service reads the target again and compares. A
 change since the first read is `[conflict]` (D-25, D-26). A formula that
 reaches outside the spreadsheet is refused unless the operator allowed
 it (D-28).
@@ -437,7 +437,7 @@ CHANGELOG to the code. Releasing is in [release.md](release.md).
 | D-41 | A gated delete takes its target in A1, and names it | accepted | TestAnchorBandRefusalOffersABand, TestAClearNamesItsRange, TestADataSourceDeleteCarriesItsSheet, TestADataSourceWitnessIsReadPastTheCache |
 | D-42 | A delete counts and names what it takes, including what Google removes silently | accepted | TestDeleteSheetCountsBeforeItAsks, TestDeletingRowsNamesTheAnchorsItWouldTake, TestARefusalCountsTheSeriesItWouldTake, TestClearOverPivotAnchorSaysWhatItTakes, TestSourceDeleteNamesTheSheetItTakes, TestClearCountsOnlyWhatItCanRemove |
 | D-43 | Connected Sheets is opt-in: one setting registers its tools and asks for `bigquery.readonly` | accepted | TestScopesAreOptIn, TestScopes, staleness |
-| D-44 | Every error is a tool result, `[class] message`, from a closed vocabulary that says what to do | accepted | classes, TestClassesAreClosedAndDistinct, TestClassesAreTheOnesClassReturns, TestToolErrorsAreResultsNotProtocolErrors, TestFailFormatsTheClass, TestMissingScopeIsForbiddenNotAuth |
+| D-44 | Every error is a tool result, `[class] message`, from a closed vocabulary that says what to do | accepted | classes, TestClassesAreClosedAndDistinct, TestClassesAreTheOnesClassReturns, TestToolErrorsAreResultsNotProtocolErrors, TestFailFormatsTheClass, TestMissingScopeIsForbiddenNotAuth, TestASchemaRefusalCarriesAClass |
 | D-45 | Repeatability follows the HTTP method | accepted | TestRepeatabilityComesFromTheMethod, TestUnrepeatableWritesAreNotRepeated, TestAnAppendRetriesOnlyARefusalToBegin, TestAnAppendIsNotRepeatedAfterA5xx, TestReadOnlyFlagOnlyOnTheThreeReadingPOSTs, TestAFailureOnTheWire, TestACancelAfterARefusalIsNotAmbiguous, TestRetryAfterIsHonored |
 | D-46 | Requests are paced at the documented per-user quota, one in flight | accepted | review |
 | D-47 | Every request runs under a deadline, the token refresh included | accepted | TestTokenRefreshIsBounded, TestBoundedClientTakesTheConfiguredTimeout, TestLoginTimesOutWaitingForTheBrowser |
@@ -1087,7 +1087,7 @@ in one read of the anchors and what they draw.
 
 ### D-25 An overwrite carries the checkpoint of what it replaces
 
-`overwrite` and `overwrite_formulas` each need `expect_checkpoint`, the
+`overwrite` and `overwrite_formulas` each need `checkpoint`, the
 checkpoint of the cells the write replaces. Without it the write is
 refused `[invalid]`, with the checkpoint of the cells as this call read
 them. The guard's refusal and a dry run give the same checkpoint, so no
@@ -1103,7 +1103,7 @@ not a way past a refusal.
 `transform_range` holds its overwrites the same way, over the cells its
 guard reads: where a paste or a fill lands, where a split spills, or the
 formulas a replacement rewrites. An action that reads nothing first
-refuses `expect_checkpoint`, since there is nothing for it to match.
+refuses `checkpoint`, since there is nothing for it to match.
 
 Rejected: `overwrite` alone, which covers whatever the cells hold when
 the write lands.
@@ -1121,7 +1121,7 @@ because collaborators edit at the same time
 So a read returns a checkpoint, `ck_` and a hash over the spreadsheet
 id, the resolved range and what the cells store. It follows the formula
 rather than its result, and ignores formatting. A write given
-`expect_checkpoint` reads the range again and compares, and a mismatch
+`checkpoint` reads the range again and compares, and a mismatch
 is `[conflict]` with the cells that changed.
 
 A checkpoint narrows the window between a read and a write, and cannot
@@ -1606,11 +1606,15 @@ the person had to fix
 emits, and fails on one emitted and not declared, on one declared and
 never emitted, and on a scan that read too little to mean anything.
 
+The SDK checks arguments against the schema before any handler runs and
+answers in its own words, so the server puts `[invalid]` on a tool error
+that carries no class.
+
 Rejected: a smaller vocabulary of six classes, which collapses
 `ambiguous` and `ambiguous_outcome` into `invalid`.
-Cost: the SDK's own schema validation answers outside the vocabulary, so
-an argument with a wrong name or type is refused in the SDK's words
-(#79).
+Cost: an SDK refusal reads `[invalid]` followed by the SDK's own text,
+and a call to a tool that is not registered is a protocol error, which
+carries no class.
 
 ### D-45 Repeatability follows the HTTP method
 

@@ -9,13 +9,14 @@ import (
 	"io"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/tools"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/tools"
 )
 
 // Name is the MCP server name.
@@ -39,7 +40,7 @@ const instructions = "Google Sheets tools that work inside one spreadsheet. " +
 	"take a refusal as information rather than an obstacle, and use dry_run when you are not sure what is there. " +
 	"overwrite carries a decision the person made, not a way past a refusal: if a write is refused and the person " +
 	"has not said to replace what is there, report what the refusal named and stop. An overwrite also needs " +
-	"expect_checkpoint, which the refusal and dry_run give, so that what it replaces is what was read. " +
+	"checkpoint, which the refusal and dry_run give, so that what it replaces is what was read. " +
 	"input=typed parses as a person typing, so 007 becomes 7 and a date becomes a serial; every value Google changes " +
 	"is named in the result, and input=literal stores exactly what you send. " +
 	"append_rows lands where Google decides and reports it; write_values is the one to use when you know the " +
@@ -70,8 +71,25 @@ func New(d Deps) *mcp.Server {
 	if d.Logger != nil {
 		s.AddReceivingMiddleware(logCalls(d.Logger))
 	}
+	s.AddReceivingMiddleware(classSchemaRefusals)
 	tools.Register(s, tools.Deps{Service: d.Service, Config: d.Config, Logger: d.Logger})
 	return s
+}
+
+// classSchemaRefusals puts [invalid] on a tool error the SDK wrote: its
+// own check of the arguments against the schema answers before any
+// handler runs, in words outside the error vocabulary, and every error
+// a handler returns already starts with its class.
+func classSchemaRefusals(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		res, err := next(ctx, method, req)
+		if r, ok := res.(*mcp.CallToolResult); ok && r != nil && r.IsError && len(r.Content) > 0 {
+			if text, ok := r.Content[0].(*mcp.TextContent); ok && !strings.HasPrefix(text.Text, "[") {
+				text.Text = "[invalid] " + text.Text
+			}
+		}
+		return res, err
+	}
 }
 
 // logCalls records that a call happened and how it went, and nothing

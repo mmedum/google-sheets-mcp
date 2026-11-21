@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/grid"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/render"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/grid"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/render"
 )
 
 // ReadRequest is what read_range asks for, after the tool has validated
@@ -54,7 +54,7 @@ type ReadResult struct {
 	Spreadsheet  string     `json:"spreadsheet" jsonschema:"the spreadsheet id"`
 	Sheet        string     `json:"sheet" jsonschema:"the sheet title"`
 	Range        string     `json:"range" jsonschema:"the range actually read, in A1 with the sheet quoted"`
-	Checkpoint   string     `json:"checkpoint" jsonschema:"pass this to a later write as expect_checkpoint to have the server re-read and refuse if these values changed; best effort, since Sheets offers no atomic guard"`
+	Checkpoint   string     `json:"checkpoint" jsonschema:"pass this to a later write as checkpoint to have the server re-read and refuse if these values changed; best effort, since Sheets offers no atomic guard"`
 	Truncated    bool       `json:"truncated,omitempty" jsonschema:"true when a budget stopped the read short of the range asked for"`
 	ContinueFrom int        `json:"continue_from,omitempty" jsonschema:"the first row not shown; pass it back as continue_from to read on"`
 	Rows         [][]string `json:"rows,omitempty" jsonschema:"the values as arrays, present only when format is json, csv or tsv"`

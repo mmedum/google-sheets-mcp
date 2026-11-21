@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/auth"
 )
 
 // askDataSourceReach asks whether this server can reach a data source,

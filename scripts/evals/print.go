@@ -3,7 +3,7 @@
 package main
 
 import (
-	redactpkg "github.com/mmedum/google-sheets-mcp/v4/internal/redact"
+	redactpkg "github.com/mmedum/google-sheets-mcp/v5/internal/redact"
 )
 
 // Redaction, in one place, for the same reason the live driver has it in

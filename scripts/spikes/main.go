@@ -25,12 +25,12 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/auth"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/config"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/credentials"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/redact"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/userconfig"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/auth"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/credentials"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/redact"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/userconfig"
 )
 
 // line is the only way this program reaches the terminal, and it

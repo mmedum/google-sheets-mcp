@@ -123,7 +123,7 @@ func (d *driver) transformSteps() []step {
 			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:F1", "action": "find_replace", "find": "Zzzznomatch", "replace": "x", "in_formulas": true, "overwrite": true, "overwrite_formulas": true},
 			expectError: "invalid",
 			check: func(text string, _ map[string]any) error {
-				if !strings.Contains(text, "overwrite needs expect_checkpoint") || !strings.Contains(text, "!A1:F1 reads ck_") {
+				if !strings.Contains(text, "overwrite needs checkpoint") || !strings.Contains(text, "!A1:F1 reads ck_") {
 					return fmt.Errorf("the refusal does not hand over the checkpoint of the range: %s", text)
 				}
 				return nil
@@ -136,7 +136,7 @@ func (d *driver) transformSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A1:F1",
 				"action": "find_replace", "find": "Zzzznomatch", "replace": "x",
-				"in_formulas": true, "overwrite": true, "overwrite_formulas": true, "expect_checkpoint": fromDryRun,
+				"in_formulas": true, "overwrite": true, "overwrite_formulas": true, "checkpoint": fromDryRun,
 			},
 		},
 		{
@@ -236,7 +236,7 @@ func (d *driver) transformSteps() []step {
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "B31:B32",
 				"action": "auto_fill", "fill_rows": true, "fill_length": 2, "overwrite": true,
-				"expect_checkpoint": fromDryRun,
+				"checkpoint": fromDryRun,
 			},
 		},
 		{

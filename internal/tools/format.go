@@ -5,7 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/service"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/service"
 )
 
 // ReadFormattingInput is what read_formatting takes.
@@ -109,9 +109,9 @@ type TransformRangeInput struct {
 	Paste       string `json:"paste,omitempty" jsonschema:"what to carry across: normal (the default), values, format, formula, validation or conditional"`
 	Transpose   bool   `json:"transpose,omitempty" jsonschema:"for copy_paste: turn rows into columns"`
 
-	Overwrite         bool   `json:"overwrite,omitempty" jsonschema:"allow the write over cells that are not empty, wherever this lands, carrying the person's decision to replace them. Needs expect_checkpoint"`
+	Overwrite         bool   `json:"overwrite,omitempty" jsonschema:"allow the write over cells that are not empty, wherever this lands, carrying the person's decision to replace them. Needs checkpoint"`
 	OverwriteFormulas bool   `json:"overwrite_formulas,omitempty" jsonschema:"allow it over cells holding formulas. Needs overwrite as well"`
-	ExpectCheckpoint  string `json:"expect_checkpoint,omitempty" jsonschema:"the checkpoint of the cells this action reads before it writes, as its refusal or a dry run gives it; the action is refused if they changed since. Required with overwrite"`
+	ExpectCheckpoint  string `json:"checkpoint,omitempty" jsonschema:"the checkpoint of the cells this action reads before it writes, as its refusal or a dry run gives it; the action is refused if they changed since. Required with overwrite"`
 	DryRun            bool   `json:"dry_run,omitempty" jsonschema:"say what would change and send nothing"`
 }
 
@@ -193,7 +193,7 @@ func registerFormat(s *mcp.Server, d Deps) {
 			"These are the operations that move data without you naming its new address, so each one reads what it " +
 			"would land on and refuses first: a paste lands on cells you did not name, a split spills into the columns " +
 			"to its right, and a replacement inside formulas rewrites what a cell computes rather than what it shows. " +
-			"Each refusal names the cells and the argument that would allow it; overwrite needs expect_checkpoint, " +
+			"Each refusal names the cells and the argument that would allow it; overwrite needs checkpoint, " +
 			"which the refusal gives. remove_duplicates deletes rows. " +
 			"sort, randomize, remove_duplicates and cut_paste all move rows, so an address or a checkpoint from before " +
 			"the call no longer points where it did, and the result says so.",
@@ -241,7 +241,7 @@ var transformActions = &ActionArgs{
 	// overwrite and its witness are shared: each action that reads cells
 	// first takes them, and the service refuses a checkpoint from one that
 	// reads nothing, naming why.
-	Shared: []string{"spreadsheet", "sheet", "range", "overwrite", "overwrite_formulas", "expect_checkpoint"},
+	Shared: []string{"spreadsheet", "sheet", "range", "overwrite", "overwrite_formulas", "checkpoint"},
 	Reads: map[string][]string{
 		"sort":            {"sort_by"},
 		"find_replace":    {"find", "replace", "match_case", "match_entire_cell", "regex", "in_formulas"},

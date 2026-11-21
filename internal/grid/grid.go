@@ -15,8 +15,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
 )
 
 // Kind says what a cell holds. A formula is a kind of its own because it
@@ -44,7 +44,7 @@ type Cell struct {
 	// stores rather than what it shows. Hashing Display meant a read
 	// with formatted=true produced a checkpoint no write could match —
 	// a write reads raw — so every date or currency in the range made
-	// expect_checkpoint report a conflict that had not happened.
+	// checkpoint report a conflict that had not happened.
 	Raw string
 	// Formula is the text under the value, "" when the cell was typed
 	// rather than computed.

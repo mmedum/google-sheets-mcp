@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-sheets-mcp/v4/internal/a1"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gapi/sheetstest"
-	"github.com/mmedum/google-sheets-mcp/v4/internal/gsheets"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi/sheetstest"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
 )
 
 // data builds a GridData the way the API sends one: trailing empty rows
@@ -339,7 +339,7 @@ func TestIsCheckpoint(t *testing.T) {
 //
 // Read with formatted=true, a currency cell displays "£1,234.50" where
 // it stores 1234.5. Hashing the display made such a checkpoint fail
-// against every write — a write reads raw — so expect_checkpoint
+// against every write — a write reads raw — so checkpoint
 // reported a conflict on a range nobody had touched.
 func TestCheckpointIgnoresFormatting(t *testing.T) {
 	rect := a1.Rect{FirstCol: 1, FirstRow: 1, LastCol: 2, LastRow: 1}
