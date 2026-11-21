@@ -58,7 +58,7 @@ jobs:
       # cosign is here to VERIFY, not to sign: this job signs nothing.
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
-          cosign-release: v3.1.3
+          cosign-release: v3.1.4
 
       - name: Take the checksums from the published release
         run: |
