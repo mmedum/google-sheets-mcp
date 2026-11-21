@@ -123,6 +123,18 @@ const PivotFields = "spreadsheetId,sheets(properties(sheetId,title)," +
 const PivotExtentFields = "spreadsheetId,sheets(properties(sheetId)," +
 	"data(startRow,startColumn,rowData(values(userEnteredValue,effectiveValue))))"
 
+// PivotSourceFields is the field mask behind naming the pivot tables a
+// row or column delete shrinks: where each pivot sits and what it reads,
+// and nothing else, across every sheet.
+const PivotSourceFields = "sheets(properties(sheetId,title)," +
+	"data(startRow,startColumn,rowData(values(pivotTable(source)))))"
+
+// PivotCoverFields is the field mask behind naming the pivot table a
+// refused write lands in: the anchors and what they draw, in one read,
+// so the two do not split the cell budget between them.
+const PivotCoverFields = "spreadsheetId,sheets(properties(sheetId)," +
+	"data(startRow,startColumn,rowData(values(pivotTable(source),userEnteredValue,effectiveValue))))"
+
 // FormatFields is the field mask behind read_formatting: what a cell
 // looks like, and the things attached to the sheet that decide it.
 //

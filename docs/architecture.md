@@ -1071,10 +1071,12 @@ over a formula succeeds silently.
 Rejected: a minimal diff, which a rectangle of independent cells has no
 structure for; one acknowledgment for a value and a formula alike;
 tracked-change modes, which Sheets lacks.
+The guard names what lifts a blocker by kind, as a `plan.Allowance`,
+and the service names the tool argument that carries it, so `internal/plan`
+knows no tool's arguments.
 Cost: a guarded write is two requests. A write into a pivot table's
-output names the pivot only when its anchor lies within the read budget
-(#81). The guard's refusals name the tool's arguments, so renaming an
-argument means changing `internal/plan` too (#71).
+output names the pivot only when its anchor lies within the read budget,
+in one read of the anchors and what they draw.
 
 ### D-25 An overwrite carries the checkpoint of what it replaces
 
@@ -1532,10 +1534,12 @@ read part of a range does not guard the rest. `delete_data_source` names
 the sheet it takes.
 
 Rejected: a clear sent for a range larger than its one read.
+`delete_dimensions` also names the pivot tables, on any sheet, whose
+source the band cuts, since their output can fall to a header and a
+grand total. It reads every grid sheet for the pivot field alone, within
+the read budget, and names a sheet it did not finish.
 Cost: naming a band's anchors costs a developer metadata search on every
-band delete. `delete_dimensions` does not name the pivot tables whose
-source a band cuts, though their output can fall to a header and a grand
-total (#63).
+band delete, and naming its pivots one grid read across the sheets.
 
 ### D-43 Connected Sheets is opt-in: one setting registers its tools and asks for `bigquery.readonly`
 

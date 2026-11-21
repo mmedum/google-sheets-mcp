@@ -81,6 +81,10 @@ type DimensionAct struct {
 	// Charts are the charts that read the band. They are not taken with
 	// it: they stay, and draw less.
 	Charts []ChartLoss
+	// Pivots are the pivot tables whose source the band cuts, and
+	// PivotsUnsearched the sheets a read for them did not finish.
+	Pivots           []string
+	PivotsUnsearched []string
 	// Shifted says addresses after the band moved.
 	Shifted bool
 }
@@ -149,6 +153,9 @@ func dimensionNotes(b *strings.Builder, a DimensionAct, preview bool, took, move
 		} else {
 			b.WriteString(ChartsLost(a.Charts))
 		}
+	}
+	if s := PivotsShrunk(a.Pivots, a.PivotsUnsearched); s != "" {
+		b.WriteString(s + "\n")
 	}
 	if a.Shifted {
 		fmt.Fprintf(b, "Addresses after the band %s: a checkpoint or an address from before this call no longer "+
@@ -229,4 +236,23 @@ func upperFirst(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// PivotsShrunk says, in whole sentences, which pivot tables a delete
+// shrinks and which sheets were not searched for one; "" for neither.
+func PivotsShrunk(pivots, unsearched []string) string {
+	var parts []string
+	if len(pivots) > 0 {
+		stays := "stays where it is and loses"
+		if len(pivots) > 1 {
+			stays = "stay where they are and lose"
+		}
+		parts = append(parts, upperFirst(JoinAnd(pivots))+" "+stays+" the deleted rows or columns from its "+
+			"source, which can leave a header and Grand Total; Google's reply does not mention it.")
+	}
+	if len(unsearched) > 0 {
+		parts = append(parts, "The search for pivot tables did not reach "+JoinAnd(unsearched)+
+			", so one there reading these cells is not named.")
+	}
+	return strings.Join(parts, " ")
 }

@@ -403,9 +403,9 @@ func (s *Service) pivotAt(ctx context.Context, ref Reference, props *gsheets.She
 
 // pivotAnchors reads a rectangle for the cells carrying a pivot table.
 //
-// One place for the mask, the range and the walk, because three callers
-// want the same three: the listing, the update that has to read a pivot
-// before replacing it, and the look behind a refusal. The mask asks for
+// One place for the mask, the range and the walk, because two callers
+// want the same three: the listing, and the update that has to read a
+// pivot before replacing it. The mask asks for
 // the pivot and nothing else — no values, no formats — since there is no
 // pivot index in this API and a listing is a grid read.
 func (s *Service) pivotAnchors(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
@@ -432,9 +432,8 @@ type foundPivot struct {
 
 // pivotCells walks a response for the cells carrying a pivot table.
 //
-// One walk, used by both readers. The two had a copy each, four levels
-// deep, and a change to one of them would have been invisible in the
-// other.
+// One walk for every reader of pivot cells, so a change to how a pivot is
+// found lands in all of them.
 func pivotCells(sp *gsheets.Spreadsheet, sheetID int) []foundPivot {
 	var out []foundPivot
 	for _, sh := range sp.Sheets {
@@ -527,8 +526,26 @@ func (s *Service) pivotExtents(ctx context.Context, ref Reference, props *gsheet
 		return out
 	}
 
-	// drawn[row][col], one-based, for the cells a pivot computes: an
-	// effective value and nothing entered.
+	drawn := drawnCells(sp)
+	anchors := anchorRects(pivots)
+	for i, p := range pivots {
+		out[i] = extentFrom(drawn, anchors, p.at, window)
+	}
+	return out
+}
+
+// anchorRects is where each pivot sits.
+func anchorRects(pivots []foundPivot) []a1.Rect {
+	out := make([]a1.Rect, len(pivots))
+	for i, p := range pivots {
+		out[i] = p.at
+	}
+	return out
+}
+
+// drawnCells is drawn[row][col], one-based, for the cells a pivot
+// computes in a response: an effective value and nothing entered.
+func drawnCells(sp *gsheets.Spreadsheet) map[int]map[int]bool {
 	drawn := map[int]map[int]bool{}
 	for _, sh := range sp.Sheets {
 		for _, d := range sh.Data {
@@ -552,14 +569,7 @@ func (s *Service) pivotExtents(ctx context.Context, ref Reference, props *gsheet
 			}
 		}
 	}
-	anchors := make([]a1.Rect, len(pivots))
-	for i, p := range pivots {
-		anchors[i] = p.at
-	}
-	for i, p := range pivots {
-		out[i] = extentFrom(drawn, anchors, p.at, window)
-	}
-	return out
+	return drawn
 }
 
 // extentFrom grows a rectangle from one anchor until a row and then a
@@ -1304,7 +1314,7 @@ func (s *Service) pivotsBehind(ctx context.Context, t target, r *plan.Report, ac
 		return
 	}
 	for _, p := range s.pivotsCovering(ctx, t) {
-		r.AddDrawnBy(p.Anchor, p.Output, p.Hit)
+		r.AddDrawnBy(p)
 	}
 }
 
@@ -1312,7 +1322,7 @@ func (s *Service) pivotsBehind(ctx context.Context, t target, r *plan.Report, ac
 // a rectangle whose output reaches into it.
 //
 // Separate from pivotsBehind's gating because two callers want the same
-// two reads for different reasons. A values write asks only where it is
+// read for different reasons. A values write asks only where it is
 // already being refused, because the answer improves a message. A merge
 // asks whenever the rectangle holds a cell nobody typed, because Sheets
 // refuses that merge outright and the caller has to be told which table
@@ -1327,29 +1337,46 @@ func (s *Service) pivotsCovering(ctx context.Context, t target) []plan.PivotOutp
 	if !t.rect.Bounded() {
 		return nil
 	}
-	anchors, err := s.pivotAnchors(ctx, t.ref, t.props, lookback(t.rect, s.cfg.MaxCells))
+	// One read, of the anchors and what they draw together, so the two
+	// cannot split the budget and leave an anchor outside its half. The
+	// window holds every anchor that can draw into the write, and reaches
+	// as far right and down as the budget allows, so an output is measured
+	// past the write's corner when it can be.
+	rows, cols := extent(t.props)
+	window := lookback(t.rect, s.cfg.MaxCells)
+	wide, _ := fit(a1.Rect{FirstRow: window.FirstRow, FirstCol: 1, LastRow: max(rows, window.LastRow),
+		LastCol: max(cols, window.LastCol)}, s.cfg.MaxCells)
+	if wide.LastRow >= t.rect.LastRow {
+		window = wide
+	}
+	sp, err := s.api.GetSpreadsheet(ctx, t.ref.ID, gapi.GetOptions{
+		Fields:          gapi.PivotCoverFields,
+		Ranges:          []string{a1.Format(t.props.Title, window)},
+		IncludeGridData: true,
+	})
 	if err != nil {
 		s.log.DebugContext(ctx, "pivot lookup behind a refusal failed", "spreadsheet", gapi.ShortID(t.ref.ID))
 		return nil
 	}
-	var found []foundPivot
-	for _, p := range anchors {
+	pivots := pivotCells(sp, t.props.SheetID)
+	if len(pivots) == 0 {
+		return nil
+	}
+	anchors := anchorRects(pivots)
+	drawn := drawnCells(sp)
+	var out []plan.PivotOutput
+	for _, p := range pivots {
 		// An anchor inside the rectangle is already visible to whoever
 		// read it, and is named from there. Naming it again here would
 		// put two sentences about one pivot table in one refusal.
-		if !t.rect.Contains(p.at) {
-			found = append(found, p)
+		if t.rect.Contains(p.at) {
+			continue
 		}
-	}
-	if len(found) == 0 {
-		return nil
-	}
-	// The extents, because an anchor up and to the left is not yet a
-	// pivot that reaches this rectangle: a table two columns wide says
-	// nothing about a write ten columns along, and claiming it did would
-	// steer a caller away from cells that were never the pivot's.
-	var out []plan.PivotOutput
-	for i, rect := range s.pivotExtents(ctx, t.ref, t.props, found) {
+		// The extent, because an anchor up and to the left is not yet a
+		// pivot that reaches this rectangle: a table two columns wide
+		// says nothing about a write ten columns along, and claiming it
+		// did would steer a caller away from cells never the pivot's.
+		rect := extentFrom(drawn, anchors, p.at, window)
 		if !rect.Bounded() {
 			continue
 		}
@@ -1358,9 +1385,10 @@ func (s *Service) pivotsCovering(ctx context.Context, t target) []plan.PivotOutp
 			continue
 		}
 		out = append(out, plan.PivotOutput{
-			Anchor: a1.FormatRect(found[i].at),
-			Output: a1.FormatRect(rect),
-			Hit:    a1.FormatRect(hit),
+			Anchor: a1.FormatRect(p.at), Output: a1.FormatRect(rect), Hit: a1.FormatRect(hit),
+			// Cut off by the window rather than ended by the pivot.
+			Clipped: (rect.LastRow == window.LastRow && window.LastRow < rows) ||
+				(rect.LastCol == window.LastCol && window.LastCol < cols),
 		})
 	}
 	return out
@@ -1379,4 +1407,91 @@ func lookback(rect a1.Rect, maxCells int) a1.Rect {
 	window := a1.Rect{FirstRow: 1, FirstCol: 1, LastRow: rect.LastRow, LastCol: rect.LastCol}
 	window, _ = window.LimitRowsFromEnd(max(maxCells/window.Cols(), 1))
 	return window
+}
+
+// pivotSearchShare is how many times the read budget a search for pivot
+// sources may read. The mask asks for one field, which an empty cell
+// does not carry, so a cell costs a fraction of one in a values read.
+const pivotSearchShare = 10
+
+// pivotsOnBand names each pivot table, on any sheet, whose source the
+// band cuts: the delete shrinks the source and the reply says nothing.
+// A pivot the band itself deletes goes with the cells and is counted
+// there.
+//
+// One read of every grid sheet for the pivot field alone, since a pivot
+// on any sheet may read this one. Every sheet is read whole when they fit
+// the budget together, and otherwise each to the same share of its rows;
+// a sheet past the budget, or cut short, is named as not searched. The
+// names are worth a read and not a delete, so a read that fails leaves
+// every sheet unsearched rather than failing the call.
+func (s *Service) pivotsOnBand(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
+	band plan.Band) (pivots, unsearched []string, err error) {
+
+	sp, err := s.card(ctx, ref.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	var grids []*gsheets.SheetProperties
+	total := 0
+	for _, sh := range sp.Sheets {
+		if sh.Properties != nil && sh.Properties.GridProperties != nil {
+			grids = append(grids, sh.Properties)
+			rows, cols := extent(sh.Properties)
+			total += rows * cols
+		}
+	}
+	if len(grids) == 0 {
+		return nil, nil, nil
+	}
+	budget := s.cfg.MaxCells * pivotSearchShare
+	share := min(1, float64(budget)/float64(total))
+	var ranges []string
+	var read []*gsheets.SheetProperties
+	spent := 0
+	for _, g := range grids {
+		rows, cols := extent(g)
+		last := max(1, int(float64(rows)*share))
+		if spent+last*cols > budget {
+			unsearched = append(unsearched, fmt.Sprintf("%q", g.Title))
+			continue
+		}
+		spent += last * cols
+		read = append(read, g)
+		ranges = append(ranges, a1.Format(g.Title, a1.Rect{FirstRow: 1, FirstCol: 1, LastRow: last, LastCol: cols}))
+		if last < rows {
+			unsearched = append(unsearched, fmt.Sprintf("%q past row %d", g.Title, last))
+		}
+	}
+	if len(ranges) == 0 {
+		return nil, unsearched, nil
+	}
+	got, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{
+		Fields: gapi.PivotSourceFields, Ranges: ranges, IncludeGridData: true,
+	})
+	if err != nil {
+		s.log.DebugContext(ctx, "pivot search before a delete failed", "spreadsheet", gapi.ShortID(ref.ID))
+		unsearched = unsearched[:0]
+		for _, g := range grids {
+			unsearched = append(unsearched, fmt.Sprintf("%q", g.Title))
+		}
+		return nil, unsearched, nil
+	}
+	cut := band.Rect()
+	for _, g := range read {
+		for _, p := range pivotCells(got, g.SheetID) {
+			var pivot gsheets.PivotTable
+			if json.Unmarshal(p.raw, &pivot) != nil || pivot.Source == nil || pivot.Source.SheetID != props.SheetID {
+				continue
+			}
+			if g.SheetID == props.SheetID && cut.Overlaps(p.at) {
+				continue
+			}
+			if a1.FromGridRange(pivot.Source).Overlaps(cut) {
+				pivots = append(pivots, fmt.Sprintf("the pivot table at %s, which reads %s",
+					a1.Format(g.Title, p.at), pivotSourceName(pivot.Source, props.Title)))
+			}
+		}
+	}
+	return pivots, unsearched, nil
 }

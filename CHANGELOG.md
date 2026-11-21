@@ -5,12 +5,17 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- `delete_dimensions` names the pivot tables whose source a delete cuts, in its preview, its refusal and a new `pivots_affected` field.
+
 ### Changed
 
 - A `dry_run` that would be refused previews and names the refusal in every write tool; several answered with the refusal alone.
 
 ### Fixed
 
+- A write refused inside a pivot table's output on a wide sheet names the pivot; one read now finds the anchor and what it draws.
 - `manage_chart` `update` works without `sheet`; it refused every chart as if it sat on a sheet of its own.
 - A `read_range` straight after `append_rows` sees the appended rows; it could clamp them off for 30 seconds.
 - A read after a write that failed `[ambiguous_outcome]` sees what the write may have changed, rather than metadata cached before it.

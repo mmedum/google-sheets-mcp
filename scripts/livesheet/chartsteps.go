@@ -652,6 +652,21 @@ func (d *driver) pivotSteps() []step {
 			},
 		},
 		{
+			name: "an unconfirmed delete names the pivot whose source it shrinks",
+			why:  "a delete shrinks a pivot's source and Google's reply says nothing, so the refusal names it",
+			tool: "delete_dimensions",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "dimension": "columns", "band": "B:B",
+			},
+			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "pivot table at '"+chartSheet+"'!H1") {
+					return fmt.Errorf("the refusal does not name the pivot reading column B: %q", text)
+				}
+				return nil
+			},
+		},
+		{
 			name: "delete it, and everything it drew",
 			why:  "there is no deletePivotTable: naming the field with an empty cell takes the whole output",
 			tool: "manage_pivot_table",
