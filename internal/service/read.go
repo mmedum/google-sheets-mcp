@@ -111,7 +111,19 @@ func (s *Service) Read(ctx context.Context, req ReadRequest) (*ReadResult, error
 		window.FirstRow = req.ContinueFrom
 	}
 
-	window, cellsCut := fit(window, bud.Cells)
+	window, fetchCut := fit(window, bud.Cells)
+	// The rendering stops at the character budget, at a row boundary,
+	// and a row with something in it draws at least " |" for each cell
+	// and a newline. Rows past what the budget could show at that rate are
+	// not fetched; a fetch bound by cells alone read rows no rendering
+	// reached. A run of empty rows draws one line, so a sparse range can
+	// come back shorter than the budget allows, and continue_from still
+	// says where to read on.
+	if bud.Chars > 0 {
+		var charsCut bool
+		window, charsCut = window.LimitRows(bud.Chars/render.MinRowChars(window.Cols()) + 1)
+		fetchCut = fetchCut || charsCut
+	}
 	rangeA1 := a1.Format(sh.Title, window)
 
 	got, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{
@@ -153,7 +165,7 @@ func (s *Service) Read(ctx context.Context, req ReadRequest) (*ReadResult, error
 	switch {
 	case rendered.ContinueFrom > 0:
 		continueFrom = rendered.ContinueFrom
-	case cellsCut:
+	case fetchCut:
 		continueFrom = window.LastRow + 1
 	}
 
@@ -169,7 +181,10 @@ func (s *Service) Read(ctx context.Context, req ReadRequest) (*ReadResult, error
 
 	parts := []string{render.Footer(g, rendered, opts)}
 	if continueFrom > 0 && rendered.ContinueFrom == 0 {
-		parts = append(parts, fmt.Sprintf("the cell budget stopped here; continue at row %d", continueFrom))
+		parts = append(parts, fmt.Sprintf("the read budget stopped here; continue at row %d", continueFrom))
+	}
+	if hint := narrowerRange(g, window, full, shown, sh.Title, continueFrom); hint != "" {
+		parts = append(parts, hint)
 	}
 	parts = append(parts, "checkpoint "+res.Checkpoint)
 	res.Footer = strings.Join(parts, "; ")
@@ -280,6 +295,36 @@ func extent(p *gsheets.SheetProperties) (rows, cols int) {
 		}
 	}
 	return rows, cols
+}
+
+// narrowerRange says, for a read cut short, when every row it showed
+// ends before the window's last column, and names the rest of the range
+// with only the columns that held data, which reads more rows a call. It
+// is a hint and not a resize, because a later row that reaches further
+// right would fall outside a window sized by the rows shown so far.
+func narrowerRange(g *grid.Grid, window, full a1.Rect, shown int, sheet string, continueFrom int) string {
+	if continueFrom == 0 {
+		return ""
+	}
+	last := 0
+	for i := 0; i < len(g.Cells) && window.FirstRow+i <= shown; i++ {
+		for j := len(g.Cells[i]) - 1; j >= 0; j-- {
+			if !g.Cells[i][j].Empty() {
+				last = max(last, window.FirstCol+j)
+				break
+			}
+		}
+	}
+	if last == 0 || last >= window.LastCol {
+		return ""
+	}
+	letter, err := a1.ColumnName(last)
+	if err != nil {
+		return ""
+	}
+	rest := a1.Rect{FirstRow: continueFrom, FirstCol: window.FirstCol, LastRow: full.LastRow, LastCol: last}
+	return fmt.Sprintf("every row shown ends by column %s, so %s reads more rows a call, "+
+		"if no later row reaches further right", letter, a1.Format(sheet, rest))
 }
 
 // fit trims a bounded rectangle to a cell budget, whole rows at a time.

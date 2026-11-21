@@ -101,6 +101,11 @@ func Grid(g *grid.Grid, o GridOptions) GridResult {
 	return res
 }
 
+// MinRowChars is the fewest characters a row with something in it draws
+// for cols cells: " |" for each and a newline, the padding of the last
+// trimmed away. A run of empty rows draws one line between them.
+func MinRowChars(cols int) int { return 2*cols + 1 }
+
 func renderRow(gutter string, cells []string, widths []int) string {
 	var b strings.Builder
 	b.WriteString(gutter)

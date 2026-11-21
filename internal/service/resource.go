@@ -56,7 +56,9 @@ func (s *Service) SheetCSV(ctx context.Context, spreadsheet, sheet string) (*She
 		return nil, wrap(err)
 	}
 	data, _, _ := sheetData(got, props.SheetID)
-	g := grid.Build(props.Title, props.SheetID, window, data, grid.AsRaw)
+	// Over what came back, not the window: a new sheet's window is
+	// 26 000 cells whatever is on it.
+	g := grid.Build(props.Title, props.SheetID, grid.DataExtent(window, data), data, grid.AsRaw)
 
 	used, empty := usedRange(g)
 	res := &SheetCSVResult{}
@@ -70,11 +72,9 @@ func (s *Service) SheetCSV(ctx context.Context, spreadsheet, sheet string) (*She
 	}
 	res.Range = a1.Format(props.Title, used)
 
-	// Trimmed before rendering, not after. The window is the sheet's
-	// allocated size and the used range is usually a fraction of it, so
-	// rendering the whole window first materializes every empty cell as
-	// a string only to slice them away — 388 KB and a thousand
-	// allocations to describe sixty cells, on a sparse sheet.
+	// Trimmed before rendering, not after: a reply carries cells that hold
+	// formatting and no value, and rendering them first would make each a
+	// string only to slice it away.
 	g.Cells = g.Cells[:used.LastRow-window.FirstRow+1]
 	for i := range g.Cells {
 		g.Cells[i] = g.Cells[i][:used.LastCol-window.FirstCol+1]

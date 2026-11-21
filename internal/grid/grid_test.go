@@ -354,3 +354,28 @@ func TestCheckpointIgnoresFormatting(t *testing.T) {
 		t.Errorf("a formatted read gave checkpoint %s and a raw read %s; a write could never match the first", got, want)
 	}
 }
+
+// A grid is built over what the reply carries: Google leaves trailing
+// empty rows and cells out, so the reply's own extent is where the data
+// ends, clipped to the window asked for.
+func TestDataExtentIsWhereTheReplyEnds(t *testing.T) {
+	window := a1.Rect{FirstRow: 1, FirstCol: 1, LastRow: 1000, LastCol: 26}
+	row := func(n int) *gsheets.RowData { return &gsheets.RowData{Values: make([]*gsheets.CellData, n)} }
+	for _, tc := range []struct {
+		name string
+		data *gsheets.GridData
+		want a1.Rect
+	}{
+		{"no reply", nil, a1.Rect{FirstRow: 1, FirstCol: 1, LastRow: 1, LastCol: 1}},
+		{"ragged rows", &gsheets.GridData{RowData: []*gsheets.RowData{row(1), row(3), {}}},
+			a1.Rect{FirstRow: 1, FirstCol: 1, LastRow: 2, LastCol: 3}},
+		{"a reply starting inside the window", &gsheets.GridData{StartRow: 4, StartColumn: 2, RowData: []*gsheets.RowData{row(2)}},
+			a1.Rect{FirstRow: 1, FirstCol: 1, LastRow: 5, LastCol: 4}},
+		{"a reply wider than the window", &gsheets.GridData{RowData: []*gsheets.RowData{row(40)}},
+			a1.Rect{FirstRow: 1, FirstCol: 1, LastRow: 1, LastCol: 26}},
+	} {
+		if got := DataExtent(window, tc.data); got != tc.want {
+			t.Errorf("%s: DataExtent = %+v, want %+v", tc.name, got, tc.want)
+		}
+	}
+}

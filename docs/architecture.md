@@ -1015,12 +1015,19 @@ answer
 A caller who asks for more than the maximum and quietly gets less reads
 a footer describing a window they never asked for.
 
+The fetch is also cut at the rows the character budget could show, at
+the fewest characters a row with data draws. A read cut short over data
+that ends before the window's last column names the narrower range in
+its footer, as a hint: a window sized by the rows read so far would miss
+a later row that reaches further right.
+
 Rejected: clamping the rendering while fetching an open-ended range
-whole; an over-range budget silently reduced.
-Cost: the cell window and the character budget can disagree, so a raised
-`max_cells` fetches rows no rendering reaches (#69). A window is spent
-on the sheet's allocated width rather than its data, and decoding the
-response is most of a large read's time (#70).
+whole; an over-range budget silently reduced; sizing the window by the
+width the first rows returned, which can skip a wider row unseen.
+Cost: a run of empty rows renders as one line, so a sparse read can come
+back shorter than its character budget allows, and says where to read
+on. A window is spent on the sheet's allocated width until the caller
+narrows it, and decoding the response is most of a large read's time.
 
 ### D-23 Content is data, and a read shows formulas rather than resolving them
 
@@ -1928,13 +1935,14 @@ whatever is on it, and a resource of empty cells is commas that describe
 nothing. A read cut short by the budget says so in a second content
 block rather than inside the CSV, since CSV has no comment syntax and a
 note there parses as a row of data. A sheet title is percent-encoded in
-the URI, since a title can hold a slash, a question mark or a hash.
+the URI, since a title can hold a slash, a question mark or a hash. A
+resource builds its grid over the extent the reply carries, not the
+window it asked for.
 
 Rejected: a static list, which is a Drive listing; subscriptions, which
 the API cannot feed; a truncation note inside the CSV; reusing `Read`,
 which renders a grid nobody asked for.
-Cost: a resource builds a grid the size of its window rather than its
-data, and a change to the fetch window has two places to land (#77).
+Cost: a change to the fetch window has two places to land.
 
 ### D-59 Tests run against an in-memory Sheets that replays what Google was seen to do
 
