@@ -124,7 +124,7 @@ func TestPhase2BuildersSetOneUnionMember(t *testing.T) {
 		"TableAdd":         plan.TableAdd("Skerry", 1, rect, nil),
 		"TableUpdate":      plan.TableUpdate("t1", "Skerry", nil),
 		"TableDelete":      plan.TableDelete("t1"),
-		"BandingAdd":       plan.BandingAdd(1, rect, &gsheets.BandingProperties{}),
+		"BandingAdd":       plan.BandingAdd(1, rect, false, &gsheets.BandingProperties{}),
 		"BandingUpdate":    plan.BandingUpdate(1, true, &gsheets.BandingProperties{}),
 		"BandingDelete":    plan.BandingDelete(1),
 		"RuleAdd":          plan.RuleAdd(0, plan.Rule(1, rect, cond, format)),

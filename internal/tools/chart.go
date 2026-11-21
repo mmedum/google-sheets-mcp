@@ -49,7 +49,8 @@ func registerChart(s *mcp.Server, d Deps) {
 			"moved and deleted, and says so rather than being rebuilt as something else. " +
 			"list is worth calling first: it reports each chart's id, what it reads, and whether it has lost its " +
 			"series, which is what deleting a charted column does and what nothing in Sheets tells you.",
-		Kind: Write,
+		Kind:    Write,
+		Actions: chartActions,
 		Handle: func(ctx context.Context, in ManageChartInput) (*service.ChartResult, error) {
 			return d.Service.ManageChart(ctx, service.ChartRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Action: in.Action,
@@ -98,7 +99,8 @@ func registerPivot(s *mcp.Server, d Deps) {
 			"source, which Google accepts and turns into a circular reference. " +
 			"list reports each pivot table's groups, values and filters in the spelling this tool takes, so they " +
 			"can be changed and sent back.",
-		Kind: Write,
+		Kind:    Write,
+		Actions: pivotActions,
 		Handle: func(ctx context.Context, in ManagePivotTableInput) (*service.PivotResult, error) {
 			return d.Service.ManagePivotTable(ctx, service.PivotRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Action: in.Action, Anchor: in.Anchor,
@@ -108,4 +110,33 @@ func registerPivot(s *mcp.Server, d Deps) {
 			})
 		},
 	})
+}
+
+// chartActions is what each manage_chart action reads.
+var chartActions = &ActionArgs{
+	By:     []string{"action", "slicer"},
+	Shared: []string{"spreadsheet", "sheet"},
+	Reads: map[string][]string{
+		"list/false": {}, "list/true": {},
+		"add/false": {"title", "subtitle", "chart_type", "domain", "series", "headers", "legend", "stacked",
+			"axis_title", "anchor", "new_sheet", "width", "height"},
+		"update/false": {"id", "title", "subtitle", "chart_type", "domain", "series", "headers", "legend", "stacked",
+			"axis_title"},
+		"move/false": {"id", "anchor", "width", "height"}, "delete/false": {"id"},
+		"add/true":    {"title", "anchor", "width", "height", "range", "column"},
+		"update/true": {"id", "title", "range", "column"},
+		"move/true":   {"id", "anchor", "width", "height"}, "delete/true": {"id"},
+	},
+}
+
+// pivotActions is what each manage_pivot_table action reads.
+var pivotActions = &ActionArgs{
+	Shared: []string{"spreadsheet", "sheet"},
+	Reads: map[string][]string{
+		"list": {"range"},
+		"add":  {"anchor", "source", "group_rows", "group_columns", "values", "filters", "layout"},
+		"update": {"anchor", "source", "group_rows", "group_columns", "values", "filters", "clear_filters",
+			"layout"},
+		"delete": {"anchor"},
+	},
 }

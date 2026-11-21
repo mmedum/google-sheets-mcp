@@ -19,7 +19,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"reflect"
+	"slices"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -116,7 +119,23 @@ type Def[In any, Out service.Rendered] struct {
 	// delete Sheets cannot undo of something other objects depend on.
 	// Only a Destructive tool may set it.
 	PromptEveryCall bool
-	Handle          func(ctx context.Context, in In) (Out, error)
+	// Actions is what each action of the tool reads, so a call passing an
+	// argument its action does not read is refused rather than dropped.
+	// Nil for a tool with no action argument.
+	Actions *ActionArgs
+	Handle  func(ctx context.Context, in In) (Out, error)
+}
+
+// ActionArgs names, for each combination of the input's By fields, the
+// arguments it reads beyond Shared. A key joins the fields' values with
+// "/", a bool as true or false: manage_range's "banding/add". Every input
+// field must be Shared or read by some key, which registration checks.
+type ActionArgs struct {
+	// By are the fields the table is keyed by: "action" when empty.
+	By []string
+	// Shared are the arguments every key reads.
+	Shared []string
+	Reads  map[string][]string
 }
 
 // add registers one tool if the configuration allows it.
@@ -128,7 +147,12 @@ func add[In any, Out service.Rendered](s *mcp.Server, d Deps, def Def[In, Out]) 
 	// dump happens to force the full surface. The check is pure and
 	// costs nothing, so every Def is validated whether or not this
 	// configuration registers it.
-	dryRun, err := checkDryRun(def.Kind, reflect.TypeFor[In]())
+	in := reflect.TypeFor[In]()
+	reads, err := checkActions(in, def.Actions)
+	if err != nil {
+		panic(fmt.Sprintf("tools: %s: %v", def.Name, err))
+	}
+	dryRun, err := checkDryRun(def.Kind, in)
 	if err != nil {
 		// A programming error, found the first time the server starts.
 		// Failing loudly is the point: a write tool that offers dry_run
@@ -155,6 +179,9 @@ func add[In any, Out service.Rendered](s *mcp.Server, d Deps, def Def[In, Out]) 
 		var zero Out
 		if dryRun >= 0 && reflect.ValueOf(in).Field(dryRun).Bool() {
 			ctx = service.WithDryRun(ctx)
+		}
+		if err := reads.refuse(reflect.ValueOf(in)); err != nil {
+			return nil, zero, fail(err)
 		}
 		out, err := def.Handle(ctx, in)
 		if err != nil {
@@ -250,27 +277,134 @@ const DryRunField = "dry_run"
 // wrote, so the flag is looked for in the type rather than remembered
 // per tool. Reads have nothing to preview and must not offer one.
 func checkDryRun(k Kind, in reflect.Type) (field int, err error) {
-	field = -1
 	if in == nil || in.Kind() != reflect.Struct {
-		return field, nil
+		return -1, nil
 	}
-	for i := range in.NumField() {
-		f := in.Field(i)
-		if jsonName(f.Tag.Get("json")) != DryRunField {
-			continue
-		}
-		if f.Type.Kind() != reflect.Bool {
+	field, found := -1, false
+	if i, ok := argFields(in)[DryRunField]; ok {
+		if f := in.Field(i); f.Type.Kind() != reflect.Bool {
 			return -1, fmt.Errorf("%s must be a bool, not %s", DryRunField, f.Type)
 		}
-		field = i
+		field, found = i, true
 	}
 	switch {
-	case k == Read && field >= 0:
+	case k == Read && found:
 		return -1, errors.New("a read has nothing to preview, so it must not offer " + DryRunField)
-	case k != Read && field < 0:
+	case k != Read && !found:
 		return -1, errors.New("a write must offer " + DryRunField + "; a caller that cannot preview will not")
 	}
 	return field, nil
+}
+
+// argFields is each argument of an input, by its JSON name, with the
+// index of the field that carries it.
+func argFields(in reflect.Type) map[string]int {
+	out := map[string]int{}
+	if in == nil || in.Kind() != reflect.Struct {
+		return out
+	}
+	for i := range in.NumField() {
+		if name := jsonName(in.Field(i).Tag.Get("json")); name != "" {
+			out[name] = i
+		}
+	}
+	return out
+}
+
+// actionReads is what checkActions found: the fields that key a tool's
+// table, every argument, and what each key reads.
+type actionReads struct {
+	by    []int
+	names []string
+	args  map[string]int
+	reads map[string]map[string]bool
+}
+
+// checkActions holds a Def's table to its input type: every name is an
+// argument, and every argument is shared or read by some key, so no
+// argument is offered that nothing reads. An input with an action field
+// must have a table, so a tool cannot leave one out by default.
+func checkActions(in reflect.Type, a *ActionArgs) (*actionReads, error) {
+	args := argFields(in)
+	if a == nil {
+		if _, ok := args["action"]; ok {
+			return nil, errors.New("it takes an action, so it must say what each action reads")
+		}
+		return nil, nil
+	}
+	r := &actionReads{names: a.By, args: args, reads: map[string]map[string]bool{}}
+	if len(r.names) == 0 {
+		r.names = []string{"action"}
+	}
+	read := map[string]bool{DryRunField: true}
+	for _, name := range r.names {
+		i, ok := args[name]
+		if !ok {
+			return nil, fmt.Errorf("the table is keyed by %s, which the input does not have", name)
+		}
+		r.by = append(r.by, i)
+		read[name] = true
+	}
+	for _, name := range a.Shared {
+		if _, ok := args[name]; !ok {
+			return nil, fmt.Errorf("%s is shared and is not an argument", name)
+		}
+		read[name] = true
+	}
+	used := maps.Clone(read)
+	for key, names := range a.Reads {
+		r.reads[key] = maps.Clone(read)
+		for _, name := range names {
+			if _, ok := args[name]; !ok {
+				return nil, fmt.Errorf("%s reads %s, which is not an argument", key, name)
+			}
+			r.reads[key][name], used[name] = true, true
+		}
+	}
+	for name := range args {
+		if !used[name] {
+			return nil, fmt.Errorf("%s is read by nothing in the table", name)
+		}
+	}
+	return r, nil
+}
+
+// refuse names the arguments a call passed that its key does not read,
+// an empty list counting as none passed. A key the table does not have,
+// such as a misspelled action, is left to the service, which names the
+// ones there are.
+func (r *actionReads) refuse(in reflect.Value) error {
+	if r == nil {
+		return nil
+	}
+	parts := make([]string, len(r.by))
+	shown := make([]string, len(r.by))
+	for i, f := range r.by {
+		v := in.Field(f)
+		parts[i] = fmt.Sprint(v.Interface())
+		shown[i] = r.names[i] + "=" + parts[i]
+	}
+	reads, ok := r.reads[strings.Join(parts, "/")]
+	if !ok {
+		return nil
+	}
+	var extra, wanted []string
+	for _, name := range slices.Sorted(maps.Keys(r.args)) {
+		v := in.Field(r.args[name])
+		empty := (v.Kind() == reflect.Slice || v.Kind() == reflect.Map) && v.Len() == 0
+		passed := !v.IsZero() && !empty
+		switch {
+		case !reads[name] && passed:
+			extra = append(extra, name)
+		case reads[name] && !slices.Contains(r.names, name) && name != DryRunField:
+			wanted = append(wanted, name)
+		}
+	}
+	if len(extra) == 0 {
+		return nil
+	}
+	return service.Errorf("invalid", "%s does not read %s; it reads %s",
+		strings.Join(shown, " "), strings.Join(extra, ", "), strings.Join(wanted, ", "))
 }
 
 func jsonName(tag string) string {

@@ -7,10 +7,12 @@ and this project follows [semantic versioning](https://semver.org).
 
 ### Added
 
+- `manage_range` banding takes `by_columns`, to alternate the shade across columns.
 - `delete_dimensions` names the pivot tables whose source a delete cuts, in its preview, its refusal and a new `pivots_affected` field.
 
 ### Changed
 
+- The `manage_*` tools refuse an argument the call's action does not read, with `[invalid]` naming it, where they dropped it silently.
 - `read_range` fetches no more rows than its character budget can show, and a cut-short read names a narrower range that reads more rows a call.
 - A `dry_run` that would be refused previews and names the refusal in every write tool; several answered with the refusal alone.
 

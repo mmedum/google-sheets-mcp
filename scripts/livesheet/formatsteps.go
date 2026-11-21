@@ -384,6 +384,36 @@ func (d *driver) rangeSteps() []step {
 			},
 		},
 		{
+			name: "banding across columns",
+			why:  "a banded range carries row or column properties, never both, and a table read across shades columns",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
+				"kind": "banding", "action": "add", "color": "#d9e2f3", "by_columns": true,
+			},
+		},
+		{
+			name: "and it reads back as columns",
+			why:  "Google could take the request and band rows anyway; only a read says which",
+			tool: "read_formatting",
+			args: map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8"},
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "columns #") {
+					return fmt.Errorf("the banding does not read back as columns: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "column banding removed",
+			why:  "and the next steps write in that band",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A5:C8",
+				"kind": "banding", "action": "delete",
+			},
+		},
+		{
 			name: "a conditional format rule, added at an index",
 			why:  "rules are evaluated in order, so the index is how a caller says which wins",
 			tool: "manage_range",

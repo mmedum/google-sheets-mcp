@@ -40,7 +40,8 @@ func registerAnchor(s *mcp.Server, d Deps) {
 			"remove deletes the label and leaves the data alone, and list shows every anchor in the spreadsheet. " +
 			"Anchors are stored in the spreadsheet itself, so they outlive this session and are visible to anything " +
 			"else that reads it.",
-		Kind: Write,
+		Kind:    Write,
+		Actions: anchorActions,
 		Handle: func(ctx context.Context, in AnchorInput) (*service.AnchorResult, error) {
 			return d.Service.Anchors(ctx, service.AnchorRequest{
 				Spreadsheet: in.Spreadsheet, Action: in.Action, Name: in.Name, Note: in.Note,
@@ -48,4 +49,13 @@ func registerAnchor(s *mcp.Server, d Deps) {
 			})
 		},
 	})
+}
+
+// anchorActions is what each manage_anchor action reads.
+var anchorActions = &ActionArgs{
+	Shared: []string{"spreadsheet"},
+	Reads: map[string][]string{
+		"add": {"name", "note", "sheet", "range"}, "move": {"name", "note", "sheet", "range"},
+		"remove": {"name"}, "list": {},
+	},
 }

@@ -3,8 +3,13 @@ package tools
 import (
 	"context"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -392,4 +397,178 @@ func callTool(t *testing.T, s *mcp.Server, name string, args map[string]any) *mc
 		t.Fatal(err)
 	}
 	return res
+}
+
+// The live driver's steps are calls a person would make. Each one has
+// to pass its action's argument list, or a call that worked would now be
+// refused; a step that expects [invalid] may be the refusal itself. A
+// step whose key the reader cannot see in a literal map is a failure, not
+// a skip; a step whose arguments a helper merges is not a literal, and
+// the floor on how many were checked keeps such skips few.
+func TestEveryLiveStepPassesItsActionsArguments(t *testing.T) {
+	tables := map[string]*actionReads{}
+	for tool, def := range map[string]struct {
+		in    reflect.Type
+		table *ActionArgs
+	}{
+		"manage_sheet": {reflect.TypeFor[SheetInput](), sheetActions}, "manage_range": {reflect.TypeFor[ManageRangeInput](), rangeActions},
+		"manage_data_source":  {reflect.TypeFor[ManageDataSourceInput](), sourceActions},
+		"manage_cell_comment": {reflect.TypeFor[ManageCommentInput](), commentActions},
+		"manage_chart":        {reflect.TypeFor[ManageChartInput](), chartActions},
+		"manage_pivot_table":  {reflect.TypeFor[ManagePivotTableInput](), pivotActions},
+		"manage_anchor":       {reflect.TypeFor[AnchorInput](), anchorActions},
+		"edit_dimensions":     {reflect.TypeFor[DimensionInput](), dimensionActions},
+		"transform_range":     {reflect.TypeFor[TransformRangeInput](), transformActions},
+	} {
+		r, err := checkActions(def.in, def.table)
+		if err != nil {
+			t.Fatalf("%s: %v", tool, err)
+		}
+		tables[tool] = r
+	}
+	files, err := filepath.Glob(filepath.Join("..", "..", "scripts", "livesheet", "*.go"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no live driver to read: %v", err)
+	}
+	checked := 0
+	for _, path := range files {
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			lit, ok := n.(*ast.CompositeLit)
+			if !ok {
+				return true
+			}
+			fields := map[string]ast.Expr{}
+			for _, e := range lit.Elts {
+				if kv, ok := e.(*ast.KeyValueExpr); ok {
+					if id, ok := kv.Key.(*ast.Ident); ok {
+						fields[id.Name] = kv.Value
+					}
+				}
+			}
+			r := tables[stringLit(fields["tool"])]
+			if r == nil {
+				return true
+			}
+			name := stringLit(fields["name"])
+			args, ok := fields["args"].(*ast.CompositeLit)
+			if !ok {
+				return true
+			}
+			sent := map[string]ast.Expr{}
+			for _, e := range args.Elts {
+				if kv, ok := e.(*ast.KeyValueExpr); ok {
+					sent[stringLit(kv.Key)] = kv.Value
+				}
+			}
+			parts := make([]string, len(r.names))
+			for i, by := range r.names {
+				switch v := sent[by].(type) {
+				case nil:
+					parts[i] = "false" // a bool key left out
+				case *ast.Ident:
+					parts[i] = v.Name
+				default:
+					parts[i] = stringLit(v)
+				}
+				if parts[i] == "" {
+					t.Errorf("%s: live step %q gives %s in a form this test cannot read", fset.Position(lit.Pos()), name, by)
+					return true
+				}
+			}
+			if stringLit(fields["expectError"]) == "invalid" {
+				return true
+			}
+			key := strings.Join(parts, "/")
+			reads, known := r.reads[key]
+			if !known {
+				return true // the service refuses an unknown action itself
+			}
+			checked++
+			for arg := range sent {
+				if !reads[arg] {
+					t.Errorf("%s: live step %q sends %s, which %s does not read", path, name, arg, key)
+				}
+			}
+			return true
+		})
+	}
+	if checked < 90 {
+		t.Errorf("checked %d live steps, want at least 90: the reader is not seeing the driver", checked)
+	}
+}
+
+func stringLit(e ast.Expr) string {
+	if lit, ok := e.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+		if s, err := strconv.Unquote(lit.Value); err == nil {
+			return s
+		}
+	}
+	return ""
+}
+
+type actionInput struct {
+	Spreadsheet string   `json:"spreadsheet"`
+	Action      string   `json:"action"`
+	Title       string   `json:"title,omitempty"`
+	Rows        int      `json:"rows,omitempty"`
+	Values      []string `json:"values,omitempty"`
+	DryRun      bool     `json:"dry_run,omitempty"`
+}
+
+// A table that names an argument the input lacks, or leaves one read by
+// no action, is a defect found at registration.
+func TestAnActionTableIsHeldToItsInput(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		table *ActionArgs
+		want  string
+	}{
+		{"a name that is not an argument", &ActionArgs{Shared: []string{"spreadsheet"},
+			Reads: map[string][]string{"add": {"title", "rows", "values", "shade"}}}, "add reads shade, which is not an argument"},
+		{"an argument nothing reads", &ActionArgs{Shared: []string{"spreadsheet"},
+			Reads: map[string][]string{"add": {"title", "values"}}}, "rows is read by nothing in the table"},
+		{"a key that is not an argument", &ActionArgs{By: []string{"kind"}, Shared: []string{"spreadsheet"},
+			Reads: map[string][]string{"add": {"title", "rows", "values"}}}, "keyed by kind, which the input does not have"},
+	} {
+		if _, err := checkActions(reflect.TypeFor[actionInput](), tc.table); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: %v, want an error saying %q", tc.name, err, tc.want)
+		}
+	}
+}
+
+// A call passing an argument its action does not read is refused, naming
+// it; one passing only what its action reads, or an action the table
+// does not know, goes through to the tool.
+func TestAnArgumentTheActionDoesNotReadIsRefused(t *testing.T) {
+	reads, err := checkActions(reflect.TypeFor[actionInput](), &ActionArgs{Shared: []string{"spreadsheet"},
+		Reads: map[string][]string{"add": {"title", "rows", "values"}, "rename": {"title"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		in   actionInput
+		want string
+	}{
+		{actionInput{Spreadsheet: "x", Action: "add", Title: "t", Rows: 3, DryRun: true}, ""},
+		{actionInput{Spreadsheet: "x", Action: "Rename", Title: "t", Rows: 3}, ""},
+		// An empty list is how clients often send an argument they mean to
+		// leave out.
+		{actionInput{Spreadsheet: "x", Action: "rename", Title: "t", Values: []string{}}, ""},
+		{actionInput{Spreadsheet: "x", Action: "rename", Title: "t", Rows: 3},
+			"[invalid] action=rename does not read rows; it reads spreadsheet, title"},
+		{actionInput{Spreadsheet: "x", Action: "summarize", Rows: 3}, ""},
+	} {
+		got := ""
+		if err := reads.refuse(reflect.ValueOf(tc.in)); err != nil {
+			got = err.Error()
+		}
+		if got != tc.want {
+			t.Errorf("%+v: %q, want %q", tc.in, got, tc.want)
+		}
+	}
 }

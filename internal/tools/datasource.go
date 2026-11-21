@@ -50,7 +50,8 @@ func registerDataSource(s *mcp.Server, d Deps) {
 			"get_spreadsheet already reports whether a spreadsheet has data sources at all, with no extra scope. " +
 			"Connecting one is connect_data_source; deleting one is delete_data_source, which is off by default and " +
 			"needs confirm.",
-		Kind: Connected,
+		Kind:    Connected,
+		Actions: sourceActions,
 		Handle: func(ctx context.Context, in ManageDataSourceInput) (*service.SourceResult, error) {
 			return d.Service.ManageDataSource(ctx, service.SourceRequest{
 				Spreadsheet: in.Spreadsheet, Action: in.Action, ID: in.ID, DryRun: in.DryRun,
@@ -117,4 +118,10 @@ func registerDeleteDataSource(s *mcp.Server, d Deps) {
 			})
 		},
 	})
+}
+
+// sourceActions is what each manage_data_source action reads.
+var sourceActions = &ActionArgs{
+	Shared: []string{"spreadsheet"},
+	Reads:  map[string][]string{"refresh": {"id"}, "cancel_refresh": {"id"}, "list": {}},
 }
