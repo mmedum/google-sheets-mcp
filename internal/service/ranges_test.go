@@ -555,8 +555,13 @@ func TestDeletingATableThatTakesRulesIsRefused(t *testing.T) {
 	if _, err := svc.ManageRange(ctx, remove); err != nil {
 		t.Fatalf("overwrite did not allow it: %v", err)
 	}
-	if got := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Tables; len(got) != 0 {
-		t.Errorf("%d tables left", len(got))
+	sh := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet)
+	if len(sh.Tables) != 0 {
+		t.Errorf("%d tables left", len(sh.Tables))
+	}
+	// The rule the refusal named went with the table.
+	if len(sh.Conditional) != 0 {
+		t.Errorf("%d conditional rule(s) survived the table delete", len(sh.Conditional))
 	}
 }
 

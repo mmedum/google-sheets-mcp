@@ -1030,3 +1030,70 @@ func TestPivotRulesAreChecked(t *testing.T) {
 		})
 	}
 }
+
+// Google answers with what the mask names and nothing else, so the fake
+// does too: a mask that drops a field the code reads must fail here.
+func TestAGetAnswersOnlyWhatTheMaskNames(t *testing.T) {
+	doc := map[string]any{
+		"a": 1.0, "x": 2.0,
+		"b": map[string]any{"c": 3.0, "y": 4.0},
+		"d": []any{
+			map[string]any{"e": 5.0, "f": map[string]any{"g": 6.0, "z": 7.0}, "w": 8.0},
+			map[string]any{"e": 9.0},
+		},
+	}
+	got, err := json.Marshal(prune(doc, must(t, "a, b/c,d(e,f(g))")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"a":1,"b":{"c":3},"d":[{"e":5,"f":{"g":6}},{"e":9}]}`
+	if string(got) != want {
+		t.Errorf("pruned\n%s\nwant\n%s", got, want)
+	}
+}
+
+// Two paths into the same object keep both, and a whole field kept once
+// stays whole.
+func TestAMaskMergesPathsIntoOneObject(t *testing.T) {
+	doc := map[string]any{"s": map[string]any{"p": 1.0, "q": 2.0, "r": 3.0}}
+	for mask, want := range map[string]string{
+		"s/p,s/q":     `{"s":{"p":1,"q":2}}`,
+		"s(p),s.q":    `{"s":{"p":1,"q":2}}`,
+		"s,s/p":       `{"s":{"p":1,"q":2,"r":3}}`,
+		"s/p,s":       `{"s":{"p":1,"q":2,"r":3}}`,
+		"s(*)":        `{"s":{"p":1,"q":2,"r":3}}`,
+		"s(p/x),s(p)": `{"s":{"p":1}}`,
+	} {
+		got, _ := json.Marshal(prune(doc, must(t, mask)))
+		if string(got) != want {
+			t.Errorf("mask %q pruned to %s, want %s", mask, got, want)
+		}
+	}
+}
+
+// A nested path merged with another keeps both, at any depth.
+func TestAMaskMergesNestedPaths(t *testing.T) {
+	doc := map[string]any{"s": map[string]any{"p": map[string]any{"x": 1.0, "y": 2.0, "z": 3.0}}}
+	got, _ := json.Marshal(prune(doc, must(t, "s(p/x),s(p/y)")))
+	if want := `{"s":{"p":{"x":1,"y":2}}}`; string(got) != want {
+		t.Errorf("pruned to %s, want %s", got, want)
+	}
+}
+
+// Google answers a mask whose parentheses do not balance with a 400.
+func TestAnUnbalancedMaskIsRefused(t *testing.T) {
+	for _, mask := range []string{"a(b", "a)b", "a(b(c)", "a,b)"} {
+		if _, ok := parseMask(mask); ok {
+			t.Errorf("parseMask(%q) accepted an unbalanced mask", mask)
+		}
+	}
+}
+
+func must(t *testing.T, mask string) fieldMask {
+	t.Helper()
+	m, ok := parseMask(mask)
+	if !ok {
+		t.Fatalf("parseMask(%q) refused a balanced mask", mask)
+	}
+	return m
+}
