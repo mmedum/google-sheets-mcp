@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -404,6 +405,7 @@ func manifestProblems(raw []byte, m manifest, files []staged, root string) []str
 	problems = append(problems, manifestShapeProblems(m.Schema, m.ManifestVersion, m.Support)...)
 	problems = append(problems, identityProblems(m, files)...)
 	problems = append(problems, settingProblems(m, bundleLeftOut)...)
+	problems = append(problems, registrationProblems(m)...)
 	problems = append(problems, checkLauncher(files, root)...)
 
 	// And against the schema the manifest cites, which the checks above
@@ -1152,6 +1154,112 @@ func settingProblems(m manifest, leftOut map[string]string) []string {
 	defaults, defaultsErr := defaultsProblems(m)
 	problems = append(problems, defaults...)
 	return append(problems, refusalProblems(m, switches, bundleRefused, defaultsErr)...)
+}
+
+// registrationProblems holds what each switch's description says it
+// registers to what the server registers. A switch names, by name, each
+// tool it adds and no other; a tool only two switches together add has
+// no description to name it, so it is refused; and read-only leaves every
+// other switch nothing to register, which the fields say.
+func registrationProblems(m manifest) []string {
+	readOnly := bundleKey(config.EnvPrefix + "READ_ONLY")
+	var others []string
+	for _, v := range config.Vars() {
+		key := bundleKey(v.Name)
+		if _, asked := m.UserConfig[key]; v.Switch && asked && key != readOnly {
+			others = append(others, key)
+		}
+	}
+	slices.Sort(others)
+	registered := func(turned ...string) (map[string]bool, error) {
+		env, _ := hostEnv(m, turned...)
+		cfg, err := loadEnv(env)
+		if err == nil {
+			var names map[string]bool
+			if names, err = toolNames(cfg); err == nil {
+				return names, nil
+			}
+		}
+		return nil, fmt.Errorf("the server's tools with %s: %w", turnedNames(m, turned), err)
+	}
+	base, err := registered()
+	if err != nil {
+		return nil // the defaults check reports defaults the server refuses
+	}
+	onlyRead, err := registered(readOnly)
+	if err != nil {
+		return []string{err.Error()}
+	}
+	everything, err := registered(others...)
+	if err != nil {
+		return []string{err.Error()}
+	}
+	var problems []string
+	named := map[string]bool{}
+	for _, key := range others {
+		with, err := registered(key)
+		if err != nil {
+			problems = append(problems, err.Error())
+			continue
+		}
+		says := map[string]bool{}
+		for _, word := range toolWord.FindAllString(m.UserConfig[key].Description, -1) {
+			says[word] = true
+		}
+		for _, name := range slices.Sorted(maps.Keys(everything)) {
+			if base[name] {
+				continue
+			}
+			named[name] = named[name] || with[name]
+			switch {
+			case with[name] && !says[name]:
+				problems = append(problems, fmt.Sprintf("user_config.%s registers %s and its description does not name it", key, name))
+			case says[name] && !with[name]:
+				problems = append(problems, fmt.Sprintf("user_config.%s names %s, which it does not register", key, name))
+			}
+		}
+		underReadOnly, err := registered(readOnly, key)
+		if err != nil {
+			problems = append(problems, err.Error())
+			continue
+		}
+		if !maps.Equal(underReadOnly, onlyRead) {
+			problems = append(problems, fmt.Sprintf("user_config.%s says read-only leaves it nothing to register, "+
+				"and with both on the server registers %v", key, slices.Sorted(maps.Keys(underReadOnly))))
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(everything)) {
+		if !base[name] && !named[name] {
+			problems = append(problems, fmt.Sprintf("%s registers only with %s, and no switch's description can name it",
+				name, turnedNames(m, others)))
+		}
+	}
+	return problems
+}
+
+// toolWord is a word a description could name a tool by.
+var toolWord = regexp.MustCompile(`\w+`)
+
+// toolNames is every tool the server registers with cfg, asked over an
+// in-memory session as a client would.
+func toolNames(cfg config.Config) (map[string]bool, error) {
+	var buf bytes.Buffer
+	if err := server.DumpSchemas(context.Background(), server.New(server.Deps{Config: cfg}), &buf, "gate"); err != nil {
+		return nil, err
+	}
+	var dump struct {
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &dump); err != nil {
+		return nil, err
+	}
+	names := map[string]bool{}
+	for _, t := range dump.Tools {
+		names[t.Name] = true
+	}
+	return names, nil
 }
 
 // passByEnvProblems holds that every setting passes by mcp_config.env:

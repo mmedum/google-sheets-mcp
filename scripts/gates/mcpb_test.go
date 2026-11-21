@@ -1336,3 +1336,47 @@ func TestTheStampedManifestIsHeldToTheSchema(t *testing.T) {
 		t.Errorf("stamping a document the schema refuses gave %v, want an error containing %q", err, want)
 	}
 }
+
+// Each switch's description names the tools it registers and no others,
+// held to what the server registers, so a tool added behind a switch
+// fails here until the field a person reads names it.
+func TestSwitchDescriptionsNameWhatTheyRegister(t *testing.T) {
+	if got := registrationProblems(good(t)); len(got) != 0 {
+		t.Fatalf("the committed manifest: %v", got)
+	}
+	describe := func(key, description string) manifest {
+		return edited(t, func(doc map[string]any) {
+			dig(doc, "user_config", key)["description"] = description
+		})
+	}
+	for _, tc := range []struct {
+		name, key, description, want string
+	}{
+		{"a tool left unnamed", "enable_destructive",
+			"Register delete_sheet, delete_dimensions, clear_values and delete_data_source.",
+			"user_config.enable_destructive registers delete_cell_comment and its description does not name it"},
+		{"a tool it does not add", "enable_data_sources",
+			"Register connect_data_source, manage_data_source and delete_sheet.",
+			"user_config.enable_data_sources names delete_sheet, which it does not register"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := registrationProblems(describe(tc.key, tc.description))
+			if !mentions(got, tc.want) {
+				t.Errorf("problems %v, want one saying %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// Read-only leaves every other switch nothing to register, which their
+// fields say; a bundle whose read-only reaches the server as off would
+// register them anyway.
+func TestReadOnlyLeavesTheSwitchesNothing(t *testing.T) {
+	m := edited(t, func(doc map[string]any) {
+		dig(doc, "server", "mcp_config", "env")["GSHEETS_READ_ONLY"] = "false"
+	})
+	want := "user_config.enable_destructive says read-only leaves it nothing to register"
+	if got := registrationProblems(m); !mentions(got, want) {
+		t.Errorf("problems %v, want one saying %q", got, want)
+	}
+}
