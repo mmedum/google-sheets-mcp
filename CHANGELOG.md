@@ -11,6 +11,7 @@ and this project follows [semantic versioning](https://semver.org).
 
 ### Changed
 
+- `read_range` fetches no more rows than its character budget can show, and a cut-short read names a narrower range that reads more rows a call.
 - A `dry_run` that would be refused previews and names the refusal in every write tool; several answered with the refusal alone.
 
 ### Fixed

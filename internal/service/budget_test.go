@@ -81,3 +81,86 @@ func TestZeroBudgetTakesTheConfiguredDefault(t *testing.T) {
 		t.Errorf("continue_from = %d, want the configured cell default to have bounded the read", res.ContinueFrom)
 	}
 }
+
+// A raised cell budget fetches no rows the character budget could never
+// render: each row draws at least " |" a cell and a newline, so the fetch
+// stops where even rows of empty cells would run out of characters.
+func TestTheFetchStopsWhereTheRenderingMust(t *testing.T) {
+	srv := sheetstest.New(t)
+	doc, file := sheetstest.Large(5000, 2)
+	srv.Add(doc, file)
+	svc := newService(t, srv)
+	res, err := svc.Read(context.Background(), service.ReadRequest{
+		Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A:B",
+		Budget: service.Budget{Cells: config.MaxMaxCells, Chars: 1000},
+	})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	// 1000 characters at 2 a cell and 1 a row is 200 rows, plus the one
+	// row always drawn.
+	if res.Range != "'Bractal'!A1:B201" {
+		t.Errorf("the read fetched %s, want 'Bractal'!A1:B201", res.Range)
+	}
+	if res.ContinueFrom < 2 || res.ContinueFrom > 202 {
+		t.Errorf("continue_from = %d, want a row the fetch reached", res.ContinueFrom)
+	}
+}
+
+// A sparse range renders runs of empty rows as one line, so a page cut
+// by the character bound can be shorter than the budget allows. It still
+// says where to read on, so nothing is skipped.
+func TestASparsePageCutByTheBoundSaysWhereToReadOn(t *testing.T) {
+	srv := sheetstest.New(t)
+	doc, file := sheetstest.Large(400, 2)
+	for r := 2; r <= 400; r++ {
+		if r%100 != 0 {
+			doc.Sheets[0].Set(r, 1, nil)
+			doc.Sheets[0].Set(r, 2, nil)
+		}
+	}
+	srv.Add(doc, file)
+	svc := newService(t, srv)
+	res, err := svc.Read(context.Background(), service.ReadRequest{
+		Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A:B",
+		Budget: service.Budget{Cells: config.MaxMaxCells, Chars: 500},
+	})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if res.Range != "'Bractal'!A1:B101" || res.ContinueFrom != 102 {
+		t.Errorf("read %s and continues at %d, want 'Bractal'!A1:B101 and 102", res.Range, res.ContinueFrom)
+	}
+}
+
+// A read of a sheet's allocated width, cut short over data that ends far
+// to the left, says which narrower range reads more rows a call. It is a
+// hint, since a later row might reach further right.
+func TestACutReadNamesTheNarrowerRange(t *testing.T) {
+	srv := sheetstest.New(t)
+	doc, file := sheetstest.Large(3000, 2)
+	doc.Sheets[0].Props.GridProperties.ColumnCount = 26
+	srv.Add(doc, file)
+	svc := newService(t, srv)
+	res, err := svc.Read(context.Background(), service.ReadRequest{
+		Spreadsheet: doc.ID, Sheet: "Bractal",
+		Budget: service.Budget{Chars: config.MaxMaxChars},
+	})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	const want = "every row shown ends by column B, so 'Bractal'!A193:B3000 reads more rows a call"
+	if !strings.Contains(res.Footer, want) {
+		t.Errorf("footer %q does not say %q", res.Footer, want)
+	}
+
+	narrow, err := svc.Read(context.Background(), service.ReadRequest{
+		Spreadsheet: doc.ID, Sheet: "Bractal", Range: "A:B", Budget: service.Budget{Chars: config.MaxMaxChars},
+	})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if strings.Contains(narrow.Footer, "every row shown ends") {
+		t.Errorf("a read already as narrow as its data still offers a narrower range: %q", narrow.Footer)
+	}
+}

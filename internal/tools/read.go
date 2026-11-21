@@ -22,7 +22,7 @@ type ReadInput struct {
 	Format            string `json:"format,omitempty" jsonschema:"grid (default, an addressed grid for reading), or json, csv or tsv for feeding elsewhere"`
 	Formatted         bool   `json:"formatted,omitempty" jsonschema:"apply Google's display formatting. Off by default: a currency symbol inside a number you may want to compute with is a trap"`
 	MaxCells          int    `json:"max_cells,omitempty" jsonschema:"cell budget, default 5000, maximum 50000. Applied before the call, so an open-ended range never becomes an unbounded fetch"`
-	MaxChars          int    `json:"max_chars,omitempty" jsonschema:"character budget for the rendering, default 20000, maximum 400000"`
+	MaxChars          int    `json:"max_chars,omitempty" jsonschema:"character budget for the rendering, default 20000, maximum 400000. It also bounds the rows fetched, to those it could show"`
 	ContinueFrom      int    `json:"continue_from,omitempty" jsonschema:"the continue_from row a truncated read returned; resumes there"`
 	IncludeNotes      bool   `json:"include_notes,omitempty" jsonschema:"list cell notes under the grid; a values read cannot show them"`
 	IncludeValidation bool   `json:"include_validation,omitempty" jsonschema:"list data validation rules under the grid"`
@@ -92,6 +92,7 @@ func registerRead(s *mcp.Server, d Deps) {
 			"include_validation and include_merges add what a values read cannot show. " +
 			"The read is budgeted in cells and characters and the window is resolved before the call, so an open-ended " +
 			"range is safe; when it is cut short the footer says where to continue and continue_from resumes there. " +
+			"A range as narrow as the data reads more rows a call than the whole sheet's width does. " +
 			"Every read returns a checkpoint to hand to a later write. " +
 			"Use get_spreadsheet first for sheet names and sizes, and find_in_spreadsheet when you do not yet know which " +
 			"cells you want.",

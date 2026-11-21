@@ -180,6 +180,28 @@ const (
 	AsRaw       Formatted = false
 )
 
+// DataExtent is rect cut to the rows and columns a response carries.
+// Google leaves trailing empty rows and cells out of a reply, so this is
+// where the data ends, and a grid built over it allocates the data rather
+// than the window asked for. An empty reply keeps rect's first cell.
+// Checked by the live step "an addressed grid", as Build's padding is.
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/get
+func DataExtent(rect a1.Rect, data *gsheets.GridData) a1.Rect {
+	out := a1.Rect{FirstRow: rect.FirstRow, FirstCol: rect.FirstCol, LastRow: rect.FirstRow, LastCol: rect.FirstCol}
+	if data == nil {
+		return out
+	}
+	rowOffset, colOffset := rect.OffsetOf(data.StartRow, data.StartColumn)
+	for i, row := range data.RowData {
+		if row == nil || len(row.Values) == 0 {
+			continue
+		}
+		out.LastRow = max(out.LastRow, min(rect.LastRow, rect.FirstRow+rowOffset+i))
+		out.LastCol = max(out.LastCol, min(rect.LastCol, rect.FirstCol+colOffset+len(row.Values)-1))
+	}
+	return out
+}
+
 // Build turns one sheet's grid data into a Grid over rect.
 //
 // rect is what the caller asked for and what the result is padded to.

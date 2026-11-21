@@ -420,3 +420,20 @@ func TestFooterNamesTheCellsItShortened(t *testing.T) {
 		t.Errorf("a capped sample does not say it was capped:\n%s", foot)
 	}
 }
+
+// The read's fetch bound counts on a row with something in it drawing at
+// least MinRowChars; a renderer that drew less would let it fetch too
+// little.
+func TestARowDrawsAtLeastMinRowChars(t *testing.T) {
+	const cols = 5
+	g := grid.Build("Bractal", 0, a1.Rect{FirstRow: 1, FirstCol: 1, LastRow: 2, LastCol: cols}, &gsheets.GridData{
+		RowData: []*gsheets.RowData{{Values: []*gsheets.CellData{{FormattedValue: "x"}}}, {Values: []*gsheets.CellData{{FormattedValue: "y"}}}},
+	}, grid.AsRaw)
+	out := render.Grid(g, render.GridOptions{Show: render.ShowValues}).Text
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	for _, line := range lines[len(lines)-2:] {
+		if got := len(line) + 1; got < render.MinRowChars(cols) {
+			t.Errorf("a row of %d cells drew %d characters, under MinRowChars %d: %q", cols, got, render.MinRowChars(cols), line)
+		}
+	}
+}
