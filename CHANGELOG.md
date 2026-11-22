@@ -21,6 +21,7 @@ and this project follows [semantic versioning](https://semver.org).
 
 ### Fixed
 
+- A busy turn no longer meets Google's per-minute quota: requests stay within 60 a minute, and a quota refusal waits for the minute.
 - A write refused inside a pivot table's output on a wide sheet names the pivot; one read now finds the anchor and what it draws.
 - `manage_chart` `update` works without `sheet`; it refused every chart as if it sat on a sheet of its own.
 - A `read_range` straight after `append_rows` sees the appended rows; it could clamp them off for 30 seconds.

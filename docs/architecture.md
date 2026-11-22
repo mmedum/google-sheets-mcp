@@ -439,7 +439,7 @@ CHANGELOG to the code. Releasing is in [release.md](release.md).
 | D-43 | Connected Sheets is opt-in: one setting registers its tools and asks for `bigquery.readonly` | accepted | TestScopesAreOptIn, TestScopes, staleness |
 | D-44 | Every error is a tool result, `[class] message`, from a closed vocabulary that says what to do | accepted | classes, TestClassesAreClosedAndDistinct, TestClassesAreTheOnesClassReturns, TestToolErrorsAreResultsNotProtocolErrors, TestFailFormatsTheClass, TestMissingScopeIsForbiddenNotAuth, TestASchemaRefusalCarriesAClass |
 | D-45 | Repeatability follows the HTTP method | accepted | TestRepeatabilityComesFromTheMethod, TestUnrepeatableWritesAreNotRepeated, TestAnAppendRetriesOnlyARefusalToBegin, TestAnAppendIsNotRepeatedAfterA5xx, TestReadOnlyFlagOnlyOnTheThreeReadingPOSTs, TestAFailureOnTheWire, TestACancelAfterARefusalIsNotAmbiguous, TestRetryAfterIsHonored |
-| D-46 | Requests are paced at the documented per-user quota, one in flight | accepted | review |
+| D-46 | Requests are paced at the documented per-user quota, one in flight | accepted | review, TestTheLimiterKeepsToTheMinuteQuota, TestAQuotaRefusalWaitsForTheMinute |
 | D-47 | Every request runs under a deadline, the token refresh included | accepted | TestTokenRefreshIsBounded, TestBoundedClientTakesTheConfiguredTimeout, TestLoginTimesOutWaitingForTheBrowser |
 | D-48 | Spreadsheet metadata is cached briefly and never trusted for correctness | accepted | TestCardIsCachedBriefly, TestARenameIsVisibleImmediately, TestAnAmbiguousRenameStillDropsTheCard, TestACardReadBeforeAnAppendIsNotKept |
 | D-49 | Scopes are `spreadsheets` plus `drive.readonly`, or their read-only pair | accepted | TestScopes, TestMissingScopes, staleness |
@@ -1654,9 +1654,13 @@ Google did.
 Requests are paced at the quota Google documents: 60 read requests and
 60 write requests a minute per user, refilled every minute
 ([limits](https://developers.google.com/workspace/sheets/api/limits)).
-`internal/gapi` holds a read limiter and a write limiter at one request
-a second each, with a small burst, and lets one request be in flight at
-a time. A limiter is taken inside the retry loop, once per attempt.
+`internal/gapi` holds a read limiter and a write limiter, each at 55 a
+minute with a burst of 5, so no minute sees more than 60 from one
+process, and lets one request be in flight at a time. A limiter is taken
+inside the retry loop, once per attempt. A rate-limit refusal with no
+Retry-After waits ten seconds longer on each retry, up to 30 seconds a
+wait and a minute in all, since a backoff of a few seconds retries into
+the minute that refused it; past a minute the call is `[rate_limited]`.
 
 One request at a time is also Google's own advice for avoiding 503s on a
 spreadsheet
@@ -1671,7 +1675,9 @@ minute sooner and then wait.
 Rejected: limits guessed rather than read from Google's page; limits
 raised past the quota, which would not raise it.
 Cost: a request takes about a second with one in flight, so a turn of
-several calls takes seconds. No test pins the rates or the one request
+several calls takes seconds, and a call that meets the quota can wait a
+minute. The bound is per process: a second client of the same account,
+or a second server, spends the same quota. No test pins the one request
 in flight; review does.
 
 ### D-47 Every request runs under a deadline, the token refresh included
