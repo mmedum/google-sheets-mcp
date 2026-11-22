@@ -164,3 +164,26 @@ func TestACutReadNamesTheNarrowerRange(t *testing.T) {
 		t.Errorf("a read already as narrow as its data still offers a narrower range: %q", narrow.Footer)
 	}
 }
+
+// Data that ends before the read was cut gains nothing from more rows a
+// call, so the footer offers no narrower range for it.
+func TestNoNarrowerRangeOnceTheDataHasEnded(t *testing.T) {
+	srv := sheetstest.New(t)
+	doc, file := sheetstest.Large(20, 2)
+	doc.Sheets[0].Props.GridProperties.RowCount = 3000
+	doc.Sheets[0].Props.GridProperties.ColumnCount = 26
+	srv.Add(doc, file)
+	svc := newService(t, srv)
+	res, err := svc.Read(context.Background(), service.ReadRequest{
+		Spreadsheet: doc.ID, Sheet: "Bractal", Budget: service.Budget{Chars: config.MaxMaxChars},
+	})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if res.ContinueFrom == 0 {
+		t.Fatal("the read was not cut, so this test shows nothing")
+	}
+	if !strings.Contains(res.Footer, "data ends at row 20") || strings.Contains(res.Footer, "every row shown ends") {
+		t.Errorf("a read whose data ended offers a narrower range, or does not say the data ended: %q", res.Footer)
+	}
+}
