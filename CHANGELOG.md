@@ -5,6 +5,8 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-11-22
+
 ### Added
 
 - `manage_range` banding takes `by_columns`, to alternate the shade across columns.
@@ -32,6 +34,7 @@ and this project follows [semantic versioning](https://semver.org).
 ### Security
 
 - Built with Go 1.27.4, which fixes CVE-2026-97054 (GO-2026-6859), a `net/http` race that can crash an HTTP/1 server.
+- Built with `golang.org/x/sys` v0.44.0, which fixes CVE-2026-39824 (GO-2026-5024) in a Windows helper this server never calls.
 
 ## [4.2.1] - 2026-11-04
 
@@ -1464,7 +1467,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v4.2.1...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v4.2.1...v5.0.0
 [4.2.1]: https://github.com/mmedum/google-sheets-mcp/compare/v4.2.0...v4.2.1
 [4.2.0]: https://github.com/mmedum/google-sheets-mcp/compare/v4.1.1...v4.2.0
 [4.1.1]: https://github.com/mmedum/google-sheets-mcp/compare/v4.1.0...v4.1.1
