@@ -659,11 +659,13 @@ func CheckValues(r *Report, values [][]any, formulasEvaluated bool, label func(i
 }
 
 // CheckReplacement records a find_replace whose replacement names a
-// formula that reaches outside the spreadsheet. Where the text lands is
-// not known before the call, and whether a value it lands in becomes a
-// formula has not been probed, so it is checked whatever the
-// replacement searches, and labeled as the replacement rather than by a
-// cell.
+// formula that reaches outside the spreadsheet. A replacement over values
+// does write a formula: with includeFormulas off, a cell whose whole text
+// becomes "=1+1" is stored as that formula. Where the text lands is not
+// known before the call, so it is checked whatever the replacement
+// searches, and labeled as the replacement rather than by a cell. Checked
+// by the spike "whether a replacement over values can write a formula".
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#FindReplaceRequest
 func CheckReplacement(r *Report, replace string) {
 	if externalFetch.MatchString(replace) {
 		r.Fetching.Add("the replacement text")

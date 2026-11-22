@@ -1181,10 +1181,14 @@ would run it, since replacing `X(` with `(` turns `=IMAGEX(...)` into
 It is a setting rather than an argument, because a model persuaded to
 write such a formula would pass the argument too.
 
+A replacement over values writes a formula where a cell's whole text
+becomes one, so a `find_replace` whose replacement names such a function
+is refused whatever it searches.
+
 Rejected: `allow_external_formulas` on the call; an external-fetch
 formula treated as ordinary content.
-Cost: a `find_replace` whose replacement names such a function is
-refused whatever it searches (#67). A pattern Go cannot compile, such as
+Cost: a replacement naming such a function is refused even where no
+cell would become a formula. A pattern Go cannot compile, such as
 a lookbehind, cannot be run here first, so over formulas it is refused
 unless the setting allows it.
 
@@ -1547,11 +1551,16 @@ clear larger than one read is refused with its size, since a guard that
 read part of a range does not guard the rest. `delete_data_source` names
 the sheet it takes.
 
-Rejected: a clear sent for a range larger than its one read.
 `delete_dimensions` also names the pivot tables, on any sheet, whose
 source the band cuts, since their output can fall to a header and a
 grand total. It reads every grid sheet for the pivot field alone, within
-the read budget, and names a sheet it did not finish.
+a budget of rows rather than cells, since Google answers that mask with
+an empty entry for each row down to the last pivot, and names the sheets
+the budget, a timeout or a failure left unsearched.
+
+Rejected: a clear sent for a range larger than its one read; a search
+for pivots bounded by the read budget in cells, which left every
+default-size sheet unsearched.
 Cost: naming a band's anchors costs a developer metadata search on every
 band delete, and naming its pivots one grid read across the sheets.
 

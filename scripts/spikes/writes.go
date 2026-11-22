@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi"
 	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
 )
 
@@ -645,4 +646,97 @@ func rowLabels(ctx context.Context, q string) string {
 		out = append(out, fmt.Sprint(row[0]))
 	}
 	return strings.Join(out, ", ")
+}
+
+// askReplaceIntoFormula asks whether findReplace over values, with
+// includeFormulas off, can turn text into a formula. A replacement that
+// did would let find_replace write an IMPORTRANGE or IMAGE the external
+// formula setting exists to stop, so transform_range refuses one whatever
+// it searches until this is answered. The replacement here computes and
+// fetches nothing: whether =1+1 lands as a formula is the whole question.
+// https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#FindReplaceRequest
+func askReplaceIntoFormula(ctx context.Context) {
+	const sheet = "SpikeReplace"
+	sheetID, err := addSheet(ctx, sheet)
+	if err != nil {
+		line("  setup failed: %v", err)
+		return
+	}
+	q := a1.QuoteSheet(sheet)
+	if err := put(ctx, q+"!A1:A2", [][]any{{"QQ"}, {"xQQ"}}); err != nil {
+		line("  setup failed: %v", err)
+		return
+	}
+	status, body := batchOne(ctx, map[string]any{"findReplace": map[string]any{
+		"find": "QQ", "replacement": "=1+1", "includeFormulas": false,
+		"range": map[string]any{"sheetId": sheetID, "startRowIndex": 0, "endRowIndex": 2,
+			"startColumnIndex": 0, "endColumnIndex": 1},
+	}})
+	line("  findReplace QQ -> =1+1 over A1:A2, includeFormulas false -> HTTP %d  %s", status, first120(body))
+	if status != http.StatusOK {
+		return
+	}
+	cells, err := cellsIn(ctx, q+"!A1:A2")
+	if err != nil {
+		line("  read back failed: %v", err)
+		return
+	}
+	for i, row := range cells {
+		if len(row) == 0 || row[0] == nil || row[0].UserEnteredValue == nil {
+			line("    A%d: empty", i+1)
+			continue
+		}
+		v := row[0].UserEnteredValue
+		switch {
+		case v.FormulaValue != nil:
+			line("    A%d: a formula, %q, showing %q", i+1, *v.FormulaValue, row[0].FormattedValue)
+		case v.StringValue != nil:
+			line("    A%d: text, %q", i+1, *v.StringValue)
+		default:
+			line("    A%d: %s", i+1, whole(fmt.Sprintf("%+v", *v)))
+		}
+	}
+}
+
+// askPivotSearchCost asks what a read of whole sheets for the pivot
+// field alone costs. delete_dimensions searches every sheet for a pivot
+// whose source a band cuts, and the read budget is in cells; if Google
+// sends a sheet's empty cells as nothing, the search can read every sheet
+// whole for a few bytes, and a budget in cells would only make it miss.
+func askPivotSearchCost(ctx context.Context) {
+	const sheet = "SpikePivotCost"
+	sheetID, err := addSheet(ctx, sheet)
+	if err != nil {
+		line("  setup failed: %v", err)
+		return
+	}
+	q := a1.QuoteSheet(sheet)
+	if err := put(ctx, q+"!A1:B4", [][]any{{"Region", "Units"}, {"Plimth", 3}, {"Quorbin", 4}, {"Plimth", 5}}); err != nil {
+		line("  setup failed: %v", err)
+		return
+	}
+	// Far down the sheet, so a reply that kept every row before the pivot
+	// as an empty entry would show it in its size.
+	status, body := batchOne(ctx, map[string]any{"updateCells": map[string]any{
+		"start":  map[string]any{"sheetId": sheetID, "rowIndex": 899, "columnIndex": 5},
+		"fields": "pivotTable",
+		"rows": []any{map[string]any{"values": []any{map[string]any{"pivotTable": map[string]any{
+			"source": map[string]any{"sheetId": sheetID, "startRowIndex": 0, "endRowIndex": 4, "startColumnIndex": 0, "endColumnIndex": 2},
+			"rows":   []any{map[string]any{"sourceColumnOffset": 0, "showTotals": true, "sortOrder": "ASCENDING"}},
+			"values": []any{map[string]any{"sourceColumnOffset": 1, "summarizeFunction": "SUM"}},
+		}}}}},
+	}})
+	line("  a pivot at F900 over A1:B4 -> HTTP %d  %s", status, first120(body))
+	for _, ranges := range [][]string{{q, a1.QuoteSheet(firstSheet)}, nil} {
+		v := url.Values{}
+		v.Set("includeGridData", "true")
+		v.Set("fields", gapi.PivotSourceFields)
+		for _, r := range ranges {
+			v.Add("ranges", r)
+		}
+		st, b := call(ctx, http.MethodGet, sheetsBase+"/spreadsheets/"+scratchID+"?"+v.Encode(), nil)
+		line("  the server's mask, %d range(s) (none is every sheet) -> HTTP %d, %d bytes, %d row entries, %d pivot(s)",
+			len(ranges), st, len(b), strings.Count(b, "\"values\"")+strings.Count(b, "{}"), strings.Count(b, "\"pivotTable\""))
+		line("    %s", first120(b))
+	}
 }
