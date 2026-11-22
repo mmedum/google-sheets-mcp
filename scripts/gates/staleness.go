@@ -333,11 +333,13 @@ func changelogRule(text string, sourceChanged bool, since string, tagged func(ve
 }
 
 // shippedChangedSince reports whether the binary's source changed between
-// since and HEAD: a file shippedSource has, or go.mod outside its require
-// and tool lines. A package counts by its directory, so a file another
-// platform builds counts, and so does a file removed from it.
+// since and the working tree: a file shippedSource has, or go.mod outside
+// its require and tool lines. A package counts by its directory, so a file
+// another platform builds counts, and so does a file removed from it. The
+// working tree rather than HEAD, so `make check` before a commit sees what
+// CI will; a file git does not track yet is not seen until it is added.
 func shippedChangedSince(since string) (bool, error) {
-	out, err := git("diff", since+"..HEAD", "--name-only", "--no-renames", "-z")
+	out, err := git("diff", since, "--name-only", "--no-renames", "-z")
 	if err != nil {
 		return false, err
 	}
@@ -425,8 +427,8 @@ func listShipped() (*shippedSource, error) {
 	return s, nil
 }
 
-// goModChangedSince reports whether go.mod changed between since and HEAD
-// outside its require and tool lines. A dependency bump needs no entry
+// goModChangedSince reports whether go.mod changed between since and the
+// working tree, outside its require and tool lines. A dependency bump needs no entry
 // (CONTRIBUTING.md#changelog); a go, toolchain or replace line changes what
 // the binary is built with.
 func goModChangedSince(since string) (bool, error) {
@@ -434,11 +436,11 @@ func goModChangedSince(since string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	after, err := git("show", "HEAD:go.mod")
+	after, err := os.ReadFile("go.mod")
 	if err != nil {
 		return false, err
 	}
-	return goModBuildLines(before) != goModBuildLines(after), nil
+	return goModBuildLines(before) != goModBuildLines(string(after)), nil
 }
 
 // goModBuildLines is a go.mod's lines, each trimmed and the blank ones

@@ -70,13 +70,16 @@ const (
 	// own would be scoring whether the model can make a pivot table —
 	// which is the task above it — rather than what the guard does.
 	WorkPivotGuard = "pivot guard"
+	// WorkABGrid and WorkABRows are the A/B arms' sheets.
+	WorkABGrid = "ab grid"
+	WorkABRows = "ab rows"
 )
 
 // WorkSheets is every per-task copy the fixture makes.
 var WorkSheets = []string{
 	WorkTotal, WorkAppend, WorkGuard, WorkAck, WorkFormat,
 	WorkSort, WorkValid, WorkCopy, WorkFix, WorkAnchor,
-	WorkChart, WorkPivot, WorkPivotGuard,
+	WorkChart, WorkPivot, WorkPivotGuard, WorkABGrid, WorkABRows,
 }
 
 // SheetFor is the sheet a task works in. Derived rather than stored, so

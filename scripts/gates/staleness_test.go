@@ -243,6 +243,38 @@ func TestTheChangelogRuleCountsWhatShips(t *testing.T) {
 	}
 }
 
+// A change counts before it is committed, so `make check` run ahead of a
+// commit asks for the entry CI will; a staged file counts too, and so does
+// a go.mod line the binary is built with.
+func TestTheChangelogRuleSeesTheWorkingTree(t *testing.T) {
+	dir := stalenessRepo(t)
+	want := []string{"the binary's source changed since v1.9.0 but CHANGELOG.md documents nothing new; " +
+		"put the entries under [Unreleased], or under the version heading this release is about to tag"}
+	for _, tc := range []struct {
+		name  string
+		file  string
+		edit  func(release string) string
+		stage bool
+	}{
+		{"an edit not yet staged", "internal/a/b.go", func(string) string { return "package a\n\n// changed\n" }, false},
+		{"a staged edit", "internal/a/b.go", func(string) string { return "package a\n\n// changed\n" }, true},
+		{"a go.mod replace line not yet staged", "go.mod", func(release string) string {
+			return release + "replace example.com/dep => ../dep\n"
+		}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stalenessReset(t, dir)
+			put(t, dir, tc.file, tc.edit(stalenessGoMod(t, dir)))
+			if tc.stage {
+				gitIn(t, dir, "add", "-A")
+			}
+			if problems, err := checkChangelog(); err != nil || !slices.Equal(problems, want) {
+				t.Errorf("checkChangelog() over an uncommitted change = %q, %v; want %q", problems, err, want)
+			}
+		})
+	}
+}
+
 // stalenessGoMod is the fixture's go.mod at the release.
 func stalenessGoMod(t *testing.T, dir string) string {
 	t.Helper()

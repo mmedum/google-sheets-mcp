@@ -485,44 +485,76 @@ func (d *driver) searchWithIndexingLag() {
 	})
 }
 
-// poll runs a step until its result names the scratch spreadsheet, and
-// says loudly if it never does.
+// poll runs a step until its result names the scratch spreadsheet. A
+// step Drive's index has not caught up with is asked again at the end
+// of the run, minutes later, rather than settled now.
 func (d *driver) poll(s step) {
-	const attempts = 10
 	d.steps++
+	if settled, _ := d.pollFor(s, 10, 3*time.Second); settled {
+		return
+	}
+	line("WAIT %s: not found in 30 seconds; asked again at the end of the run", s.name)
+	d.later = append(d.later, s)
+}
+
+// settle asks again each step poll put off. By now the rest of the run
+// has given Drive's index minutes, and this gives each step up to five
+// more, at one search every 30 seconds, far inside Drive's per-user
+// query quota.
+// https://developers.google.com/workspace/drive/api/guides/limits
+func (d *driver) settle() {
+	for _, s := range d.later {
+		if settled, last := d.pollFor(s, 10, 30*time.Second); !settled {
+			d.unknown(s, last)
+		}
+	}
+}
+
+// pollFor runs a step up to attempts times, wait apart. settled says the
+// result named the scratch spreadsheet or the step was reported failed;
+// last is the final result when neither happened.
+func (d *driver) pollFor(s step, attempts int, wait time.Duration) (settled bool, last string) {
+	start := time.Now()
 	for attempt := 1; attempt <= attempts; attempt++ {
 		text, structured, err := d.call(s.tool, s.args)
 		if err != nil {
 			d.fail(s, "the call itself failed: %v", err)
-			return
+			return true, ""
 		}
 		if strings.Contains(text, d.spreadsheet) {
-			line("ok   %s (found on attempt %d)", s.name, attempt)
+			line("ok   %s (found on attempt %d, after %s)", s.name, attempt, time.Since(start).Round(time.Second))
 			line("     why: %s", s.why)
 			if hits, _ := structured["spreadsheets"].([]any); len(hits) == 0 {
 				d.fail(s, "the text half found it and the structured half is empty")
-				return
+				return true, ""
 			}
 			for _, l := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
 				line("     | %s", l)
 			}
-			return
+			return true, ""
 		}
-		time.Sleep(3 * time.Second)
+		last = text
+		if attempt < attempts {
+			time.Sleep(wait)
+		}
 	}
-	// The step failed to find *this* spreadsheet. That has two causes
-	// with opposite meanings, and they are distinguishable: run the same
-	// query without expecting the new file. If it matches something
-	// else, the query works and the index is behind. If it matches
-	// nothing anywhere, the query itself is suspect — which is what was
-	// happening when this step searched for a hyphenated compound Drive
-	// tokenizes apart, and reported patience for two runs instead.
+	return false, last
+}
+
+// unknown reports a step whose last result, text, never found the
+// scratch spreadsheet.
+//
+// That has two causes with opposite meanings, and they are
+// distinguishable: read the same query without expecting the new file.
+// If it matches something else, the query works and the index is
+// behind. If it matches nothing anywhere, the query itself is suspect —
+// which is what was happening when this step searched for a hyphenated
+// compound Drive tokenizes apart, and reported patience for two runs
+// instead.
+func (d *driver) unknown(s step, text string) {
 	d.undetermined++
 	line("UNKNOWN %s", s.name)
-	text, _, err := d.call(s.tool, s.args)
 	switch {
-	case err != nil:
-		line("     the query itself failed: %v", err)
 	case strings.Contains(text, "no spreadsheets matched"):
 		line("     THE QUERY MATCHES NOTHING AT ALL, not even spreadsheets indexed long ago.")
 		line("     That is not indexing lag. Suspect the query or the search itself:")
