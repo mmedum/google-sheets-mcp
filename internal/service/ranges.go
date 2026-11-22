@@ -400,12 +400,16 @@ func (s *Service) protectedOp(ctx context.Context, req RangeRequest, action stri
 			return nil, nil, err
 		}
 		// The list replaces the one before, so the result says what that was.
-		before := target.Editors
-		if before == nil {
-			before = &gsheets.Editors{}
+		before := "everyone, after a warning"
+		if !target.WarningOnly {
+			was := target.Editors
+			if was == nil {
+				was = &gsheets.Editors{}
+			}
+			before = describeEditors(was)
 		}
-		applied = append(applied, render.Applied{Kind: "editors were", Value: describeEditors(before)},
-			render.Applied{Kind: "editors now", Value: describeEditors(editors)})
+		applied = append(applied, render.Applied{Kind: "editors",
+			Value: describeEditors(editors) + " (before: " + before + ")"})
 	}
 	return plan.ProtectedUpdate(target.ProtectedRangeID, req.Description, warning, req.WarningOnly != nil, editors),
 		applied, nil
