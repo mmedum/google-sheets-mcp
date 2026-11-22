@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 
 	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
@@ -28,7 +29,7 @@ import (
 // whether a value on min is kept, since the reference calls it unused.
 // Q4. A number value under a comma-decimal locale: is "1.5" taken, is
 // "1,5", and what reads back. What a locale does to the colors is not
-// in any reply; the transcript names the sheet for a person to look at.
+// in any reply, so Q4b reads the colors Google painted.
 // Q5. A percent or percentile value outside 0 to 100. The reference
 // states no bound and manage_range refuses none; is one refused, and
 // what reads back.
@@ -49,7 +50,7 @@ func askColorScales(ctx context.Context) {
 	columnB := a1.Rect{FirstCol: 2, FirstRow: 1, LastCol: 2, LastRow: 5}.GridRange(sheetID)
 	over := columnA
 	white := map[string]any{"rgbColor": map[string]any{"red": 1, "green": 1, "blue": 1}}
-	green := map[string]any{"rgbColor": map[string]any{"red": 0.34, "green": 0.73, "blue": 0.54}}
+	green := map[string]any{"rgbColor": map[string]any{"red": greenRed, "green": 0.73, "blue": 0.54}}
 	point := func(kind, value string) map[string]any {
 		p := map[string]any{"colorStyle": white}
 		if kind != "" {
@@ -145,11 +146,81 @@ func askColorScales(ctx context.Context) {
 			firstScale(ctx, sheetID, "minpoint")
 		}
 	}
-	line("    no reply says how de_DE read a value it took. Open %q: column B has the scale from", sheet)
-	line("    1,5 over 1 to 5; if its color first changes between 1 and 2, de_DE read it as one and a half.")
+	// Q4b. No reply says how de_DE read a value it took, but the colors
+	// it paints do: effectiveFormat includes the results of conditional
+	// formatting (the discovery document on CellData.effectiveFormat).
+	// Column C holds 1 to 5 under one scale, white at "1,5" to green at
+	// the max, so C2's red channel gives the minpoint Google used.
+	line("")
+	line("  Q4b: which number Google colors from, read from the cells' effective format")
+	// A failed setup skips Q4b only: the locale is set back either way.
+	painted := false
+	if err := put(ctx, a1.QuoteSheet(sheet)+"!C1:C5", [][]any{{1}, {2}, {3}, {4}, {5}}); err != nil {
+		line("    setup failed: %v", err)
+	} else {
+		over = a1.Rect{FirstCol: 3, FirstRow: 1, LastCol: 3, LastRow: 5}.GridRange(sheetID)
+		if add("NUMBER minpoint 1,5 under de_DE, on column C", scale(point("NUMBER", "1,5"), nil, maxpoint)) == 200 {
+			painted = true
+			paintedMinpoint(ctx, sheet, "under de_DE")
+		}
+	}
 	if locale != "" {
 		status, body = setLocale(ctx, locale)
 		line("    %-48s -> HTTP %d  %s", "set the locale back", status, first120(body))
+		// The rule stores the string; whether its meaning follows the
+		// locale it is read under is the second half of the question.
+		if painted {
+			paintedMinpoint(ctx, sheet, "after the locale is set back to "+locale)
+		}
+	}
+}
+
+// greenRed is the red channel of the scales' max color; their min color
+// is white, whose red is 1.
+const greenRed = 0.34
+
+// paintedMinpoint reads the background Google painted on C1:C5 and
+// infers the minpoint of a white-to-green scale whose max is 5.
+func paintedMinpoint(ctx context.Context, sheet, when string) {
+	status, body := call(ctx, http.MethodGet, sheetsBase+"/spreadsheets/"+scratchID+"?ranges="+
+		url.QueryEscape(a1.QuoteSheet(sheet)+"!C1:C5")+"&fields="+
+		url.QueryEscape("sheets(data(rowData(values(effectiveValue,effectiveFormat(backgroundColorStyle)))))"), nil)
+	if status != 200 {
+		line("      read back -> HTTP %d  %s", status, first120(body))
+		return
+	}
+	var out gsheets.Spreadsheet
+	if err := json.Unmarshal([]byte(body), &out); err != nil || len(out.Sheets) == 0 || len(out.Sheets[0].Data) == 0 {
+		line("      read back: unreadable reply")
+		return
+	}
+	redAt2 := -1.0
+	for _, r := range out.Sheets[0].Data[0].RowData {
+		if r == nil || len(r.Values) == 0 || r.Values[0].EffectiveValue == nil || r.Values[0].EffectiveValue.NumberValue == nil {
+			continue
+		}
+		v, f := *r.Values[0].EffectiveValue.NumberValue, r.Values[0].EffectiveFormat
+		if f == nil || f.BackgroundColorStyle == nil || f.BackgroundColorStyle.RGBColor == nil {
+			line("      %s: value %g has no rgbColor", when, v)
+			continue
+		}
+		// A channel Google omits decodes as zero, which is what it means.
+		c := f.BackgroundColorStyle.RGBColor
+		line("      %s: value %g painted r=%.4f g=%.4f b=%.4f", when, v, c.Red, c.Green, c.Blue)
+		if v == 2 {
+			redAt2 = c.Red
+		}
+	}
+	// The fraction at value 2 is (2-min)/(5-min), so min = (2-5f)/(1-f).
+	switch f := (1 - redAt2) / (1 - greenRed); {
+	case redAt2 < 0:
+		line("      %s: no color was read for the value 2, so the minpoint is unknown", when)
+	case f <= 0:
+		line("      %s: 2 is painted the min color, so the minpoint is 2 or more", when)
+	case f >= 1:
+		line("      %s: 2 is painted the max color, which no minpoint below 2 explains", when)
+	default:
+		line("      %s: the color at 2 puts the minpoint at %.3f", when, (2-5*f)/(1-f))
 	}
 }
 

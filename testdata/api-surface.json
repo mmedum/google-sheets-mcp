@@ -1,5 +1,5 @@
 {
-  "fetched": "2026-11-21",
+  "fetched": "2026-11-22",
   "note": "Written by `gates api-diff`; nobody edits this. One verdict per item lives in testdata/api-coverage.tsv. A `method` is an API method; a `request` is a member of the Sheets batchUpdate union, which is where this API keeps most of its capability.",
   "apis": [
     {

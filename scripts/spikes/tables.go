@@ -273,16 +273,10 @@ func askTypedColumns(ctx context.Context) {
 		"fields": "userEnteredValue,chipRuns",
 	}})
 	line("    %-52s -> HTTP %d  %s", "a person chip into D1", status, first120(body))
-	chipCell := func(what string) {
-		status, body := call(ctx, http.MethodGet, sheetsBase+"/spreadsheets/"+scratchID+
-			"?ranges="+url.QueryEscape(a1.QuoteSheet(sheet)+"!D1")+
-			"&fields="+url.QueryEscape("sheets(data(rowData(values(userEnteredValue,formattedValue,chipRuns))))"), nil)
-		line("  %-50s -> HTTP %d  %s", what, status, whole(body))
-	}
-	chipCell("  D1 before the update")
+	chipsWhole(ctx, "  D1 before the update", a1.QuoteSheet(sheet)+"!D1")
 	columns = readColumns(ctx, sheetID)
 	update("every column as read, names included", id, columns)
-	chipCell("  D1 after it: chip kept?")
+	chipsWhole(ctx, "  D1 after it: chip kept?", a1.QuoteSheet(sheet)+"!D1")
 
 	line("")
 	line("  Q10: an add over a formula in the header of a column it does not type")
@@ -655,6 +649,14 @@ func named(columns []any, index int, kind string) map[string]any {
 
 // cellsWhole prints what a range's cells hold and show, formulas
 // included, uncut.
+// chipsWhole prints a range's values and smart chips as Google stores them.
+func chipsWhole(ctx context.Context, what, rangeA1 string) {
+	status, body := call(ctx, http.MethodGet, sheetsBase+"/spreadsheets/"+scratchID+
+		"?ranges="+url.QueryEscape(rangeA1)+
+		"&fields="+url.QueryEscape("sheets(data(rowData(values(userEnteredValue,formattedValue,chipRuns))))"), nil)
+	line("  %-50s -> HTTP %d  %s", what, status, whole(body))
+}
+
 func cellsWhole(ctx context.Context, what, rangeA1 string) {
 	status, body := call(ctx, http.MethodGet, sheetsBase+"/spreadsheets/"+scratchID+
 		"?ranges="+url.QueryEscape(rangeA1)+
