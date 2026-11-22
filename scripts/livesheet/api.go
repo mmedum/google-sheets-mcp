@@ -212,7 +212,7 @@ func (a *driverAPI) about(ctx context.Context) (string, error) {
 // decorate adds the three things a values read cannot show — a merge, a
 // validation rule and a number format — so the options that surface them
 // have something to surface.
-func (a *driverAPI) decorate(ctx context.Context, id string, sheetID int) error {
+func (a *driverAPI) decorate(ctx context.Context, id string, sheetID, chipSheetID int) error {
 	merge := a1.Rect{FirstCol: 1, FirstRow: 8, LastCol: 3, LastRow: 8}
 	validated := a1.Rect{FirstCol: 1, FirstRow: 9, LastCol: 1, LastRow: 9}
 	formatted := a1.Rect{FirstCol: 2, FirstRow: 10, LastCol: 2, LastRow: 10}
@@ -234,6 +234,18 @@ func (a *driverAPI) decorate(ctx context.Context, id string, sheetID int) error 
 			"range":  formatted.GridRange(sheetID),
 			"cell":   map[string]any{"userEnteredFormat": map[string]any{"numberFormat": map[string]any{"type": "CURRENCY", "pattern": "\u00a3#,##0.00"}}},
 			"fields": "userEnteredFormat.numberFormat",
+		}},
+		// A smart chip linking to the spreadsheet itself, so it names
+		// nobody.
+		map[string]any{"updateCells": map[string]any{
+			"range": chipCell.GridRange(chipSheetID),
+			"rows": []any{map[string]any{"values": []any{map[string]any{
+				"userEnteredValue": map[string]any{"stringValue": "@"},
+				"chipRuns": []any{map[string]any{"chip": map[string]any{"richLinkProperties": map[string]any{
+					"uri": "https://docs.google.com/spreadsheets/d/" + id + "/edit",
+				}}}},
+			}}}},
+			"fields": "userEnteredValue,chipRuns",
 		}},
 	}}
 	return a.do(ctx, http.MethodPost, a.sheets+"/spreadsheets/"+url.PathEscape(id)+":batchUpdate", body, nil)

@@ -110,8 +110,8 @@ func run(ctx context.Context, bin, profile string, keep bool) error {
 	}); err != nil {
 		return fmt.Errorf("fill the annotated rows: %w", err)
 	}
-	if err := api.decorate(ctx, id, 0); err != nil {
-		return fmt.Errorf("add a merge, a validation rule and a number format: %w", err)
+	if err := api.decorate(ctx, id, 0, secondID); err != nil {
+		return fmt.Errorf("add a merge, a validation rule, a number format and a smart chip: %w", err)
 	}
 	owner, err := api.about(ctx)
 	if err != nil {
@@ -119,6 +119,7 @@ func run(ctx context.Context, bin, profile string, keep bool) error {
 	}
 	line("filled A1:D6 with invented data, a formula column and a note on A2")
 	line("added a merge on A8:C8, a validation rule on A9 and a currency format on B10")
+	line("added a smart chip linking to the spreadsheet itself on the second sheet's %s", a1.FormatRect(chipCell))
 
 	defer func() {
 		sec("Cleanup")
@@ -156,6 +157,10 @@ func run(ctx context.Context, bin, profile string, keep bool) error {
 		secondSheet: secondSheet, secondSheetID: secondID, title: title, owner: owner,
 		since: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)}
 	d.runAll()
+	if len(d.later) > 0 {
+		sec("Late checks")
+		d.settle()
+	}
 
 	sec("Coverage")
 	coverErr := d.coverage()
@@ -270,6 +275,9 @@ type step struct {
 	check func(text string, structured map[string]any) error
 }
 
+// chipCell holds the smart chip setup puts on the second sheet.
+var chipCell = a1.Rect{FirstCol: 4, FirstRow: 1, LastCol: 4, LastRow: 1}
+
 // fromDryRun stands for checkpoint in a step's arguments. run
 // replaces it with the checkpoint a dry run of the same call gives, which
 // is what a caller passing overwrite carries. The option is still
@@ -339,6 +347,8 @@ type driver struct {
 	// for something the server did not do. So it is a third number, and
 	// a human reads it.
 	undetermined int
+	// later are the poll steps asked again at the end of the run.
+	later []step
 	// sent is every (tool, option) pair that reached the server.
 	sent map[string]map[string]bool
 }

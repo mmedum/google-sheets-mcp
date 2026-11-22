@@ -31,19 +31,22 @@ func abTest(ctx context.Context, cfg, model string, budget float64, f Fixture) R
 	sec("A/B: does the addressed grid save tool calls?")
 	line("why: that addresses save calls is reasoning rather than measurement, and this is the measurement")
 
-	ask := func(how string) *Run {
+	// Each arm writes the same cell, so each works on its own copy of the
+	// seeded block, or the second would find the first's word there.
+	ask := func(work, how string) *Run {
 		return drive(ctx, Task{
 			Name: "a/b " + how,
 			Prompt: fmt.Sprintf("In the spreadsheet %s, on the sheet %q, find the row whose column A value is "+
-				"Threnody-03 and write the word Checked into column F of that same row. %s", f.ID, f.Sheet, how),
+				"Threnody-03 and write the word Checked into column F of that same row. %s",
+				f.ID, f.SheetFor(work), how),
 			MaxCalls: 20,
 		}, cfg, model, budget)
 	}
 
 	// Arm A: the server's own default, the addressed grid.
-	withGrid := ask("Read whatever you need first.")
+	withGrid := ask(WorkABGrid, "Read whatever you need first.")
 	// Arm B: the same work with rows and no addresses in front of it.
-	withRows := ask("When you read, pass format=json so you get the raw rows.")
+	withRows := ask(WorkABRows, "When you read, pass format=json so you get the raw rows.")
 
 	res := Result{Task: "A/B: addressed grid against bare rows"}
 	if withGrid.Err != nil || withRows.Err != nil {
@@ -58,8 +61,8 @@ func abTest(ctx context.Context, cfg, model string, budget float64, f Fixture) R
 	// Both arms have to have landed on the same cell, or the comparison
 	// is between a right answer and a wrong one rather than between two
 	// renderings.
-	gridCell := wroteTo(withGrid)
-	rowsCell := wroteTo(withRows)
+	gridCell := wroteTo(withGrid, f.SheetFor(WorkABGrid))
+	rowsCell := wroteTo(withRows, f.SheetFor(WorkABRows))
 	line("  addressed grid: %d call(s), wrote to %s", len(withGrid.Calls), orNone(gridCell))
 	line("  bare rows:      %d call(s), wrote to %s", len(withRows.Calls), orNone(rowsCell))
 
@@ -81,11 +84,15 @@ func abTest(ctx context.Context, cfg, model string, budget float64, f Fixture) R
 	return res
 }
 
-// wroteTo is the range the run's last successful write named.
-func wroteTo(r *Run) string {
+// wroteTo is the range the run's last successful write to its own
+// sheet named. A write to any other sheet is not the task done.
+func wroteTo(r *Run, sheet string) string {
 	out := ""
 	for _, c := range r.Calls {
 		if c.IsError || c.Tool != "write_values" {
+			continue
+		}
+		if s, _ := c.Args["sheet"].(string); s != sheet {
 			continue
 		}
 		if rng, _ := c.Args["range"].(string); rng != "" {

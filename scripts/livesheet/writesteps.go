@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/v5/internal/config"
 )
 
@@ -392,6 +393,22 @@ func (d *driver) writeSteps() []step {
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "D1",
 				"values": [][]any{{float64(3)}}, "overwrite": true, "overwrite_formulas": true,
 				"checkpoint": fromDryRun,
+			},
+		},
+		{
+			name: "a write over a smart chip is refused, naming the chip",
+			why: "a values read shows a chip as its text, and a value write keeps the text and drops the chip, " +
+				"as the spike \"what a value write does to a smart chip\" found",
+			tool: "write_values",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.secondSheet, "range": a1.FormatRect(chipCell), "values": [][]any{{"Skerry"}},
+			},
+			expectError: "blocked",
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, a1.FormatRect(chipCell)) || !strings.Contains(text, "smart chip") {
+					return fmt.Errorf("the refusal does not name the chip in %s: %s", a1.FormatRect(chipCell), text)
+				}
+				return nil
 			},
 		},
 		{
