@@ -190,7 +190,10 @@ type Report struct {
 	NonEmpty Cells
 	Formulas Cells
 	// Chips are cells holding a smart chip, which a value write erases
-	// and a values read does not show. They are in NonEmpty too.
+	// and a values read does not show: the chip's text sent back, RAW or
+	// USER_ENTERED, keeps the text and drops the chip. They are in
+	// NonEmpty too. Checked by the spike "what a value write does to a
+	// smart chip".
 	Chips Cells
 	// Notes and Validation are invisible in a values read and survive a
 	// value write, so they are reported as surviving: a rule that still

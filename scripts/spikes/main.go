@@ -39,8 +39,12 @@ import (
 // came back inside a values.update response and would have traveled
 // into any paste of the raw output.
 func line(format string, args ...any) {
-	fmt.Println(redact.Line(fmt.Sprintf(format, args...)))
+	fmt.Println(registry.Line(fmt.Sprintf(format, args...)))
 }
+
+// registry names the values a spike knows, so a transcript can tell
+// them apart where the masking alone prints every address alike.
+var registry redact.Registry
 
 // sec prints a static section header.
 func sec(title string) {
@@ -101,6 +105,8 @@ var spikes = []spike{
 	{name: "the unit the text limits count", run: askTextLimitUnit},
 	{name: "whether a replacement over values can write a formula", run: askReplaceIntoFormula},
 	{name: "what a pivot search of whole sheets costs", run: askPivotSearchCost},
+	{name: "who an outside address reaches", run: askOutsideReach},
+	{name: "what a value write does to a smart chip", run: askChipWriteBack},
 }
 
 // only names the spikes to run, so re-probing a single question does not
@@ -247,6 +253,7 @@ func setup(ctx context.Context, title string) error {
 		return err
 	}
 	scratchID = created.SpreadsheetID
+	registry.Add(scratchID, "<spreadsheet>")
 	firstSheet = created.Sheets[0].Properties.Title
 	firstID := created.Sheets[0].Properties.SheetID
 	secondSheet = "Sidecar"
