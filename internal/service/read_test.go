@@ -448,3 +448,94 @@ func TestAnnotationsCoverOnlyTheRowsShown(t *testing.T) {
 		t.Errorf("row 3's validation is listed under a grid that stops at row %d:\n%s", res.ContinueFrom-1, res.Grid)
 	}
 }
+
+// Several ranges are one request, answered in the order asked, and
+// ranges on one sheet, asked out of order or twice, each get their own
+// cells.
+func TestReadManyRangesInOneRequest(t *testing.T) {
+	srv, svc := standard(t)
+	res, err := svc.Read(context.Background(), service.ReadRequest{
+		Spreadsheet: sheetstest.FixtureID,
+		Ranges: []service.SheetRange{
+			{Sheet: sheetstest.FirstSheet, Range: "B1"},
+			{Sheet: sheetstest.SecondSheet, Range: "A1"},
+			{Sheet: sheetstest.FirstSheet, Range: "A1"},
+			{Sheet: sheetstest.SecondSheet, Range: "B2"},
+			{Sheet: sheetstest.FirstSheet, Range: "B1"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	gets := 0
+	for _, c := range srv.Calls() {
+		if c.Op == "spreadsheets.get" && len(c.Query["ranges"]) > 0 {
+			gets++
+		}
+	}
+	if gets != 1 {
+		t.Errorf("%d grid reads reached the fake, want 1", gets)
+	}
+	want := []struct{ rng, has, hasNot string }{
+		{"'Vandel'!B1", "Nardle", "Plimth"},
+		{"'Ürväl'!A1", "Trennow", "Bractal"},
+		{"'Vandel'!A1", "Plimth", "Nardle"},
+		{"'Ürväl'!B2", "42", "Trennow"},
+		{"'Vandel'!B1", "Nardle", "Plimth"},
+	}
+	if len(res.Reads) != len(want) {
+		t.Fatalf("%d reads, want %d: %+v", len(res.Reads), len(want), res.Reads)
+	}
+	seen := map[string]bool{}
+	for i, w := range want {
+		r := res.Reads[i]
+		if r.Range != w.rng || !strings.Contains(r.Grid, w.has) || strings.Contains(r.Grid, w.hasNot) {
+			t.Errorf("read %d = %q holding\n%s\nwant %q holding %q and not %q", i, r.Range, r.Grid, w.rng, w.has, w.hasNot)
+		}
+		if r.Checkpoint == "" || (seen[r.Checkpoint] && i != 4) {
+			t.Errorf("read %d's checkpoint %q is empty or repeats another range's", i, r.Checkpoint)
+		}
+		seen[r.Checkpoint] = true
+	}
+	if res.Reads[4].Checkpoint != res.Reads[0].Checkpoint {
+		t.Errorf("the same range read twice has two checkpoints: %q and %q", res.Reads[0].Checkpoint, res.Reads[4].Checkpoint)
+	}
+	if !strings.Contains(res.Render(), "== 'Ürväl'!B2\n") {
+		t.Errorf("the text half does not head each range with its address:\n%s", res.Render())
+	}
+}
+
+// The budget is shared: two ranges under 200 cells ask for at most 100
+// each, and each says where it would continue.
+func TestReadManyRangesShareTheBudget(t *testing.T) {
+	srv := sheetstest.New(t)
+	doc, file := sheetstest.Large(5000, 20)
+	srv.Add(doc, file)
+	svc := newService(t, srv)
+	res, err := svc.Read(context.Background(), service.ReadRequest{
+		Spreadsheet: doc.ID, Budget: service.Budget{Cells: 200},
+		Ranges: []service.SheetRange{{Sheet: "Bractal", Range: "A:T"}, {Sheet: "Bractal", Range: "A:T"}},
+	})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	for _, c := range srv.Calls() {
+		for _, sent := range c.Query["ranges"] {
+			ref, err := a1.Parse(sent)
+			if err != nil {
+				t.Fatalf("the range sent does not parse: %q", sent)
+			}
+			if cells, _ := ref.Rect.Cells(); cells > 100 {
+				t.Errorf("%q asks for %d cells, past its share of 100", sent, cells)
+			}
+		}
+	}
+	for i, r := range res.Reads {
+		if !r.Truncated || r.ContinueFrom == 0 {
+			t.Errorf("read %d does not say it was cut and where to continue: %+v", i, r)
+		}
+	}
+	if !res.Truncated {
+		t.Error("the call does not say a range was cut")
+	}
+}

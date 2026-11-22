@@ -377,13 +377,15 @@ var pointTypes = map[string]string{
 // highest. number, percent and percentile need one, which is kept as
 // written: the API takes it as text, it may be a formula, a percent or
 // percentile past 0-100 is taken, and a number is read in the
-// spreadsheet's locale, so under de_DE 1.5 is refused and 1,5 taken. The
-// reference states no bound and no locale. Google takes min and max as a
-// midpoint too, so a scale read back from a sheet can be sent again; min
-// cannot be the last point, nor max the first, which is this server's
-// own rule. Checked by the live steps "what Google makes of a color
-// scale", "a number point written with a decimal point, under de_DE, is
-// refused" and "a color scale with a percentile midpoint".
+// spreadsheet's locale, so under de_DE 1.5 is refused and 1,5 taken.
+// Google colors from one and a half for 1,5, and keeps that after the
+// locale changes back. The reference states no bound and no locale.
+// Google takes min and max as a midpoint too, so a scale read back from
+// a sheet can be sent again; min cannot be the last point, nor max the
+// first, which is this server's own rule. Checked by the spike "what
+// Google makes of a color scale" (Q4b reads the colors painted), and by
+// the live steps "a number point written with a decimal point, under
+// de_DE, is refused" and "a color scale with a percentile midpoint".
 // https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/sheets#InterpolationPoint
 func ParseGradient(points []string) (*gsheets.GradientRule, error) {
 	if len(points) < 2 || len(points) > 3 {

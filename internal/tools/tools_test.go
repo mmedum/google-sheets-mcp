@@ -2,7 +2,9 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -569,6 +571,42 @@ func TestAnArgumentTheActionDoesNotReadIsRefused(t *testing.T) {
 		}
 		if got != tc.want {
 			t.Errorf("%+v: %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// ranges replaces sheet and range and cannot resume, and its length is
+// bounded; each misuse is refused before anything is sent, and the bound
+// the schema states is the one enforced.
+func TestReadRangesRefusesWhatItCannotMean(t *testing.T) {
+	cfg := config.Config{}
+	s := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+	Register(s, Deps{Service: service.New(service.Deps{Config: cfg}), Config: cfg})
+	schema, _ := json.Marshal(listTools(t, s)["read_range"].InputSchema)
+	if want := fmt.Sprintf("At most %d.", service.MaxReadRanges); !strings.Contains(string(schema), want) {
+		t.Errorf("the ranges description does not say %q", want)
+	}
+	one := []any{map[string]any{"sheet": "Vandel", "range": "A1"}}
+	many := make([]any, service.MaxReadRanges+1)
+	for i := range many {
+		many[i] = one[0]
+	}
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"with sheet", map[string]any{"spreadsheet": "x", "sheet": "Vandel", "ranges": one}},
+		{"with range", map[string]any{"spreadsheet": "x", "range": "A1", "ranges": one}},
+		{"with continue_from", map[string]any{"spreadsheet": "x", "continue_from": 5, "ranges": one}},
+		{"one past the limit", map[string]any{"spreadsheet": "x", "ranges": many}},
+	} {
+		res := callTool(t, s, "read_range", tc.args)
+		text := ""
+		if len(res.Content) > 0 {
+			text = res.Content[0].(*mcp.TextContent).Text
+		}
+		if !res.IsError || !strings.HasPrefix(text, "[invalid]") {
+			t.Errorf("%s: IsError=%v %q, want an [invalid] refusal", tc.name, res.IsError, text)
 		}
 	}
 }
