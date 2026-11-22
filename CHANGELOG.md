@@ -5,6 +5,8 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [5.1.0] - 2026-11-22
+
 ### Added
 
 - `read_range` takes `ranges`, to read up to 20 ranges across sheets in one call, each with its own grid, footer and checkpoint.
@@ -1472,7 +1474,8 @@ The first release: the skeleton, the gates, and reading.
 - Not tagged. CI has never run on macOS or Windows, and `main` is the
   maintainer's to push.
 
-[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v5.0.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-sheets-mcp/compare/v5.1.0...HEAD
+[5.1.0]: https://github.com/mmedum/google-sheets-mcp/compare/v5.0.0...v5.1.0
 [5.0.0]: https://github.com/mmedum/google-sheets-mcp/compare/v4.2.1...v5.0.0
 [4.2.1]: https://github.com/mmedum/google-sheets-mcp/compare/v4.2.0...v4.2.1
 [4.2.0]: https://github.com/mmedum/google-sheets-mcp/compare/v4.1.1...v4.2.0
