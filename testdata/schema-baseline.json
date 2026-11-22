@@ -1,6 +1,6 @@
 {
   "server": "google-sheets-mcp",
-  "version": "v5.0.0",
+  "version": "v5.1.0",
   "sdk": "v1.8.0",
   "instructions": "Google Sheets tools that work inside one spreadsheet. Start with get_spreadsheet: it costs the same on any size of spreadsheet and gives the exact sheet titles every other call needs. Never guess a sheet name — Google names the first sheet in the account's language, so it is often not an English word — and never build a range by joining a title to a range yourself; pass sheet and range separately and this server quotes the title, which is what keeps a whole-sheet reference meaning the sheet rather than a named range that happens to share its name. Then read_range for cells, with show=both when you need to see which numbers are computed, or find_in_spreadsheet to locate something first. Ranges are A1 throughout; this server does the index arithmetic. Reads are budgeted and say where to continue. Writing is guarded: write_values reads the target first and refuses to overwrite anything non-empty without overwrite, or a formula without overwrite_formulas as well, naming the cells each time. Sheets has no undo, so take a refusal as information rather than an obstacle, and use dry_run when you are not sure what is there. overwrite carries a decision the person made, not a way past a refusal: if a write is refused and the person has not said to replace what is there, report what the refusal named and stop. An overwrite also needs checkpoint, which the refusal and dry_run give, so that what it replaces is what was read. input=typed parses as a person typing, so 007 becomes 7 and a date becomes a serial; every value Google changes is named in the result, and input=literal stores exactly what you send. append_rows lands where Google decides and reports it; write_values is the one to use when you know the addresses. Files, folders, sharing and revisions are not here: they belong to a server built on the Drive API. Comments on cells are here, through read_cell_comments and manage_cell_comment, and so is a cell note, which is a Sheets field. The tools that delete are registered only when the person running the server allows them, and each needs confirm: pass it only when the person asked for that delete.",
   "tools": [
@@ -2334,9 +2334,23 @@
             "description": "what a protected range is for, which is shown to anyone who tries to edit it",
             "type": "string"
           },
+          "domain_users_can_edit": {
+            "description": "for a protected range, on add or update: let everyone in the owner's domain edit it, which needs that whole domain able to edit the spreadsheet already. On an update it replaces the protection's editors, as editors does",
+            "type": "boolean"
+          },
           "dry_run": {
             "description": "say what would change and send nothing",
             "type": "boolean"
+          },
+          "editors": {
+            "description": "for a protected range, on add or update: the people and groups, by email address, who may edit it besides the owner. Each must already be able to edit the spreadsheet, through their own grant, the domain's or anyone's with the link: a protection chooses among its editors and shares nothing, so any other address is refused. A person who edits through a group is named by the group. On an update the list replaces the protection's editors. Not with warning_only true",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "gradient": {
             "description": "for conditional_format: a color scale instead of a condition. Two or three points, lowest first, each \"\u003cmin|max|number|percent|percentile\u003e [value] #hex\", such as [\"min #ffffff\", \"percentile 50 #ffd666\", \"max #57bb8a\"]. min and max take no value and may also be the middle point; min is never last, nor max first. A number is written the way the spreadsheet's locale writes it: 1,5 under de_DE, where Google refuses 1.5. Not with condition, values, color, text_color or bold",
@@ -2406,7 +2420,7 @@
             ]
           },
           "warning_only": {
-            "description": "for a protected range: true warns in the interface and refuses nothing over the API, false refuses edits from anyone but the owner. Leaving it out on an update leaves it as it is",
+            "description": "for a protected range: true warns in the interface and refuses nothing over the API, false refuses edits from anyone but the owner and its editors. Leaving it out on an update leaves it as it is",
             "type": [
               "null",
               "boolean"
@@ -2845,7 +2859,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Read cells as an addressed grid: column letters across the top, row numbers down the side, so you can write back to what you just read without counting. Give the sheet exactly as get_spreadsheet reports it. show=both prints each formula under the value it produced, which is the only way to tell a computed number from a typed one. include_notes, include_validation and include_merges add what a values read cannot show. The read is budgeted in cells and characters and the window is resolved before the call, so an open-ended range is safe; when it is cut short the footer says where to continue and continue_from resumes there. A range as narrow as the data reads more rows a call than the whole sheet's width does. Every read returns a checkpoint to hand to a later write. Use get_spreadsheet first for sheet names and sizes, and find_in_spreadsheet when you do not yet know which cells you want.",
+      "description": "Read cells as an addressed grid: column letters across the top, row numbers down the side, so you can write back to what you just read without counting. Give the sheet exactly as get_spreadsheet reports it. show=both prints each formula under the value it produced, which is the only way to tell a computed number from a typed one. include_notes, include_validation and include_merges add what a values read cannot show. The read is budgeted in cells and characters and the window is resolved before the call, so an open-ended range is safe; when it is cut short the footer says where to continue and continue_from resumes there. A range as narrow as the data reads more rows a call than the whole sheet's width does. Every read returns a checkpoint to hand to a later write. To read from several sheets or places at once, pass ranges rather than calling once per range. Use get_spreadsheet first for sheet names and sizes, and find_in_spreadsheet when you do not yet know which cells you want.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2884,6 +2898,30 @@
           "range": {
             "description": "an A1 range on that sheet: a rectangle (B2:D40), whole columns (B:D), whole rows (2:5), or omitted for the whole sheet",
             "type": "string"
+          },
+          "ranges": {
+            "description": "several ranges to read in one request, in place of sheet and range, such as A1 of every sheet. At most 20. The cell and character budgets are shared equally among them, and each comes back in reads with its own grid, footer and checkpoint; with format json, csv or tsv each range's rows are in its entry. Not with continue_from: read a range that was cut short on its own",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "range": {
+                  "description": "an A1 range on that sheet, as for range; omitted for the whole sheet",
+                  "type": "string"
+                },
+                "sheet": {
+                  "description": "the sheet title exactly as get_spreadsheet reports it, or its numeric sheet id",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sheet"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "sheet": {
             "description": "the sheet title exactly as get_spreadsheet reports it, or its numeric sheet id. Required unless the range carries the sheet or the URL carried a gid; nothing is defaulted, because Google names the first sheet in the account's language",
@@ -2926,6 +2964,70 @@
           "range": {
             "description": "the range actually read, in A1 with the sheet quoted",
             "type": "string"
+          },
+          "reads": {
+            "description": "one entry per range when ranges was given, in the order given, each with its own grid, footer, checkpoint, continue_from and, for json, csv or tsv, rows. Then grid holds every range under its address, and sheet, range, checkpoint and rows are empty: take a checkpoint from its range's entry",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "checkpoint": {
+                  "description": "pass this to a later write to this range as checkpoint",
+                  "type": "string"
+                },
+                "continue_from": {
+                  "description": "the first row not shown; read on with this range alone and continue_from",
+                  "type": "integer"
+                },
+                "footer": {
+                  "description": "what was shown, out of what exists, and how to continue",
+                  "type": "string"
+                },
+                "grid": {
+                  "description": "the range as an addressed grid",
+                  "type": "string"
+                },
+                "range": {
+                  "description": "the range actually read, in A1 with the sheet quoted",
+                  "type": "string"
+                },
+                "rows": {
+                  "description": "the values as arrays, present only when format is json, csv or tsv",
+                  "items": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "null",
+                      "array"
+                    ]
+                  },
+                  "type": [
+                    "null",
+                    "array"
+                  ]
+                },
+                "sheet": {
+                  "description": "the sheet title",
+                  "type": "string"
+                },
+                "truncated": {
+                  "description": "true when the range's share of the budget stopped it short",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "grid",
+                "footer",
+                "sheet",
+                "range",
+                "checkpoint"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "rows": {
             "description": "the values as arrays, present only when format is json, csv or tsv",
