@@ -3,10 +3,12 @@ package service_test
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi"
 	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi/sheetstest"
 	"github.com/mmedum/google-sheets-mcp/v5/internal/gsheets"
 	"github.com/mmedum/google-sheets-mcp/v5/internal/service"
@@ -1386,5 +1388,171 @@ func TestBandingAcrossColumns(t *testing.T) {
 	b := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Bandings
 	if len(b) != 1 || b[0].ColumnProperties == nil || b[0].RowProperties != nil {
 		t.Fatalf("bandings = %+v, want one with column properties alone", b)
+	}
+}
+
+// A protection's editors are chosen from the people who can already
+// edit the file, users and groups each in their own list; anyone else,
+// a commenter included, is refused before anything is sent.
+func TestProtectedRangeEditorsComeFromTheFilesEditors(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	srv.SetPermissions(sheetstest.FixtureID,
+		&gapi.Permission{Type: "user", Role: "owner", EmailAddress: "fixture@example.test"},
+		&gapi.Permission{Type: "user", Role: "writer", EmailAddress: "Grivet@example.test"},
+		&gapi.Permission{Type: "group", Role: "writer", EmailAddress: "plimth-team@example.test"},
+		&gapi.Permission{Type: "user", Role: "commenter", EmailAddress: "oblisk@example.test"},
+	)
+	svc := newService(t, srv)
+	ctx := context.Background()
+
+	add := rangeReq(service.RangeProtected, service.RangeAdd, "A1:B2")
+	add.Editors = []string{"grivet@example.test", "plimth-team@example.test"}
+	if _, err := svc.ManageRange(ctx, add); err != nil {
+		t.Fatalf("adding a protection with editors: %v", err)
+	}
+	got := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Protected[0].Editors
+	if got == nil || !slices.Equal(got.Users, []string{"Grivet@example.test"}) ||
+		!slices.Equal(got.Groups, []string{"plimth-team@example.test"}) {
+		t.Errorf("editors stored = %+v, want users [Grivet@example.test] and groups [plimth-team@example.test]", got)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		editors []string
+		domain  bool
+		warning *bool
+		class   string
+	}{
+		{"a commenter", []string{"oblisk@example.test"}, false, nil, "[blocked]"},
+		{"nobody the file is shared with", []string{"nardle@example.test"}, false, nil, "[blocked]"},
+		{"the domain, which has no grant", nil, true, nil, "[blocked]"},
+		{"editors with warning_only", []string{"grivet@example.test"}, false, boolPtr(true), "[invalid]"},
+	} {
+		srv.Reset()
+		up := rangeReq(service.RangeProtected, service.RangeUpdate, "A1:B2")
+		up.Editors, up.DomainEditors, up.WarningOnly = tc.editors, tc.domain, tc.warning
+		_, err := svc.ManageRange(ctx, up)
+		if err == nil || !strings.HasPrefix(err.Error(), tc.class) {
+			t.Errorf("%s: %v, want %s", tc.name, err, tc.class)
+		}
+		for _, c := range srv.Calls() {
+			if c.Op == "spreadsheets.batchUpdate" {
+				t.Errorf("%s: a batchUpdate was sent", tc.name)
+			}
+		}
+	}
+}
+
+// On a protection that only warns, editors need warning_only false with
+// them, since Google takes no editors on a warning-only protection.
+func TestEditorsOnAWarningOnlyProtectionNeedItToRefuse(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	svc := newService(t, srv)
+	ctx := context.Background()
+	add := rangeReq(service.RangeProtected, service.RangeAdd, "A1:B2")
+	add.WarningOnly = boolPtr(true)
+	if _, err := svc.ManageRange(ctx, add); err != nil {
+		t.Fatal(err)
+	}
+	up := rangeReq(service.RangeProtected, service.RangeUpdate, "A1:B2")
+	up.Editors = []string{"fixture@example.test"}
+	if _, err := svc.ManageRange(ctx, up); err == nil || !strings.HasPrefix(err.Error(), "[invalid]") {
+		t.Fatalf("editors on a warning-only protection: %v, want [invalid]", err)
+	}
+	up.WarningOnly = boolPtr(false)
+	if _, err := svc.ManageRange(ctx, up); err != nil {
+		t.Fatalf("editors with warning_only false: %v", err)
+	}
+	p := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Protected[0]
+	if p.WarningOnly || p.Editors == nil || !slices.Equal(p.Editors.Users, []string{"fixture@example.test"}) {
+		t.Errorf("protection = warningOnly %v, editors %+v; want refusing, with the owner as editor", p.WarningOnly, p.Editors)
+	}
+}
+
+// Edit access through the domain's grant or anyone's counts, an address
+// named twice is sent once, and domain editing needs the owner's own
+// domain able to edit.
+func TestProtectedRangeEditorsThroughWiderGrants(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	owner := &gapi.Permission{Type: "user", Role: "owner", EmailAddress: "fixture@example.test"}
+	svc := newService(t, srv)
+	ctx := context.Background()
+	if _, err := svc.ManageRange(ctx, rangeReq(service.RangeProtected, service.RangeAdd, "A1:B2")); err != nil {
+		t.Fatal(err)
+	}
+	update := func(editors []string, domain bool) error {
+		up := rangeReq(service.RangeProtected, service.RangeUpdate, "A1:B2")
+		up.Editors, up.DomainEditors = editors, domain
+		_, err := svc.ManageRange(ctx, up)
+		return err
+	}
+	stored := func() *gsheets.Editors {
+		return srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Protected[0].Editors
+	}
+
+	srv.SetPermissions(sheetstest.FixtureID, owner, &gapi.Permission{Type: "domain", Role: "writer", Domain: "partner.test"})
+	if err := update([]string{"Ana@partner.test", "ana@partner.test"}, false); err != nil {
+		t.Fatalf("an address the partner domain's grant covers: %v", err)
+	}
+	if got := stored(); !slices.Equal(got.Users, []string{"Ana@partner.test"}) {
+		t.Errorf("users = %v, want [Ana@partner.test] once", got.Users)
+	}
+	if err := update(nil, true); err == nil || !strings.HasPrefix(err.Error(), "[blocked]") {
+		t.Errorf("domain editing on another domain's grant: %v, want [blocked]", err)
+	}
+
+	srv.SetPermissions(sheetstest.FixtureID, owner, &gapi.Permission{Type: "domain", Role: "writer", Domain: "example.test"})
+	if err := update(nil, true); err != nil || !stored().DomainUsersCanEdit {
+		t.Errorf("domain editing on the owner's domain's grant: %v, stored %+v", err, stored())
+	}
+
+	srv.SetPermissions(sheetstest.FixtureID, owner, &gapi.Permission{Type: "anyone", Role: "writer"})
+	if err := update([]string{"quorbin@elsewhere.test"}, false); err != nil {
+		t.Errorf("an address anyone's edit grant covers: %v", err)
+	}
+}
+
+// What can be refused without Drive is refused first: an empty address,
+// and an update over a range no protection covers; a Drive that will not
+// list the grants is [forbidden], with nothing sent.
+func TestProtectedRangeEditorRefusalsComeInOrder(t *testing.T) {
+	srv := sheetstest.Standard(t)
+	svc := newService(t, srv)
+	ctx := context.Background()
+	if _, err := svc.ManageRange(ctx, rangeReq(service.RangeProtected, service.RangeAdd, "A1:B2")); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, rng string
+		editors   []string
+		forbid    bool
+		class     string
+		drive     bool
+	}{
+		{"an empty address", "A1:B2", []string{" "}, false, "[invalid]", false},
+		{"no protection over the range", "C5:D6", []string{"nardle@example.test"}, false, "[not_found]", false},
+		{"Drive will not list the grants", "A1:B2", []string{"fixture@example.test"}, true, "[forbidden]", true},
+	} {
+		srv.Reset()
+		if tc.forbid {
+			srv.FailOnce("drive.permissions.list", sheetstest.Failure{Status: 403,
+				Body: `{"error":{"code":403,"message":"The user does not have sufficient permissions for this file.","status":"PERMISSION_DENIED"}}`})
+		}
+		up := rangeReq(service.RangeProtected, service.RangeUpdate, tc.rng)
+		up.Editors = tc.editors
+		_, err := svc.ManageRange(ctx, up)
+		if err == nil || !strings.HasPrefix(err.Error(), tc.class) {
+			t.Errorf("%s: %v, want %s", tc.name, err, tc.class)
+		}
+		listed := false
+		for _, c := range srv.Calls() {
+			listed = listed || c.Op == "drive.permissions.list"
+			if c.Op == "spreadsheets.batchUpdate" {
+				t.Errorf("%s: a batchUpdate was sent", tc.name)
+			}
+		}
+		if listed != tc.drive {
+			t.Errorf("%s: Drive was asked = %v, want %v", tc.name, listed, tc.drive)
+		}
 	}
 }

@@ -117,8 +117,8 @@ func TestPhase2BuildersSetOneUnionMember(t *testing.T) {
 		"NamedRangeAdd":    plan.NamedRangeAdd("Quorbin", 1, rect),
 		"NamedRangeMove":   plan.NamedRangeMove("nr1", 1, rect),
 		"NamedRangeDelete": plan.NamedRangeDelete("nr1"),
-		"ProtectedAdd":     plan.ProtectedAdd(1, rect, "why", false),
-		"ProtectedUpdate":  plan.ProtectedUpdate(2, "why", true, true),
+		"ProtectedAdd":     plan.ProtectedAdd(1, rect, "why", false, nil),
+		"ProtectedUpdate":  plan.ProtectedUpdate(2, "why", true, true, nil),
 		"ProtectedDelete":  plan.ProtectedDelete(2),
 		"Validation":       plan.Validation(1, rect, plan.ValidationRule(cond, true, "")),
 		"TableAdd":         plan.TableAdd("Skerry", 1, rect, nil),
@@ -167,10 +167,10 @@ func TestEveryUpdateCarriesAMask(t *testing.T) {
 	if got := plan.TableUpdate("t1", "Skerry", columns).UpdateTable.Fields; got != "name,columnProperties" {
 		t.Errorf("a rename and a retype mask %q", got)
 	}
-	if got := plan.ProtectedUpdate(1, "why", false, false).UpdateProtectedRange.Fields; got != "description" {
+	if got := plan.ProtectedUpdate(1, "why", false, false, nil).UpdateProtectedRange.Fields; got != "description" {
 		t.Errorf("a description-only update masks %q", got)
 	}
-	if got := plan.ProtectedUpdate(1, "", true, true).UpdateProtectedRange.Fields; got != "warningOnly" {
+	if got := plan.ProtectedUpdate(1, "", true, true, nil).UpdateProtectedRange.Fields; got != "warningOnly" {
 		t.Errorf("a warning-only update masks %q", got)
 	}
 	// The axis a banding runs along decides its mask, and writing the

@@ -60,8 +60,8 @@ const FileFields = "id,name,mimeType,createdTime,modifiedTime,owners(displayName
 // drives, newest first. The caller builds q and is responsible for
 // escaping every value it interpolates — QuoteDriveValue is how.
 //
-// Beside GetFile and About, this is the only Drive call this server
-// makes. Sharing, moving and trashing files belong to a server built on
+// Beside GetFile, About and ListPermissions, this is the one other Drive
+// call this server makes. Sharing, moving and trashing files belong to a server built on
 // the Drive API.
 func (c *Client) SearchSpreadsheets(ctx context.Context, q string, limit int, pageToken string) (*FileList, error) {
 	if limit <= 0 {
@@ -116,6 +116,66 @@ func (c *Client) GetFile(ctx context.Context, id string) (*File, error) {
 		return nil, fmt.Errorf("%w: drive.files.get returned something this server cannot read", ErrUnavailable)
 	}
 	return &f, nil
+}
+
+// Permission is one grant on a file, as permissions.list reads it.
+type Permission struct {
+	// Type is user, group, domain or anyone; Role is owner, organizer,
+	// fileOrganizer, writer, commenter or reader.
+	Type         string `json:"type,omitempty"`
+	Role         string `json:"role,omitempty"`
+	EmailAddress string `json:"emailAddress,omitempty"`
+	Domain       string `json:"domain,omitempty"`
+}
+
+// CanEdit reports whether the grant lets its holder edit the file. The
+// roles are Drive's.
+// https://developers.google.com/workspace/drive/api/guides/ref-roles
+func (p *Permission) CanEdit() bool {
+	switch p.Role {
+	case "owner", "organizer", "fileOrganizer", "writer":
+		return true
+	}
+	return false
+}
+
+// ListPermissions returns every grant on a file, which drive.readonly
+// may read (the discovery document's scopes on permissions.list). It
+// pages until Drive gives no next token.
+// https://developers.google.com/workspace/drive/api/reference/rest/v3/permissions/list
+func (c *Client) ListPermissions(ctx context.Context, id string) ([]*Permission, error) {
+	var all []*Permission
+	token := ""
+	for {
+		v := url.Values{}
+		v.Set("fields", "nextPageToken,permissions(type,role,emailAddress,domain)")
+		v.Set("supportsAllDrives", "true")
+		v.Set("pageSize", "100")
+		if token != "" {
+			v.Set("pageToken", token)
+		}
+		body, err := c.do(ctx, request{
+			op:          "drive.permissions.list",
+			spreadsheet: id,
+			method:      http.MethodGet,
+			url:         c.drive + "/files/" + url.PathEscape(id) + "/permissions?" + v.Encode(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		var page struct {
+			NextPageToken string        `json:"nextPageToken"`
+			Permissions   []*Permission `json:"permissions"`
+		}
+		if err := json.Unmarshal(body, &page); err != nil {
+			return nil, fmt.Errorf("%w: drive.permissions.list returned something this server cannot read", ErrUnavailable)
+		}
+		all = append(all, page.Permissions...)
+		if page.NextPageToken == "" {
+			return all, nil
+		}
+		token = page.NextPageToken
+	}
 }
 
 // About returns the signed-in account, the cheapest authenticated call

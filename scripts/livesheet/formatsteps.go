@@ -315,6 +315,50 @@ func (d *driver) rangeSteps() []step {
 			},
 		},
 		{
+			name:        "editors on a warning-only protection are refused",
+			why:         "Google takes no editors on a protection that only warns, so the server says so before sending",
+			tool:        "manage_range",
+			args:        map[string]any{"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A2:C2", "kind": "protected_range", "action": "update", "editors": []any{d.owner}},
+			expectError: "invalid",
+		},
+		{
+			name: "a protection names the signed-in account as its editor",
+			why: "an editor is chosen from the people who can edit the file, read through drive.readonly; the " +
+				"signed-in account is the one address the driver may send",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A2:C2",
+				"kind": "protected_range", "action": "update", "warning_only": false, "editors": []any{d.owner},
+			},
+			check: func(text string, _ map[string]any) error {
+				if !strings.Contains(text, "editors now") || !strings.Contains(text, d.owner) {
+					return fmt.Errorf("the result does not name the editor: %s", text)
+				}
+				return nil
+			},
+		},
+		{
+			name: "an address the file is not shared with is refused before Google sees it",
+			why: "a protection chooses among the file's editors and shares nothing, so an outside address is refused " +
+				"here; the spike \"who an outside address reaches\" found Google refuses one that is no Google account",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A2:C2",
+				"kind": "protected_range", "action": "update", "editors": []any{"probe@example.com"},
+			},
+			expectError: "blocked",
+		},
+		{
+			name: "domain editors need a domain that can edit the file",
+			why:  "a personal account's spreadsheet has no domain grant, so the server refuses before sending",
+			tool: "manage_range",
+			args: map[string]any{
+				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A2:C2",
+				"kind": "protected_range", "action": "update", "domain_users_can_edit": true,
+			},
+			expectError: "blocked",
+		},
+		{
 			name: "and lifted, over the very range it protects",
 			why:  "a protection that blocked the request lifting it would be a trap rather than a guard",
 			tool: "manage_range",
