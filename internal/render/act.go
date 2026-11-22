@@ -251,8 +251,8 @@ func PivotsShrunk(pivots, unsearched []string) string {
 			"source, which can leave a header and Grand Total; Google's reply does not mention it.")
 	}
 	if len(unsearched) > 0 {
-		parts = append(parts, "The search for pivot tables on "+JoinAnd(unsearched)+
-			" failed, so one there reading these cells is not named.")
+		parts = append(parts, "The search for pivot tables did not cover "+JoinAnd(unsearched)+
+			", so one there reading these cells is not named.")
 	}
 	return strings.Join(parts, " ")
 }

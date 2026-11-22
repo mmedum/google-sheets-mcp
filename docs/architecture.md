@@ -1551,12 +1551,16 @@ clear larger than one read is refused with its size, since a guard that
 read part of a range does not guard the rest. `delete_data_source` names
 the sheet it takes.
 
-Rejected: a clear sent for a range larger than its one read.
 `delete_dimensions` also names the pivot tables, on any sheet, whose
 source the band cuts, since their output can fall to a header and a
-grand total. It reads every grid sheet whole for the pivot field alone,
-which Google sends only where a pivot is, and names the sheets when that
-read fails.
+grand total. It reads every grid sheet for the pivot field alone, within
+a budget of rows rather than cells, since Google answers that mask with
+an empty entry for each row down to the last pivot, and names the sheets
+the budget, a timeout or a failure left unsearched.
+
+Rejected: a clear sent for a range larger than its one read; a search
+for pivots bounded by the read budget in cells, which left every
+default-size sheet unsearched.
 Cost: naming a band's anchors costs a developer metadata search on every
 band delete, and naming its pivots one grid read across the sheets.
 

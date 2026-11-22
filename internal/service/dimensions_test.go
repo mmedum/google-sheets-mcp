@@ -2,11 +2,11 @@ package service_test
 
 import (
 	"context"
-	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi"
 	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi/sheetstest"
 	"github.com/mmedum/google-sheets-mcp/v5/internal/service"
 )
@@ -252,7 +252,8 @@ func TestADeleteNamesThePivotWhoseSourceItCuts(t *testing.T) {
 		t.Errorf("a small budget cut the pivot search short: %q\n%s", res.Pivots, res.Render())
 	}
 
-	// A search that fails costs the names, not the delete.
+	// A search that fails costs the names, not the delete. The run before
+	// the count warms the card cache, so the next delete reads as this one.
 	if _, err := small.EditDimensions(ctx, del("B:B")); err != nil {
 		t.Fatal(err)
 	}
@@ -260,14 +261,18 @@ func TestADeleteNamesThePivotWhoseSourceItCuts(t *testing.T) {
 	if _, err := small.EditDimensions(ctx, del("B:B")); err != nil {
 		t.Fatal(err)
 	}
-	var before int
+	before, found := 0, false
 	for _, c := range srv.Calls() {
 		if c.Op == "spreadsheets.get" {
 			if c.Query.Get("fields") == gapi.PivotSourceFields {
+				found = true
 				break
 			}
 			before++
 		}
+	}
+	if !found {
+		t.Fatal("no pivot search among the reads of a delete, so there is nothing to fail")
 	}
 	for range before {
 		srv.FailOnce("spreadsheets.get", sheetstest.Failure{Pass: true})
@@ -277,8 +282,21 @@ func TestADeleteNamesThePivotWhoseSourceItCuts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a failed pivot search failed the delete: %v", err)
 	}
-	if !strings.Contains(failed.Render(), "The search for pivot tables on") || !strings.Contains(failed.Render(), "failed") {
+	if !strings.Contains(failed.Render(), `The search for pivot tables did not cover "Vandel"`) {
 		t.Errorf("a failed pivot search is not said to have failed:\n%s", failed.Render())
+	}
+
+	// Rows past the search's budget are named, sheet by sheet: the reply
+	// carries an entry for every row down to the last pivot.
+	big := sheetstest.Standard(t)
+	big.Doc(sheetstest.FixtureID).Find(sheetstest.FirstSheet).Props.GridProperties.RowCount = 300_000
+	wide := service.New(service.Deps{API: big.Client(), Config: fs})
+	res, err = wide.EditDimensions(ctx, del("B:B"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Render(), `The search for pivot tables did not cover "Vandel" past row`) {
+		t.Errorf("a sheet past the row budget is not named:\n%s", res.Render())
 	}
 }
 

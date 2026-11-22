@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mmedum/google-sheets-mcp/v5/internal/a1"
 	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi"
@@ -1409,19 +1410,28 @@ func lookback(rect a1.Rect, maxCells int) a1.Rect {
 	return window
 }
 
+// pivotSearchRows bounds the rows a search for pivot sources reads
+// across every sheet, and pivotSearchTime how long it may take. The mask
+// asks for the pivot field alone, and Google answers with an empty entry
+// for each row down to the last pivot: a pivot at row 900 cost 15 KB, so
+// the bound is a few megabytes. Checked by the spike "what a pivot search
+// of whole sheets costs".
+const (
+	pivotSearchRows = 200_000
+	pivotSearchTime = 20 * time.Second
+)
+
 // pivotsOnBand names each pivot table, on any sheet, whose source the
 // band cuts: the delete shrinks the source and the reply says nothing.
 // A pivot the band itself deletes goes with the cells and is counted
 // there.
 //
-// One read of every grid sheet whole, for the pivot field alone, since a
-// pivot on any sheet may read this one. No cell budget bounds it: Google
-// sends only the rows that carry the field, so two whole 1000 by 26
-// sheets with one pivot between them came back under a kilobyte. Checked
-// by the spike "what a pivot search of whole sheets costs". The names are
-// worth a read and not a delete, so a read that fails leaves every sheet
-// unsearched rather than failing the call.
-// https://developers.google.com/workspace/sheets/api/guides/field-masks
+// One read of every grid sheet for the pivot field alone, since a pivot
+// on any sheet may read this one: each sheet whole when their rows fit
+// pivotSearchRows together, and otherwise each to the same share of its
+// rows, naming the part not searched. The names are worth a read and not
+// a delete, so a read that fails or runs past pivotSearchTime leaves
+// every sheet unsearched rather than failing the call.
 func (s *Service) pivotsOnBand(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
 	band plan.Band) (pivots, unsearched []string, err error) {
 
@@ -1430,21 +1440,35 @@ func (s *Service) pivotsOnBand(ctx context.Context, ref Reference, props *gsheet
 		return nil, nil, err
 	}
 	var grids []*gsheets.SheetProperties
-	var ranges []string
+	total := 0
 	for _, sh := range sp.Sheets {
 		if sh.Properties != nil && sh.Properties.GridProperties != nil {
 			grids = append(grids, sh.Properties)
-			ranges = append(ranges, a1.QuoteSheet(sh.Properties.Title))
+			rows, _ := extent(sh.Properties)
+			total += rows
 		}
 	}
 	if len(grids) == 0 {
 		return nil, nil, nil
 	}
-	got, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{
+	share := min(1, float64(pivotSearchRows)/float64(total))
+	var ranges []string
+	for _, g := range grids {
+		rows, cols := extent(g)
+		last := max(1, int(float64(rows)*share))
+		ranges = append(ranges, a1.Format(g.Title, a1.Rect{FirstRow: 1, FirstCol: 1, LastRow: last, LastCol: cols}))
+		if last < rows {
+			unsearched = append(unsearched, fmt.Sprintf("%q past row %d", g.Title, last))
+		}
+	}
+	searchCtx, cancel := context.WithTimeout(ctx, pivotSearchTime)
+	defer cancel()
+	got, err := s.api.GetSpreadsheet(searchCtx, ref.ID, gapi.GetOptions{
 		Fields: gapi.PivotSourceFields, Ranges: ranges, IncludeGridData: true,
 	})
 	if err != nil {
 		s.log.DebugContext(ctx, "pivot search before a delete failed", "spreadsheet", gapi.ShortID(ref.ID))
+		unsearched = unsearched[:0]
 		for _, g := range grids {
 			unsearched = append(unsearched, fmt.Sprintf("%q", g.Title))
 		}
