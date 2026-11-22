@@ -5,6 +5,10 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- `read_range` takes `ranges`, to read up to 20 ranges across sheets in one call, each with its own grid, footer and checkpoint.
+
 ## [5.0.0] - 2026-11-22
 
 ### Added

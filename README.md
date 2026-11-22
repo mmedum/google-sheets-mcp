@@ -84,7 +84,7 @@ title is found through Drive, under `drive.readonly`. In read-only mode,
 | Tool | What it does | Scope |
 |---|---|---|
 | `get_spreadsheet` | The spreadsheet card: title, link, locale, and every sheet's exact title, id, size, frozen rows, hidden state and what it holds, plus named ranges, tables, protected ranges and filter views. No cell data, so it costs the same on a spreadsheet of ten cells and one of ten million. Call it first | `spreadsheets` |
-| `read_range` | An addressed grid of a range: column letters across the top, row numbers down the side. `show=both` prints each formula under the value it produced. Budgeted in cells and characters, with a continuation, and every read returns a checkpoint | `spreadsheets` |
+| `read_range` | An addressed grid of a range: column letters across the top, row numbers down the side. `show=both` prints each formula under the value it produced. Budgeted in cells and characters, with a continuation, and every read returns a checkpoint. `ranges` reads several at once | `spreadsheets` |
 | `read_formatting` | What a range looks like — number formats, fonts, colors, borders, alignment — per block of identically formatted cells rather than per cell, with the merges, conditional rules, banding, validation and notes that decide how a cell looks without being on the cell | `spreadsheets` |
 | `search_spreadsheets` | Find a spreadsheet by part of its title, by text inside it, by owner or by when it changed | `drive.readonly` |
 | `find_in_spreadsheet` | Search one spreadsheet for text or an RE2 pattern and get back A1 addresses, saying whether each match was in a value, in the formula under it, or in a note beside it | `spreadsheets` |

@@ -56,6 +56,37 @@ func (d *driver) cardSteps() []step {
 func (d *driver) readSteps() []step {
 	return []step{
 		{
+			name: "several ranges in one read",
+			why: "Google answers each range asked of a sheet with its own GridData; ranges on one sheet, asked out " +
+				"of order or twice, must each show their own cells, and every sheet must be read in one call",
+			tool: "read_range",
+			args: map[string]any{"spreadsheet": d.spreadsheet, "ranges": []any{
+				map[string]any{"sheet": d.firstSheet, "range": "B1"},
+				map[string]any{"sheet": d.secondSheet, "range": "A1"},
+				map[string]any{"sheet": d.firstSheet, "range": "A1"},
+				map[string]any{"sheet": d.firstSheet, "range": "B1"},
+			}},
+			check: func(_ string, s map[string]any) error {
+				reads, _ := s["reads"].([]any)
+				if len(reads) != 4 {
+					return fmt.Errorf("%d reads, want 4", len(reads))
+				}
+				for i, want := range []struct{ has, hasNot string }{
+					{"Nardle", "Plimth"}, {"Trennow", "Bractal"}, {"Plimth", "Nardle"}, {"Nardle", "Plimth"},
+				} {
+					r, _ := reads[i].(map[string]any)
+					grid, _ := r["grid"].(string)
+					if !strings.Contains(grid, want.has) || strings.Contains(grid, want.hasNot) {
+						return fmt.Errorf("read %d holds %q, want %q and not %q", i, grid, want.has, want.hasNot)
+					}
+					if cp, _ := r["checkpoint"].(string); !strings.HasPrefix(cp, "ck_") {
+						return fmt.Errorf("read %d has no checkpoint", i)
+					}
+				}
+				return nil
+			},
+		},
+		{
 			name: "an addressed grid",
 			why:  "the addresses are the substance: they are what lets a model write back without counting",
 			tool: "read_range",
