@@ -350,7 +350,8 @@ func (d *driver) rangeSteps() []step {
 		},
 		{
 			name: "domain editors need a domain that can edit the file",
-			why:  "a personal account's spreadsheet has no domain grant, so the server refuses before sending",
+			why: "the scratch spreadsheet has no domain edit grant unless the account shares new files with its " +
+				"domain by default, so the server refuses before sending",
 			tool: "manage_range",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": d.workSheet, "range": "A2:C2",
