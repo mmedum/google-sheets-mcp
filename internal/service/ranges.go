@@ -400,16 +400,8 @@ func (s *Service) protectedOp(ctx context.Context, req RangeRequest, action stri
 			return nil, nil, err
 		}
 		// The list replaces the one before, so the result says what that was.
-		before := "everyone, after a warning"
-		if !target.WarningOnly {
-			was := target.Editors
-			if was == nil {
-				was = &gsheets.Editors{}
-			}
-			before = describeEditors(was)
-		}
 		applied = append(applied, render.Applied{Kind: "editors",
-			Value: describeEditors(editors) + " (before: " + before + ")"})
+			Value: describeEditors(editors) + " (before: " + editorsBefore(target) + ")"})
 	}
 	return plan.ProtectedUpdate(target.ProtectedRangeID, req.Description, warning, req.WarningOnly != nil, editors),
 		applied, nil
@@ -492,6 +484,18 @@ func (s *Service) editorsWhoCanEdit(ctx context.Context, ref Reference, addrs []
 // domainOf is the part of an address after its last @, folded to lower case.
 func domainOf(addr string) string {
 	return strings.ToLower(addr[strings.LastIndex(addr, "@")+1:])
+}
+
+// editorsBefore is who could edit a protected range before an update:
+// everyone, where it only warned.
+func editorsBefore(p *gsheets.ProtectedRange) string {
+	if p.WarningOnly {
+		return "everyone, after a warning"
+	}
+	if p.Editors == nil {
+		return describeEditors(&gsheets.Editors{})
+	}
+	return describeEditors(p.Editors)
 }
 
 // describeEditors names a protection's editors for the result.
