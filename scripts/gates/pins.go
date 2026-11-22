@@ -127,8 +127,10 @@ var (
 	// pinsImageDigest is a container image pinned by its content digest.
 	pinsImageDigest = regexp.MustCompile(`^[^@\s]+@sha256:[0-9a-f]{64}$`)
 	// pinsGoModToolchain and pinsGoModGo are setup-go v7.1.0's patterns
-	// for the toolchain directive and the go line, beta and rc included
-	// (https://github.com/actions/setup-go/blob/d8cbb8045d7f43706b9177cceb36c1f91a6644d5/src/installer.ts#L686-L697).
+	// for the toolchain directive and the go line, beta and rc included.
+	// setup-go skips the toolchain line under GOTOOLCHAIN=local, which no
+	// workflow here sets
+	// (https://github.com/actions/setup-go/blob/d8cbb8045d7f43706b9177cceb36c1f91a6644d5/src/installer.ts#L685-L697).
 	pinsGoModToolchain = regexp.MustCompile(`(?m)^toolchain go(1\.\d+(?:\.\d+|(?:beta|rc)\d+)?)`)
 	pinsGoModGo        = regexp.MustCompile(`(?m)^go (\d+(?:\.\d+)*(?:\.\d+|(?:beta|rc)\d+)?)`)
 )
