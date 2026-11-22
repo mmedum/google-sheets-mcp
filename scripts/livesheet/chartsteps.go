@@ -440,8 +440,8 @@ func (d *driver) pivotSteps() []step {
 		{
 			name: "a write into the output is refused, and the refusal names the pivot",
 			why: "the output carries an effectiveValue and no userEnteredValue, and if the guard could not see " +
-				"that, a write would land on a pivot table and stop it drawing. Naming which pivot takes a " +
-				"second read, because the output cells carry no pivotTable field",
+				"that, a write would land on a pivot table and stop it drawing. Naming which pivot takes one " +
+				"more read, of the anchors and what they draw, because the output cells carry no pivotTable field",
 			tool: "write_values",
 			args: map[string]any{
 				"spreadsheet": d.spreadsheet, "sheet": chartSheet, "range": "I3",
@@ -462,7 +462,7 @@ func (d *driver) pivotSteps() []step {
 		},
 		{
 			name: "a write onto typed cells is refused without naming a pivot",
-			why: "the second read is paid only where nobody typed what is in the way. A3 holds data somebody " +
+			why: "the extra read is paid only where nobody typed what is in the way. A3 holds data somebody " +
 				"entered, so this refusal must cost no extra call and must blame no pivot table",
 			tool: "write_values",
 			args: map[string]any{
