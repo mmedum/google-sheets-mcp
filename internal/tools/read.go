@@ -15,18 +15,25 @@ type SpreadsheetInput struct {
 
 // ReadInput scopes a read of cells.
 type ReadInput struct {
-	Spreadsheet       string `json:"spreadsheet" jsonschema:"a spreadsheet id, any docs.google.com/spreadsheets URL, or an exact title"`
-	Sheet             string `json:"sheet,omitempty" jsonschema:"the sheet title exactly as get_spreadsheet reports it, or its numeric sheet id. Required unless the range carries the sheet or the URL carried a gid; nothing is defaulted, because Google names the first sheet in the account's language"`
-	Range             string `json:"range,omitempty" jsonschema:"an A1 range on that sheet: a rectangle (B2:D40), whole columns (B:D), whole rows (2:5), or omitted for the whole sheet"`
-	Show              string `json:"show,omitempty" jsonschema:"values (default), formulas, or both. both prints the formula on a line under the value it produced, which is the only way to see that a number is computed"`
-	Format            string `json:"format,omitempty" jsonschema:"grid (default, an addressed grid for reading), or json, csv or tsv for feeding elsewhere"`
-	Formatted         bool   `json:"formatted,omitempty" jsonschema:"apply Google's display formatting. Off by default: a currency symbol inside a number you may want to compute with is a trap"`
-	MaxCells          int    `json:"max_cells,omitempty" jsonschema:"cell budget, default 5000, maximum 50000. Applied before the call, so an open-ended range never becomes an unbounded fetch"`
-	MaxChars          int    `json:"max_chars,omitempty" jsonschema:"character budget for the rendering, default 20000, maximum 400000. It also bounds the rows fetched, to those it could show"`
-	ContinueFrom      int    `json:"continue_from,omitempty" jsonschema:"the continue_from row a truncated read returned; resumes there"`
-	IncludeNotes      bool   `json:"include_notes,omitempty" jsonschema:"list cell notes under the grid; a values read cannot show them"`
-	IncludeValidation bool   `json:"include_validation,omitempty" jsonschema:"list data validation rules under the grid"`
-	IncludeMerges     bool   `json:"include_merges,omitempty" jsonschema:"list merged ranges under the grid"`
+	Spreadsheet       string       `json:"spreadsheet" jsonschema:"a spreadsheet id, any docs.google.com/spreadsheets URL, or an exact title"`
+	Sheet             string       `json:"sheet,omitempty" jsonschema:"the sheet title exactly as get_spreadsheet reports it, or its numeric sheet id. Required unless the range carries the sheet or the URL carried a gid; nothing is defaulted, because Google names the first sheet in the account's language"`
+	Range             string       `json:"range,omitempty" jsonschema:"an A1 range on that sheet: a rectangle (B2:D40), whole columns (B:D), whole rows (2:5), or omitted for the whole sheet"`
+	Show              string       `json:"show,omitempty" jsonschema:"values (default), formulas, or both. both prints the formula on a line under the value it produced, which is the only way to see that a number is computed"`
+	Format            string       `json:"format,omitempty" jsonschema:"grid (default, an addressed grid for reading), or json, csv or tsv for feeding elsewhere"`
+	Formatted         bool         `json:"formatted,omitempty" jsonschema:"apply Google's display formatting. Off by default: a currency symbol inside a number you may want to compute with is a trap"`
+	MaxCells          int          `json:"max_cells,omitempty" jsonschema:"cell budget, default 5000, maximum 50000. Applied before the call, so an open-ended range never becomes an unbounded fetch"`
+	MaxChars          int          `json:"max_chars,omitempty" jsonschema:"character budget for the rendering, default 20000, maximum 400000. It also bounds the rows fetched, to those it could show"`
+	ContinueFrom      int          `json:"continue_from,omitempty" jsonschema:"the continue_from row a truncated read returned; resumes there"`
+	IncludeNotes      bool         `json:"include_notes,omitempty" jsonschema:"list cell notes under the grid; a values read cannot show them"`
+	IncludeValidation bool         `json:"include_validation,omitempty" jsonschema:"list data validation rules under the grid"`
+	IncludeMerges     bool         `json:"include_merges,omitempty" jsonschema:"list merged ranges under the grid"`
+	Ranges            []RangeInput `json:"ranges,omitempty" jsonschema:"several ranges to read in one request, in place of sheet and range, such as A1 of every sheet. At most 20. The cell and character budgets are shared equally among them, and each comes back in reads with its own grid, footer and checkpoint; with format json, csv or tsv each range's rows are in its entry. Not with continue_from: read a range that was cut short on its own"`
+}
+
+// RangeInput is one range of a read of several.
+type RangeInput struct {
+	Sheet string `json:"sheet" jsonschema:"the sheet title exactly as get_spreadsheet reports it, or its numeric sheet id"`
+	Range string `json:"range,omitempty" jsonschema:"an A1 range on that sheet, as for range; omitted for the whole sheet"`
 }
 
 // SearchInput scopes a Drive search.
@@ -94,6 +101,7 @@ func registerRead(s *mcp.Server, d Deps) {
 			"range is safe; when it is cut short the footer says where to continue and continue_from resumes there. " +
 			"A range as narrow as the data reads more rows a call than the whole sheet's width does. " +
 			"Every read returns a checkpoint to hand to a later write. " +
+			"To read from several sheets or places at once, pass ranges rather than calling once per range. " +
 			"Use get_spreadsheet first for sheet names and sizes, and find_in_spreadsheet when you do not yet know which " +
 			"cells you want.",
 		Kind: Read,
@@ -101,12 +109,17 @@ func registerRead(s *mcp.Server, d Deps) {
 			if in.ContinueFrom < 0 {
 				return nil, service.Errorf("invalid", "continue_from is a row number, so it cannot be negative")
 			}
+			ranges := make([]service.SheetRange, 0, len(in.Ranges))
+			for _, r := range in.Ranges {
+				ranges = append(ranges, service.SheetRange{Sheet: r.Sheet, Range: r.Range})
+			}
 			return d.Service.Read(ctx, service.ReadRequest{
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range,
 				Show: in.Show, Format: in.Format, Formatted: in.Formatted,
 				Budget:       service.Budget{Cells: in.MaxCells, Chars: in.MaxChars},
 				ContinueFrom: in.ContinueFrom,
 				IncludeNotes: in.IncludeNotes, IncludeValidation: in.IncludeValidation, IncludeMerges: in.IncludeMerges,
+				Ranges: ranges,
 			})
 		},
 	})

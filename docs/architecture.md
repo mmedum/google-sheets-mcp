@@ -228,7 +228,8 @@ call needs (D-15, D-22). The service keeps this card for a short window
 `read_range` names a sheet and a range. The service resolves the title
 from the card and quotes it on the wire (D-14). It resolves the window
 against the sheet's extent before the call, under the cell budget, so an
-open-ended range is a finite request (D-22).
+open-ended range is a finite request (D-22). `ranges` reads several in
+one request, each with its own share of the budget (D-81).
 
 The grid comes back with column letters and row numbers, formulas under
 values with `show=both`, and empty runs folded into one line that names
@@ -474,6 +475,7 @@ CHANGELOG to the code. Releasing is in [release.md](release.md).
 | D-78 | Changes arrive by a watch or push channel | rejected | — |
 | D-79 | A tool changes the spreadsheet's title, locale or recalculation setting | rejected | — |
 | D-80 | The client refuses a write made during a dry run | accepted | TestADryRunThatForgetsItsReturnSendsNothing |
+| D-81 | Several ranges are one read, sharing one budget | accepted | TestReadManyRangesInOneRequest |
 | D-82 | A protection's editors come from the file's editors | accepted | TestProtectedRangeEditorsComeFromTheFilesEditors |
 
 ### D-01 One stdio binary per person, signed in to their own Google account through their own OAuth client
@@ -2546,6 +2548,28 @@ write added without one free to send; refusing in the service, where
 each write would have to remember to ask.
 Cost: a dry-run defect surfaces as `[invalid]` naming the method, not
 as a preview.
+
+### D-81 Several ranges are one read, sharing one budget
+
+`read_range` takes `ranges`, a bounded list of pairs of a sheet and a
+range, in place of `sheet` and `range`. They go to Google in one
+`spreadsheets.get`, which answers each range asked of a sheet with its
+own `GridData`; each is matched to its range by where it starts. Each
+range gets an equal share of the cell and character budgets, and its
+own grid, footer and checkpoint, so a write afterwards names one
+range's checkpoint.
+
+A question about every sheet is one call rather than one per sheet,
+and one request against the per-minute quota rather than many.
+
+`continue_from` is refused with `ranges`: it names a row of one range,
+and a range cut short reads on alone.
+
+Rejected: one request per range, which spends the quota the single
+request saves; a `read_ranges` tool, which would repeat `read_range`'s
+arguments and description.
+Cost: an equal share can cut a long range while a short one leaves its
+share unused.
 
 ### D-82 A protection's editors come from the file's editors
 
