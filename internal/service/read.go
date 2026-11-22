@@ -303,7 +303,12 @@ func extent(p *gsheets.SheetProperties) (rows, cols int) {
 // is a hint and not a resize, because a later row that reaches further
 // right would fall outside a window sized by the rows shown so far.
 func narrowerRange(g *grid.Grid, window, full a1.Rect, shown int, sheet string, continueFrom int) string {
-	if continueFrom == 0 {
+	// Only where the data runs on to the last row shown: a read whose
+	// data ended earlier gains nothing from more rows a call, and the hint
+	// would name a column for data that is not there. The test is the one
+	// the footer's "data ends at row" makes, so the two never disagree; a
+	// blank run at the cut reads as the end to both.
+	if continueFrom == 0 || window.FirstRow+g.DataRows-1 < shown {
 		return ""
 	}
 	last := 0
