@@ -415,11 +415,6 @@ func checkText(text string, required bool) error {
 // cell comments read back and fail".
 // https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#InsertCommentRequest
 //
-// Assigning to, or mentioning, an address that is not a Google account
-// adds no Drive permission to the file. Whether Google emails it, and
-// what a Google account outside the sharing gets, no probe has seen
-// (#66). Checked by the spike "who an outside address reaches".
-//
 // An invisible or reordering character is refused too: net/mail accepts
 // one, and the address a preview showed would not be the one sent.
 func checkAssignee(addr string) error {
