@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -835,5 +836,61 @@ func TestACanceledRequestCarriesNoURL(t *testing.T) {
 		if strings.Contains(err.Error(), forbidden) {
 			t.Errorf("the error carries %q: %v", forbidden, err)
 		}
+	}
+}
+
+// Sheets allows 60 reads and 60 writes a minute per user, so the limiter
+// lets through at most 60 in any minute, burst included.
+func TestTheLimiterKeepsToTheMinuteQuota(t *testing.T) {
+	c := New(staticToken{}, Options{})
+	for name, lim := range map[string]*rate.Limiter{"read": c.readLim, "write": c.writeLim} {
+		start := time.Now()
+		sent := 0
+		for at := start; at.Before(start.Add(time.Minute)); at = at.Add(10 * time.Millisecond) {
+			if lim.AllowN(at, 1) {
+				sent++
+			}
+		}
+		if sent > 60 {
+			t.Errorf("the %s limiter let %d requests through in one minute, over Google's 60", name, sent)
+		}
+		if sent < 55 {
+			t.Errorf("the %s limiter let only %d through in a minute, well under the quota", name, sent)
+		}
+	}
+}
+
+// A 429 with no Retry-After is the per-minute quota, which refills every
+// minute, so each retry waits ten seconds longer than the last rather
+// than retrying into the same exhausted minute; and after a minute of
+// waiting the call gives up as [rate_limited], before a client's own
+// timeout would.
+func TestAQuotaRefusalWaitsForTheMinute(t *testing.T) {
+	calls := 0
+	c, srv := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls < 3 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"quota"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	})
+	var waited []time.Duration
+	c.sleep = func(_ context.Context, d time.Duration) error { waited = append(waited, d); return nil }
+	if _, err := c.do(context.Background(), request{op: "values.get", spreadsheet: "id", method: http.MethodGet, url: srv.URL + "/v4/x"}); err != nil {
+		t.Fatalf("a read that met two 429s failed: %v", err)
+	}
+	if want := []time.Duration{10 * time.Second, 20 * time.Second}; !slices.Equal(waited, want) {
+		t.Errorf("waited %v after two 429s, want %v", waited, want)
+	}
+
+	calls, waited = -100, nil
+	_, err := c.do(context.Background(), request{op: "values.get", spreadsheet: "id", method: http.MethodGet, url: srv.URL + "/v4/x"})
+	if Class(err) != "rate_limited" {
+		t.Errorf("a read refused for a minute gave %v, want [rate_limited]", err)
+	}
+	if want := []time.Duration{10 * time.Second, 20 * time.Second, 30 * time.Second}; !slices.Equal(waited, want) {
+		t.Errorf("waited %v on a quota that never refilled, want %v and no more", waited, want)
 	}
 }

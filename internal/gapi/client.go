@@ -216,15 +216,16 @@ func New(ts oauth2.TokenSource, o Options) *Client {
 	}
 	// Sheets counts requests, not units: 60 reads and 60 writes a minute
 	// per user, refilled every minute, and a batch with its subrequests
-	// counts once. 60 a minute is one a second, which is also Google's
-	// advice for concurrency on one spreadsheet. The burst lets a tool
-	// that reads then writes go straight through.
+	// counts once. The burst lets a tool that reads then writes go
+	// straight through, so the steady rate leaves room for it: 55 a minute
+	// and a burst of 5 is at most 60 in any minute. The bound is this
+	// process's; another client of the same account spends the same quota.
 	// https://developers.google.com/workspace/sheets/api/limits
 	if c.readLim == nil {
-		c.readLim = rate.NewLimiter(rate.Limit(1), 5)
+		c.readLim = rate.NewLimiter(quotaRate, quotaBurst)
 	}
 	if c.writeLim == nil {
-		c.writeLim = rate.NewLimiter(rate.Limit(1), 5)
+		c.writeLim = rate.NewLimiter(quotaRate, quotaBurst)
 	}
 	if c.ua == "" {
 		c.ua = "google-sheets-mcp"
@@ -296,6 +297,23 @@ func WithDryRun(ctx context.Context) context.Context {
 	return context.WithValue(ctx, dryRunKey{}, true)
 }
 
+// quotaPerMinute is Sheets' per-user quota for reads, and for writes;
+// quotaBurst is how many of them a tool may send back to back.
+const quotaPerMinute, quotaBurst = 60, 5
+
+// quotaRate is the steady rate that leaves room for the burst.
+var quotaRate = rate.Every(time.Minute / (quotaPerMinute - quotaBurst))
+
+// quotaWait is how much longer each retry after a rate-limit refusal
+// waits when Google gives no Retry-After, or gives zero: the limits page
+// says the quota refills every minute, so a backoff of a few seconds
+// retries into the same exhausted minute. Each wait is capped at
+// MaxDelay, and quotaPatience bounds them all, so a call reports
+// [rate_limited] before a client's own timeout reports nothing. That the
+// quota refills by the minute is the page's claim; no live step probes it.
+// https://developers.google.com/workspace/sheets/api/limits
+const quotaWait, quotaPatience = 10 * time.Second, time.Minute
+
 // do performs one logical request with rate limiting and retries.
 func (c *Client) do(ctx context.Context, r request) ([]byte, error) {
 	// [invalid] because no class names a defect in this server, and this
@@ -319,6 +337,7 @@ func (c *Client) do(ctx context.Context, r request) ([]byte, error) {
 	// 429 is a refusal to begin, which is why a POST retries on it.
 	var lastErr error
 	var landed bool
+	var quotaSlept time.Duration
 	finish := func(err error) error {
 		if r.writes() && !r.repeatable() && landed {
 			return markAmbiguous(r.op, lastErr)
@@ -348,7 +367,17 @@ func (c *Client) do(ctx context.Context, r request) ([]byte, error) {
 		if !retry || attempt == c.retry.MaxAttempts {
 			break
 		}
-		if err := c.sleep(ctx, c.backoff(attempt, after)); err != nil {
+		wait := c.backoff(attempt, after)
+		if errors.Is(err, ErrRateLimited) {
+			if after == 0 {
+				wait = c.backoff(attempt, quotaWait*time.Duration(attempt))
+			}
+			if quotaSlept+wait > quotaPatience {
+				break
+			}
+			quotaSlept += wait
+		}
+		if err := c.sleep(ctx, wait); err != nil {
 			return nil, finish(err)
 		}
 	}

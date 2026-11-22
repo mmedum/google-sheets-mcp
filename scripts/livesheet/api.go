@@ -69,11 +69,21 @@ func (a *driverAPI) do(ctx context.Context, method, rawURL string, body, out any
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(time.Duration(attempt) * 2 * time.Second):
+			case <-time.After(setupWait(status, attempt)):
 			}
 		}
 	}
 	return err
+}
+
+// setupWait is how long a setup call waits before its next attempt. A 429
+// is the per-minute quota the server's steps share, so it waits as the
+// server does, ten seconds more each time; a 5xx waits a little.
+func setupWait(status, attempt int) time.Duration {
+	if status == 429 {
+		return time.Duration(attempt) * 10 * time.Second
+	}
+	return time.Duration(attempt) * 2 * time.Second
 }
 
 // once is one attempt, returning the status so do can decide.
