@@ -1,8 +1,8 @@
 {
   "server": "google-sheets-mcp",
-  "version": "v4.2.1",
+  "version": "v5.0.0",
   "sdk": "v1.8.0",
-  "instructions": "Google Sheets tools that work inside one spreadsheet. Start with get_spreadsheet: it costs the same on any size of spreadsheet and gives the exact sheet titles every other call needs. Never guess a sheet name — Google names the first sheet in the account's language, so it is often not an English word — and never build a range by joining a title to a range yourself; pass sheet and range separately and this server quotes the title, which is what keeps a whole-sheet reference meaning the sheet rather than a named range that happens to share its name. Then read_range for cells, with show=both when you need to see which numbers are computed, or find_in_spreadsheet to locate something first. Ranges are A1 throughout; this server does the index arithmetic. Reads are budgeted and say where to continue. Writing is guarded: write_values reads the target first and refuses to overwrite anything non-empty without overwrite, or a formula without overwrite_formulas as well, naming the cells each time. Sheets has no undo, so take a refusal as information rather than an obstacle, and use dry_run when you are not sure what is there. overwrite carries a decision the person made, not a way past a refusal: if a write is refused and the person has not said to replace what is there, report what the refusal named and stop. An overwrite also needs expect_checkpoint, which the refusal and dry_run give, so that what it replaces is what was read. input=typed parses as a person typing, so 007 becomes 7 and a date becomes a serial; every value Google changes is named in the result, and input=literal stores exactly what you send. append_rows lands where Google decides and reports it; write_values is the one to use when you know the addresses. Files, folders, sharing and revisions are not here: they belong to a server built on the Drive API. Comments on cells are here, through read_cell_comments and manage_cell_comment, and so is a cell note, which is a Sheets field. The tools that delete are registered only when the person running the server allows them, and each needs confirm: pass it only when the person asked for that delete.",
+  "instructions": "Google Sheets tools that work inside one spreadsheet. Start with get_spreadsheet: it costs the same on any size of spreadsheet and gives the exact sheet titles every other call needs. Never guess a sheet name — Google names the first sheet in the account's language, so it is often not an English word — and never build a range by joining a title to a range yourself; pass sheet and range separately and this server quotes the title, which is what keeps a whole-sheet reference meaning the sheet rather than a named range that happens to share its name. Then read_range for cells, with show=both when you need to see which numbers are computed, or find_in_spreadsheet to locate something first. Ranges are A1 throughout; this server does the index arithmetic. Reads are budgeted and say where to continue. Writing is guarded: write_values reads the target first and refuses to overwrite anything non-empty without overwrite, or a formula without overwrite_formulas as well, naming the cells each time. Sheets has no undo, so take a refusal as information rather than an obstacle, and use dry_run when you are not sure what is there. overwrite carries a decision the person made, not a way past a refusal: if a write is refused and the person has not said to replace what is there, report what the refusal named and stop. An overwrite also needs checkpoint, which the refusal and dry_run give, so that what it replaces is what was read. input=typed parses as a person typing, so 007 becomes 7 and a date becomes a serial; every value Google changes is named in the result, and input=literal stores exactly what you send. append_rows lands where Google decides and reports it; write_values is the one to use when you know the addresses. Files, folders, sharing and revisions are not here: they belong to a server built on the Drive API. Comments on cells are here, through read_cell_comments and manage_cell_comment, and so is a cell note, which is a Sheets field. The tools that delete are registered only when the person running the server allows them, and each needs confirm: pass it only when the person asked for that delete.",
   "tools": [
     {
       "annotations": {
@@ -877,6 +877,16 @@
           "formulas": {
             "type": "integer"
           },
+          "pivots_affected": {
+            "description": "the pivot tables whose source the deleted rows or columns cut, which stay in place and read less",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "sheet": {
             "type": "string"
           },
@@ -1101,6 +1111,16 @@
           },
           "formulas": {
             "type": "integer"
+          },
+          "pivots_affected": {
+            "description": "the pivot tables whose source the deleted rows or columns cut, which stay in place and read less",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "sheet": {
             "type": "string"
@@ -2288,6 +2308,10 @@
               "boolean"
             ]
           },
+          "by_columns": {
+            "description": "for banding, on add: alternate the shade across columns rather than down rows",
+            "type": "boolean"
+          },
           "color": {
             "description": "a hex color: the base shade for a banding, or the background a conditional_format rule applies",
             "type": "string"
@@ -2325,7 +2349,7 @@
             ]
           },
           "header": {
-            "description": "for banding: give the first row a darker shade of the color",
+            "description": "for banding: give the first row, or the first column with by_columns, a darker shade of the color",
             "type": "boolean"
           },
           "index": {
@@ -2821,7 +2845,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Read cells as an addressed grid: column letters across the top, row numbers down the side, so you can write back to what you just read without counting. Give the sheet exactly as get_spreadsheet reports it. show=both prints each formula under the value it produced, which is the only way to tell a computed number from a typed one. include_notes, include_validation and include_merges add what a values read cannot show. The read is budgeted in cells and characters and the window is resolved before the call, so an open-ended range is safe; when it is cut short the footer says where to continue and continue_from resumes there. Every read returns a checkpoint to hand to a later write. Use get_spreadsheet first for sheet names and sizes, and find_in_spreadsheet when you do not yet know which cells you want.",
+      "description": "Read cells as an addressed grid: column letters across the top, row numbers down the side, so you can write back to what you just read without counting. Give the sheet exactly as get_spreadsheet reports it. show=both prints each formula under the value it produced, which is the only way to tell a computed number from a typed one. include_notes, include_validation and include_merges add what a values read cannot show. The read is budgeted in cells and characters and the window is resolved before the call, so an open-ended range is safe; when it is cut short the footer says where to continue and continue_from resumes there. A range as narrow as the data reads more rows a call than the whole sheet's width does. Every read returns a checkpoint to hand to a later write. Use get_spreadsheet first for sheet names and sizes, and find_in_spreadsheet when you do not yet know which cells you want.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2854,7 +2878,7 @@
             "type": "integer"
           },
           "max_chars": {
-            "description": "character budget for the rendering, default 20000, maximum 400000",
+            "description": "character budget for the rendering, default 20000, maximum 400000. It also bounds the rows fetched, to those it could show",
             "type": "integer"
           },
           "range": {
@@ -2884,7 +2908,7 @@
         "additionalProperties": false,
         "properties": {
           "checkpoint": {
-            "description": "pass this to a later write as expect_checkpoint to have the server re-read and refuse if these values changed; best effort, since Sheets offers no atomic guard",
+            "description": "pass this to a later write as checkpoint to have the server re-read and refuse if these values changed; best effort, since Sheets offers no atomic guard",
             "type": "string"
           },
           "continue_from": {
@@ -3039,12 +3063,16 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Sort, replace, trim, de-duplicate, split, shuffle, fill, copy or move a range. These are the operations that move data without you naming its new address, so each one reads what it would land on and refuses first: a paste lands on cells you did not name, a split spills into the columns to its right, and a replacement inside formulas rewrites what a cell computes rather than what it shows. Each refusal names the cells and the argument that would allow it; overwrite needs expect_checkpoint, which the refusal gives. remove_duplicates deletes rows. sort, randomize, remove_duplicates and cut_paste all move rows, so an address or a checkpoint from before the call no longer points where it did, and the result says so.",
+      "description": "Sort, replace, trim, de-duplicate, split, shuffle, fill, copy or move a range. These are the operations that move data without you naming its new address, so each one reads what it would land on and refuses first: a paste lands on cells you did not name, a split spills into the columns to its right, and a replacement inside formulas rewrites what a cell computes rather than what it shows. Each refusal names the cells and the argument that would allow it; overwrite needs checkpoint, which the refusal gives. remove_duplicates deletes rows. sort, randomize, remove_duplicates and cut_paste all move rows, so an address or a checkpoint from before the call no longer points where it did, and the result says so.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "action": {
             "description": "sort, find_replace, trim_whitespace, remove_duplicates, text_to_columns, randomize, auto_fill, copy_paste or cut_paste",
+            "type": "string"
+          },
+          "checkpoint": {
+            "description": "the checkpoint of the cells this action reads before it writes, as its refusal or a dry run gives it; the action is refused if they changed since. Required with overwrite",
             "type": "string"
           },
           "columns": {
@@ -3062,10 +3090,6 @@
           "dry_run": {
             "description": "say what would change and send nothing",
             "type": "boolean"
-          },
-          "expect_checkpoint": {
-            "description": "the checkpoint of the cells this action reads before it writes, as its refusal or a dry run gives it; the action is refused if they changed since. Required with overwrite",
-            "type": "string"
           },
           "fill_length": {
             "description": "for auto_fill: how many rows or columns to fill past the range",
@@ -3092,7 +3116,7 @@
             "type": "boolean"
           },
           "overwrite": {
-            "description": "allow the write over cells that are not empty, wherever this lands, carrying the person's decision to replace them. Needs expect_checkpoint",
+            "description": "allow the write over cells that are not empty, wherever this lands, carrying the person's decision to replace them. Needs checkpoint",
             "type": "boolean"
           },
           "overwrite_formulas": {
@@ -3160,7 +3184,7 @@
             "type": "integer"
           },
           "checkpoint": {
-            "description": "on a dry run, the checkpoint of the cells the action reads before it writes (where a copy or fill lands, where a split spills, or the formulas a replacement rewrites), which overwrite needs as expect_checkpoint",
+            "description": "on a dry run, the checkpoint of the cells the action reads before it writes (where a copy or fill lands, where a split spills, or the formulas a replacement rewrites), which overwrite needs passed back",
             "type": "string"
           },
           "destination": {
@@ -3201,24 +3225,24 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Write a rectangle of values, refusing first anything the write would destroy that you cannot see. Before sending, this reads the target and refuses if it holds formulas (a formula and its result look identical in a read), if it is not empty, if it is protected, or if the write cuts across a merged range. A formula into a table's header row is refused outright: Google replaces it with a column name of its own. Each refusal names the cells and the argument that would allow it. Sheets has no undo, so this is the only guard there is. overwrite carries the person's decision to replace what is there, not a way past a refusal, and it needs expect_checkpoint, which the refusal gives. A formula that fetches a URL, or IMPORTRANGE, is refused unless the person running the server allows them. After writing it asks Google for the stored values back and names every one it changed: with input=typed, 007 becomes 7 and 2026-09-05 becomes a date serial that still displays as a date. The range says where to start; the values decide the rectangle. A range larger than the values leaves the rest as it was, and the result says so. Use dry_run first when you are not sure what is there.",
+      "description": "Write a rectangle of values, refusing first anything the write would destroy that you cannot see. Before sending, this reads the target and refuses if it holds formulas (a formula and its result look identical in a read), if it is not empty, if it is protected, or if the write cuts across a merged range. A formula into a table's header row is refused outright: Google replaces it with a column name of its own. Each refusal names the cells and the argument that would allow it. Sheets has no undo, so this is the only guard there is. overwrite carries the person's decision to replace what is there, not a way past a refusal, and it needs checkpoint, which the refusal gives. A formula that fetches a URL, or IMPORTRANGE, is refused unless the person running the server allows them. After writing it asks Google for the stored values back and names every one it changed: with input=typed, 007 becomes 7 and 2026-09-05 becomes a date serial that still displays as a date. The range says where to start; the values decide the rectangle. A range larger than the values leaves the rest as it was, and the result says so. Use dry_run first when you are not sure what is there.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "checkpoint": {
+            "description": "the checkpoint of the cells the write covers, as a refusal, a dry run or a read_range of that same rectangle gives it; the write is refused if they changed since. Required with overwrite. Best effort — Sheets has no atomic guard — so a protected range is the real one",
+            "type": "string"
+          },
           "dry_run": {
             "description": "report what the write would find and change, and send nothing",
             "type": "boolean"
-          },
-          "expect_checkpoint": {
-            "description": "the checkpoint of the cells the write covers, as a refusal, a dry run or a read_range of that same rectangle gives it; the write is refused if they changed since. Required with overwrite. Best effort — Sheets has no atomic guard — so a protected range is the real one",
-            "type": "string"
           },
           "input": {
             "description": "typed (default) parses as a person typing: 007 becomes 7, 1-2 becomes a date, =A1+1 becomes a formula. literal stores exactly what you send, which is what a product code or a leading-zero identifier needs. Every value Google changes is named in the result",
             "type": "string"
           },
           "overwrite": {
-            "description": "allow the write over cells that are not empty, carrying the person's decision to replace them. Without it a write into occupied cells is refused with their addresses. Needs expect_checkpoint",
+            "description": "allow the write over cells that are not empty, carrying the person's decision to replace them. Without it a write into occupied cells is refused with their addresses. Needs checkpoint",
             "type": "boolean"
           },
           "overwrite_formulas": {
@@ -3271,7 +3295,7 @@
             "type": "integer"
           },
           "checkpoint": {
-            "description": "after a write, a checkpoint over what was just written, to hand to a later write; after a dry run, over what the target holds now, which overwrite needs as expect_checkpoint",
+            "description": "after a write, a checkpoint over what was just written, to hand to a later write; after a dry run, over what the target holds now, which overwrite needs passed back",
             "type": "string"
           },
           "coerced": {
