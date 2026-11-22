@@ -99,6 +99,8 @@ var spikes = []spike{
 	{name: "what a typed column does to a cell's own rule", run: askCellRuleUnderTyping},
 	{name: "what Google makes of a pivot definition", run: askPivotDefinition},
 	{name: "the unit the text limits count", run: askTextLimitUnit},
+	{name: "whether a replacement over values can write a formula", run: askReplaceIntoFormula},
+	{name: "what a pivot search of whole sheets costs", run: askPivotSearchCost},
 }
 
 // only names the spikes to run, so re-probing a single question does not

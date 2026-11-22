@@ -2,6 +2,8 @@ package service_test
 
 import (
 	"context"
+	"github.com/mmedum/google-sheets-mcp/v5/internal/gapi"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -232,6 +234,8 @@ func TestADeleteNamesThePivotWhoseSourceItCuts(t *testing.T) {
 		t.Errorf("a band over the anchor named %q as staying (%v)", pivotsOf(takes), err)
 	}
 
+	// The search reads whole sheets, whatever the cell budget: it asks
+	// for the pivot field alone, which Google sends only where a pivot is.
 	srv := sheetstest.Standard(t)
 	fs, err := settings()
 	if err != nil {
@@ -244,8 +248,37 @@ func TestADeleteNamesThePivotWhoseSourceItCuts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(res.Render(), "The search for pivot tables did not reach") {
-		t.Errorf("a search the budget cut short is not said to be:\n%s", res.Render())
+	if len(res.Pivots) != 1 || strings.Contains(res.Render(), "search for pivot tables") {
+		t.Errorf("a small budget cut the pivot search short: %q\n%s", res.Pivots, res.Render())
+	}
+
+	// A search that fails costs the names, not the delete.
+	if _, err := small.EditDimensions(ctx, del("B:B")); err != nil {
+		t.Fatal(err)
+	}
+	srv.Reset()
+	if _, err := small.EditDimensions(ctx, del("B:B")); err != nil {
+		t.Fatal(err)
+	}
+	var before int
+	for _, c := range srv.Calls() {
+		if c.Op == "spreadsheets.get" {
+			if c.Query.Get("fields") == gapi.PivotSourceFields {
+				break
+			}
+			before++
+		}
+	}
+	for range before {
+		srv.FailOnce("spreadsheets.get", sheetstest.Failure{Pass: true})
+	}
+	srv.FailOnce("spreadsheets.get", sheetstest.Failure{Status: http.StatusForbidden})
+	failed, err := small.EditDimensions(ctx, del("B:B"))
+	if err != nil {
+		t.Fatalf("a failed pivot search failed the delete: %v", err)
+	}
+	if !strings.Contains(failed.Render(), "The search for pivot tables on") || !strings.Contains(failed.Render(), "failed") {
+		t.Errorf("a failed pivot search is not said to have failed:\n%s", failed.Render())
 	}
 }
 

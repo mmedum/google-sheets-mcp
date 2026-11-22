@@ -1409,22 +1409,19 @@ func lookback(rect a1.Rect, maxCells int) a1.Rect {
 	return window
 }
 
-// pivotSearchShare is how many times the read budget a search for pivot
-// sources may read. The mask asks for one field, which an empty cell
-// does not carry, so a cell costs a fraction of one in a values read.
-const pivotSearchShare = 10
-
 // pivotsOnBand names each pivot table, on any sheet, whose source the
 // band cuts: the delete shrinks the source and the reply says nothing.
 // A pivot the band itself deletes goes with the cells and is counted
 // there.
 //
-// One read of every grid sheet for the pivot field alone, since a pivot
-// on any sheet may read this one. Every sheet is read whole when they fit
-// the budget together, and otherwise each to the same share of its rows;
-// a sheet past the budget, or cut short, is named as not searched. The
-// names are worth a read and not a delete, so a read that fails leaves
-// every sheet unsearched rather than failing the call.
+// One read of every grid sheet whole, for the pivot field alone, since a
+// pivot on any sheet may read this one. No cell budget bounds it: Google
+// sends only the rows that carry the field, so two whole 1000 by 26
+// sheets with one pivot between them came back under a kilobyte. Checked
+// by the spike "what a pivot search of whole sheets costs". The names are
+// worth a read and not a delete, so a read that fails leaves every sheet
+// unsearched rather than failing the call.
+// https://developers.google.com/workspace/sheets/api/guides/field-masks
 func (s *Service) pivotsOnBand(ctx context.Context, ref Reference, props *gsheets.SheetProperties,
 	band plan.Band) (pivots, unsearched []string, err error) {
 
@@ -1433,52 +1430,28 @@ func (s *Service) pivotsOnBand(ctx context.Context, ref Reference, props *gsheet
 		return nil, nil, err
 	}
 	var grids []*gsheets.SheetProperties
-	total := 0
+	var ranges []string
 	for _, sh := range sp.Sheets {
 		if sh.Properties != nil && sh.Properties.GridProperties != nil {
 			grids = append(grids, sh.Properties)
-			rows, cols := extent(sh.Properties)
-			total += rows * cols
+			ranges = append(ranges, a1.QuoteSheet(sh.Properties.Title))
 		}
 	}
 	if len(grids) == 0 {
 		return nil, nil, nil
-	}
-	budget := s.cfg.MaxCells * pivotSearchShare
-	share := min(1, float64(budget)/float64(total))
-	var ranges []string
-	var read []*gsheets.SheetProperties
-	spent := 0
-	for _, g := range grids {
-		rows, cols := extent(g)
-		last := max(1, int(float64(rows)*share))
-		if spent+last*cols > budget {
-			unsearched = append(unsearched, fmt.Sprintf("%q", g.Title))
-			continue
-		}
-		spent += last * cols
-		read = append(read, g)
-		ranges = append(ranges, a1.Format(g.Title, a1.Rect{FirstRow: 1, FirstCol: 1, LastRow: last, LastCol: cols}))
-		if last < rows {
-			unsearched = append(unsearched, fmt.Sprintf("%q past row %d", g.Title, last))
-		}
-	}
-	if len(ranges) == 0 {
-		return nil, unsearched, nil
 	}
 	got, err := s.api.GetSpreadsheet(ctx, ref.ID, gapi.GetOptions{
 		Fields: gapi.PivotSourceFields, Ranges: ranges, IncludeGridData: true,
 	})
 	if err != nil {
 		s.log.DebugContext(ctx, "pivot search before a delete failed", "spreadsheet", gapi.ShortID(ref.ID))
-		unsearched = unsearched[:0]
 		for _, g := range grids {
 			unsearched = append(unsearched, fmt.Sprintf("%q", g.Title))
 		}
 		return nil, unsearched, nil
 	}
 	cut := band.Rect()
-	for _, g := range read {
+	for _, g := range grids {
 		for _, p := range pivotCells(got, g.SheetID) {
 			var pivot gsheets.PivotTable
 			if json.Unmarshal(p.raw, &pivot) != nil || pivot.Source == nil || pivot.Source.SheetID != props.SheetID {
