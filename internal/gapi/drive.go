@@ -60,8 +60,8 @@ const FileFields = "id,name,mimeType,createdTime,modifiedTime,owners(displayName
 // drives, newest first. The caller builds q and is responsible for
 // escaping every value it interpolates — QuoteDriveValue is how.
 //
-// Beside GetFile, About and ListPermissions, this is the only Drive call
-// this server makes. Sharing, moving and trashing files belong to a server built on
+// Beside GetFile, About and ListPermissions, this is the one other Drive
+// call this server makes. Sharing, moving and trashing files belong to a server built on
 // the Drive API.
 func (c *Client) SearchSpreadsheets(ctx context.Context, q string, limit int, pageToken string) (*FileList, error) {
 	if limit <= 0 {
@@ -126,6 +126,17 @@ type Permission struct {
 	Role         string `json:"role,omitempty"`
 	EmailAddress string `json:"emailAddress,omitempty"`
 	Domain       string `json:"domain,omitempty"`
+}
+
+// CanEdit reports whether the grant lets its holder edit the file. The
+// roles are Drive's.
+// https://developers.google.com/workspace/drive/api/guides/ref-roles
+func (p *Permission) CanEdit() bool {
+	switch p.Role {
+	case "owner", "organizer", "fileOrganizer", "writer":
+		return true
+	}
+	return false
 }
 
 // ListPermissions returns every grant on a file, which drive.readonly
