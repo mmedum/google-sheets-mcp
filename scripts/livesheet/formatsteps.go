@@ -331,8 +331,8 @@ func (d *driver) rangeSteps() []step {
 				"kind": "protected_range", "action": "update", "warning_only": false, "editors": []any{d.owner},
 			},
 			check: func(text string, _ map[string]any) error {
-				if !strings.Contains(text, "editors now") || !strings.Contains(text, d.owner) {
-					return fmt.Errorf("the result does not name the editor: %s", text)
+				if !strings.Contains(text, d.owner+" (before: everyone, after a warning)") {
+					return fmt.Errorf("the result does not name the editor and what the warning-only protection allowed before: %s", text)
 				}
 				return nil
 			},
@@ -928,8 +928,7 @@ func (d *driver) typedColumnSteps() []step {
 }
 
 // commaLocaleAll writes a number point under a locale that writes a
-// decimal with a comma. Google refuses 1.5 there and takes 1,5; which
-// value 1,5 colors from, only a person looking can say.
+// decimal with a comma. Google refuses 1.5 there and takes 1,5.
 // It needs a spreadsheet in that locale, so it makes one.
 func (d *driver) commaLocaleAll() {
 	d.run(step{
@@ -955,10 +954,9 @@ func (d *driver) commaLocaleAll() {
 	if d.commaLocale == "" {
 		return
 	}
+	// What 1,5 colors from is in ParseGradient's comment, in
+	// internal/plan; no reply carries it.
 	d.run(d.commaLocaleSteps()...)
-	line("     LOOK: no reply says what de_DE read 1,5 as. In the comma-locale spreadsheet, column B scales")
-	line("     from 1,5 over 1 to 5. If its color first changes between 1 and 2, de_DE read it as one and")
-	line("     a half; record it in ParseGradient's comment, in internal/plan.")
 }
 
 func (d *driver) commaLocaleSteps() []step {

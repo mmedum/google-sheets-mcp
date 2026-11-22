@@ -1460,8 +1460,12 @@ func TestEditorsOnAWarningOnlyProtectionNeedItToRefuse(t *testing.T) {
 		t.Fatalf("editors on a warning-only protection: %v, want [invalid]", err)
 	}
 	up.WarningOnly = boolPtr(false)
-	if _, err := svc.ManageRange(ctx, up); err != nil {
+	res, err := svc.ManageRange(ctx, up)
+	if err != nil {
 		t.Fatalf("editors with warning_only false: %v", err)
+	}
+	if want := "editors — fixture@example.test (before: everyone, after a warning)"; !strings.Contains(res.Render(), want) {
+		t.Errorf("the result does not name the editors before and after, %q:\n%s", want, res.Render())
 	}
 	p := srv.Doc(sheetstest.FixtureID).Find(sheetstest.SecondSheet).Protected[0]
 	if p.WarningOnly || p.Editors == nil || !slices.Equal(p.Editors.Users, []string{"fixture@example.test"}) {
@@ -1496,6 +1500,13 @@ func TestProtectedRangeEditorsThroughWiderGrants(t *testing.T) {
 	}
 	if got := stored(); !slices.Equal(got.Users, []string{"Ana@partner.test"}) {
 		t.Errorf("users = %v, want [Ana@partner.test] once", got.Users)
+	}
+	up := rangeReq(service.RangeProtected, service.RangeUpdate, "A1:B2")
+	up.Editors = []string{"fixture@example.test"}
+	srv.SetPermissions(sheetstest.FixtureID, owner, &gapi.Permission{Type: "domain", Role: "writer", Domain: "partner.test"})
+	res, err := svc.ManageRange(ctx, up)
+	if want := "editors — fixture@example.test (before: Ana@partner.test)"; err != nil || !strings.Contains(res.Render(), want) {
+		t.Errorf("an update over named editors: %v; want %q in:\n%v", err, want, res)
 	}
 	if err := update(nil, true); err == nil || !strings.HasPrefix(err.Error(), "[blocked]") {
 		t.Errorf("domain editing on another domain's grant: %v, want [blocked]", err)
