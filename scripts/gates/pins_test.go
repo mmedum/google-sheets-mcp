@@ -668,3 +668,18 @@ func TestPinsRefusesToReadTooLittle(t *testing.T) {
 		t.Errorf("problems:\n  %s\nwant:\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
 	}
 }
+
+// The Go a go.mod runs, read as setup-go reads it: the toolchain line
+// first, a beta or rc included, and the go line otherwise.
+func TestPinsReadsGoModAsSetupGoDoes(t *testing.T) {
+	for gomod, want := range map[string]string{
+		"module m\n\ngo 1.27.4\n":                          "1.27.4",
+		"module m\n\ngo 1.28rc1\n":                         "1.28rc1",
+		"module m\n\ngo 1.27.4\n\ntoolchain go1.28beta1\n": "1.28beta1",
+		"module m\n\ngo 1.27\n\ntoolchain go1.27.5\n":      "1.27.5",
+	} {
+		if got := pinsGoVersion(gomod); got != want {
+			t.Errorf("pinsGoVersion(%q) = %q, want %q", gomod, got, want)
+		}
+	}
+}
