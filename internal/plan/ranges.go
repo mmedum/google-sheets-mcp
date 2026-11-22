@@ -72,25 +72,28 @@ func NamedRangeDelete(id string) *gsheets.Request {
 
 // ProtectedAdd protects a rectangle.
 //
-// No editors: with none named the protection is the owner's alone, which
-// is the API's default and the strongest form. Naming them is not
-// offered: the argument takes email addresses, and the live driver has
-// none it may send. warningOnly is the weak form —
+// With editors nil the protection is the owner's alone, which is the
+// API's default and the strongest form. warningOnly is the weak form —
 // it warns in the interface and refuses nothing over the API, and the
 // guard treats it as such.
-func ProtectedAdd(sheetID int, rect a1.Rect, description string, warningOnly bool) *gsheets.Request {
+func ProtectedAdd(sheetID int, rect a1.Rect, description string, warningOnly bool, editors *gsheets.Editors) *gsheets.Request {
 	return &gsheets.Request{AddProtectedRange: &gsheets.AddProtectedRangeRequest{
 		ProtectedRange: &gsheets.ProtectedRange{
-			Range: rect.GridRange(sheetID), Description: description, WarningOnly: warningOnly,
+			Range: rect.GridRange(sheetID), Description: description, WarningOnly: warningOnly, Editors: editors,
 		},
 	}}
 }
 
 // ProtectedUpdate changes a protection's description, its warning-only
-// flag, or both.
-func ProtectedUpdate(id int, description string, warningOnly, setWarning bool) *gsheets.Request {
+// flag, its editors, or any of them. Editors, when given, replace the
+// list.
+func ProtectedUpdate(id int, description string, warningOnly, setWarning bool, editors *gsheets.Editors) *gsheets.Request {
 	p := &gsheets.ProtectedRange{ProtectedRangeID: id}
 	var fields []string
+	if editors != nil {
+		p.Editors = editors
+		fields = append(fields, "editors")
+	}
 	if description != "" {
 		p.Description = description
 		fields = append(fields, "description")

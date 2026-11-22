@@ -27,6 +27,7 @@ type API interface {
 	SearchDeveloperMetadata(ctx context.Context, id string, filters []*gsheets.DataFilter) (*gsheets.SearchDeveloperMetadataResponse, error)
 	GetFile(ctx context.Context, id string) (*gapi.File, error)
 	About(ctx context.Context) (*gapi.User, error)
+	ListPermissions(ctx context.Context, id string) ([]*gapi.Permission, error)
 
 	UpdateValues(ctx context.Context, id, a1Range string, values [][]any, o gapi.WriteOptions) (*gsheets.UpdateValuesResponse, error)
 	AppendValues(ctx context.Context, id, a1Range string, values [][]any, o gapi.WriteOptions) (*gsheets.AppendValuesResponse, error)

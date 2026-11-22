@@ -474,6 +474,7 @@ CHANGELOG to the code. Releasing is in [release.md](release.md).
 | D-78 | Changes arrive by a watch or push channel | rejected | — |
 | D-79 | A tool changes the spreadsheet's title, locale or recalculation setting | rejected | — |
 | D-80 | The client refuses a write made during a dry run | accepted | TestADryRunThatForgetsItsReturnSendsNothing |
+| D-82 | A protection's editors come from the file's editors | accepted | TestProtectedRangeEditorsComeFromTheFilesEditors |
 
 ### D-01 One stdio binary per person, signed in to their own Google account through their own OAuth client
 
@@ -2546,4 +2547,29 @@ each write would have to remember to ask.
 Cost: a dry-run defect surfaces as `[invalid]` naming the method, not
 as a preview.
 
-Next ID: D-81
+### D-82 A protection's editors come from the file's editors
+
+`manage_range` names a protected range's editors, as users, groups or
+the whole domain, only from among the people who can already edit the
+spreadsheet. The service reads the file's Drive permissions through
+`drive.readonly` and refuses any other address with `[blocked]` before
+sending. Google's own rules come first: no editors on a warning-only
+protection.
+
+A protection narrows who of the file's editors may edit a range, and
+grants nothing. The Sheets help calls it no security measure
+([Protect, hide and edit sheets](https://support.google.com/docs/answer/1218656)),
+and someone who cannot edit the file cannot edit a protected range
+either. So an outside address adds nothing a person can use, and only
+sends an address somewhere. Google refuses one that is no Google account
+with 400 `Invalid user` and shares nothing (the spike "who an outside
+address reaches").
+
+Rejected: any address; a separate tool for outside addresses behind an
+operator setting, which would have no use while a protection grants
+nothing; leaving editors out, which kept protections owner-only.
+Cost: one `permissions.list` read per call that names editors. What
+Google does with a Google account outside the sharing is not probed,
+since that needs a second account (#72).
+
+Next ID: D-83

@@ -46,6 +46,11 @@ type RangeRequest struct {
 	// three-valued so an update can leave it as it is.
 	Description string
 	WarningOnly *bool
+	// Editors and DomainEditors name who may edit a protection, from
+	// among the people who can already edit the file. Either, on an
+	// update, replaces the protection's editors.
+	Editors       []string
+	DomainEditors bool
 	// Condition and Values are a validation rule's or a conditional
 	// format rule's test; Strict and Message are the validation's own.
 	Condition string
@@ -269,7 +274,7 @@ func (s *Service) rangeOp(ctx context.Context, req RangeRequest, action string, 
 	case RangeNamed:
 		return namedRangeOp(req, action, card, props, rect)
 	case RangeProtected:
-		return protectedOp(req, action, card, props, rect)
+		return s.protectedOp(ctx, req, action, ref, card, props, rect)
 	case RangeValidation:
 		return validationOp(req, action, card, props, rect)
 	case RangeTable:
@@ -335,18 +340,37 @@ func findNamedRange(card *gsheets.Spreadsheet, name string) *gsheets.NamedRange 
 	return nil
 }
 
-func protectedOp(req RangeRequest, action string, card *gsheets.Spreadsheet,
-	props *gsheets.SheetProperties, rect a1.Rect,
+func (s *Service) protectedOp(ctx context.Context, req RangeRequest, action string, ref Reference,
+	card *gsheets.Spreadsheet, props *gsheets.SheetProperties, rect a1.Rect,
 ) (*gsheets.Request, []render.Applied, error) {
 	sheet := sheetOf(card, props.SheetID)
+	naming := len(req.Editors) > 0 || req.DomainEditors
+	if naming && action == RangeDelete {
+		return nil, nil, Errorf("invalid", "editors and domain_users_can_edit belong to an add or an update, not a delete")
+	}
+	if naming && req.WarningOnly != nil && *req.WarningOnly {
+		// Google: "Editors are not supported with warning_only protection"
+		// (the discovery document on ProtectedRange.editors).
+		return nil, nil, Errorf("invalid", "a warning-only protection has no editors; give editors, or warning_only, not both")
+	}
+	var editors *gsheets.Editors
+	if naming {
+		var err error
+		if editors, err = s.editorsWhoCanEdit(ctx, ref, req.Editors, req.DomainEditors); err != nil {
+			return nil, nil, err
+		}
+	}
 	if action == RangeAdd {
 		warning := req.WarningOnly != nil && *req.WarningOnly
 		what := "protected"
 		if warning {
 			what = "protected with a warning only"
 		}
-		return plan.ProtectedAdd(props.SheetID, rect, req.Description, warning),
-			[]render.Applied{{Kind: what, Value: a1.FormatRect(rect)}}, nil
+		applied := []render.Applied{{Kind: what, Value: a1.FormatRect(rect)}}
+		if editors != nil {
+			applied = append(applied, render.Applied{Kind: "editors", Value: describeEditors(editors)})
+		}
+		return plan.ProtectedAdd(props.SheetID, rect, req.Description, warning, editors), applied, nil
 	}
 	found, err := matchOne("protection", rect, rectsOf(sheet.ProtectedRanges, func(p *gsheets.ProtectedRange) *gsheets.GridRange { return p.Range }, props))
 	if err != nil {
@@ -357,12 +381,90 @@ func protectedOp(req RangeRequest, action string, card *gsheets.Spreadsheet,
 		return plan.ProtectedDelete(target.ProtectedRangeID),
 			[]render.Applied{{Kind: "protection removed from", Value: a1.FormatRect(rect)}}, nil
 	}
-	if req.Description == "" && req.WarningOnly == nil {
-		return nil, nil, Errorf("invalid", "updating a protection needs description, warning_only, or both")
+	if req.Description == "" && req.WarningOnly == nil && editors == nil {
+		return nil, nil, Errorf("invalid", "updating a protection needs description, warning_only, editors or domain_users_can_edit")
+	}
+	if editors != nil && target.WarningOnly && req.WarningOnly == nil {
+		return nil, nil, Errorf("invalid", "this protection only warns, and a warning-only protection has no editors; "+
+			"pass warning_only false with the editors to make it refuse everyone else")
 	}
 	warning := req.WarningOnly != nil && *req.WarningOnly
-	return plan.ProtectedUpdate(target.ProtectedRangeID, req.Description, warning, req.WarningOnly != nil),
-		[]render.Applied{{Kind: "protection updated on", Value: a1.FormatRect(rect)}}, nil
+	applied := []render.Applied{{Kind: "protection updated on", Value: a1.FormatRect(rect)}}
+	if editors != nil {
+		applied = append(applied, render.Applied{Kind: "editors now", Value: describeEditors(editors)})
+	}
+	return plan.ProtectedUpdate(target.ProtectedRangeID, req.Description, warning, req.WarningOnly != nil, editors),
+		applied, nil
+}
+
+// editorsWhoCanEdit sorts addresses into a protection's users and groups,
+// refusing any that cannot already edit the file. A protection narrows
+// who of the file's editors may edit a range and grants nothing: the
+// Sheets help calls it no security measure, and Google refuses an address
+// that is no Google account with 400 "Invalid user", sharing nothing.
+// Reaching a person outside the sharing is a Drive server's (D-82).
+// Checked by the spike "who an outside address reaches" and the live
+// step "a protection names the signed-in account as its editor".
+// https://support.google.com/docs/answer/1218656
+func (s *Service) editorsWhoCanEdit(ctx context.Context, ref Reference, addrs []string, domain bool) (*gsheets.Editors, error) {
+	perms, err := s.api.ListPermissions(ctx, ref.ID)
+	if err != nil {
+		return nil, wrap(err)
+	}
+	canEdit := func(role string) bool {
+		return role == "owner" || role == "organizer" || role == "fileOrganizer" || role == "writer"
+	}
+	out := &gsheets.Editors{}
+	var outside []string
+	for _, addr := range addrs {
+		addr = strings.TrimSpace(addr)
+		found := false
+		for _, p := range perms {
+			if p == nil || !strings.EqualFold(p.EmailAddress, addr) || !canEdit(p.Role) {
+				continue
+			}
+			switch p.Type {
+			case "user":
+				out.Users, found = append(out.Users, p.EmailAddress), true
+			case "group":
+				out.Groups, found = append(out.Groups, p.EmailAddress), true
+			}
+			break
+		}
+		if !found {
+			outside = append(outside, addr)
+		}
+	}
+	if len(outside) > 0 {
+		return nil, Errorf("blocked", "%s cannot edit this spreadsheet, and a protection only chooses among the people "+
+			"who can; share the file with them through a Drive tool first if the person asked for that", join(outside))
+	}
+	if domain {
+		found := false
+		for _, p := range perms {
+			found = found || (p != nil && p.Type == "domain" && canEdit(p.Role))
+		}
+		if !found {
+			return nil, Errorf("blocked", "domain_users_can_edit needs everyone in the domain able to edit the "+
+				"spreadsheet, and its sharing gives no domain edit access")
+		}
+		out.DomainUsersCanEdit = true
+	}
+	return out, nil
+}
+
+// describeEditors names a protection's editors for the result.
+func describeEditors(e *gsheets.Editors) string {
+	var parts []string
+	parts = append(parts, e.Users...)
+	parts = append(parts, e.Groups...)
+	if e.DomainUsersCanEdit {
+		parts = append(parts, "everyone in the domain")
+	}
+	if len(parts) == 0 {
+		return "the owner alone"
+	}
+	return strings.Join(parts, ", ")
 }
 
 func validationOp(req RangeRequest, action string, card *gsheets.Spreadsheet, props *gsheets.SheetProperties,

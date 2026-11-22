@@ -5,6 +5,10 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- `manage_range` protected ranges take `editors` and `domain_users_can_edit`, chosen from the people who can already edit the spreadsheet; anyone else is refused.
+
 ## [5.0.0] - 2026-11-22
 
 ### Added

@@ -104,7 +104,8 @@ sheets	request	updateTable	used	internal/plan builds it
 drive	method	drive.about.get	used	gapi.About, behind doctor and the profile's account_email
 drive	method	drive.files.get	used	gapi.GetFile, behind resolving a title and the card's owner
 drive	method	drive.files.list	used	gapi.SearchSpreadsheets, behind search_spreadsheets
-drive	method	*	out	file management belongs to a server built on the Drive API (D-02); this server holds drive.readonly and uses Drive to find spreadsheets, to read a file's owner and modified time, and to read the signed-in account's address, and nothing else
+drive	method	drive.permissions.list	used	gapi.ListPermissions, behind manage_range's check that a protected range's editors can already edit the file
+drive	method	*	out	file management belongs to a server built on the Drive API (D-02); this server holds drive.readonly and uses Drive to find spreadsheets, to read a file's owner and modified time, to read who can edit a file, and to read the signed-in account's address, and nothing else
 sheets	request	addCommentReply	used	internal/plan builds it
 sheets	request	deleteComment	used	internal/plan builds it
 sheets	request	deleteCommentReply	used	internal/plan builds it

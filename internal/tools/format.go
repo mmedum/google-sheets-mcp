@@ -61,10 +61,12 @@ type ManageRangeInput struct {
 	Kind        string `json:"kind" jsonschema:"named_range, protected_range, data_validation, table, banding or conditional_format"`
 	Action      string `json:"action" jsonschema:"add, update or delete"`
 
-	Name        string   `json:"name,omitempty" jsonschema:"the name, for a named range or a table"`
-	ColumnTypes []string `json:"column_types,omitempty" jsonschema:"for table, on add or update: a type for each column named, as \"<column> <type>\", such as \"B date\", \"Amount currency\" or \"Status dropdown: Open, In progress, Done\". The column is a letter or the text of its header. The types are text, number, currency, percent, date, time, date_time, boolean and dropdown, whose options follow a colon, or sit in parentheses as get_spreadsheet shows them, separated by commas; for options with commas in them use kind data_validation with one_of_list instead. A boolean column shows checkboxes, and its empty cells fill with FALSE; it is refused over a cell holding anything but a TRUE or FALSE value, since Google turns a word, and text reading TRUE, into FALSE. A dropdown column is refused over a cell with a data validation rule of its own, which the table's list would replace. Each column keeps its header's text as its name, and Google writes a name of its own, such as Column 1, into an empty header cell. An update changes only the columns named and keeps the rest. Google takes no table over a formula in its header row, so an add is refused over one. A name is written into its header cell as plain text, so an add is also refused while the header of a column it types holds a smart chip or rich text such as a bold word, and an update while any header cell holds one of those or a formula. The smart chip types a read shows (people_chip and the like) cannot be set here"`
-	Description string   `json:"description,omitempty" jsonschema:"what a protected range is for, which is shown to anyone who tries to edit it"`
-	WarningOnly *bool    `json:"warning_only,omitempty" jsonschema:"for a protected range: true warns in the interface and refuses nothing over the API, false refuses edits from anyone but the owner. Leaving it out on an update leaves it as it is"`
+	Name               string   `json:"name,omitempty" jsonschema:"the name, for a named range or a table"`
+	ColumnTypes        []string `json:"column_types,omitempty" jsonschema:"for table, on add or update: a type for each column named, as \"<column> <type>\", such as \"B date\", \"Amount currency\" or \"Status dropdown: Open, In progress, Done\". The column is a letter or the text of its header. The types are text, number, currency, percent, date, time, date_time, boolean and dropdown, whose options follow a colon, or sit in parentheses as get_spreadsheet shows them, separated by commas; for options with commas in them use kind data_validation with one_of_list instead. A boolean column shows checkboxes, and its empty cells fill with FALSE; it is refused over a cell holding anything but a TRUE or FALSE value, since Google turns a word, and text reading TRUE, into FALSE. A dropdown column is refused over a cell with a data validation rule of its own, which the table's list would replace. Each column keeps its header's text as its name, and Google writes a name of its own, such as Column 1, into an empty header cell. An update changes only the columns named and keeps the rest. Google takes no table over a formula in its header row, so an add is refused over one. A name is written into its header cell as plain text, so an add is also refused while the header of a column it types holds a smart chip or rich text such as a bold word, and an update while any header cell holds one of those or a formula. The smart chip types a read shows (people_chip and the like) cannot be set here"`
+	Description        string   `json:"description,omitempty" jsonschema:"what a protected range is for, which is shown to anyone who tries to edit it"`
+	WarningOnly        *bool    `json:"warning_only,omitempty" jsonschema:"for a protected range: true warns in the interface and refuses nothing over the API, false refuses edits from anyone but the owner and its editors. Leaving it out on an update leaves it as it is"`
+	Editors            []string `json:"editors,omitempty" jsonschema:"for a protected range, on add or update: the people and groups, by email address, who may edit it besides the owner. Each must already be able to edit the spreadsheet: a protection chooses among its editors and shares nothing, so any other address is refused. On an update the list replaces the protection's editors. Not with warning_only true"`
+	DomainUsersCanEdit bool     `json:"domain_users_can_edit,omitempty" jsonschema:"for a protected range, on add or update: let everyone in the spreadsheet's domain edit it, which needs the whole domain able to edit the spreadsheet already. On an update it replaces the protection's editors, as editors does"`
 
 	Condition string   `json:"condition,omitempty" jsonschema:"the test, for data_validation and conditional_format: number_greater, number_between, text_contains, text_eq, one_of_list, date_after, blank, not_blank, custom_formula and the rest of that family"`
 	Values    []string `json:"values,omitempty" jsonschema:"what the condition tests against: one value for number_greater, two for number_between, the whole list for one_of_list, the formula for custom_formula"`
@@ -179,6 +181,7 @@ func registerFormat(s *mcp.Server, d Deps) {
 				Spreadsheet: in.Spreadsheet, Sheet: in.Sheet, Range: in.Range,
 				Kind: in.Kind, Action: in.Action,
 				Name: in.Name, ColumnTypes: in.ColumnTypes, Description: in.Description, WarningOnly: in.WarningOnly,
+				Editors: in.Editors, DomainEditors: in.DomainUsersCanEdit,
 				Condition: in.Condition, Values: in.Values, Strict: in.Strict, Message: in.Message,
 				Color: in.Color, TextColor: in.TextColor, Bold: in.Bold, Gradient: in.Gradient, Header: in.Header,
 				ByColumns: in.ByColumns,
@@ -221,7 +224,8 @@ var rangeActions = &ActionArgs{
 	Shared: []string{"spreadsheet", "sheet", "range"},
 	Reads: map[string][]string{
 		"named_range/add": {"name"}, "named_range/update": {"name"}, "named_range/delete": {"name"},
-		"protected_range/add": {"description", "warning_only"}, "protected_range/update": {"description", "warning_only"},
+		"protected_range/add":    {"description", "warning_only", "editors", "domain_users_can_edit"},
+		"protected_range/update": {"description", "warning_only", "editors", "domain_users_can_edit"},
 		"protected_range/delete": {},
 		"data_validation/add":    {"condition", "values", "strict", "message"},
 		"data_validation/update": {"condition", "values", "strict", "message"},

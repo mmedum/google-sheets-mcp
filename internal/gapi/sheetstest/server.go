@@ -64,6 +64,7 @@ type Server struct {
 	always   map[string]Failure
 	once     map[string][]Failure
 	notFound map[string]bool
+	perms    map[string][]*gapi.Permission
 }
 
 // New starts a fake and registers the standard fixture.
@@ -249,6 +250,8 @@ func (s *Server) dispatch(r *http.Request) (string, http.HandlerFunc) {
 		return "drive.about.get", s.about
 	case p == "/drive/v3/files":
 		return "drive.files.list", s.filesList
+	case strings.HasPrefix(p, "/drive/v3/files/") && strings.HasSuffix(p, "/permissions"):
+		return "drive.permissions.list", s.permissionsList
 	case strings.HasPrefix(p, "/drive/v3/files/"):
 		return "drive.files.get", s.filesGet
 	case strings.HasSuffix(p, "/developerMetadata:search"):
@@ -711,6 +714,35 @@ func (s *Server) filesGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeDriveMasked(w, r, f)
+}
+
+// SetPermissions replaces a file's grants. A file given none is shared
+// with its owners alone, as owner.
+func (s *Server) SetPermissions(id string, perms ...*gapi.Permission) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.perms == nil {
+		s.perms = map[string][]*gapi.Permission{}
+	}
+	s.perms[id] = perms
+}
+
+func (s *Server) permissionsList(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/drive/v3/files/"), "/permissions")
+	id, _ = url.PathUnescape(id)
+	s.mu.Lock()
+	f, perms := s.files[id], s.perms[id]
+	s.mu.Unlock()
+	if f == nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "File not found: "+id)
+		return
+	}
+	if perms == nil {
+		for _, o := range f.Owners {
+			perms = append(perms, &gapi.Permission{Type: "user", Role: "owner", EmailAddress: o.EmailAddress})
+		}
+	}
+	writeDriveMasked(w, r, map[string]any{"permissions": perms})
 }
 
 // writeDriveMasked answers a Drive read with what its mask names, and
