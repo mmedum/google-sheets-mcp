@@ -18,8 +18,16 @@ prerelease and skips the registry, whose entries cannot be withdrawn.
   body; a declined one goes in the PR body.
 - `make api-diff`, `make schema-refetch` and `make leaks-history`. A
   method Google added fails `make api-coverage` until it has a verdict.
-- `make vuln` in a worktree of the previous tag. An advisory there and
-  not at `HEAD` gets a Security line naming the CVE or GHSA.
+- `make vuln` in a worktree of the previous release tag. A dependency
+  bump other than the MCP SDK carries no CHANGELOG entry of its own
+  (D-83). An advisory there and not at `HEAD` that a bump cleared gets a
+  Security line naming the CVE or GHSA.
+
+  ```bash
+  git worktree add ../google-sheets-mcp-prev "$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*')"
+  make -C ../google-sheets-mcp-prev vuln
+  git worktree remove ../google-sheets-mcp-prev
+  ```
 - Rehearse the build into `dist/`, publishing nothing:
 
   ```bash

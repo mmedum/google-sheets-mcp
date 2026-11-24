@@ -5,6 +5,10 @@ and this project follows [semantic versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+
+- For contributors: a pull request that changes what ships adds a CHANGELOG entry, or a `Changelog: none` footer; the `changelog` gate checks it.
+
 ## [5.1.0] - 2026-11-22
 
 ### Added

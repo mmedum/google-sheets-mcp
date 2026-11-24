@@ -153,30 +153,6 @@ func (c changelogDoc) versions() []changelogHeading {
 	return out
 }
 
-// lastTag is the newest release rev reaches: of the tags on its history,
-// the highest vX.Y.Z by semver, a prerelease included, so neither a newer
-// release on another line nor a nearer tag that names no release is rev's.
-// git's version sort puts v2.0.0-rc.1 after v2.0.0, so the order is
-// semver's. It is empty when rev reaches no release, which is a state,
-// not a failure; a git error is one.
-func lastTag(rev string) (string, error) {
-	tags, err := git("tag", "--merged", rev)
-	if err != nil {
-		return "", err
-	}
-	newest := ""
-	for _, tag := range strings.Fields(tags) {
-		v, ok := strings.CutPrefix(tag, "v")
-		if ok && changelogVersion.MatchString(v) && (newest == "" || changelogCompare(v, newest) > 0) {
-			newest = v
-		}
-	}
-	if newest == "" {
-		return "", nil
-	}
-	return "v" + newest, nil
-}
-
 // changelogCompare orders two versions changelogVersion matches by semver
 // precedence: by number, a prerelease before its release, and prerelease
 // fields compared in turn, numbers below words (https://semver.org/#spec-item-11).

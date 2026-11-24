@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"maps"
 	"os"
 	"path/filepath"
@@ -182,7 +181,7 @@ func commitChange(t *testing.T, dir string, files map[string]string) {
 // test of a package it imports, a file one embeds, the bundle's manifest,
 // and go.mod but its require and tool lines. A test, a fixture, a package
 // it does not import and a dependency bump do not.
-func TestTheChangelogRuleCountsWhatShips(t *testing.T) {
+func TestTheChangelogGateCountsWhatShips(t *testing.T) {
 	const goMod = "go.mod"
 	dir := stalenessRepo(t)
 	for _, tc := range []struct {
@@ -230,46 +229,16 @@ func TestTheChangelogRuleCountsWhatShips(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			stalenessReset(t, dir)
 			commitChange(t, dir, tc.files)
-			problems, err := checkChangelog()
-			var want []string
-			if tc.ships {
-				want = []string{"the binary's source changed since v1.9.0 but CHANGELOG.md documents nothing new; " +
-					"put the entries under [Unreleased], or under the version heading this release is about to tag"}
+			out, err := git("diff", "--name-only", "--no-renames", "-z", "HEAD~1", "HEAD")
+			if err != nil {
+				t.Fatal(err)
 			}
-			if err != nil || !slices.Equal(problems, want) {
-				t.Errorf("checkChangelog() = %q, %v; want %q", problems, err, want)
+			watched, _, err := changelogWatched("HEAD~1", "HEAD", strings.FieldsFunc(out, func(r rune) bool { return r == 0 }))
+			if err != nil {
+				t.Fatal(err)
 			}
-		})
-	}
-}
-
-// A change counts before it is committed, so `make check` run ahead of a
-// commit asks for the entry CI will; a staged file counts too, and so does
-// a go.mod line the binary is built with.
-func TestTheChangelogRuleSeesTheWorkingTree(t *testing.T) {
-	dir := stalenessRepo(t)
-	want := []string{"the binary's source changed since v1.9.0 but CHANGELOG.md documents nothing new; " +
-		"put the entries under [Unreleased], or under the version heading this release is about to tag"}
-	for _, tc := range []struct {
-		name  string
-		file  string
-		edit  func(release string) string
-		stage bool
-	}{
-		{"an edit not yet staged", "internal/a/b.go", func(string) string { return "package a\n\n// changed\n" }, false},
-		{"a staged edit", "internal/a/b.go", func(string) string { return "package a\n\n// changed\n" }, true},
-		{"a go.mod replace line not yet staged", "go.mod", func(release string) string {
-			return release + "replace example.com/dep => ../dep\n"
-		}, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			stalenessReset(t, dir)
-			put(t, dir, tc.file, tc.edit(stalenessGoMod(t, dir)))
-			if tc.stage {
-				gitIn(t, dir, "add", "-A")
-			}
-			if problems, err := checkChangelog(); err != nil || !slices.Equal(problems, want) {
-				t.Errorf("checkChangelog() over an uncommitted change = %q, %v; want %q", problems, err, want)
+			if ships := len(watched) > 0; ships != tc.ships {
+				t.Errorf("changelogWatched() = %q, ships = %t; want %t", watched, ships, tc.ships)
 			}
 		})
 	}
@@ -285,133 +254,14 @@ func stalenessGoMod(t *testing.T, dir string) string {
 	return string(data)
 }
 
-// A release cut moves the entries under the heading it is about to tag,
-// a prerelease's included; a heading in a fence cuts nothing, and only a
-// bullet at the margin is an entry.
-func TestTheChangelogRuleReadsTheReleaseCut(t *testing.T) {
-	dir := stalenessRepo(t)
-	for _, tc := range []struct {
-		name, changelog string
-		ok              bool
-	}{
-		{"entries under [Unreleased]", "## [Unreleased]\n\n- new\n\n## [1.9.0]\n\n- old\n", true},
-		{"a prerelease cut", "## [Unreleased]\n\n## [2.0.0-rc.1]\n\n- new\n\n## [1.9.0]\n\n- old\n", true},
-		{"no entry", stalenessChangelog, false},
-		{"a cut heading only in a fence", "## [Unreleased]\n\n```\n## [2.0.0]\n\n- new\n```\n\n## [1.9.0]\n\n- old\n", false},
-		{"an indented bullet alone", "## [Unreleased]\n\n  - new\n\n## [1.9.0]\n\n- old\n", false},
-		{"prose alone", "## [Unreleased]\n\nSomething new.\n\n## [1.9.0]\n\n- old\n", false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			stalenessReset(t, dir)
-			commitChange(t, dir, map[string]string{changelogPath: tc.changelog, "internal/a/b.go": "package a\n\n// changed\n"})
-			if problems, err := checkChangelog(); err != nil || (len(problems) == 0) != tc.ok {
-				t.Errorf("checkChangelog() = %q, %v; want ok: %v", problems, err, tc.ok)
-			}
-		})
-	}
-}
-
-// A listing that names no command is not reading the binary.
-func TestTheChangelogRuleNeedsTheBinary(t *testing.T) {
-	commitChange(t, stalenessRepo(t), map[string]string{"cmd/fixture/main.go": "", "cmd/README.md": "moved\n"})
-	_, err := checkChangelog()
-	want := "could not run: the CHANGELOG rule: go list -deps ./cmd/... named no package of this module, so it is not reading the binary"
-	if !errors.As(err, new(couldNotRun)) || err.Error() != want {
-		t.Errorf("checkChangelog() = %v, want %q", err, want)
-	}
-}
-
-// A git that cannot answer is no verdict, never "source changed", and so is
-// a checkout whose history reaches no release.
-func TestTheChangelogRuleNeedsAGitCheckout(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
-	t.Chdir(dir)
-	_, err := checkChangelog()
-	if !errors.As(err, new(couldNotRun)) || exitCode(err) != 2 || !strings.HasPrefix(err.Error(), "could not run: the CHANGELOG rule: git tag --merged HEAD") {
-		t.Errorf("outside git: %v; want a git tag failure that could not run", err)
-	}
-	dir = stalenessRepo(t)
-	blob, err := git("hash-object", "-w", changelogPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gitIn(t, dir, "tag", "v2.0.0", blob)
-	gitIn(t, dir, "tag", "-d", "v1.9.0")
-	commitChange(t, dir, map[string]string{"internal/a/b.go": "package a\n\n// changed\n"})
-	_, err = checkChangelog()
-	want := "could not run: the CHANGELOG rule: HEAD reaches no release tag (vX.Y.Z) to measure from"
-	if !errors.As(err, new(couldNotRun)) || err == nil || err.Error() != want {
-		t.Errorf("no release on HEAD's history: %v; want %q", err, want)
-	}
-}
-
-// A finding fails and names why the CHANGELOG rule could not run, so a git
-// that cannot answer hides no other check; the reason alone is no verdict.
-func TestStalenessVerdictKeepsEveryCheck(t *testing.T) {
-	unrun := couldNotRun{errors.New("the CHANGELOG rule: git tag --merged HEAD: no git")}
-	err := stalenessVerdict([]string{"README's tool table is missing: x"}, unrun)
-	want := "2 problem(s):\n  README's tool table is missing: x\n  could not run: the CHANGELOG rule: git tag --merged HEAD: no git"
+// A finding fails the gate and is named; nothing found passes it.
+func TestStalenessVerdict(t *testing.T) {
+	err := stalenessVerdict([]string{"README's tool table is missing: x"})
+	want := "1 problem(s):\n  README's tool table is missing: x"
 	if err == nil || err.Error() != want || exitCode(err) != 1 {
-		t.Errorf("a finding and no git: %v; want exit 1 with %q", err, want)
+		t.Errorf("a finding: %v; want exit 1 with %q", err, want)
 	}
-	if err := stalenessVerdict(nil, unrun); !errors.As(err, new(couldNotRun)) || exitCode(err) != 2 {
-		t.Errorf("no git alone: %v; want it could not run", err)
-	}
-	if err := stalenessVerdict(nil, nil); err != nil {
+	if err := stalenessVerdict(nil); err != nil {
 		t.Errorf("nothing found: %v", err)
-	}
-}
-
-// The release a change is measured from is the newest HEAD reaches by
-// semver, a prerelease included: neither a newer release on another line
-// nor a tag that names no release is HEAD's.
-func TestLastTagIsOneTheRevisionReaches(t *testing.T) {
-	isolateGit(t)
-	dir := t.TempDir()
-	initRepo(t, dir)
-	t.Chdir(dir)
-	empty := func(message string) { gitIn(t, dir, "commit", "--quiet", "--allow-empty", "-m", message) }
-	empty("Start")
-	gitIn(t, dir, "branch", "-M", "main")
-	gitIn(t, dir, "branch", "before-any-release")
-	empty("Release")
-	gitIn(t, dir, "tag", "v1.0.0")
-	gitIn(t, dir, "switch", "--quiet", "-c", "maint")
-	empty("Fix")
-	gitIn(t, dir, "tag", "v1.0.1")
-	gitIn(t, dir, "switch", "--quiet", "main")
-	empty("Next")
-	gitIn(t, dir, "tag", "v2.0.0")
-	for _, m := range []string{"More", "And more"} {
-		empty(m)
-	}
-	gitIn(t, dir, "switch", "--quiet", "-c", "merged")
-	gitIn(t, dir, "merge", "--quiet", "--no-ff", "-m", "Merge maint", "maint")
-	// git's version sort puts v3.0.0-rc.1 after v3.0.0; semver puts it before.
-	gitIn(t, dir, "switch", "--quiet", "-c", "next", "main")
-	empty("Candidate")
-	gitIn(t, dir, "tag", "v3.0.0-rc.1")
-	gitIn(t, dir, "branch", "candidate")
-	empty("Final")
-	gitIn(t, dir, "tag", "v3.0.0")
-	gitIn(t, dir, "switch", "--quiet", "main")
-	empty("Weekly")
-	gitIn(t, dir, "tag", "weekly")
-	gitIn(t, dir, "tag", "v9.9.9--")
-	for rev, want := range map[string]string{
-		"main":               "v2.0.0",
-		"maint":              "v1.0.1",
-		"merged":             "v2.0.0",
-		"candidate":          "v3.0.0-rc.1",
-		"next":               "v3.0.0",
-		"before-any-release": "",
-	} {
-		if got, err := lastTag(rev); err != nil || got != want {
-			t.Errorf("lastTag(%s) = %q, %v; want %q", rev, got, err, want)
-		}
-	}
-	if _, err := lastTag("no-such-rev"); err == nil {
-		t.Error("lastTag of a revision git cannot read returned no error")
 	}
 }
