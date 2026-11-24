@@ -468,7 +468,7 @@ CHANGELOG to the code. Releasing is in [release.md](release.md).
 | D-71 | The bundle manifest is held to the staged tree and a pinned schema | accepted | mcpb, mcpb-pack, TestTheSixWaysAManifestBreaks, TestCommittedManifestPacks, TestAFailedWriteLeavesNoBundle, TestTheWaysAManifestMisdeclaresItsVersion, TestTheStampedManifestIsHeldToTheSchema, TestAVendoredSchemaIsHeldToItsRecordedDigest |
 | D-72 | The bundle asks for the settings a person sets elsewhere, each defaulting as the server does | accepted | mcpb, TestBundleVarsAreDerivedFromTheSettings, TestTheBundleSettingsRefuseEachBreak, TestVarsDescribeWhatBuildDoes, TestTheClientFileMayBeLeftEmpty |
 | D-73 | `main` is released code, and work reaches it through a pull request the maintainer merges | accepted | review |
-| D-74 | The CHANGELOG section is the release note | accepted | staleness, release-notes, TestReleaseNotesTakesOnlyItsOwnVersion, TestReleaseNotesRefusesAnEmptySection, TestTheChangelogRuleCountsWhatShips, TestLastTagIsOneTheRevisionReaches, TestStalenessVerdictKeepsEveryCheck |
+| D-74 | The CHANGELOG section is the release note | accepted | release-notes, TestReleaseNotesTakesOnlyItsOwnVersion, TestReleaseNotesRefusesAnEmptySection |
 | D-75 | Own wire types over raw REST, and no generated client | accepted | depguard, api-fields |
 | D-76 | Every published method, union request and field has a written verdict | accepted | api-coverage, api-fields, TestTheRealRecordIsRead, TestFieldsProblemsCatchesAFieldGoogleAdds, TestAPIFieldsGate |
 | D-77 | The server confirms a write by asking the person through elicitation | rejected | — |
@@ -477,6 +477,7 @@ CHANGELOG to the code. Releasing is in [release.md](release.md).
 | D-80 | The client refuses a write made during a dry run | accepted | TestADryRunThatForgetsItsReturnSendsNothing |
 | D-81 | Several ranges are one read, sharing one budget | accepted | TestReadManyRangesInOneRequest |
 | D-82 | A protection's editors come from the file's editors | accepted | TestProtectedRangeEditorsComeFromTheFilesEditors |
+| D-83 | A pull request that changes what ships adds a CHANGELOG entry, checked from its merge-base | accepted | changelog, TestTheChangelogGateWantsAnEntryPerPullRequest, TestTheChangelogGateCountsWhatShips |
 
 ### D-01 One stdio binary per person, signed in to their own Google account through their own OAuth client
 
@@ -2399,24 +2400,16 @@ note written at release time drifts from the log, and one generated from
 commit subjects is written for contributors rather than for the people
 who install the server.
 
-The staleness gate asks for an entry under `[Unreleased]` whenever the
-binary's source changed since the newest release HEAD reaches, a
-prerelease included. That is any file but a test in a package the binary
-imports, as `go list -deps` reports them, a file such a package embeds,
-the bundle's manifest and Linux launcher, or `go.mod` outside its
-`require` and `tool` lines. The CHANGELOG is read with fenced code
-blanked. A checkout whose git cannot answer, or whose history reaches no
-release, gets no verdict from the rule, and the gate's other checks
-still run. `CONTRIBUTING.md` holds the rules for an entry, which are not
-optional since the section ships verbatim.
+The `changelog` gate asks each pull request that changes what ships for
+an entry (D-83). `CONTRIBUTING.md` holds the rules for an entry, which
+are not optional since the section ships verbatim.
 
 Rejected: a changelog generated from commit subjects; release notes
 written by hand at release time; a path filter over `cmd/` and
 `internal/`, which counts a package the binary never imports and misses
 `go.mod`.
-Cost: the staleness gate asks for an entry whenever the binary's source
-changed, a refactor no user sees included. A dependency bump passes it,
-the MCP SDK's too, whose entry `CONTRIBUTING.md` asks for.
+Cost: a section is only as good as the entries written into it, which
+D-83 asks for per pull request.
 
 ### D-75 Own wire types over raw REST, and no generated client
 
@@ -2596,4 +2589,33 @@ Cost: one `permissions.list` read per call that names editors. What
 Google does with a Google account outside the sharing is not probed,
 since that needs a second account (#72).
 
-Next ID: D-83
+### D-83 A pull request that changes what ships adds a CHANGELOG entry, checked from its merge-base
+
+A pull request that changes what users get adds an entry under
+`[Unreleased]`: a file but a test in a package the binary imports, as
+`go list -deps` reports them, a file such a package embeds, the bundle's
+manifest and Linux launcher, `.goreleaser.yaml`, `go.mod` outside its
+`require` and `tool` lines, or the MCP SDK's version. The `changelog`
+gate measures from the merge-base, so a base branch that moved on is not
+the pull request's change, and wants more entries under `[Unreleased]`
+than the merge-base holds. A release cut, which moves those entries
+under a new version heading, passes.
+
+A change nobody using the server can see ends its newest commit's
+message with `Changelog: none, <why>`, which keeps contributor detail out
+of the release note. The footer is read only while the CHANGELOG is
+untouched, and never for a `go.mod` change outside the `require` lines
+or an MCP SDK bump. Only the newest commit's footer counts, since it ends
+the squashed commit's message. An advisory a bump fixed is found at
+release time (`docs/release.md`).
+
+Rejected: the staleness rule D-74 described, which wanted one entry
+since the newest release and so passed every later pull request once
+one existed; reading the footer per commit after the merge, which broke
+on a multi-commit pull request, on GitHub's squash of several authors'
+commits, and on merge commits.
+Cost: a commit that skips the pull request gate, such as an admin merge,
+is not checked; `release-notes` still refuses an empty section at
+release.
+
+Next ID: D-84

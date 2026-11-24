@@ -236,9 +236,16 @@ checks the task table and needs no credentials.
 Every user-visible change gets an entry under `## [Unreleased]` in
 `CHANGELOG.md`, in the same pull request that makes the change. Leave
 out changes only contributors see, unless they must act on them.
-`make staleness` asks for an entry when the binary's source changed
-since the newest release your branch reaches (D-74). An entry is a `- `
-bullet at the margin.
+On a pull request, the `changelog` gate wants at least one entry more
+under `[Unreleased]` than the merge-base holds when the pull request
+changes what users get (D-83). A test, a script or a bump of a module
+other than the MCP SDK needs none. A change nobody using the server can
+see, such as a refactor, leaves the CHANGELOG as it is and ends its
+newest commit's message with a footer that says why:
+`Changelog: none, the text is unchanged line for line`. Only the newest
+commit's footer counts, since it ends the squashed commit's message, so
+split a user-visible change into its own pull request. An entry is a
+`- ` bullet at the margin.
 
 - **Sections** are the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   set and nothing else: Added, Changed, Deprecated, Removed, Fixed and

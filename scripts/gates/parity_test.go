@@ -151,11 +151,11 @@ func TestParityFindsTheDriftsThatHappened(t *testing.T) {
 			tagged + "ci.yml vets no pass that builds it; it compiles only on a maintainer's machine",
 		}},
 		{name: "make check does not scan for secrets", remove: "secrets", want: []string{
-			".github/workflows/ci.yml:182 runs `go run github.com/zricethezav/gitleaks/v8@v8.30.1 git --log-opts=HEAD " +
+			".github/workflows/ci.yml:184 runs `go run github.com/zricethezav/gitleaks/v8@v8.30.1 git --log-opts=HEAD " +
 				"--config .gitleaks.toml --redact --no-banner .` and `make check` does not",
 		}},
 		{name: "make check does not check that go.mod is tidy", remove: "tidy", want: []string{
-			".github/workflows/ci.yml:149 runs `go mod tidy -diff` and `make check` does not",
+			".github/workflows/ci.yml:151 runs `go mod tidy -diff` and `make check` does not",
 		}},
 		{name: "a gate runs in CI and not in make check", remove: "staleness", want: []string{
 			"the staleness gate runs in make check by the dispatch, and no target `make check` runs calls it",
@@ -202,11 +202,11 @@ func TestParityFindsTheDriftsThatHappened(t *testing.T) {
 		}},
 		{name: "a check only CI runs", edits: []docsEdit{
 			replace(fxCI, "      - name: go.mod is tidy\n", "      - run: go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...\n      - name: go.mod is tidy\n"),
-		}, want: []string{".github/workflows/ci.yml:148 runs `go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...` and `make check` does not"}},
+		}, want: []string{".github/workflows/ci.yml:150 runs `go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...` and `make check` does not"}},
 		{name: "CI runs a tool at another version", edits: []docsEdit{
 			replace(fxCI, "govulncheck@v1.7.0", "govulncheck@v1.7.1"),
 		}, want: []string{
-			".github/workflows/ci.yml:157 runs `go run golang.org/x/vuln/cmd/govulncheck@v1.7.1 ./...` and `make check` does not",
+			".github/workflows/ci.yml:159 runs `go run golang.org/x/vuln/cmd/govulncheck@v1.7.1 ./...` and `make check` does not",
 			"`make vuln` runs \"go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...\" and ci.yml never does",
 		}},
 		{name: "the release notes are no longer written", edits: []docsEdit{
@@ -296,7 +296,7 @@ func TestParityReadsWhatRuns(t *testing.T) {
 			replace(fxMakefile, "check: fmt", "# check: secrets\ncheck: fmt"),
 			replace(fxMakefile, " secrets api-coverage", " api-coverage"),
 		}, nil, []string{
-			".github/workflows/ci.yml:182 runs `go run github.com/zricethezav/gitleaks/v8@v8.30.1 git --log-opts=HEAD " +
+			".github/workflows/ci.yml:184 runs `go run github.com/zricethezav/gitleaks/v8@v8.30.1 git --log-opts=HEAD " +
 				"--config .gitleaks.toml --redact --no-banner .` and `make check` does not",
 		}},
 		// CI's make line runs the recipes make check runs, by the Makefile's
@@ -482,7 +482,7 @@ func TestParityHoldsTheTreesTagsToAVetPass(t *testing.T) {
 		{"a test that turns vet off, which is not a vet pass", []docsEdit{
 			replace(fxMakefile, vet, "\t$(GO) test -vet=off -tags=live ./...\n"),
 		}, nil, []string{
-			".github/workflows/ci.yml:147 runs `go vet -tags=live ./...` and `make check` does not",
+			".github/workflows/ci.yml:149 runs `go vet -tags=live ./...` and `make check` does not",
 			"`make vet` runs \"go test -vet=off -tags=live ./...\" and ci.yml never does",
 			"scripts/evals/ab.go builds only with -tags=live (//go:build live) and `make check` vets no pass that builds it; a contributor cannot see it break",
 		}},
@@ -491,7 +491,7 @@ func TestParityHoldsTheTreesTagsToAVetPass(t *testing.T) {
 		{"a file another tag keeps out, vetted only by a pass with that tag", []docsEdit{
 			replace(fxMakefile, vet, "\t$(GO) vet -tags=live,evals ./...\n"),
 		}, map[string]string{"internal/probe/probe.go": "//go:build live && !evals\n\npackage probe\n"}, []string{
-			".github/workflows/ci.yml:147 runs `go vet -tags=live ./...` and `make check` does not",
+			".github/workflows/ci.yml:149 runs `go vet -tags=live ./...` and `make check` does not",
 			"`make vet` runs \"go vet -tags=live,evals ./...\" and ci.yml never does",
 			"internal/probe/probe.go builds only with -tags=live (//go:build live && !evals) and `make check` vets no pass that builds it; a contributor cannot see it break",
 		}},

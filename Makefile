@@ -5,7 +5,7 @@ GO        ?= go
 EXE       := $(if $(filter Windows_NT,$(OS)),.exe,)
 BIN       ?= ./google-sheets-mcp$(EXE)
 VERSION   ?= dev
-# The range schema-ack measures on a local run; CI passes its own.
+# The range changelog and schema-ack measure on a local run; CI passes its own.
 PR_BASE_REF ?= origin/main
 PR_HEAD   ?= HEAD
 PKG        = github.com/mmedum/google-sheets-mcp/v5
@@ -163,6 +163,10 @@ schemas: build ## Dump the tool schemas
 .PHONY: schema-diff
 schema-diff: build gates ## Diff the tool schemas against the newest release's recorded baseline
 	@$(GATES) schema-diff $(BIN)
+
+.PHONY: changelog
+changelog: gates ## Check a change to what users get adds an entry under [Unreleased] since the merge-base
+	@$(GATES) changelog $(PR_BASE_REF) $(PR_HEAD)
 
 .PHONY: schema-ack
 schema-ack: gates ## Check every tool-surface change since the merge-base is named in a commit footer
